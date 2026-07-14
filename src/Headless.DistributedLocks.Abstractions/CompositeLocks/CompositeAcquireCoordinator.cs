@@ -373,6 +373,24 @@ internal static class CompositeAcquireCoordinator
                             continue;
                         }
 
+                        // pendingWinner also completes when the child is simply ACQUIRED -- it races the pending
+                        // acquire, not just the loss/cancellation sentinel. Winning this race is therefore not by
+                        // itself an interruption, and treating it as one would abort a composite whose last child
+                        // landed inside the renewal round-trip. Only a genuinely interrupted wait aborts; otherwise
+                        // finish the renewal (so a real renewal failure still surfaces) and let the loop head hand
+                        // the completed child back.
+                        if (
+                            !callerToken.IsCancellationRequested
+                            && !deadlineToken.IsCancellationRequested
+                            && !operationToken.IsCancellationRequested
+                            && held.FirstOrDefault(static child => child.IsLost) is null
+                        )
+                        {
+                            await renewalTask.ConfigureAwait(false);
+                            renewalSchedule.Reset();
+                            continue;
+                        }
+
                         var renewalPrimary = _CreateWaitInterruption(held, callerToken, deadlineToken, operationToken);
                         var observedRenewalFailure = await _CancelAndObserveTaskAsync(
                                 renewalTask,

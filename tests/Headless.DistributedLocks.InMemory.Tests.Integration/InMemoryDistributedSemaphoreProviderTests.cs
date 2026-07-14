@@ -79,4 +79,8 @@ public sealed class InMemoryDistributedSemaphoreProviderTests : DistributedSemap
     [Fact]
     public override Task should_return_child_lease_for_single_canonical_semaphore_resource() =>
         base.should_return_child_lease_for_single_canonical_semaphore_resource();
+
+    [Fact]
+    public override Task should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently() =>
+        base.should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently();
 }

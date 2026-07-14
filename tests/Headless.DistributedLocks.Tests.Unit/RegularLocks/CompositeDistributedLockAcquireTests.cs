@@ -925,6 +925,69 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_complete_formation_when_last_child_lands_while_a_renewal_is_in_flight()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var provider = _CreateProvider(timeProvider);
+        var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var renewalGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // The held child's renewal is held in flight so the pending acquire can land inside the renewal window --
+        // the exact interleaving where the composite must NOT mistake a successful child for an interruption.
+        var first = new CompositeTestLease(
+            "A",
+            renewal: async (_, token) =>
+            {
+                renewalStarted.TrySetResult();
+                return await renewalGate.Task.WaitAsync(token).ConfigureAwait(false);
+            }
+        );
+
+        var second = new CompositeTestLease("B");
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondResult = new TaskCompletionSource<IDistributedLease?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        Task<IDistributedLease?>? pendingSecond = null;
+
+        provider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                call.ArgAt<string>(0) == "A"
+                    ? Task.FromResult<IDistributedLease?>(first)
+                    : pendingSecond = _BlockSecondAsync(secondStarted, secondResult.Task)
+            );
+
+        var acquireTask = provider.TryAcquireAllAsync(
+            ["A", "B"],
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromMinutes(10),
+                AcquireTimeout = Timeout.InfiniteTimeSpan,
+            },
+            AbortToken
+        );
+
+        await secondStarted.Task.WaitAsync(AbortToken);
+
+        // Fire the renewal cadence, then let B be granted while A's renewal is still outstanding. Awaiting the child
+        // and draining the scheduler before releasing the renewal pins the interleaving deterministically: the
+        // coordinator observes a COMPLETED child while a renewal is in flight, which it must not mistake for an
+        // interrupted wait.
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await renewalStarted.Task.WaitAsync(AbortToken);
+        secondResult.SetResult(second);
+        await pendingSecond!.WaitAsync(AbortToken);
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
+        renewalGate.TrySetResult(true);
+
+        var handle = await acquireTask.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        handle.Should().NotBeNull();
+        handle!.Resource.Should().Be("A+B");
+    }
+
     private static IDistributedLock _CreateProvider(FakeTimeProvider timeProvider)
     {
         var provider = Substitute.For<IDistributedLock>();

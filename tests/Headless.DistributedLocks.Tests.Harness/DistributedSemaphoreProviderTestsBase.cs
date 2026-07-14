@@ -211,4 +211,136 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
 
         (await provider.GetHolderCountAsync(first, AbortToken)).Should().Be(0);
     }
+
+    /// <summary>
+    /// Two callers name the same two capacity-1 semaphores in OPPOSITE order and race. Canonicalization sorts both
+    /// sets to the same ordinal order, so one caller takes both slots and the other follows. Every iteration must see
+    /// both composites succeed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Capacity 1 is what gives this teeth: a capacity-1 semaphore is mutually exclusive, so without the canonical
+    /// sort caller X holds a slot of <c>first</c> while waiting on <c>second</c> and caller Y holds a slot of
+    /// <c>second</c> while waiting on <c>first</c> — a circular wait that never resolves.
+    /// </para>
+    /// <para>
+    /// Both callers are released from one barrier onto separate pool threads. Without that they do not genuinely
+    /// interleave: an in-process acquire can complete without ever yielding, so caller X would run to completion
+    /// before caller Y was constructed, and a serialized pair cannot form a circular wait — the test would pass even
+    /// with the ordinal sort deleted. Probabilistic by nature, hence the repeats; the deterministic ordering guard
+    /// lives in the unit tests.
+    /// </para>
+    /// </remarks>
+    public virtual async Task should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently()
+    {
+        var provider = GetSemaphoreProvider();
+
+        for (var iteration = 0; iteration < 20; iteration++)
+        {
+            var (first, second) = CompositeTestResources.CreatePair();
+            var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) };
+
+            using var startLine = new SemaphoreSlim(0, 2);
+            using var callerSource = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+            var callerToken = callerSource.Token;
+
+            var callerX = Task.Run(
+                async () =>
+                {
+                    await startLine.WaitAsync(callerToken);
+
+                    return await _AcquireThenReleaseAsync(
+                        provider,
+                        [new DistributedSemaphoreRequest(first, 1), new DistributedSemaphoreRequest(second, 1)],
+                        options,
+                        callerToken
+                    );
+                },
+                callerToken
+            );
+
+            var callerY = Task.Run(
+                async () =>
+                {
+                    await startLine.WaitAsync(callerToken);
+
+                    return await _AcquireThenReleaseAsync(
+                        provider,
+                        [new DistributedSemaphoreRequest(second, 1), new DistributedSemaphoreRequest(first, 1)],
+                        options,
+                        callerToken
+                    );
+                },
+                callerToken
+            );
+
+            startLine.Release(2);
+
+            var race = Task.WhenAll(callerX, callerY);
+            bool acquiredX;
+            bool acquiredY;
+
+            try
+            {
+                // The blocked caller re-probes on the provider's TimeProvider-driven backoff, so advance the clock
+                // until both settle. The bounded WaitAsync means a genuine deadlock FAILS rather than hangs.
+                for (var i = 0; i < 60 && !race.IsCompleted; i++)
+                {
+                    await AdvanceTimeAsync(TimeSpan.FromMilliseconds(200), AbortToken);
+                    await Task.Yield();
+                }
+
+                await race.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+                acquiredX = await callerX;
+                acquiredY = await callerY;
+            }
+            finally
+            {
+                // On an ordering regression the callers deadlock and the WaitAsync above throws while they are still
+                // running against a real backend. Cancel and drain them, or an abandoned caller would hold real slots
+                // past the end of this test and turn one honest failure into a cascade of unrelated ones.
+                await callerSource.CancelAsync();
+                await _DrainCancelledRaceAsync(race);
+            }
+
+            acquiredX.Should().BeTrue($"caller X must form its composite on iteration {iteration}");
+            acquiredY.Should().BeTrue($"caller Y must form its composite on iteration {iteration}");
+        }
+    }
+
+    private static async Task<bool> _AcquireThenReleaseAsync(
+        IDistributedSemaphoreProvider provider,
+        IReadOnlyList<DistributedSemaphoreRequest> requests,
+        DistributedLockAcquireOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var handle = await provider.TryAcquireAllAsync(requests, options, cancellationToken);
+
+        if (handle is null)
+        {
+            return false;
+        }
+
+        await handle.DisposeAsync();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Awaits the cancelled race so both callers are settled before the test leaves the iteration, swallowing the
+    /// cancellation and any acquire fault they report on the way down. Only reached when the race has already failed,
+    /// so there is no outcome left to assert — the point is to leave no caller running.
+    /// </summary>
+#pragma warning disable CA1031, RCS1075 // The race has already failed; draining it must not mask that failure with a new one.
+    private static async Task _DrainCancelledRaceAsync(Task race)
+    {
+        try
+        {
+            await race;
+        }
+        catch (Exception) { }
+    }
+#pragma warning restore CA1031, RCS1075
 }
