@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
@@ -10,6 +11,9 @@ namespace Tests.RegularLocks;
 
 public sealed class CompositeSemaphoreAcquireTests : TestBase
 {
+    /// <summary>Bounds every gate in the interleaved-formation test, so an ordering regression fails instead of hanging.</summary>
+    private static readonly TimeSpan _GateTimeout = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task should_reject_null_request_sequence_before_creating_any_semaphore()
     {
@@ -164,6 +168,93 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
         provider.Received(1).CreateSemaphore("a", 5);
         provider.Received(1).CreateSemaphore("b", 2);
         calls.Should().Equal("a", "b");
+    }
+
+    /// <summary>
+    /// The deterministic deadlock-freedom guard for semaphore composites (SC1), and the interleaved counterpart of the
+    /// ordering test above. Both semaphores have capacity 1, so a slot is mutually exclusive. Both composites are held
+    /// mid-formation: the deadlock state — each holding the slot the other needs next — would be reachable if either
+    /// caller could take "b" before "a". Canonical ordering makes it unreachable: the second caller blocks on "a"
+    /// without ever asking for "b".
+    /// </summary>
+    /// <remarks>
+    /// Strip the ordinal sort at <c>_MaterializeCanonicalRequests</c> and the first caller starts at "b" (its input
+    /// order), the second starts at "a" and wins that slot, and the two hold-and-wait against each other — the state
+    /// this asserts is unreachable.
+    /// </remarks>
+    [Fact]
+    public async Task should_make_the_interleaved_formation_deadlock_state_unreachable()
+    {
+        var provider = _CreateProvider(new FakeTimeProvider());
+        var calls = new ConcurrentQueue<string>();
+        var slotsTakenOfA = 0;
+        var firstWantsB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseB = new TaskCompletionSource<IDistributedLease?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondWantsA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseA = new TaskCompletionSource<IDistributedLease?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var semaphoreA = _StubSemaphore(
+            provider,
+            "a",
+            1,
+            _ =>
+            {
+                calls.Enqueue("a");
+
+                // Capacity 1: the sole slot goes to whoever asks first, and the next caller contends for it.
+                if (Interlocked.Increment(ref slotsTakenOfA) == 1)
+                {
+                    return Task.FromResult<IDistributedLease?>(new CompositeTestLease("a"));
+                }
+
+                secondWantsA.TrySetResult();
+
+                return releaseA.Task;
+            }
+        );
+
+        var semaphoreB = _StubSemaphore(
+            provider,
+            "b",
+            1,
+            _ =>
+            {
+                calls.Enqueue("b");
+                firstWantsB.TrySetResult();
+
+                return releaseB.Task;
+            }
+        );
+
+        var options = new DistributedLockAcquireOptions { AcquireTimeout = Timeout.InfiniteTimeSpan };
+        var firstTask = provider.TryAcquireAllAsync(
+            [new DistributedSemaphoreRequest("b", 1), new DistributedSemaphoreRequest("a", 1)],
+            options,
+            AbortToken
+        );
+        await firstWantsB.Task.WaitAsync(_GateTimeout, AbortToken);
+
+        var secondTask = provider.TryAcquireAllAsync(
+            [new DistributedSemaphoreRequest("a", 1), new DistributedSemaphoreRequest("b", 1)],
+            options,
+            AbortToken
+        );
+        await secondWantsA.Task.WaitAsync(_GateTimeout, AbortToken);
+
+        // The second caller is blocked on "a" and has never asked for "b" — so it cannot be holding the slot the first
+        // caller is waiting for. That is the whole guarantee.
+        await semaphoreB
+            .Received(1)
+            .TryAcquireAsync(Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
+        await semaphoreA
+            .Received(2)
+            .TryAcquireAsync(Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
+        calls.Should().Equal("a", "b", "a");
+
+        releaseB.SetResult(new CompositeTestLease("b"));
+        (await firstTask.WaitAsync(_GateTimeout, AbortToken)).Should().NotBeNull();
+        releaseA.SetResult(new CompositeTestLease("a"));
+        (await secondTask.WaitAsync(_GateTimeout, AbortToken)).Should().NotBeNull();
     }
 
     [Fact]
