@@ -28,7 +28,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         var topics = await client.FetchMessageNamesAsync([subject], AbortToken);
         await client.SubscribeAsync(topics, AbortToken);
@@ -79,7 +79,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         await client.FetchMessageNamesAsync([subject], AbortToken);
         await client.SubscribeAsync([subject], AbortToken);
@@ -121,7 +121,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: true);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when — FetchMessageNamesAsync with EnableSubscriberClientStreamAndSubjectCreation=true
         var result = await client.FetchMessageNamesAsync([subject], AbortToken);
@@ -152,7 +152,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         );
 
         await using var client = new NatsConsumerClient("test-group", 0, opts, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when
         await client.FetchMessageNamesAsync([subject], AbortToken);
@@ -175,7 +175,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
         await client.FetchMessageNamesAsync([subject], AbortToken);
         await client.SubscribeAsync([subject], AbortToken);
 
@@ -247,7 +247,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
         await client.FetchMessageNamesAsync([subject], AbortToken);
         await client.SubscribeAsync([subject], AbortToken);
 

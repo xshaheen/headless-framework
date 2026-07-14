@@ -833,7 +833,7 @@ internal sealed class NatsConsumerClient(
         {
             // A tokenless NATS connection attempt cannot be canceled. Do not make caller cancellation
             // wait for it, but retain ownership until it settles so disposal cannot race socket setup.
-            if (_connectTask is null || _connectTask.IsCompleted)
+            if (_connectTask?.IsCompleted != false)
             {
                 await _DisposeConnectionAsync(connection).ConfigureAwait(false);
             }

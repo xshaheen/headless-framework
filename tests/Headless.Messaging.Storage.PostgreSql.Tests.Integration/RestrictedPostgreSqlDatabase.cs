@@ -103,7 +103,7 @@ internal static class RestrictedPostgreSqlDatabase
 
             if (restrictedConnectionString is not null)
             {
-                using var restrictedConnection = new NpgsqlConnection(restrictedConnectionString);
+                await using var restrictedConnection = new NpgsqlConnection(restrictedConnectionString);
                 NpgsqlConnection.ClearPool(restrictedConnection);
             }
 

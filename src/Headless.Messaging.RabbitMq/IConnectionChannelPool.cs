@@ -79,7 +79,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor
     )
-        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, null) { }
+        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, connectionActivator: null) { }
 
     internal ConnectionChannelPool(
         ILogger<ConnectionChannelPool> logger,
