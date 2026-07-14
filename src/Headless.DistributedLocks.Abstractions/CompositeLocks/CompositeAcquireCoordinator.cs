@@ -359,6 +359,11 @@ internal static class CompositeAcquireCoordinator
                     if (completed == cadenceTask)
                     {
                         using var renewalSource = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+
+                        // The REQUESTED TTL, not the effective one that set the cadence. Each child re-applies its own
+                        // backend's clamp on renewal exactly as it did on acquire, so a mixed reader-writer set renews
+                        // its read child to the finite default and its write child to the infinite lease the caller
+                        // actually asked for. Passing the clamped value here would silently downgrade the write child.
                         var renewalTask = _RenewHeldAsync(
                             held,
                             options.TimeUntilExpires ?? environment.DefaultTimeUntilExpires,
@@ -440,12 +445,19 @@ internal static class CompositeAcquireCoordinator
         }
     }
 
+    /// <summary>
+    /// How often held children are renewed while a later child is still pending — half the lease TTL, capped at one
+    /// minute; <see langword="null"/> means never. The TTL here is the <em>effective</em> one
+    /// (<see cref="CompositeAcquireEnvironment.GetEffectiveTimeUntilExpires"/>), not the requested one: a reader-writer
+    /// read child asked for an infinite lease really holds a finite one, and scheduling off the option would leave it
+    /// unrenewed until it expired underneath a still-forming composite.
+    /// </summary>
     private static TimeSpan? _GetRenewalCadence(
         CompositeAcquireEnvironment environment,
         DistributedLockAcquireOptions options
     )
     {
-        var timeUntilExpires = options.TimeUntilExpires ?? environment.DefaultTimeUntilExpires;
+        var timeUntilExpires = environment.GetEffectiveTimeUntilExpires(options);
 
         if (
             options.Monitoring == LockMonitoringMode.AutoExtend

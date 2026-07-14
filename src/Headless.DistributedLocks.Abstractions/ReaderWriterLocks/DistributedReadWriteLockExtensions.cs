@@ -307,7 +307,15 @@ public static class DistributedReadWriteLockExtensions
 
         var canonicalRequests = _MaterializeCanonicalRequests(requests);
 
-        var environment = CompositeAcquireEnvironment.From(provider);
+        // A read child cannot hold an infinite lease -- the provider clamps it to DefaultTimeUntilExpires so a crashed
+        // reader cannot strand the resource forever. Tell the coordinator, or it would classify this set as
+        // non-expiring, never renew it during formation, and hand back a lease whose read children had already expired.
+        var environment = CompositeAcquireEnvironment.From(
+            provider,
+            clampsInfiniteTimeUntilExpires: canonicalRequests.Any(static request =>
+                request.Mode is DistributedLockMode.Read
+            )
+        );
 
         return CompositeAcquireCoordinator.TryAcquireAsync(
             canonicalRequests,

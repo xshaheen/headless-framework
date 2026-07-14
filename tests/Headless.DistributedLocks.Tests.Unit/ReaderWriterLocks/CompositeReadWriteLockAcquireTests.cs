@@ -497,6 +497,61 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         first.RenewalCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// An infinite TTL is not honoured for read children: the provider clamps them to its default so a crashed reader
+    /// cannot strand the resource. The composite must schedule formation renewal on that clamped TTL — treating the
+    /// set as non-expiring would let the read child expire underneath a long formation and return a lease the caller
+    /// does not really hold. The cadence is half the 20-minute default, capped at the coordinator's one-minute ceiling.
+    /// </summary>
+    [Fact]
+    public async Task should_renew_read_children_when_infinite_ttl_is_clamped_by_the_provider()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var provider = _CreateProvider(timeProvider);
+        var renewedWith = new ConcurrentQueue<TimeSpan?>();
+        var first = new CompositeTestLease(
+            "a",
+            renewal: (timeUntilExpires, _) =>
+            {
+                renewedWith.Enqueue(timeUntilExpires);
+                return Task.FromResult(true);
+            }
+        );
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondResult = new TaskCompletionSource<IDistributedLease?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        provider
+            .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(first));
+        provider
+            .TryAcquireWriteLockAsync("b", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .Returns(_ => _BlockUntilAsync(secondStarted, secondResult.Task));
+
+        var acquireTask = provider.TryAcquireAllAsync(
+            [new("b", DistributedLockMode.Write), new("a", DistributedLockMode.Read)],
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = Timeout.InfiniteTimeSpan,
+                AcquireTimeout = Timeout.InfiniteTimeSpan,
+            },
+            AbortToken
+        );
+
+        await secondStarted.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
+        secondResult.SetResult(new CompositeTestLease("b"));
+
+        (await acquireTask).Should().NotBeNull();
+        first.RenewalCount.Should().Be(1);
+
+        // The child is renewed with the REQUESTED TTL and re-applies its own clamp, so a write child in the same set
+        // keeps the infinite lease the caller asked for.
+        renewedWith.Should().Equal(Timeout.InfiniteTimeSpan);
+    }
+
     [Fact]
     public async Task should_abort_and_report_lost_handle_when_mid_flight_renewal_returns_false()
     {
