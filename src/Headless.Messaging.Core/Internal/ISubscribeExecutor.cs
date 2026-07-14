@@ -492,17 +492,22 @@ internal sealed class SubscribeExecutor(
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
-        return await dataStorage.LeaseReceiveAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+        return await dataStorage
+            .LeaseReceiveAsync(message, _retryPolicy.DispatchTimeout, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
         var originalInlineAttempts = message.InlineAttempts;
         message.InlineAttempts++;
         var reserved = await dataStorage
-            .LeaseReceiveAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .LeaseReceiveAndReserveAttemptAsync(
+                message,
+                _retryPolicy.DispatchTimeout,
+                originalInlineAttempts,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (!reserved)
         {

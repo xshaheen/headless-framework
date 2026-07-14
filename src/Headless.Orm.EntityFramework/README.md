@@ -178,7 +178,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - Registers `EntityFrameworkCommitCoordination` (EF interceptor + ambient commit coordinator)
 - `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
-- Registers via `TryAddSingleton`: `IClock`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
+- Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant`
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly
 - Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`)

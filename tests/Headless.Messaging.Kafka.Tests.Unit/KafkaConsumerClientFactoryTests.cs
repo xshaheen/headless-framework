@@ -34,7 +34,7 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-consumer-group", 1);
+        var client = await factory.CreateAsync("test-consumer-group", 1, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -50,7 +50,7 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-consumer-group", 5);
+        var client = await factory.CreateAsync("test-consumer-group", 5, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -65,8 +65,8 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 1);
-        var client2 = await factory.CreateAsync("group-2", 1);
+        var client1 = await factory.CreateAsync("group-1", 1, AbortToken);
+        var client2 = await factory.CreateAsync("group-2", 1, AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);
@@ -82,7 +82,7 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-group", 1);
+        var client = await factory.CreateAsync("test-group", 1, AbortToken);
 
         // then
         client.BrokerAddress.Name.Should().Be("kafka");

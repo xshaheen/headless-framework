@@ -43,7 +43,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
-    private readonly IClock _clock;
+    private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
     private readonly IBlobNamingNormalizer _normalizer;
@@ -116,14 +116,13 @@ internal sealed class RedisBlobStorage : IBlobStorage
         IOptions<RedisBlobStorageOptions> optionsAccessor,
         IJsonSerializer defaultSerializer,
         IBlobNamingNormalizer normalizer,
-        IClock clock,
         TimeProvider? timeProvider = null
     )
     {
         _options = optionsAccessor.Value;
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
-        _clock = clock;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _normalizer = normalizer;
 
         var pipelineLogger = _logger;
@@ -238,7 +237,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
                 Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
             }
 
-            var now = _clock.UtcNow;
+            var now = _timeProvider.GetUtcNow();
 
             var blobInfo = new BlobInfo
             {

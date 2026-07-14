@@ -2,11 +2,12 @@
 
 using System.Collections.Concurrent;
 using Headless.CommitCoordination;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class CommitScopeFactoryTests
+public sealed class CommitScopeFactoryTests : TestBase
 {
     [Fact]
     public async Task should_restore_parent_current_after_child_scope_disposes()
@@ -160,7 +161,7 @@ public sealed class CommitScopeFactoryTests
             );
         }
 
-        await rollbackRan.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await rollbackRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         calls.Should().Be(1);
         stack.Current.Should().BeNull();
     }

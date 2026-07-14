@@ -150,7 +150,6 @@ public static class SetupAuditLogPostgreSql
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
             services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(PostgreSqlReadAuditLog<>));
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();

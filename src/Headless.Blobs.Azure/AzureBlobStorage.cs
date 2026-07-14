@@ -34,7 +34,7 @@ namespace Headless.Blobs.Azure;
 internal sealed class AzureBlobStorage(
     BlobServiceClient blobServiceClient,
     IMimeTypeProvider mimeTypeProvider,
-    IClock clock,
+    TimeProvider timeProvider,
     IOptions<AzureStorageOptions> optionAccessor,
     IBlobNamingNormalizer normalizer,
     ILogger<AzureBlobStorage> logger
@@ -70,7 +70,11 @@ internal sealed class AzureBlobStorage(
 
         // Copies the caller's metadata (never mutated — it may be shared across a BulkUploadAsync batch) and layers
         // the framework uploadDate/extension keys on top.
-        var effectiveMetadata = BlobStorageHelpers.BuildEffectiveMetadata(metadata, clock.UtcNow, location.Path);
+        var effectiveMetadata = BlobStorageHelpers.BuildEffectiveMetadata(
+            metadata,
+            timeProvider.GetUtcNow(),
+            location.Path
+        );
 
         // Seekable streams are rewound to position 0 before upload. Non-seekable streams are passed straight
         // through to the Azure SDK, which streams them as-is — non-seekable handling is provider-specific and is
@@ -695,7 +699,7 @@ internal sealed class AzureBlobStorage(
             BlobContainerName = blobClient.BlobContainerName,
             BlobName = blobClient.Name,
             Resource = "b",
-            ExpiresOn = clock.UtcNow.Add(expiry),
+            ExpiresOn = timeProvider.GetUtcNow().Add(expiry),
             // The SAS is a bearer credential; restrict it to HTTPS so it can't be replayed over plaintext HTTP.
             // When the client targets an http:// endpoint (an emulator such as Azurite), allow http too — the
             // emulator rejects an https-only (spr=https) SAS. Real Azure endpoints are https, so this stays

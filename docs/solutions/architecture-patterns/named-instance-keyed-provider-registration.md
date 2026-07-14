@@ -37,7 +37,7 @@ Compose three pieces per named instance — the **named-options + keyed-factory 
    - Options: wrap the named snapshot for engines that take `IOptions<T>` → `Options.Create(sp.GetRequiredService<IOptionsMonitor<TOptions>>().Get(name))`.
    - Provider client: build it from the named options (add a small `internal static` client factory if none exists).
    - Normalizer / other per-config helpers: `new XxxNormalizer()` per instance.
-   - Genuinely shared, config-independent ambient services (e.g. `IMimeTypeProvider`, `IClock`, `TimeProvider`) stay resolved from `sp` — sharing them is safe.
+   - Genuinely shared, config-independent ambient services (e.g. `IMimeTypeProvider`, `TimeProvider`) stay resolved from `sp` — sharing them is safe.
 
 Then expose resolution two ways, matching the caching precedent: a name-resolving provider (`IBlobStorageProvider` over `GetKeyedService<IService>(name)`) **and** keyed injection (`[FromKeyedServices("name")] IService`). The **default** (unnamed) instance stays a plain unkeyed `AddSingleton<IService>` so direct injection keeps working; named instances never touch the unkeyed registration.
 
@@ -72,7 +72,7 @@ setup.RegisterDefaultProvider(services =>
     services.AddSingleton<IBlobStorage>(sp => new AwsBlobStorage(
         S3ClientFactory.Create(awsOptions),              // per-instance client
         sp.GetRequiredService<IMimeTypeProvider>(),       // shared ambient — safe
-        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<IOptions<AwsBlobStorageOptions>>(),
         new AwsBlobNamingNormalizer(),                    // per-instance normalizer
         sp.GetService<ILogger<AwsBlobStorage>>()));
@@ -88,7 +88,7 @@ instance.RegisterProvider(services =>
     services.AddKeyedSingleton<IBlobStorage>(name, (sp, _) => new AwsBlobStorage(
         S3ClientFactory.Create(awsOptions),
         sp.GetRequiredService<IMimeTypeProvider>(),
-        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<TimeProvider>(),
         Options.Create(sp.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)),
         new AwsBlobNamingNormalizer(),
         sp.GetService<ILogger<AwsBlobStorage>>()));

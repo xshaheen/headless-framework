@@ -36,7 +36,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
 
         // when
         await source.ForEachAsync(
-            (string item, int index) =>
+            (item, index) =>
             {
                 observed.Add((item, index));
                 return Task.CompletedTask;
@@ -58,7 +58,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
 
         // when
         await source.ForEachAsync(
-            (int _, CancellationToken token) =>
+            (_, token) =>
             {
                 observed.Add(token);
                 return Task.CompletedTask;
@@ -67,8 +67,8 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
         );
 
         // then
-        observed.Should().HaveCount(1);
-        observed[0].Should().Be(cts.Token);
+        observed.Should().ContainSingle();
+        observed.Should().HaveElementAt(0, cts.Token);
     }
 
     [Fact]

@@ -23,7 +23,7 @@ public sealed class CloudflareR2BlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         return services;
     }

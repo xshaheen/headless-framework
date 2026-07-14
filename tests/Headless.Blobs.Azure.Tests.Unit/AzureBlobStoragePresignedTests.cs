@@ -20,7 +20,7 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         return new AzureBlobStorage(
             blobServiceClient,
             new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
+            TimeProvider.System,
             new OptionsWrapper<AzureStorageOptions>(new AzureStorageOptions()),
             new AzureBlobNamingNormalizer(),
             NullLogger<AzureBlobStorage>.Instance
