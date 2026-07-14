@@ -67,6 +67,30 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         return _CreateStorage(timeProvider);
     }
 
+    /// <inheritdoc />
+    protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<DateTime>("SELECT statement_timestamp()");
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var tableName = published ? "published" : "received";
+        return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
+            $"""SELECT "LockedUntil", "Owner" FROM messaging.{tableName} WHERE "Id"=@Id""",
+            new { Id = storageId }
+        );
+    }
+
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
         return new PostgreSqlDataStorage(
@@ -313,6 +337,22 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
 
     [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_published_fenced_writes_with_fast_application_clock();
+
+    [Fact]
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
+        base.should_allow_received_fenced_writes_with_fast_application_clock();
+
+    [Fact]
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 
@@ -380,6 +420,86 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     #endregion
 
     #region PostgreSQL-Specific Tests
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool published, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(published, reserveAttempt);
+
+    [Fact]
+    public async Task should_preserve_sub_second_fresh_dispatch_lease_duration()
+    {
+        var storage = GetStorage();
+        var message = await storage.StoreMessageAsync(
+            "sub-second-database-clock-lease",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        var leaseDuration = TimeSpan.FromMilliseconds(750);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var databaseTimeBefore = await connection.ExecuteScalarAsync<DateTime>("SELECT statement_timestamp()");
+
+        (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        var persistedLease = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.published WHERE "Id"=@Id""",
+            new { Id = message.StorageId }
+        );
+        persistedLease.LockedUntil.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
+        persistedLease.LockedUntil.Should().BeOnOrBefore(persistedLease.DatabaseTimeAfter.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_preserve_active_receive_lease_when_fast_application_clock_redelivers()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+
+        NodeMembership.SetIdentity("fast-clock-redelivery-owner");
+        (await storage.LeaseReceiveAsync(stored, TimeSpan.FromMinutes(5), AbortToken)).Should().BeTrue();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var before = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        var fastClockStorage = _CreateStorage(
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddYears(10))
+        );
+        var redelivery = await fastClockStorage.StoreReceivedMessageAsync(
+            "fast-clock-redelivery",
+            "fast-clock-group",
+            origin,
+            AbortToken
+        );
+        var after = await connection.QuerySingleAsync<PersistedLease>(
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            new { Id = stored.StorageId }
+        );
+
+        redelivery.StorageId.Should().NotBe(stored.StorageId, "the active-lease guard must reject the upsert");
+        after.LockedUntil.Should().Be(before.LockedUntil);
+        after.Owner.Should().Be(before.Owner);
+    }
 
     [Fact]
     public async Task should_create_database_schema()
@@ -1024,6 +1144,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 _WalkPlanForProperty(child, propertyName, collector);
             }
         }
+    }
+
+    private sealed class PersistedLease
+    {
+        public required DateTime DatabaseTimeAfter { get; init; }
+
+        public required DateTime LockedUntil { get; init; }
+
+        public string? Owner { get; init; }
     }
 
     #endregion

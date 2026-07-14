@@ -72,4 +72,22 @@
   <data name="MultipleJobsConstructorAttributesMessage" xml:space="preserve">
     <value>The class '{0}' has multiple constructors with [JobsConstructor] attribute. Only one constructor can be marked with [JobsConstructor].</value>
   </data>
+  <data name="DuplicateRequestTypeTitle" xml:space="preserve">
+    <value>Duplicate job request type</value>
+  </data>
+  <data name="DuplicateRequestTypeMessage" xml:space="preserve">
+    <value>The request type '{0}' is already mapped to another [JobFunction] method</value>
+  </data>
+  <data name="InvalidJobPriorityTitle" xml:space="preserve">
+    <value>Invalid job priority</value>
+  </data>
+  <data name="InvalidJobPriorityMessage" xml:space="preserve">
+    <value>The job priority value '{0}' is not defined</value>
+  </data>
+  <data name="InvalidMaxConcurrencyTitle" xml:space="preserve">
+    <value>Invalid maximum concurrency</value>
+  </data>
+  <data name="InvalidMaxConcurrencyMessage" xml:space="preserve">
+    <value>The maximum concurrency value '{0}' cannot be negative</value>
+  </data>
 </root>

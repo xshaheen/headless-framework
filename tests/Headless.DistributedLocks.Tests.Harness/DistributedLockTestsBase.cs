@@ -122,6 +122,130 @@ public abstract class DistributedLockTestsBase : TestBase
         });
     }
 
+    public virtual async Task should_acquire_composite_in_canonical_order_and_deduplicate()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        var handle = await lockProvider.AcquireAllAsync([second, first, second], cancellationToken: AbortToken);
+
+        try
+        {
+            handle.Resource.Should().Be($"{first}+{second}");
+            (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeTrue();
+            (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeTrue();
+        }
+        finally
+        {
+            await handle.DisposeAsync();
+        }
+
+        (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
+        (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeFalse();
+    }
+
+    public virtual async Task should_acquire_opposite_composite_orders_sequentially()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) };
+        var firstHandle = await lockProvider.AcquireAllAsync([second, first], options, AbortToken);
+        var secondTask = lockProvider.TryAcquireAllAsync([first, second], options, AbortToken);
+        var contentionWindow = Task.Delay(TimeSpan.FromMilliseconds(150), TimeProvider, AbortToken);
+        var completedDuringContention = await Task.WhenAny(secondTask, contentionWindow);
+
+        await firstHandle.ReleaseAsync();
+        await firstHandle.DisposeAsync();
+
+        var secondHandle = await secondTask.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider, AbortToken);
+        completedDuringContention.Should().BeSameAs(contentionWindow);
+        secondHandle.Should().NotBeNull();
+        await secondHandle!.DisposeAsync();
+    }
+
+    public virtual async Task should_release_earlier_composite_children_when_later_resource_is_contended()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        await using var blocker = await lockProvider.AcquireAsync(second, cancellationToken: AbortToken);
+
+        var handle = await lockProvider.TryAcquireAllAsync(
+            [second, first, first],
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+
+        handle.Should().BeNull();
+        (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
+        (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeTrue();
+    }
+
+    public virtual async Task should_renew_and_release_composite_lease()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        var handle = await lockProvider.AcquireAllAsync([first, second], cancellationToken: AbortToken);
+
+        try
+        {
+            (await handle.RenewAsync(TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
+            await handle.ReleaseAsync();
+
+            (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
+            (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeFalse();
+        }
+        finally
+        {
+            await handle.ReleaseAsync();
+            await handle.DisposeAsync();
+        }
+    }
+
+    public virtual async Task should_dispatch_composite_renew_and_release_through_provider()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        var handle = await lockProvider.AcquireAllAsync(
+            [first, second],
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            AbortToken
+        );
+
+        try
+        {
+            (await lockProvider.RenewAsync(handle, TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
+            await lockProvider.ReleaseAsync(handle, AbortToken);
+
+            (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
+            (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeFalse();
+        }
+        finally
+        {
+            await lockProvider.ReleaseAsync(handle, AbortToken);
+            await handle.DisposeAsync();
+        }
+    }
+
+    public virtual async Task should_keep_composite_resources_when_disposed_without_release()
+    {
+        var lockProvider = GetLockProvider();
+        var (first, second) = CompositeTestResources.CreatePair();
+        var handle = await lockProvider.AcquireAllAsync(
+            [first, second],
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            AbortToken
+        );
+
+        await handle.DisposeAsync();
+
+        (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeTrue();
+        (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeTrue();
+
+        await handle.ReleaseAsync();
+
+        (await lockProvider.IsLockedAsync(first, AbortToken)).Should().BeFalse();
+        (await lockProvider.IsLockedAsync(second, AbortToken)).Should().BeFalse();
+    }
+
     public virtual async Task should_release_lock_multiple_times()
     {
         var locker = GetLockProvider();

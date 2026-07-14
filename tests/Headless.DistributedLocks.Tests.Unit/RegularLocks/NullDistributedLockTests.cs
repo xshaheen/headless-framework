@@ -13,6 +13,14 @@ public sealed class NullDistributedLockTests : TestBase
     private NullDistributedLock _CreateProvider() => new(_timeProvider);
 
     [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
+    }
+
+    [Fact]
     public async Task should_acquire_immediately_with_unmonitored_lease()
     {
         // given

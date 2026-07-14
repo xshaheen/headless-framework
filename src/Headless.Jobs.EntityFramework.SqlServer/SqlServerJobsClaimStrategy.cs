@@ -61,7 +61,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var batch =
                 timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                     ? timeJobs
-                    : timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize).ToArray();
+                    : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
             claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
@@ -70,16 +70,16 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    batch
-                        .SelectMany(
+                    [
+                        .. batch.SelectMany(
                             (job, index) =>
                                 new SqlParameter[]
                                 {
                                     new(_ParameterName("id", index), job.Id),
                                     _DateTimeParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
                                 }
-                        )
-                        .ToArray()
+                        ),
+                    ]
                 )
                 .ConfigureAwait(false);
 
@@ -272,7 +272,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                         dbContext,
                         transaction,
                         mapping,
-                        claimed.Select(x => x.Id).ToArray(),
+                        [.. claimed.Select(x => x.Id)],
                         owner,
                         _leaseDuration,
                         cancellationToken
@@ -580,7 +580,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             ids.Add(reader.GetGuid(0));
         }
 
-        return ids.ToArray();
+        return [.. ids];
     }
 
     private static string _BuildDirectCandidates(
@@ -648,7 +648,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             claimedAt ??= reader.GetDateTime(1);
         }
 
-        return new ClaimResult(ids.ToArray(), claimedAt ?? default);
+        return new ClaimResult([.. ids], claimedAt ?? default);
     }
 
     private static async Task _StampDescendantsAsync(

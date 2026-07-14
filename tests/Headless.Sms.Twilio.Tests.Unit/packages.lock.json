@@ -89,61 +89,61 @@
       },
       "Microsoft.Testing.Extensions.CodeCoverage": {
         "type": "Direct",
-        "requested": "[18.8.0, )",
-        "resolved": "18.8.0",
-        "contentHash": "euA4tpkGAkfHznVQrPzXFLNaUhcRCIKPkDmJJB+A2XU9d5ymHLhQ2Do0fGc/Z2y+VFUaNnM6vHhIrb4FW+qhtg==",
+        "requested": "[18.9.0, )",
+        "resolved": "18.9.0",
+        "contentHash": "Odp8djWEUFTJoRV02y0zJaAwAHF31CtNaDgnKKM+8dBHbbaH7Ee0oo9gweLpbzjI7UrtMUzH6xLJSrICZw+Nwg==",
         "dependencies": {
-          "Microsoft.DiaSymReader": "2.2.3",
-          "Microsoft.Extensions.DependencyModel": "8.0.2",
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.DiaSymReader": "2.2.9",
+          "Microsoft.Extensions.DependencyModel": "10.0.8",
+          "Microsoft.Testing.Platform": "2.3.0"
         }
       },
       "Microsoft.Testing.Extensions.CrashDump": {
         "type": "Direct",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "wop2zrjwNhHLZfo0UJbTOBe5h9kwQsi2O5+ZPRi41KkFzM5obxWYLIpQYw6p/iBv81/9rT7Jn/IeInMFtkYShg==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "NVXsP9x3FoeniJO146EDE0pyDvZUtfiXukOm/x/ywA65kOqaFjVHErJ1aDW32pLsxuNQhC3Q9NjK7DtoIhFPlw==",
         "dependencies": {
-          "Microsoft.Testing.Extensions.TrxReport.Abstractions": "2.2.3",
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Extensions.TrxReport.Abstractions": "2.3.1",
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.Testing.Extensions.HangDump": {
         "type": "Direct",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "VR3pTDWbBPZ15pZeXzlQzcsGiQ22sd7+M3OJzaOgLLKojMySnS45F5PPSJ4RHxfge2h52yN9m2hNn5U8YiGm2w==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "4ys3mPSLTnYLFc/8K7vGOt4Boj/iwfT6vxe3eALZMT3qVvY+FNi+UEF8Dt3LSCmdRQwdQq3e7sGHdPZPr9r6yQ==",
         "dependencies": {
           "Microsoft.Diagnostics.NETCore.Client": "0.2.607501",
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.Testing.Extensions.HotReload": {
         "type": "Direct",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "2ojTkDg/UyVDyCRzOdD28Qckb4Ds6tWPqk+6+c+vfmIE+nnr9bIVZHJ5ZjnXd2LNT3iUqGtt/4nEAwDPyPLI8Q==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "9UWdC7Z33a8+SeZIQXo2mc6yuXIjCPOuV4LHFO5ufVD5CV46fygAcBk6905Ubjjb3CoNGlyayFpjEPA2Dlnp/g==",
         "dependencies": {
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.Testing.Extensions.Retry": {
         "type": "Direct",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "YYhoLdZOksV5S+poW4b5Kx9hCcO41YpBcExPgpHlKLf7B+LFyjWryF9zPmKCWV/W7LBpo+HgDZXa5o2WVi5/Eg==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "Y1lspSpTIfLgQC9A5sUjyzf5AYgpkztzsrlRjBkjiA9bS30tsAcnyE0Zv0tDyx7l1S4yEbSTz/JbkTcxjXNNAw==",
         "dependencies": {
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.Testing.Extensions.TrxReport": {
         "type": "Direct",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "9Hot3ty5ZVWHrW40k2NPfD0dCaPwIxj7j7VjujNYwpYkYw9AdbejPHjGNkL/gvUWorauJf5IkeDoUeIbS7LuUg==",
+        "requested": "[2.3.1, )",
+        "resolved": "2.3.1",
+        "contentHash": "nuYT2oV6xht8HkRWsPJvNbM1CwiHiwe6T4B5XsJv2eKCGbE68/teMJlzNybYn2TWJ0oBuYgbTroFDhgciYUMcQ==",
         "dependencies": {
-          "Microsoft.Testing.Extensions.TrxReport.Abstractions": "2.2.3",
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Extensions.TrxReport.Abstractions": "2.3.1",
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.VisualStudio.Threading.Analyzers": {
@@ -871,8 +871,8 @@
       },
       "Microsoft.DiaSymReader": {
         "type": "Transitive",
-        "resolved": "2.2.3",
-        "contentHash": "bhwzJfzyiJM0nXJyNB7Y9OfsEXyxLdDBHG99soIp5JjnPydwkOaBdRCtRtWgQh3noSLi2cSIZ/wpbHNNE9knxQ=="
+        "resolved": "2.2.9",
+        "contentHash": "WLbDc/W9XkHpGVtd1L6Vml8W6+PaaYZZTJASHjHF7W2WX/hld6bfNK102Ui+I3a6zIdx4+oKRJtMgHz44JmBfw=="
       },
       "Microsoft.Extensions.AmbientMetadata.Application": {
         "type": "Transitive",
@@ -973,8 +973,8 @@
       },
       "Microsoft.Extensions.DependencyModel": {
         "type": "Transitive",
-        "resolved": "8.0.2",
-        "contentHash": "mUBDZZRgZrSyFOsJ2qJJ9fXfqd/kXJwf3AiDoqLD9m6TjY5OO/vLNOb9fb4juC0487eq4hcGN/M2Rh/CKS7QYw=="
+        "resolved": "10.0.8",
+        "contentHash": "vLyZVpxmduO2jx+76ggqnsA3m81kwMY3NkWciNTj5E+Nvqb0VihqCvQP89QsGONWp0AJwMZG+u9GzaCjDdFGNw=="
       },
       "Microsoft.Extensions.Diagnostics": {
         "type": "Transitive",
@@ -1201,16 +1201,16 @@
       },
       "Microsoft.Testing.Extensions.TrxReport.Abstractions": {
         "type": "Transitive",
-        "resolved": "2.2.3",
-        "contentHash": "hntvxJEkmUAx6C2xXc/PO38DqEQl4rimzOgSvTR1hAMruMid7R4RcXOrzzF33J66gKaN7jRaQ0TMW/nNfaV9jw==",
+        "resolved": "2.3.1",
+        "contentHash": "RpMkMST/uzU3UMGMtqu5PjXk7mg4pyHLKP0tCdpt6fIqWvAsO7Vp34eA6bwdgtlQZMBCXZMlFiavGIxTGAOfHA==",
         "dependencies": {
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Platform": "2.3.1"
         }
       },
       "Microsoft.Testing.Platform": {
         "type": "Transitive",
-        "resolved": "2.2.3",
-        "contentHash": "LhM1/Qoi8Ams5QcD4r3f09CSOono9iQr3NEJQItFtyzWB55nWTgEOsVqXqMWWWIwk3nkPqc+XfnlJmp8xUI5fg=="
+        "resolved": "2.3.1",
+        "contentHash": "sZlgL8zvquO/uOMFK9YdovHzfnI/MPNXvakTPskKzRB3CQp9Yzdqs9ZFew7STlNzib9X/twjezdSPW4CE9YjIQ=="
       },
       "Microsoft.Testing.Platform.MSBuild": {
         "type": "Transitive",

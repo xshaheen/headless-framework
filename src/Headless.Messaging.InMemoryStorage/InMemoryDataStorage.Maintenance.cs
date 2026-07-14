@@ -26,7 +26,7 @@ internal sealed partial class InMemoryDataStorage
         lock (current)
         {
             if (
-                (current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null
+                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || current.LockedUntil != message.LockedUntil
@@ -46,7 +46,7 @@ internal sealed partial class InMemoryDataStorage
     private static ValueTask<bool> _LeaseAndReserveAttemptAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
-        DateTimeOffset lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         TimeProvider timeProvider,
         string? owner,
@@ -75,11 +75,11 @@ internal sealed partial class InMemoryDataStorage
                 return ValueTask.FromResult(false);
             }
 
-            var utcLockedUntil = lockedUntil;
-            current.LockedUntil = utcLockedUntil;
+            var lockedUntil = nowUtc.Add(leaseDuration);
+            current.LockedUntil = lockedUntil;
             current.Owner = owner;
             current.InlineAttempts = message.InlineAttempts;
-            message.LockedUntil = utcLockedUntil;
+            message.LockedUntil = lockedUntil;
             message.Owner = owner;
             return ValueTask.FromResult(true);
         }

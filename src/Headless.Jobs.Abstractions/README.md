@@ -4,10 +4,13 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 
 ## Problem Solved
 
-Provides the shared contracts — `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, entity types, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. All consumer code can target these abstractions without referencing `Headless.Jobs.Core` or `Headless.Jobs.EntityFramework`.
+Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, descriptors, entity types, options, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. All consumer code can target these abstractions without referencing `Headless.Jobs.EntityFramework`.
 
 ## Key Features
 
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, and schedules immediate, delayed, and recurring jobs without copied function strings or entity construction.
+- **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
+- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains immutable `[JobFunction]` / descriptor metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and `RequestCancellation()`.
@@ -33,34 +36,92 @@ Pulled in transitively by `Headless.Jobs.Core`. Install directly only when build
 
 ```csharp
 using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 
-// Inject manager and enqueue a time job
-public sealed class OrderService(ITimeJobManager<TimeJobEntity> jobs)
+public sealed record OrderReminderRequest(string OrderId);
+
+// The facade resolves the generated descriptor for OrderReminderRequest.
+public sealed class OrderService(IJobScheduler jobs)
 {
     public async Task ScheduleReminderAsync(string orderId, CancellationToken ct)
     {
-        await jobs.AddAsync(new TimeJobEntity
-        {
-            Function = "SendOrderReminder",
-            Description = $"order-reminder-{orderId}",
-            ExecutionTime = DateTime.UtcNow.AddHours(24),
-            Request = JobsHelper.SerializeRequest(new { OrderId = orderId }),
-            Retries = 3,
-            RetryIntervals = [30, 60, 120],
-        }, ct);
+        var jobId = await jobs.EnqueueAsync(
+            new OrderReminderRequest(orderId),
+            new EnqueueOptions
+            {
+                Description = $"order-reminder-{orderId}",
+                Retries = 3,
+                RetryIntervals = [30, 60, 120],
+            },
+            ct
+        );
+
+        Console.WriteLine($"Scheduled {jobId}");
     }
 }
 
-// Mark a method for registration (requires Headless.Jobs.SourceGenerator)
-[JobFunction("SendOrderReminder")]
-public static async Task ExecuteAsync(
-    JobFunctionContext<OrderReminderRequest> context,
-    CancellationToken ct)
+// Requestless functions use their generated descriptor instead of a synthetic request type.
+public sealed class CleanupService(IJobScheduler jobs)
 {
-    // context.Request.OrderId, context.RetryCount, context.ScheduledFor available
+    public Task<Guid> RunAsync(JobFunctionDescriptor descriptor, CancellationToken ct) =>
+        jobs.EnqueueAsync(
+            descriptor,
+            new EnqueueOptions
+            {
+                Description = "manual-cleanup",
+            },
+            ct
+        );
 }
+
+// Mark methods for registration (requires Headless.Jobs.SourceGenerator).
+[JobFunction("SendOrderReminder")]
+public static Task SendReminderAsync(
+    JobFunctionContext<OrderReminderRequest> context,
+    CancellationToken ct
+)
+{
+    // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
+    return Task.CompletedTask;
+}
+
+[JobFunction("Cleanup")]
+public static Task CleanupAsync(CancellationToken ct) => Task.CompletedTask;
+```
+
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its frozen indexes.
+
+Delayed and recurring scheduling keep time and cron expressions explicit:
+
+```csharp
+var delayedId = await jobs.ScheduleAsync(
+    new OrderReminderRequest(orderId),
+    DateTime.UtcNow.AddHours(24),
+    new EnqueueOptions { Description = "delayed-reminder" },
+    ct
+);
+
+var recurringId = await jobs.ScheduleRecurringAsync(
+    new OrderReminderRequest(orderId),
+    "0 0 * * *",
+    new RecurringJobOptions { Description = "daily-reminder" },
+    ct
+);
+```
+
+The managers remain supported public APIs. Use `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entity types, chains, or other advanced persistence scenarios:
+
+```csharp
+await timeJobManager.AddAsync(
+    new TimeJobEntity
+    {
+        Function = "SendOrderReminder",
+        ExecutionTime = DateTime.UtcNow.AddHours(24),
+        Request = serializedRequest,
+    },
+    ct
+);
 ```
 
 ## Configuration
@@ -78,7 +139,7 @@ None.
 
 ## Commit Coordination (Atomic Enqueue)
 
-When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
+When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `IJobScheduler` inherits the same atomic behavior from the managers it calls. `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
 
 ```csharp
 await db.ExecuteCoordinatedTransactionAsync(
@@ -89,13 +150,10 @@ await db.ExecuteCoordinatedTransactionAsync(
 
         await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct);
 
-        await timeJobManager.AddAsync(
-            new TimeJobEntity
-            {
-                Function = "SendOrderReminder",
-                ExecutionTime = DateTime.UtcNow.AddHours(24),
-                Request = JobsHelper.SerializeRequest(new { order.Id }),
-            },
+        await jobScheduler.ScheduleAsync(
+            new OrderReminderRequest(order.Id),
+            DateTime.UtcNow.AddHours(24),
+            new EnqueueOptions { Description = "order-reminder" },
             ct
         );
     },

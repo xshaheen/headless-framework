@@ -288,7 +288,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -517,9 +516,6 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
 
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -573,9 +569,6 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
-            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
-            // shares one clock domain; keeps the guard testable with a fake clock.
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
 
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
@@ -902,7 +895,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
         ];
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var affected = await connection
@@ -957,7 +949,6 @@ internal sealed class PostgreSqlDataStorage(
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -1046,6 +1037,9 @@ internal sealed class PostgreSqlDataStorage(
         // redelivered message that arrives while the row is being dispatched would otherwise
         // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
         // the retry processor re-pick the row while the inline retry burst is still in flight.
+        // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
+        // clock that wrote "LockedUntil" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
+        // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
         // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
         // redelivery collapse never resets the durable retry counters.
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
@@ -1063,7 +1057,7 @@ internal sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= statement_timestamp())
             RETURNING "Id"
             """;
 
@@ -1093,16 +1087,21 @@ internal sealed class PostgreSqlDataStorage(
         // statement (one round trip instead of the _LeaseMessageAsync + _ReserveAttemptAsync pair).
         // Combines the lease-contention predicate (#15) with the durable-counter CAS from
         // _ReserveAttemptAsync; no owner match is required because this path is TAKING the lease.
-        //
-        // Ownership time is the DATABASE's: statement_timestamp() supplies BOTH the expiry comparison and
-        // the new deadline, so the lease a remote replica later evaluates was written by the same clock it
-        // compares against. statement_timestamp() (not clock_timestamp()) is stable for the whole statement,
-        // so the WHERE arm and the SET arm cannot land on different instants.
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),\"Owner\"=@Owner,\"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id "
-            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= statement_timestamp()) "
-            + $"AND {_TerminalRowGuardWithRetries} "
-            + "RETURNING \"LockedUntil\"";
+        // Ownership time is the database's: one statement-stable snapshot supplies both the expiry
+        // comparison and the new deadline. Returning the stored identity keeps the caller's fence
+        // byte-for-byte aligned with durable state.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner,
+                "InlineAttempts"=@InlineAttempts
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardWithRetries}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
@@ -1116,43 +1115,17 @@ internal sealed class PostgreSqlDataStorage(
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var persistedLockedUntil = await connection
+        var storedLease = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (persistedLockedUntil is null)
-        {
-            return false;
-        }
-
-        // Mirror the DURABLE deadline the server issued, not a locally recomputed one, so the in-memory
-        // model and the row agree on when this lease expires.
-        message.LockedUntil = persistedLockedUntil;
-        message.Owner = owner;
-
-        return true;
-    }
-
-    /// <summary>Reads the <c>RETURNING "LockedUntil"</c> deadline; <see langword="null"/> when no row matched.</summary>
-    private static async Task<DateTimeOffset?> _ReadLeaseDeadlineAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        return await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false)
-            ? null
-            : await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
+        return _ApplyStoredLease(message, storedLease);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1164,12 +1137,18 @@ internal sealed class PostgreSqlDataStorage(
     {
         // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
         // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
-        // Ownership time is the DATABASE's — see _LeaseAndReserveAttemptAsync for why.
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),\"Owner\"=@Owner WHERE \"Id\"=@Id "
-            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= statement_timestamp()) "
-            + $"AND {_TerminalRowGuardSimple} "
-            + "RETURNING \"LockedUntil\"";
+        // Ownership time is the database's — see _LeaseAndReserveAttemptAsync.
+        var sql = $"""
+            WITH clock AS (SELECT statement_timestamp() AS now)
+            UPDATE {tableName} AS message
+            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "Owner"=@Owner
+            FROM clock
+            WHERE message."Id"=@Id
+              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+              AND {_TerminalRowGuardSimple}
+            RETURNING message."LockedUntil",message."Owner"
+            """;
 
         var owner = nodeMembership.GetOwnerTag();
         object[] sqlParams =
@@ -1180,24 +1159,31 @@ internal sealed class PostgreSqlDataStorage(
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var persistedLockedUntil = await connection
+        var storedLease = await connection
             .ExecuteReaderAsync(
                 sql,
-                _ReadLeaseDeadlineAsync,
+                LeaseDeadlineReader.ReadAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (persistedLockedUntil is null)
+        return _ApplyStoredLease(message, storedLease);
+    }
+
+    private static bool _ApplyStoredLease(
+        MediumMessage message,
+        (DateTimeOffset LockedUntil, string? Owner)? storedLease
+    )
+    {
+        if (storedLease is not { } lease)
         {
             return false;
         }
 
-        message.LockedUntil = persistedLockedUntil;
-        message.Owner = owner;
-
+        message.LockedUntil = lease.LockedUntil;
+        message.Owner = lease.Owner;
         return true;
     }
 

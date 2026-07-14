@@ -44,6 +44,14 @@ public sealed class DistributedLockTests : TestBase
         );
     }
 
+    [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
+    }
+
     #region TryAcquireAsync Tests
 
     [Fact]

@@ -2,11 +2,35 @@
 
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
 
 public sealed class NullDistributedSemaphoreProviderTests : TestBase
 {
+    [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+
+        // when
+        var provider = new NullDistributedSemaphoreProvider(timeProvider);
+
+        // then
+        provider.TimeProvider.Should().BeSameAs(timeProvider);
+    }
+
+    [Fact]
+    public void should_expose_null_logger_when_none_is_injected()
+    {
+        // given / when — composite coordination reads Logger off the provider, so it can never be null
+        var provider = new NullDistributedSemaphoreProvider(new FakeTimeProvider());
+
+        // then
+        provider.Logger.Should().NotBeNull();
+    }
+
     [Fact]
     public async Task should_reject_infinite_time_until_expires()
     {

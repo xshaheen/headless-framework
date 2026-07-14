@@ -98,4 +98,4 @@ setup.UseSqlServer((options, sp) =>
 - Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
 - Registers `IAuditLog<TContext>` as singleton (`SqlServerAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
-- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

@@ -34,6 +34,11 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
+    // The SQL Server EF provider translates a bare DateTime.UtcNow inside an expression tree to GETUTCDATE(), not
+    // SYSUTCDATETIME(). Its datetime precision (~3.33 ms) is immaterial against minute-scale leases, and unlike
+    // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.
+    public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
+
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),
     // then the schema, then the Coordination tables. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
@@ -47,12 +52,12 @@ public sealed class SqlServerJobsCoordinationFixture
         + "IF TYPE_ID(N'messaging.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingOwnerList];"
         + "IF TYPE_ID(N'messaging.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingPoisonMessageList];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'messaging') DROP SCHEMA [messaging];"
+        + "DROP TABLE IF EXISTS [jobs_probe];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
 
-    public string CreateProbeTableSql =>
-        "IF OBJECT_ID(N'jobs_probe', N'U') IS NULL CREATE TABLE jobs_probe (id int); DELETE FROM jobs_probe;";
+    public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id int);";
 
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 

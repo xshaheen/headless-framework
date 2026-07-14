@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Headless.Jobs.Base;
 using Headless.Jobs.Instrumentation;
@@ -16,15 +17,16 @@ namespace Headless.Jobs;
 /// </summary>
 /// <remarks>
 /// The registration flow is callback-based: each source-generated assembly calls
-/// <c>RegisterFunctions</c> and <c>RegisterRequestType</c> to enqueue its entries, then
+/// <c>RegisterFunctions</c>, <c>RegisterRequestType</c>, and <c>RegisterDescriptors</c> to enqueue its entries, then
 /// <see cref="Build"/> executes all callbacks in order and freezes the results. After <c>Build</c> is
 /// called, no further registrations take effect.
 /// </remarks>
 public static class JobFunctionProvider
 {
-    // Callback actions to collect registrations
-    private static Action<Dictionary<string, (string, Type)>>? _requestTypeRegistrations;
-    private static Action<Dictionary<string, JobFunctionRegistration>>? _functionRegistrations;
+    private static Action<List<KeyValuePair<string, (string, Type)>>>? _requestTypeRegistrations;
+    private static Action<List<KeyValuePair<string, JobFunctionRegistration>>>? _functionRegistrations;
+    private static Action<List<KeyValuePair<string, JobFunctionDescriptor>>>? _descriptorRegistrations;
+    private static IConfiguration? _configuration;
 
     /// <summary>
     /// Frozen lookup of all registered job functions, keyed by function name. Each entry is a
@@ -44,6 +46,22 @@ public static class JobFunctionProvider
         FrozenDictionary<string, (string, Type)>.Empty;
 
     /// <summary>
+    /// Frozen lookup of generated job-function descriptors, keyed by the durable function name.
+    /// </summary>
+    public static FrozenDictionary<string, JobFunctionDescriptor> JobFunctionDescriptors { get; private set; } =
+        FrozenDictionary<string, JobFunctionDescriptor>.Empty;
+
+    /// <summary>
+    /// Frozen inverse lookup of generated job-function descriptors, keyed by the typed request payload.
+    /// Requestless functions are intentionally absent.
+    /// </summary>
+    public static FrozenDictionary<Type, JobFunctionDescriptor> JobFunctionDescriptorsByRequestType
+    {
+        get;
+        private set;
+    } = FrozenDictionary<Type, JobFunctionDescriptor>.Empty;
+
+    /// <summary>
     /// Registers job functions during application startup by adding to the callback chain.
     /// This method should only be called during application startup before Build() is called.
     /// </summary>
@@ -58,13 +76,7 @@ public static class JobFunctionProvider
             return;
         }
 
-        _functionRegistrations += dict =>
-        {
-            foreach (var (key, value) in functions)
-            {
-                dict.TryAdd(key, value); // Preserves existing entries
-            }
-        };
+        _functionRegistrations += entries => entries.AddRange(functions);
     }
 
     /// <summary>
@@ -95,13 +107,7 @@ public static class JobFunctionProvider
             return;
         }
 
-        _requestTypeRegistrations += dict =>
-        {
-            foreach (var (key, value) in requestTypes)
-            {
-                dict.TryAdd(key, value); // Preserves existing entries
-            }
-        };
+        _requestTypeRegistrations += entries => entries.AddRange(requestTypes);
     }
 
     /// <summary>
@@ -118,6 +124,36 @@ public static class JobFunctionProvider
     }
 
     /// <summary>
+    /// Registers generated descriptors during application startup by adding the assembly batch to the callback chain.
+    /// </summary>
+    /// <param name="descriptors">The descriptors to register. Cannot be null.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="descriptors"/> is <see langword="null"/>.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static void RegisterDescriptors(IDictionary<string, JobFunctionDescriptor> descriptors)
+    {
+        Argument.IsNotNull(descriptors);
+
+        if (descriptors.Count == 0)
+        {
+            return;
+        }
+
+        _descriptorRegistrations += entries => entries.AddRange(descriptors);
+    }
+
+    /// <summary>
+    /// Registers generated descriptors with a source-generated capacity hint.
+    /// </summary>
+    /// <param name="descriptors">The descriptors to register. Cannot be null.</param>
+    /// <param name="_">The total expected capacity; retained for generated-call compatibility.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="descriptors"/> is <see langword="null"/>.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static void RegisterDescriptors(IDictionary<string, JobFunctionDescriptor> descriptors, int _)
+    {
+        RegisterDescriptors(descriptors);
+    }
+
+    /// <summary>
     /// Updates cron expressions for registered functions by adding to the callback chain.
     /// This method should only be called during application startup before Build() is called.
     /// </summary>
@@ -125,64 +161,197 @@ public static class JobFunctionProvider
     /// <exception cref="ArgumentNullException">Thrown when cronUpdates parameter is null.</exception>
     internal static void UpdateCronExpressionsFromIConfiguration(IConfiguration configuration)
     {
-        _functionRegistrations += dict =>
-        {
-            foreach (var (key, value) in dict)
-            {
-                if (value.CronExpression.StartsWith('%'))
-                {
-                    var configKey = value.CronExpression.Trim('%');
-                    var mappedCronExpression = configuration[configKey];
-
-                    if (!string.IsNullOrEmpty(mappedCronExpression))
-                    {
-                        dict[key] = value with { CronExpression = mappedCronExpression };
-                    }
-                }
-            }
-        };
+        _configuration = configuration;
     }
 
     /// <summary>
-    /// Freezes the registered functions and request types into read-optimized
+    /// Freezes the registered functions, request types, and descriptors into read-optimized
     /// <see cref="FrozenDictionary{TKey,TValue}"/> instances. Must be called exactly once after all
     /// assemblies have had their <c>ModuleInitializer</c> executed and before the first job is dispatched.
-    /// After this call, <see cref="JobFunctions"/> and <see cref="JobFunctionRequestTypes"/> are
-    /// populated and subsequent <c>Register*</c> calls have no effect.
+    /// After this call, the function, request-type, and descriptor indexes are populated and subsequent
+    /// <c>Register*</c> calls have no effect.
     /// </summary>
     public static void Build()
     {
-        // Build functions dictionary
-        if (_functionRegistrations != null)
-        {
-            // Single pass: execute callbacks directly on final dictionary
-            var functionsDict = new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal);
-            _functionRegistrations(functionsDict);
-            JobFunctions = functionsDict.ToFrozenDictionary();
-            _functionRegistrations = null; // Release callback chain
-        }
-        else
-        {
-            JobFunctions = new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal).ToFrozenDictionary();
-        }
+        var functions = new List<KeyValuePair<string, JobFunctionRegistration>>();
+        var requestTypes = new List<KeyValuePair<string, (string, Type)>>();
+        var descriptors = new List<KeyValuePair<string, JobFunctionDescriptor>>();
+        _functionRegistrations?.Invoke(functions);
+        _requestTypeRegistrations?.Invoke(requestTypes);
+        _descriptorRegistrations?.Invoke(descriptors);
 
-        // Build request types dictionary
-        if (_requestTypeRegistrations != null)
-        {
-            // Single pass: execute callbacks directly on final dictionary
-            var requestTypesDict = new Dictionary<string, (string, Type)>(StringComparer.Ordinal);
-            _requestTypeRegistrations(requestTypesDict);
-            JobFunctionRequestTypes = requestTypesDict.ToFrozenDictionary();
-            _requestTypeRegistrations = null; // Release callback chain
-        }
-        else
-        {
-            JobFunctionRequestTypes = new Dictionary<string, (string, Type)>(
-                StringComparer.Ordinal
-            ).ToFrozenDictionary();
-        }
+        var registry = JobFunctionRegistryBuilder.Build(functions, requestTypes, descriptors, _configuration);
+        JobFunctions = registry.Functions;
+        JobFunctionRequestTypes = registry.RequestTypes;
+        JobFunctionDescriptors = registry.Descriptors;
+        JobFunctionDescriptorsByRequestType = registry.DescriptorsByRequestType;
+
+        _functionRegistrations = null;
+        _requestTypeRegistrations = null;
+        _descriptorRegistrations = null;
+        _configuration = null;
     }
 }
+
+internal static class JobFunctionRegistryBuilder
+{
+    public static JobFunctionRegistry Build(
+        IReadOnlyCollection<KeyValuePair<string, JobFunctionRegistration>> functions,
+        IReadOnlyCollection<KeyValuePair<string, (string, Type)>> requestTypes,
+        IReadOnlyCollection<KeyValuePair<string, JobFunctionDescriptor>> descriptors,
+        IConfiguration? configuration = null
+    )
+    {
+        var generatedDescriptorNames = descriptors.Select(entry => entry.Key).ToHashSet(StringComparer.Ordinal);
+        var effectiveDescriptors = descriptors
+            .Concat(
+                functions
+                    .Where(entry => !generatedDescriptorNames.Contains(entry.Key))
+                    .Select(entry =>
+                    {
+                        var requestType = requestTypes
+                            .FirstOrDefault(requestTypeEntry =>
+                                string.Equals(requestTypeEntry.Key, entry.Key, StringComparison.Ordinal)
+                            )
+                            .Value.Item2;
+                        var registration = entry.Value;
+                        return new KeyValuePair<string, JobFunctionDescriptor>(
+                            entry.Key,
+                            new(
+                                entry.Key,
+                                requestType,
+                                registration.CronExpression,
+                                registration.Priority,
+                                registration.MaxConcurrency
+                            )
+                        );
+                    })
+            )
+            .ToArray();
+
+        var duplicateFunctionNames = functions
+            .GroupBy(entry => entry.Key, StringComparer.Ordinal)
+            .Where(group => group.Skip(1).Any())
+            .Select(group => group.Key)
+            .Concat(
+                effectiveDescriptors
+                    .GroupBy(entry => entry.Key, StringComparer.Ordinal)
+                    .Where(group => group.Skip(1).Any())
+                    .Select(group => group.Key)
+            )
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var duplicateRequestTypes = requestTypes
+            .GroupBy(entry => entry.Value.Item2)
+            .Where(group => group.Skip(1).Any())
+            .Select(group => group.Key)
+            .Concat(
+                effectiveDescriptors
+                    .Where(entry => entry.Value.RequestType != null)
+                    .GroupBy(entry => entry.Value.RequestType!)
+                    .Where(group => group.Skip(1).Any())
+                    .Select(group => group.Key)
+            )
+            .Distinct()
+            .OrderBy(_TypeDisplayName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateFunctionNames.Length > 0 || duplicateRequestTypes.Length > 0)
+        {
+            var conflicts = duplicateFunctionNames
+                .Select(name => $"Function name '{name}' is registered more than once.")
+                .Concat(
+                    duplicateRequestTypes.Select(type =>
+                        $"Request type '{_TypeDisplayName(type)}' is mapped more than once."
+                    )
+                );
+            throw new InvalidOperationException(
+                $"Job function registration conflicts were found:{Environment.NewLine}{string.Join(Environment.NewLine, conflicts)}"
+            );
+        }
+
+        var functionDictionary = functions.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value,
+            StringComparer.Ordinal
+        );
+        var requestTypeDictionary = requestTypes.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value,
+            StringComparer.Ordinal
+        );
+        var descriptorDictionary = effectiveDescriptors.ToDictionary(
+            entry => entry.Key,
+            entry => _ResolveCronExpression(entry.Value, configuration),
+            StringComparer.Ordinal
+        );
+
+        if (configuration != null)
+        {
+            foreach (var (name, registration) in functionDictionary)
+            {
+                functionDictionary[name] = registration with
+                {
+                    CronExpression = _ResolveCronExpression(registration.CronExpression, configuration),
+                };
+            }
+        }
+
+        var descriptorsByRequestType = descriptorDictionary
+            .Values.Where(descriptor => descriptor.RequestType != null)
+            .ToDictionary(descriptor => descriptor.RequestType!, descriptor => descriptor);
+
+        return new(
+            functionDictionary.ToFrozenDictionary(StringComparer.Ordinal),
+            requestTypeDictionary.ToFrozenDictionary(StringComparer.Ordinal),
+            descriptorDictionary.ToFrozenDictionary(StringComparer.Ordinal),
+            descriptorsByRequestType.ToFrozenDictionary()
+        );
+    }
+
+    private static JobFunctionDescriptor _ResolveCronExpression(
+        JobFunctionDescriptor descriptor,
+        IConfiguration? configuration
+    )
+    {
+        var cronExpression =
+            configuration == null
+                ? descriptor.CronExpression
+                : _ResolveCronExpression(descriptor.CronExpression, configuration);
+
+        return string.Equals(cronExpression, descriptor.CronExpression, StringComparison.Ordinal)
+            ? descriptor
+            : new(
+                descriptor.FunctionName,
+                descriptor.RequestType,
+                cronExpression,
+                descriptor.Priority,
+                descriptor.MaxConcurrency
+            );
+    }
+
+    private static string _ResolveCronExpression(string cronExpression, IConfiguration configuration)
+    {
+        if (!cronExpression.StartsWith('%'))
+        {
+            return cronExpression;
+        }
+
+        var mappedCronExpression = configuration[cronExpression.Trim('%')];
+        return string.IsNullOrEmpty(mappedCronExpression) ? cronExpression : mappedCronExpression;
+    }
+
+    private static string _TypeDisplayName(Type type) => type.FullName ?? type.Name;
+}
+
+internal sealed record JobFunctionRegistry(
+    FrozenDictionary<string, JobFunctionRegistration> Functions,
+    FrozenDictionary<string, (string, Type)> RequestTypes,
+    FrozenDictionary<string, JobFunctionDescriptor> Descriptors,
+    FrozenDictionary<Type, JobFunctionDescriptor> DescriptorsByRequestType
+);
 
 /// <summary>
 /// Helper for deserializing a typed request payload from within a job function body.

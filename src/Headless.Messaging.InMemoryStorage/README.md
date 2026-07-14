@@ -15,6 +15,8 @@ Provides ephemeral message storage without database dependencies for local devel
 - **Intent-Aware Identity**: Mirrors durable providers by storing bus/queue intent and including it in received-message de-duplication
 - **Monitoring**: In-memory dashboard data
 
+InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity.
+
 ## Installation
 
 ```bash

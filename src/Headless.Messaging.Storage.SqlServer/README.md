@@ -16,6 +16,8 @@ Provides durable, transactional message storage using SQL Server with automatic 
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
 
+Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one SQL Server clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced attempt and state writes.
+
 ## Installation
 
 ```bash

@@ -253,7 +253,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                         dbContext,
                         transaction,
                         mapping,
-                        claimed.Select(x => x.Id).ToArray(),
+                        [.. claimed.Select(x => x.Id)],
                         owner,
                         _leaseDuration,
                         cancellationToken

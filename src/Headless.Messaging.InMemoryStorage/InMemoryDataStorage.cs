@@ -193,7 +193,7 @@ internal sealed partial class InMemoryDataStorage(
         _LeaseAsync(
             PublishedMessages,
             message,
-            timeProvider.GetUtcNow().Add(leaseDuration),
+            leaseDuration,
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -208,7 +208,7 @@ internal sealed partial class InMemoryDataStorage(
         _LeaseAndReserveAttemptAsync(
             PublishedMessages,
             message,
-            timeProvider.GetUtcNow().Add(leaseDuration),
+            leaseDuration,
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
@@ -332,7 +332,7 @@ internal sealed partial class InMemoryDataStorage(
         _LeaseAsync(
             ReceivedMessages,
             message,
-            timeProvider.GetUtcNow().Add(leaseDuration),
+            leaseDuration,
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -347,7 +347,7 @@ internal sealed partial class InMemoryDataStorage(
         _LeaseAndReserveAttemptAsync(
             ReceivedMessages,
             message,
-            timeProvider.GetUtcNow().Add(leaseDuration),
+            leaseDuration,
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
@@ -906,7 +906,7 @@ internal sealed partial class InMemoryDataStorage(
     private static ValueTask<bool> _LeaseAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
-        DateTimeOffset lockedUntil,
+        TimeSpan leaseDuration,
         TimeProvider timeProvider,
         string? owner,
         CancellationToken cancellationToken
@@ -935,10 +935,10 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
-            var utcLockedUntil = lockedUntil;
-            current.LockedUntil = utcLockedUntil;
+            var lockedUntil = nowUtc.Add(leaseDuration);
+            current.LockedUntil = lockedUntil;
             current.Owner = owner;
-            message.LockedUntil = utcLockedUntil;
+            message.LockedUntil = lockedUntil;
             message.Owner = owner;
             return ValueTask.FromResult(true);
         }

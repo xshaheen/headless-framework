@@ -558,6 +558,63 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task get_blob_info_converts_unspecified_last_modified_to_utc()
+    {
+        // S3 always reports Last-Modified in UTC, but the AWS SDK hands it back with DateTimeKind.Unspecified
+        // (aws/aws-sdk-net#1224, #1885). new DateTimeOffset(DateTime) treats an Unspecified value as LOCAL and
+        // applies the host's UTC offset, so on a non-UTC host (e.g. CI running under TZ=Africa/Cairo) the
+        // timestamp would silently shift by that offset. Modified must always come back with Offset zero, and its
+        // UTC instant must equal the raw wall-clock value S3 sent rather than that value shifted by the host's
+        // local offset.
+        var lastModified = new DateTime(2026, 3, 1, 10, 30, 0, DateTimeKind.Unspecified);
+
+        _s3.GetObjectMetadataAsync(Arg.Any<GetObjectMetadataRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK, LastModified = lastModified });
+
+        var sut = _CreateSut();
+
+        var info = await sut.GetBlobInfoAsync(new BlobLocation("bucket", "file.txt"), AbortToken);
+
+        info.Should().NotBeNull();
+        info!.Modified.Offset.Should().Be(TimeSpan.Zero);
+        info.Modified.UtcDateTime.Should().Be(DateTime.SpecifyKind(lastModified, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task list_converts_unspecified_last_modified_to_utc()
+    {
+        // Same defect as get_blob_info_converts_unspecified_last_modified_to_utc, reached through the listing
+        // path's _ToBlobInfo conversion (ListObjectsV2's S3Object.LastModified) instead of the HEAD/metadata path.
+        var lastModified = new DateTime(2026, 3, 1, 10, 30, 0, DateTimeKind.Unspecified);
+
+        _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ListObjectsV2Response
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    IsTruncated = false,
+                    S3Objects =
+                    [
+                        new()
+                        {
+                            Key = "file.txt",
+                            Size = 10,
+                            LastModified = lastModified,
+                        },
+                    ],
+                }
+            );
+
+        var sut = _CreateSut();
+
+        var page = await sut.ListAsync(new BlobQuery("bucket"), AbortToken);
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].Modified.Offset.Should().Be(TimeSpan.Zero);
+        page.Items[0].Modified.UtcDateTime.Should().Be(DateTime.SpecifyKind(lastModified, DateTimeKind.Utc));
+    }
+
+    [Fact]
     public async Task open_read_stream_returns_null_when_bucket_missing()
     {
         _s3.GetObjectAsync(Arg.Any<GetObjectRequest>(), Arg.Any<CancellationToken>())

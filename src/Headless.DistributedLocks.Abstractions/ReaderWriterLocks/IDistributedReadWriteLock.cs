@@ -7,28 +7,21 @@ namespace Headless.DistributedLocks;
 /// Provides distributed reader-writer locks for resources where concurrent readers are safe and writers require exclusivity.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Implementations may enforce writer-preference. Redis-backed locks block new readers while a writer is queued so writers
 /// cannot be starved by a steady stream of readers. Returned handles use the standard <see cref="IDistributedLease"/> shape,
 /// including <see cref="IDistributedLease.LostToken"/> when lease monitoring is enabled.
+/// </para>
+/// <para>
+/// Composite acquisition defines resource identity with <see cref="StringComparer.Ordinal"/> before invoking the
+/// provider. Implementations whose backend aliases ordinal-distinct names must reject non-canonical names or require
+/// callers to canonicalize them before using composite acquisition. Normalizing only inside the acquire methods is too
+/// late and can make one composite contend with itself.
+/// </para>
 /// </remarks>
 [PublicAPI]
-public interface IDistributedReadWriteLock
+public interface IDistributedReadWriteLock : IDistributedLockEnvironment
 {
-    /// <summary>
-    /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
-    /// is not specified. Implementations refresh the lease in storage at this cadence when
-    /// <see cref="LockMonitoringMode.AutoExtend"/> is enabled.
-    /// </summary>
-    TimeSpan DefaultTimeUntilExpires { get; }
-
-    /// <summary>
-    /// Default upper bound applied to acquire attempts when
-    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is not specified. After the timeout
-    /// elapses, the acquire returns <see langword="null"/> (try variants) or throws
-    /// <see cref="LockAcquisitionTimeoutException"/> (acquire variants).
-    /// </summary>
-    TimeSpan DefaultAcquireTimeout { get; }
-
     /// <summary>
     /// Acquires a read (shared) lock for <paramref name="resource"/> and throws
     /// <see cref="LockAcquisitionTimeoutException"/> when it cannot be acquired before

@@ -66,7 +66,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _connection
@@ -272,9 +272,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // when
         _channel.IsClosed.Returns(false);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
         _channel.IsClosed.Returns(true);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _connection
@@ -343,7 +343,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // when
         await client.Invoking(x => x.ConnectAsync()).Should().ThrowAsync<InvalidOperationException>();
-        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await client.ConnectAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         await _connection
@@ -382,7 +382,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -418,7 +418,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -459,7 +459,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
 
         // when
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // then
         await _channel
@@ -499,7 +499,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         await client.PauseAsync(AbortToken);
 
@@ -523,7 +523,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
-        await client.ConnectAsync();
+        await client.ConnectAsync(AbortToken);
 
         // when
         await client.PauseAsync(AbortToken);

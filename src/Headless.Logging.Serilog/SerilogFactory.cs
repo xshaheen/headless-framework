@@ -59,6 +59,12 @@ public static class SerilogFactory
     /// <c>LogEvent.Timestamp</c> from <c>DateTimeOffset.Now</c> by default, so an un-overridden template
     /// emits the host's local time — which makes correlating logs across containers in different zones
     /// needlessly painful and contradicts the framework's UTC-everywhere rule.
+    /// <para>
+    /// <c>{UtcTimestamp}</c> is a Serilog BUILT-IN output-template token (<c>OutputProperties</c>), rendered by the
+    /// formatter directly from <c>LogEvent.Timestamp.UtcDateTime</c>. It requires no enricher, and a custom event
+    /// property of the same name cannot influence it — the formatter resolves this token itself and never consults
+    /// the property bag for it. Consumers can use this template on any <see cref="LoggerConfiguration"/> as-is.
+    /// </para>
     /// </remarks>
     public const string OutputTemplate =
         "[{UtcTimestamp:yyyy-MM-dd HH:mm:ss.fff}Z {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";

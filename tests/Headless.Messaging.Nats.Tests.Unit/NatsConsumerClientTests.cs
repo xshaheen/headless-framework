@@ -178,73 +178,145 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     // NextBackoff tests
+    //
+    // NextBackoff subtracts up to 25% jitter from the doubled/capped value (never adds), so every assertion
+    // here checks a [0.75x, 1x] range against the ideal (unjittered) value rather than an exact TimeSpan —
+    // the prior exact-value assertions were flaky by construction since the function always applies jitter.
 
     [Fact]
-    public void NextBackoff_should_double_current_delay()
+    public void NextBackoff_should_double_current_delay_within_jitter_budget()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1));
-        result.Should().Be(TimeSpan.FromSeconds(2));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(2));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1.5));
     }
 
     [Fact]
-    public void NextBackoff_should_cap_at_30_seconds()
+    public void NextBackoff_should_cap_at_30_seconds_within_jitter_budget()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(20));
-        result.Should().Be(TimeSpan.FromSeconds(30));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]
     public void NextBackoff_should_not_exceed_ceiling_even_with_large_input()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60));
-        result.Should().Be(TimeSpan.FromSeconds(30));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]
-    public void NextBackoff_should_enforce_floor_when_next_is_below()
+    public void NextBackoff_should_never_return_below_the_floor_and_should_still_spread_above_it()
     {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
-        result.Should().Be(TimeSpan.FromSeconds(5));
+        // The floor is a HARD guarantee: callers pass it to promise a minimum wait (JetStream API errors), so
+        // jitter must not undercut it. But the floor path is itself a herd — an API error hits every consumer at
+        // once — so it must still spread. When the floor pins the delay, jitter therefore goes UP, not down.
+        var results = Enumerable
+            .Range(0, 200)
+            .Select(_ => NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5)))
+            .ToList();
+
+        results.Should().OnlyContain(r => r >= TimeSpan.FromSeconds(5), "the floor must never be undercut");
+        results.Should().OnlyContain(r => r <= TimeSpan.FromSeconds(6.25), "the upward spread is 25% of the floor");
+        results.Distinct().Should().HaveCountGreaterThan(1, "the floor path must not collapse to a lockstep value");
     }
 
     [Fact]
     public void NextBackoff_should_not_enforce_floor_when_next_is_above()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
-        result.Should().Be(TimeSpan.FromSeconds(10));
+        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(10));
+        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(7.5));
     }
 
     [Fact]
-    public void NextBackoff_should_produce_correct_exponential_sequence()
+    public void NextBackoff_should_stay_within_jitter_budget_of_the_ideal_doubling_curve_at_every_rung()
     {
-        var delay = TimeSpan.FromSeconds(1);
-        delay = NatsConsumerClient.NextBackoff(delay); // 2s
-        delay.Should().Be(TimeSpan.FromSeconds(2));
-        delay = NatsConsumerClient.NextBackoff(delay); // 4s
-        delay.Should().Be(TimeSpan.FromSeconds(4));
-        delay = NatsConsumerClient.NextBackoff(delay); // 8s
-        delay.Should().Be(TimeSpan.FromSeconds(8));
-        delay = NatsConsumerClient.NextBackoff(delay); // 16s
-        delay.Should().Be(TimeSpan.FromSeconds(16));
-        delay = NatsConsumerClient.NextBackoff(delay); // 30s (capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
-        delay = NatsConsumerClient.NextBackoff(delay); // 30s (stays capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
+        // Feed the theoretical (unjittered) doubling curve as input at each rung instead of chaining the
+        // previous jittered output — chaining would compound each step's 25% uncertainty into an
+        // ever-widening range and make the per-rung assertions meaningless a few steps in.
+        (TimeSpan Current, TimeSpan ExpectedNext)[] rungs =
+        [
+            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)),
+            (TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)),
+            (TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8)),
+            (TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(16)),
+            (TimeSpan.FromSeconds(16), TimeSpan.FromSeconds(30)), // capped
+            (TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30)), // stays capped
+        ];
+
+        foreach (var (current, expectedNext) in rungs)
+        {
+            var result = NatsConsumerClient.NextBackoff(current);
+            result.Should().BeLessThanOrEqualTo(expectedNext);
+            result.Should().BeGreaterThanOrEqualTo(expectedNext * 0.75);
+        }
     }
 
     [Fact]
-    public void NextBackoff_with_floor_should_produce_correct_sequence()
+    public void NextBackoff_with_floor_should_stay_within_jitter_budget_at_every_rung()
     {
-        var delay = TimeSpan.FromSeconds(1);
         var floor = TimeSpan.FromSeconds(5);
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(2, 5) = 5s
-        delay.Should().Be(TimeSpan.FromSeconds(5));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(10, 5) = 10s
-        delay.Should().Be(TimeSpan.FromSeconds(10));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(20, 5) = 20s
-        delay.Should().Be(TimeSpan.FromSeconds(20));
-        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(30, 5) = 30s (capped)
-        delay.Should().Be(TimeSpan.FromSeconds(30));
+
+        // Rung 1 is the floor-pinned case: max(2s, 5s) = 5s leaves no room to jitter downward without breaching
+        // the floor, so the band spreads upward to [5s, 6.25s]. Every later rung has the exponential value above
+        // the floor, so the band spreads downward as usual to [0.75x, 1x].
+        (TimeSpan Current, TimeSpan Lower, TimeSpan Upper)[] rungs =
+        [
+            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(6.25)),
+            (TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(7.5), TimeSpan.FromSeconds(10)),
+            (TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(20)),
+            (TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(22.5), TimeSpan.FromSeconds(30)),
+        ];
+
+        foreach (var (current, lower, upper) in rungs)
+        {
+            var result = NatsConsumerClient.NextBackoff(current, floor);
+            result.Should().BeGreaterThanOrEqualTo(lower);
+            result.Should().BeLessThanOrEqualTo(upper);
+            result.Should().BeGreaterThanOrEqualTo(floor, "the floor is a hard guarantee at every rung");
+        }
+    }
+
+    [Fact]
+    public void NextBackoff_should_never_exceed_the_30_second_ceiling_across_many_iterations_and_inputs()
+    {
+        TimeSpan[] inputs =
+        [
+            TimeSpan.FromSeconds(20),
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(45),
+            TimeSpan.FromSeconds(60),
+            TimeSpan.FromMinutes(10),
+        ];
+        var ceiling = TimeSpan.FromSeconds(30);
+
+        foreach (var input in inputs)
+        {
+            for (var i = 0; i < 1000; i++)
+            {
+                NatsConsumerClient.NextBackoff(input).Should().BeLessThanOrEqualTo(ceiling);
+            }
+        }
+    }
+
+    [Fact]
+    public void NextBackoff_should_produce_a_spread_of_values_instead_of_collapsing_to_a_constant_at_the_ceiling()
+    {
+        var results = Enumerable
+            .Range(0, 200)
+            .Select(_ => NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60)))
+            .ToHashSet();
+
+        results
+            .Should()
+            .HaveCountGreaterThan(
+                1,
+                "jitter must keep spreading retries across a fleet even once the backoff saturates at the ceiling"
+            );
+        results.Should().OnlyContain(r => r <= TimeSpan.FromSeconds(30) && r >= TimeSpan.FromSeconds(22.5));
     }
 
     [Fact]
@@ -532,7 +604,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — message should be nacked, callback should not be invoked
             callbackInvoked.Should().BeFalse();
@@ -639,11 +711,11 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
 
             // then
-            await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         finally
         {
@@ -718,14 +790,14 @@ public sealed class NatsConsumerClientTests : TestBase
             await client
                 .ListeningAsync(TimeSpan.FromMilliseconds(50), AbortToken)
                 .AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         await act.Should().ThrowAsync<NatsConnectionFailedException>();
-        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        var logged = await connectError.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         logged.Reason.Should().Contain("orders");
         logged.Reason.Should().Contain("connection failed after startup");
-        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await failedConsumer
             .Received(1)
             .NextAsync(
@@ -880,14 +952,14 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
-            await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             await client.ResumeAsync(AbortToken);
-            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await client.PauseAsync(AbortToken);
-            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then
             seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
@@ -980,7 +1052,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
         try
         {
-            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // when — dispose must drain the still-running handler before completing
             var disposeTask = client.DisposeAsync().AsTask();
@@ -989,7 +1061,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
             // then — releasing the handler lets dispose complete
             releaseHandler.TrySetResult();
-            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         finally
         {
@@ -997,7 +1069,7 @@ public sealed class NatsConsumerClientTests : TestBase
             await cts.CancelAsync();
             try
             {
-                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             }
             catch (OperationCanceledException) { }
             catch (ObjectDisposedException) { }
@@ -1030,7 +1102,7 @@ public sealed class NatsConsumerClientTests : TestBase
         shutdown.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await shutdown.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         stuckHandler.TrySetResult();
     }
@@ -1094,12 +1166,12 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             // when
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second fetch runs
-            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the second consecutive failure escalates to a supervised-restart termination
-            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await act.Should()
                 .ThrowAsync<BrokerConnectionException>()
                 .WithInnerException<BrokerConnectionException, InvalidOperationException>();
@@ -1187,14 +1259,14 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             // when — first failure, then release its backoff so the heartbeat and second failure run
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5));
-            await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
 
             // then — the loop reached the idle 4th fetch after only the initial backoff, proving both the
             // failure streak and the retry delay reset on the heartbeat
-            await idled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await idled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             prematureTermination.Task.IsCompleted.Should().BeFalse("the streak reset on the heartbeat fetch");
             listening.IsCompleted.Should().BeFalse();
         }
@@ -1249,11 +1321,11 @@ public sealed class NatsConsumerClientTests : TestBase
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await act.Should()
                 .ThrowAsync<BrokerConnectionException>()
                 .WithInnerException<BrokerConnectionException, InvalidOperationException>();
@@ -1309,7 +1381,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
         try
         {
-            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {

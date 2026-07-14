@@ -2615,7 +2615,7 @@ public sealed class RedisCache(
     /// <summary>
     /// Pairs a wire-ready <see cref="RedisValue"/> with the pooled serializer buffer backing its value segment
     /// (#580 zero-concat writes). SE.Redis reads the value when the socket write fires, so the buffer must stay
-    /// rented until the write command's await completes: writers scope this in a <c>using</c> that extends past
+    /// rented until the write command's await completes: writers scope this in a <see langword="using"/> that extends past
     /// the await. A null owner means the value is a self-contained <c>byte[]</c> with nothing to return.
     /// </summary>
     private readonly struct FramedValueWrite(RedisValue value, PooledByteBufferWriter? payloadOwner) : IDisposable

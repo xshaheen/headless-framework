@@ -54,6 +54,12 @@ internal sealed class DistributedReadWriteLock(
     );
 
     /// <inheritdoc/>
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc/>
+    public ILogger Logger => logger;
+
+    /// <inheritdoc/>
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
     /// <inheritdoc/>

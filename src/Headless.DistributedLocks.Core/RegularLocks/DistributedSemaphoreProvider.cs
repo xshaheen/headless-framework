@@ -62,6 +62,12 @@ internal sealed class DistributedSemaphoreProvider(
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
     private readonly string _keyPrefix = lockOptions.KeyPrefix;
 
+    /// <inheritdoc />
+    public TimeProvider TimeProvider => timeProvider;
+
+    /// <inheritdoc />
+    public ILogger Logger => logger;
+
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);

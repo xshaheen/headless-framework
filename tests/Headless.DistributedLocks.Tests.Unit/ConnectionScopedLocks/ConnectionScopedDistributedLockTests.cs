@@ -17,6 +17,28 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
+    public void should_expose_injected_time_provider()
+    {
+        var provider = _CreateProvider();
+
+        provider.TimeProvider.Should().BeSameAs(_timeProvider);
+    }
+
+    [Fact]
+    public void read_write_lock_should_delegate_clock_and_logger_to_backing_mutex_provider()
+    {
+        // given — the connection-scoped RW wrapper owns neither dependency; it republishes the mutex provider's
+        var mutexProvider = _CreateProvider();
+
+        // when
+        var rwProvider = new ConnectionScopedReadWriteLock(mutexProvider);
+
+        // then
+        rwProvider.TimeProvider.Should().BeSameAs(mutexProvider.TimeProvider);
+        rwProvider.Logger.Should().BeSameAs(mutexProvider.Logger);
+    }
+
+    [Fact]
     public async Task should_release_acquired_storage_handle_when_fencing_token_source_fails()
     {
         var provider = _CreateProvider(fencingTokenSource: new ThrowingFencingTokenSource());

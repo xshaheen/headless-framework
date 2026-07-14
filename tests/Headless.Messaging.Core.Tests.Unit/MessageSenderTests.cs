@@ -74,6 +74,17 @@ public sealed class MessageSenderTests : TestBase
             .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
@@ -164,13 +175,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -813,13 +824,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -831,6 +842,8 @@ public sealed class MessageSenderTests : TestBase
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions());
         var message = _CreateMediumMessage((IntentType)42);
+        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
 
         // when
         var result = await sender.SendAsync(message);
@@ -839,13 +852,13 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 null,
                 null,
                 message.Retries,
+                message.InlineAttempts,
                 Arg.Any<CancellationToken>()
             );
     }
@@ -856,13 +869,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -882,6 +895,8 @@ public sealed class MessageSenderTests : TestBase
             queueTransport: queueTransport
         );
         var message = _CreateMediumMessage(IntentType.Bus);
+        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
 
         // when
         var result = await sender.SendAsync(message);
@@ -890,13 +905,13 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 null,
                 null,
                 message.Retries,
+                message.InlineAttempts,
                 Arg.Any<CancellationToken>()
             );
         queueTransport
@@ -914,13 +929,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
-                Arg.Any<int?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -935,6 +950,8 @@ public sealed class MessageSenderTests : TestBase
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions(), busTransport);
         var message = _CreateMediumMessage(IntentType.Queue);
+        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
 
         // when
         var result = await sender.SendAsync(message);
@@ -943,13 +960,13 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeFalse();
         await storage
             .Received(1)
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
-                Arg.Any<object?>(),
                 null,
                 null,
                 message.Retries,
+                message.InlineAttempts,
                 Arg.Any<CancellationToken>()
             );
         busTransport
@@ -1000,15 +1017,16 @@ public sealed class MessageSenderTests : TestBase
             .Returns(ValueTask.FromResult(true));
         var serializer = Substitute.For<ISerializer>();
         var transport = Substitute.For<ITransport>();
-        var sender = _CreateSender(
-            storage,
-            serializer,
-            transport,
-            new MessagingOptions
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
             {
-                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(2), MaxPersistedRetries = 1 },
-            }
-        );
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                DispatchTimeout = TimeSpan.FromSeconds(17),
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options);
         var message = _CreateMediumMessage();
         message.InlineAttempts = 3;
 
@@ -1028,6 +1046,13 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Is(3),
                 Arg.Any<CancellationToken>()
             );
+        await storage
+            .Received(1)
+            .LeasePublishAsync(message, options.RetryPolicy.DispatchTimeout, Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeasePublishAndReserveAttemptAsync(default!, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
     }
 
     [Fact]
@@ -1041,9 +1066,10 @@ public sealed class MessageSenderTests : TestBase
             .ReservePublishAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
         var message = _CreateMediumMessage();
-        // Pre-leased row (as after an atomic pickup) so the standalone mid-burst reservation path
-        // is exercised rather than the fresh-dispatch combined lease+reserve write.
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        // Storage already acquired this lease. Its absolute expiry is deliberately behind the
+        // application clock: core must reserve under the returned identity without reacquiring.
+        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
+        message.Owner = "store-owner";
 
         var result = await sender.SendAsync(message);
 
@@ -1054,6 +1080,10 @@ public sealed class MessageSenderTests : TestBase
         await storage
             .DidNotReceiveWithAnyArgs()
             .ChangePublishRetryStateAsync(default!, default, default, default, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, AbortToken);
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeasePublishAndReserveAttemptAsync(default!, default, default, AbortToken);
     }
 
     [Fact]
@@ -1071,7 +1101,8 @@ public sealed class MessageSenderTests : TestBase
         // Stub with the exact instance - an Arg.Any<TransportMessage> matcher makes NSubstitute
         // invoke TransportMessage.Equals against a default record value, which throws.
         transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
-        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+        var options = new MessagingOptions { RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(17) } };
+        var sender = _CreateSender(storage, serializer, transport, options);
 
         // when
         var result = await sender.SendAsync(_CreateMediumMessage());
@@ -1083,7 +1114,7 @@ public sealed class MessageSenderTests : TestBase
             .Received(1)
             .LeasePublishAndReserveAttemptAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<TimeSpan>(),
+                options.RetryPolicy.DispatchTimeout,
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );

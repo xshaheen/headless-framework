@@ -200,6 +200,7 @@
         <Project Path="src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />
         <Project Path="tests/Headless.Generator.Primitives.Tests.Unit/Headless.Generator.Primitives.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Generator.Primitives.Abstractions.Tests.Unit/Headless.Generator.Primitives.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Identities/">
         <Project Path="src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
@@ -230,6 +231,7 @@
         <Project Path="tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.Tests.Harness/Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Kernel/">

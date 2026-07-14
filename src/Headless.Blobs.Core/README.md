@@ -18,7 +18,7 @@ A single application often needs several blob stores at once — images on one b
 ## Design Notes
 
 - Each provider package contributes `Use{Provider}` extension members on `HeadlessBlobsSetupBuilder` (default) and `HeadlessBlobInstanceBuilder` (named). Named stores register as keyed `IBlobStorage` services, never touching the default (unkeyed) registration, so a named-only configuration leaves plain `IBlobStorage` unregistered.
-- Each store is fully isolated: its own named options, its own provider client, and its own `IBlobNamingNormalizer`. Ambient services (`IMimeTypeProvider`, `IClock`) are shared across stores.
+- Each store is fully isolated: its own named options, its own provider client, and its own `IBlobNamingNormalizer`. Ambient services (`IMimeTypeProvider`, `TimeProvider`) are shared across stores.
 - Two capabilities are surfaced differently, on purpose. Presigned support is a per-store cast: for named stores, AWS, Azure, and CloudflareR2 also register a keyed `IPresignedUrlBlobStorage` forward; for the default store, feature-detect by casting (`storage is IPresignedUrlBlobStorage`). Container management is a **separate** registration resolved from DI: AWS, Azure, FileSystem, Redis, and SSH register a default + keyed `IBlobContainerManager`, while CloudflareR2 registers none (so `GetKeyedService<IBlobContainerManager>` returns null for an R2 store) — this is why it cannot be an `is`-cast from the shared AWS storage type.
 - `IBlobStorageProvider.RegisteredNames` contains only **named** instance names; the default/unnamed store is excluded. Use it to validate an externally-supplied name before calling `GetStorage` rather than probe-and-catch.
 
