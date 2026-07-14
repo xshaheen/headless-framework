@@ -47,6 +47,7 @@ public sealed class SqlServerJobsCoordinationFixture
         + "IF TYPE_ID(N'messaging.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingOwnerList];"
         + "IF TYPE_ID(N'messaging.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingPoisonMessageList];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'messaging') DROP SCHEMA [messaging];"
+        + "DROP TABLE IF EXISTS [jobs_probe];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
