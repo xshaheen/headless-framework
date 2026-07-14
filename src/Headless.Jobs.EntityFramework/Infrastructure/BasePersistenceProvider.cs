@@ -43,47 +43,38 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // one default ICache across features — matches the permissions:/features:/settings: convention.
     private const string _CronExpressionsCacheKey = "jobs:cron:expressions";
 
-    // EF Core provider names for the DB-clock dispatch in GetDatabaseUtcNowAsync. Named so a silent TimeProvider
-    // fallback (a provider rename, or a new backend without a switch arm) is grep-locatable rather than a magic string.
-    private const string _NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
-    private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
-
     private static readonly CacheEntryOptions _CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
 
     protected ICache? Cache { get; } = cache;
 
-    // #316 clock-skew: single lease-expiry time authority for EF storage is the durable store's UTC clock.
-    // Lease expiry and stalled/dead-node reclaim must NOT be decided by the reclaiming node's local TimeProvider —
-    // cross-node clock skew would otherwise let a fast node reclaim a job whose owner just renewed against a slower
-    // clock (double-exec for Retry, silent terminal drop for MarkFailed/Skip). Renewal stamps LockedUntil = DbNow +
-    // LeaseDuration and reclaim compares LockedUntil <= DbNow, anchoring the whole running-lease lifecycle to one
-    // clock. The claim/acquire path keeps the injected clock (WhereCanAcquire/KTD1) — it is Retry-gated against skew
-    // and runs on the per-second scheduler hot path. InMemory keeps TimeProvider throughout (parity is per-provider).
-    // Unknown providers (e.g. SQLite in tests) fall back to the injected clock so non-relational hosts still work.
-    private protected async Task<DateTime> GetDatabaseUtcNowAsync(
-        TDbContext dbContext,
-        CancellationToken cancellationToken
-    )
-    {
-        var sql = dbContext.Database.ProviderName switch
-        {
-            _NpgsqlProviderName => "SELECT (now() AT TIME ZONE 'UTC') AS \"Value\"",
-            _SqlServerProviderName => "SELECT GETUTCDATE() AS [Value]",
-            _ => null,
-        };
-
-        if (sql is null)
-        {
-            return TimeProvider.GetUtcNow().UtcDateTime;
-        }
-
-        var dbNow = await dbContext
-            .Database.SqlQueryRaw<DateTime>(sql)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return DateTime.SpecifyKind(dbNow, DateTimeKind.Utc);
-    }
+    // Ownership time (LockedUntil) is decided by the DATABASE clock, never the caller's TimeProvider: a lease is
+    // written by one node and evaluated by another, so a shared authority is the only thing that makes the effective
+    // lease duration independent of host skew. `DateTime.UtcNow` inside an ExecuteUpdate expression tree is NOT
+    // evaluated in-process — EF translates it to the provider's server-time expression, so the comparison and the
+    // stamp share one clock inside one statement, with no scalar clock round trip and no read-then-write gap.
+    // Scheduling/observational time (ExecutedAt, candidate selection) stays on the injected TimeProvider so it
+    // remains deterministic under FakeTimeProvider. See docs/solutions/design-patterns/temporal-authority-standard.md.
+    //
+    // WHY THE EF-TRANSLATED CLOCK IS SAFE HERE — AND THE INVARIANT THAT MAKES IT SO.
+    // EF translates the clock to `now()` on Npgsql and `GETUTCDATE()` on SQL Server. On PostgreSQL `now()` is
+    // TRANSACTION-START time, not statement time — the one function the temporal-authority standard otherwise tells
+    // you never to use. It is correct here only because of a property this class maintains BY CONSTRUCTION:
+    //
+    //     A lease DEADLINE is never written inside an explicit transaction.
+    //
+    // The three `LockedUntil = <clock> + LeaseDuration` stamps (claim, renew-time-job, renew-cron-occurrence) each
+    // run as a standalone autocommit statement, where `now()` == statement time == what we want. The multi-statement
+    // transactions in this file only ever READ the lease (`LockedUntil <= now()`), RELEASE it (`LockedUntil = null`),
+    // or stamp audit columns — none of which an instant frozen at transaction-open can corrupt: a lease that expires
+    // mid-transaction is merely missed on this tick and reclaimed on the next (every such sweep is idempotent), and
+    // audit stamps are off by the transaction's own duration (single-digit ms). SQL Server does not have this
+    // question at all: `GETUTCDATE()` is evaluated per statement, and its only cost is `datetime` precision
+    // (~3.33 ms), immaterial against minute-scale leases.
+    //
+    // KEEP IT THAT WAY. Wrapping a lease-deadline write in an explicit transaction would anchor that deadline to
+    // transaction-open and silently SHORTEN the lease by the transaction's duration. A short lease is the dangerous
+    // direction: it lets a second node reclaim the row while the owner still believes it holds it — the exact
+    // double-dispatch this design exists to prevent. No analyzer enforces this.
 
     #region Core_Time_Ticker_Methods
     public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
@@ -113,7 +104,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 : dbContext.Set<TTimeJob>().Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id));
 
         await baseQuery
-            .WhereCanAcquire(owner, now)
+            .WhereCanAcquireUsingDatabaseClock(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -228,7 +219,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
-            .WhereCanAcquire(owner, now);
+            .WhereCanAcquireUsingDatabaseClock(owner);
 
         // Find the earliest job within our window
         var minExecutionTime = await baseQuery
@@ -293,12 +284,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // #316 clock-skew: the InProgress lease-deferral arms compare LockedUntil <= now against the DB clock, not the
         // reclaiming node's TimeProvider, so a still-leased running row survives regardless of cross-node skew.
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
         // so they run under CancellationToken.None. The three statements are wrapped in one transaction
         // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
         // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
+        //
+        // The explicit transaction freezes PostgreSQL's `now()` at transaction-open for all three statements. That is
+        // SAFE here, and deliberately so: these statements only READ the lease (LockedUntil <= now), RELEASE it
+        // (LockedUntil = null) and stamp audit columns — they never WRITE a lease deadline. A lease that expires
+        // while the transaction is open is simply missed on this tick and reclaimed on the next (this sweep is
+        // idempotent by design). Do not "fix" this by removing the transaction: that reintroduces the half-reclaimed
+        // node the transaction exists to prevent. Equally, do not add a lease-deadline write here — see the
+        // class-level note for why that would silently shorten the lease.
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
@@ -314,7 +312,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x =>
                 x.Status == JobStatus.Idle
                 || x.Status == JobStatus.Queued
-                || (x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Retry && x.LockedUntil <= now)
+                || (
+                    x.Status == JobStatus.InProgress
+                    && x.OnNodeDeath == NodeDeathPolicy.Retry
+                    && x.LockedUntil <= DateTime.UtcNow
+                )
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -322,7 +324,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -332,7 +334,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.MarkFailed && x.LockedUntil <= now
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                && x.LockedUntil <= DateTime.UtcNow
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -340,8 +344,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -351,7 +355,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Skip && x.LockedUntil <= now
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.Skip
+                && x.LockedUntil <= DateTime.UtcNow
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -359,8 +365,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -391,18 +397,21 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         var now = TimeProvider.GetUtcNow().UtcDateTime;
 
-        // Acquire and mark InProgress in a single update
+        // Acquire and mark InProgress in a single update.
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT. Do not wrap in an explicit transaction: on PostgreSQL the
+        // EF-translated clock is `now()` (transaction-start), so a surrounding transaction would anchor the deadline
+        // to transaction-open and shorten the lease by the transaction's duration. See the class-level note above.
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
-            .WhereCanAcquire(owner, now)
+            .WhereCanAcquireUsingDatabaseClock(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -445,7 +454,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
         // #316 clock-skew: stamp the slid lease from the DB clock, not the local TimeProvider, so the deadline a
         // remote sweep later compares against shares one authority with the value written here.
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT (see the class-level note). A surrounding explicit transaction
+        // would anchor `now()` to transaction-open and silently shorten every renewal.
 
         return await dbContext
             .Set<TTimeJob>()
@@ -457,7 +467,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
-                    setter.SetProperty(x => x.LockedUntil, now.Add(LeaseDuration)).SetProperty(x => x.UpdatedAt, now),
+                    setter
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -475,7 +487,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
@@ -486,7 +497,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep, KTD6): a host-stop racing
         // the sweep must not tear down a per-policy transition mid-statement and revert the whole transaction.
         var released = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Retry
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.Retry
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -494,13 +507,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
 
         var failed = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -508,14 +523,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
 
         var skipped = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Skip
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.Skip
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -523,8 +540,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -780,7 +797,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // #316 clock-skew: InProgress lease-deferral arms compare LockedUntil <= now against the DB clock (see
         // ReleaseDeadNodeTimeJobResourcesAsync).
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
         // CancellationToken.None for the reclaim writes (KTD6).
@@ -797,7 +813,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x =>
                 x.Status == JobStatus.Idle
                 || x.Status == JobStatus.Queued
-                || (x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Retry && x.LockedUntil <= now)
+                || (
+                    x.Status == JobStatus.InProgress
+                    && x.OnNodeDeath == NodeDeathPolicy.Retry
+                    && x.LockedUntil <= DateTime.UtcNow
+                )
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -805,7 +825,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -814,7 +834,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.MarkFailed && x.LockedUntil <= now
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                && x.LockedUntil <= DateTime.UtcNow
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -822,8 +844,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -832,7 +854,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Skip && x.LockedUntil <= now
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.Skip
+                && x.LockedUntil <= DateTime.UtcNow
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -840,8 +864,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -869,7 +893,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         // #316 clock-skew: stamp the slid lease from the DB clock (see RenewTimeJobLeaseAsync).
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT (see the class-level note). A surrounding explicit transaction
+        // would anchor `now()` to transaction-open and silently shorten every renewal.
 
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
@@ -879,7 +904,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
-                    setter.SetProperty(x => x.LockedUntil, now.Add(LeaseDuration)).SetProperty(x => x.UpdatedAt, now),
+                    setter
+                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -893,7 +920,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
-        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
@@ -903,7 +929,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync / KTD6).
         var released = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Retry
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.Retry
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -911,13 +939,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
 
         var failed = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -925,14 +955,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
 
         var skipped = await set.Where(x =>
-                x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Skip
+                x.Status == JobStatus.InProgress
+                && x.LockedUntil <= DateTime.UtcNow
+                && x.OnNodeDeath == NodeDeathPolicy.Skip
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -940,8 +972,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, now)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -974,14 +1006,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id));
 
         await baseQuery
-            .WhereCanAcquire(owner, now)
+            .WhereCanAcquireUsingDatabaseClock(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1019,7 +1051,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Include(x => x.CronJob)
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
-            .WhereCanAcquire(owner, now)
+            .WhereCanAcquireUsingDatabaseClock(owner)
             .OrderBy(x => x.ExecutionTime)
             .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .FirstOrDefaultAsync(cancellationToken)

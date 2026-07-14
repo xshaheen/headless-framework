@@ -103,7 +103,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         // other scoped state) is released; otherwise we leak a scope per failed CreateDbContext.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IClock>(fixture.Clock);
+        services.AddSingleton<TimeProvider>(fixture.Clock);
         services.AddSingleton<ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<ICurrentUser>(fixture.CurrentUser);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
@@ -138,7 +138,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IClock>(fixture.Clock);
+        services.AddSingleton<TimeProvider>(fixture.Clock);
         services.AddSingleton<ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<ICurrentUser>(fixture.CurrentUser);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));

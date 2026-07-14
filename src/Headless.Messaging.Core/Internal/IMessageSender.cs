@@ -103,10 +103,10 @@ internal sealed class MessageSender : IMessageSender
         CancellationToken cancellationToken
     )
     {
-        // Atomic pickup already wrote a live lease. Re-leasing would immediately fail against the
-        // storage lease predicate and strand rows returned by GetPublishedMessagesOfNeedRetryAsync.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var needsLease = message.LockedUntil is not { } lockedUntil || lockedUntil <= now;
+        // A storage-returned lease is already acquired under the provider's authoritative clock.
+        // Core must not reinterpret its expiry through the application clock; reservation and
+        // state-write predicates validate the stored lease identity and activity.
+        var needsLease = message.LockedUntil is null;
 
         inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
@@ -204,17 +204,18 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
     {
+        var originalInlineAttempts = message.InlineAttempts;
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
-        message.LockedUntil = null;
 
         await _dataStorage
-            .ChangePublishStateAsync(
+            .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
                 nextRetryAt: null,
                 lockedUntil: null,
                 originalRetries: message.Retries,
+                originalInlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -434,17 +435,22 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
-        return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+        return await _dataStorage
+            .LeasePublishAsync(message, _retryPolicy.DispatchTimeout, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<bool> _LeaseAndReserveAttemptAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
         var originalInlineAttempts = message.InlineAttempts;
         message.InlineAttempts++;
         var reserved = await _dataStorage
-            .LeasePublishAndReserveAttemptAsync(message, lockedUntil, originalInlineAttempts, cancellationToken)
+            .LeasePublishAndReserveAttemptAsync(
+                message,
+                _retryPolicy.DispatchTimeout,
+                originalInlineAttempts,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (!reserved)
         {

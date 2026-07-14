@@ -6,6 +6,7 @@ using Headless.Blobs.CloudflareR2;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -64,11 +65,15 @@ public static class SetupCloudflareR2Blob
 
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IBlobStorage>(serviceProvider =>
         {
             var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();
             var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-            var clock = serviceProvider.GetRequiredService<IClock>();
+            var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
             var awsOptions = new AwsBlobStorageOptions();
             _ApplyR2ForcedDefaults(awsOptions);
             var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
@@ -77,7 +82,7 @@ public static class SetupCloudflareR2Blob
             return new AwsBlobStorage(
                 s3Client,
                 mimeTypeProvider,
-                clock,
+                timeProvider,
                 Options.Create(awsOptions),
                 new R2BlobNamingNormalizer(),
                 logger
@@ -106,7 +111,7 @@ public static class SetupCloudflareR2Blob
                         serviceProvider.GetRequiredService<IOptionsMonitor<R2BlobStorageOptions>>().Get(name)
                     ),
                     serviceProvider.GetRequiredService<IMimeTypeProvider>(),
-                    serviceProvider.GetRequiredService<IClock>(),
+                    serviceProvider.GetRequiredService<TimeProvider>(),
                     Options.Create(
                         serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
                     ),

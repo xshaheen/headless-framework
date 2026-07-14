@@ -25,6 +25,10 @@ tags:
 
 # Atomic database-clock relational lease claims
 
+> **This document is the relational-lease MECHANIC.** The general rule it is an instance of — which clock
+> owns which decision across the whole framework — lives in
+> [temporal-authority-standard.md](temporal-authority-standard.md). Read that first.
+
 ## Context
 
 A durable lease is shared correctness state: one node writes its deadline and another node may decide
@@ -32,8 +36,7 @@ that the deadline elapsed. If the write and comparison use different application
 the effective lease. A fast observer may reclaim live work early; a slow observer may delay recovery.
 
 Jobs exposed this split after relational renewal and reclaim moved to database time while initial claims
-still stamped `LockedUntil` from the claimant's `TimeProvider`. Pending PR #658 closes that gap across
-generic EF and native PostgreSQL and SQL Server claims.
+still stamped `LockedUntil` from the claimant's `TimeProvider`. PR #658 closed that gap for the claim path.
 PR #652's native PostgreSQL and SQL Server claim strategies also demonstrated why provider overrides
 must preserve correctness invariants, not only the interface and throughput characteristics.
 
@@ -131,10 +134,22 @@ execute as individual update commands, while native multi-claim transactions use
 statement-time snapshot above. Provider translation must be proven by integration tests rather than
 inferred from LINQ behavior.
 
-Pending PR #658 applies the native rule to direct and fallback time-job claims, existing and newly
-inserted cron occurrences, cron fallback claims, descendant stamps, and cron lease refresh. Root claims
-return the database-issued clock snapshot alongside their IDs, allowing the existing descendant-stamp
-command to reuse the identical value without a clock query or additional round trip.
+PR #658 applied the native rule to direct and fallback time-job claims, existing and newly inserted cron
+occurrences, cron fallback claims, descendant stamps, and cron lease refresh.
+
+The follow-up work closed the gaps #658 left, and they are worth naming because each was a case of the
+mechanic being applied to only *part* of a lease's lifecycle — which is worse than not applying it at all:
+
+- **Jobs renewal/reclaim** still read the clock through a scalar `SELECT now()` / `SELECT GETUTCDATE()`
+  round trip and applied it in a SEPARATE `UPDATE`, violating rules 3, 4 and 5 above. The clock is now
+  expressed inside the statement that consumes it (`GetDatabaseUtcNowAsync` is gone).
+- **Messaging fresh-dispatch leases** took an absolute, application-computed deadline while their expiry
+  comparisons had already moved to the DB clock. A node whose clock lags the database would stamp a
+  `LockedUntil` ALREADY in the database's past, making the row instantly re-leasable while it was still
+  dispatching. The lease contract now takes a duration; the store derives the deadline.
+
+The lesson: a lease's stamp and its comparison must move to the database clock **together**. Half-migrating
+one of them creates a defect that neither clock alone would have.
 
 ## Why This Matters
 
@@ -177,9 +192,19 @@ Dead-owner recovery uses the same provider snapshot when it shortens a live leas
 Otherwise an application-clock fast-forward followed immediately by a database-clock pickup can leave
 the row temporarily ineligible or skip the reclaim entirely under host skew.
 
-This specifically governs persisted retry pickup. Fresh-dispatch lease methods still accept an explicit
-deadline as part of the existing `IDataStorage` contract; changing that public contract is separate from
-the retry-reclaim clock-authority defect.
+The same rule now governs fresh dispatch as well as persisted retry pickup. The public `IDataStorage`
+lease methods accept a duration rather than an application-computed deadline. On success, storage copies
+the persisted `LockedUntil` and `Owner` values back to the supplied message so attempt reservation and
+terminal or retry transitions reuse the exact lease identity as their fence. PostgreSQL and SQL Server
+take one provider-clock snapshot per atomic lease command; InMemoryStorage uses its injected
+`TimeProvider` as the coherent single-process authority.
+
+This removes client-clock skew from relational lease acquisition and expiry decisions. It does not
+change the at-least-once boundary: a genuinely expired `DispatchTimeout` makes the row eligible for a
+successor, and a process paused beyond that lease can resume already-running transport or user code while
+the successor is in flight. Durable fencing can reject the stale process's later state write, but it
+cannot cancel work that has already left storage; exactly-once delivery and process-pause fencing are not
+promised.
 
 ## Examples
 

@@ -61,7 +61,8 @@ public interface IJwtTokenFactory
 /// optional AES-256-CBC/HMAC-SHA512 encryption via <see cref="JsonWebTokenHandler"/>.
 /// </summary>
 [PublicAPI]
-public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, IClock clock) : IJwtTokenFactory
+public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, TimeProvider timeProvider)
+    : IJwtTokenFactory
 {
     /// <inheritdoc/>
     /// <exception cref="ArgumentException"><see cref="JwtTokenRequest.SigningKey"/> encodes to fewer than 32 bytes.</exception>
@@ -78,7 +79,7 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
     {
         Argument.IsNotNull(request);
 
-        var issuedAt = clock.UtcNow.UtcDateTime;
+        var issuedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {

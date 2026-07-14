@@ -16,7 +16,7 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
-- `AddHeadlessTimeService()` — `TimeProvider.System`, `IClock`, `ITimezoneProvider` (all `TryAddSingleton`)
+- `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` (all `TryAddSingleton`)
 - `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
 - Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme

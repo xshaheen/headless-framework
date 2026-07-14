@@ -384,4 +384,48 @@ public sealed class DateTimeOffsetExtensionsTests
         // then
         result.ToUniversalTime().Should().Be(utc.ToUniversalTime());
     }
+
+    [Fact]
+    public void normalize_to_utc_should_return_zero_offset_input_unchanged()
+    {
+        // given
+        var utc = new DateTimeOffset(2024, 11, 27, 12, 0, 0, TimeSpan.Zero);
+
+        // when
+        var result = utc.NormalizeToUtc();
+
+        // then
+        result.Offset.Should().Be(TimeSpan.Zero);
+        result.Should().Be(utc);
+    }
+
+    [Fact]
+    public void normalize_to_utc_should_zero_a_positive_offset_while_preserving_the_instant()
+    {
+        // given
+        var withOffset = new DateTimeOffset(2024, 11, 27, 15, 0, 0, _Offset);
+
+        // when
+        var result = withOffset.NormalizeToUtc();
+
+        // then - offset becomes zero, the represented instant is unchanged
+        result.Offset.Should().Be(TimeSpan.Zero);
+        result.Should().Be(withOffset);
+        result.UtcDateTime.Should().Be(withOffset.UtcDateTime);
+    }
+
+    [Fact]
+    public void normalize_to_utc_should_zero_a_negative_offset_while_preserving_the_instant()
+    {
+        // given
+        var withOffset = new DateTimeOffset(2024, 11, 27, 5, 0, 0, TimeSpan.FromHours(-4));
+
+        // when
+        var result = withOffset.NormalizeToUtc();
+
+        // then
+        result.Offset.Should().Be(TimeSpan.Zero);
+        result.Should().Be(withOffset);
+        result.UtcDateTime.Should().Be(withOffset.UtcDateTime);
+    }
 }

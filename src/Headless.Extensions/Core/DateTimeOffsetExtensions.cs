@@ -292,4 +292,17 @@ public static class DateTimeOffsetExtensions
     {
         return dateTimeOffset.ToTimezone(TimezoneConstants.SaudiArabiaTimeZone);
     }
+
+    /// <summary>
+    /// Normalizes <paramref name="dateTimeOffset"/> to a zero (UTC) offset so an instant is persisted and compared
+    /// with a consistent offset. The represented instant is unchanged.
+    /// </summary>
+    /// <param name="dateTimeOffset">The value to normalize.</param>
+    /// <returns>An equivalent <see cref="DateTimeOffset"/> whose offset is zero.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset NormalizeToUtc(this DateTimeOffset dateTimeOffset)
+    {
+        return dateTimeOffset.ToUniversalTime();
+    }
 }

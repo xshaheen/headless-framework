@@ -214,6 +214,10 @@ public static class SetupRedisCache
 
     private static IServiceCollection _AddSerializerCore(IServiceCollection services)
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
         services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
             sp.GetRequiredService<IJsonOptionsProvider>()

@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -19,15 +20,14 @@ public sealed class EfAuditLogTests : TestBase
         var currentUser = Substitute.For<ICurrentUser>();
         var currentTenant = Substitute.For<ICurrentTenant>();
         var correlationIdProvider = Substitute.For<ICorrelationIdProvider>();
-        var clock = Substitute.For<IClock>();
-        clock.UtcNow.Returns(_Timestamp);
+        var timeProvider = new FakeTimeProvider(_Timestamp);
 
         return new EfAuditLog<AuditStoreDbContext>(
             db,
             currentUser,
             currentTenant,
             correlationIdProvider,
-            clock,
+            timeProvider,
             options ?? Options.Create(new AuditLogOptions())
         );
     }

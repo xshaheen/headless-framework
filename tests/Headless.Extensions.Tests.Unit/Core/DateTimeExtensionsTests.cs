@@ -150,6 +150,50 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
+    public void normalize_to_utc_should_return_utc_input_unchanged()
+    {
+        // given
+        var utc = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Utc);
+
+        // when
+        var result = utc.NormalizeToUtc();
+
+        // then
+        result.Kind.Should().Be(DateTimeKind.Utc);
+        result.Should().Be(utc);
+    }
+
+    [Fact]
+    public void normalize_to_utc_should_convert_local_kind_to_utc()
+    {
+        // given
+        var local = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Local);
+        var offset = TimeZoneInfo.Local.GetUtcOffset(local);
+        var expected = DateTime.SpecifyKind(local - offset, DateTimeKind.Utc);
+
+        // when
+        var result = local.NormalizeToUtc();
+
+        // then - the clock value SHIFTS by the host offset; only the instant is preserved
+        result.Kind.Should().Be(DateTimeKind.Utc);
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void normalize_to_utc_should_stamp_unspecified_kind_without_shifting_the_value()
+    {
+        // given
+        var unspecified = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Unspecified);
+
+        // when
+        var result = unspecified.NormalizeToUtc();
+
+        // then - same clock value, only Kind is stamped: Unspecified is assumed to ALREADY be UTC
+        result.Kind.Should().Be(DateTimeKind.Utc);
+        result.Should().Be(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc));
+    }
+
+    [Fact]
     public void truncate_to_milliseconds_should_floor_sub_millisecond_ticks()
     {
         // given - 123 ms plus 4567 sub-millisecond ticks

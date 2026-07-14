@@ -144,6 +144,10 @@ public static class SetupHybridCache
 
     private static IServiceCollection _AddCacheCore(IServiceCollection services)
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingletonOptionValue<HybridCacheOptions>();
         services.TryAddSingleton<HybridCache>(provider =>
             _CreateHybridCache(provider, provider.GetRequiredService<HybridCacheOptions>())

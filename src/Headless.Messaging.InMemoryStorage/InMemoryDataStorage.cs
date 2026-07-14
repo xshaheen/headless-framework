@@ -187,13 +187,13 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAsync(
             PublishedMessages,
             message,
-            lockedUntil,
+            leaseDuration,
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -201,14 +201,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAndReserveAttemptAsync(
             PublishedMessages,
             message,
-            lockedUntil,
+            leaseDuration,
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
@@ -326,13 +326,13 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAsync(
             ReceivedMessages,
             message,
-            lockedUntil,
+            leaseDuration,
             timeProvider,
             nodeMembership.GetOwnerTag(),
             cancellationToken
@@ -340,14 +340,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     ) =>
         _LeaseAndReserveAttemptAsync(
             ReceivedMessages,
             message,
-            lockedUntil,
+            leaseDuration,
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
@@ -906,7 +906,7 @@ internal sealed partial class InMemoryDataStorage(
     private static ValueTask<bool> _LeaseAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
-        DateTime lockedUntil,
+        TimeSpan leaseDuration,
         TimeProvider timeProvider,
         string? owner,
         CancellationToken cancellationToken
@@ -935,10 +935,10 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
-            var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            current.LockedUntil = utcLockedUntil;
+            var lockedUntil = nowUtc.Add(leaseDuration);
+            current.LockedUntil = lockedUntil;
             current.Owner = owner;
-            message.LockedUntil = utcLockedUntil;
+            message.LockedUntil = lockedUntil;
             message.Owner = owner;
             return ValueTask.FromResult(true);
         }

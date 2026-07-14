@@ -12,7 +12,7 @@ internal sealed class HttpRequestContext(
     ICurrentLocale currentLocale,
     ICurrentTimeZone currentTimeZone,
     IWebClientInfoProvider webClientInfoProvider,
-    IClock clock
+    TimeProvider timeProvider
 ) : IRequestContext
 {
     private HttpContext HttpContext =>
@@ -36,5 +36,5 @@ internal sealed class HttpRequestContext(
 
     public bool IsAvailable => accessor.HttpContext is not null;
 
-    public DateTimeOffset DateStarted { get; } = clock.UtcNow;
+    public DateTimeOffset DateStarted { get; } = timeProvider.GetUtcNow();
 }

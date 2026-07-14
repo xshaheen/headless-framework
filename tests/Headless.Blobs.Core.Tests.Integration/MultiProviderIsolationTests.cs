@@ -40,7 +40,7 @@ public sealed class MultiProviderIsolationTests : TestBase
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         services.AddHeadlessBlobs(blobs =>
         {

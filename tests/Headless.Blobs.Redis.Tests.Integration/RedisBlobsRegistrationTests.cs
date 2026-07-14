@@ -19,7 +19,7 @@ public sealed class RedisBlobsRegistrationTests
 {
     private static IConnectionMultiplexer _CreateMockMultiplexer() => Substitute.For<IConnectionMultiplexer>();
 
-    // RedisBlobStorage resolves IClock (and the blobs core resolves IMimeTypeProvider); register them like the
+    // RedisBlobStorage resolves TimeProvider (and the blobs core resolves IMimeTypeProvider); register them like the
     // other provider registration tests so the container can construct the store.
     private static ServiceCollection _BuildBaseServices()
     {
@@ -27,7 +27,7 @@ public sealed class RedisBlobsRegistrationTests
         services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         return services;
     }

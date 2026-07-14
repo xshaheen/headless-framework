@@ -43,7 +43,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         var azureStorageOptions = new AzureStorageOptions();
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
-        var clock = new Clock(TimeProvider.System);
+        var clock = TimeProvider.System;
         var normalizer = new AzureBlobNamingNormalizer();
 
         return new AzureBlobStorage(

@@ -6,6 +6,7 @@ using Headless.Blobs.Aws;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -95,10 +96,14 @@ public static class SetupAwsS3
 
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services, AWSOptions? awsOptions)
     {
+        // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
+        // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
+        // 'No service for type TimeProvider' at resolve time.
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IBlobStorage>(serviceProvider =>
         {
             var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-            var clock = serviceProvider.GetRequiredService<IClock>();
+            var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
             var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
             var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
             var s3Client = S3ClientFactory.Create(awsOptions);
@@ -106,7 +111,7 @@ public static class SetupAwsS3
             return new AwsBlobStorage(
                 s3Client,
                 mimeTypeProvider,
-                clock,
+                timeProvider,
                 options,
                 new AwsBlobNamingNormalizer(),
                 logger
@@ -135,7 +140,7 @@ public static class SetupAwsS3
             (serviceProvider, _) =>
             {
                 var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
-                var clock = serviceProvider.GetRequiredService<IClock>();
+                var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
                 var options = Options.Create(
                     serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
                 );
@@ -146,7 +151,7 @@ public static class SetupAwsS3
                 return new AwsBlobStorage(
                     s3Client,
                     mimeTypeProvider,
-                    clock,
+                    timeProvider,
                     options,
                     new AwsBlobNamingNormalizer(),
                     logger

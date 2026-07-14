@@ -264,18 +264,89 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         );
 
         var leaseWindow = TimeSpan.FromMilliseconds(500);
-        var leased = await storage.LeasePublishAsync(storedMessage, now.Add(leaseWindow), AbortToken);
+        var leased = await storage.LeasePublishAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+        _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    [Fact]
+    public async Task should_stamp_publish_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreMessageAsync(
+            "clocked-publish",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_receive_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreReceivedMessageAsync("clocked-receive", "group", CreateMessage(), AbortToken);
+
+        (await storage.LeaseReceiveAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_combined_publish_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreMessageAsync(
+            "clocked-combined-publish",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        message.InlineAttempts = 1;
+
+        (await storage.LeasePublishAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+    }
+
+    [Fact]
+    public async Task should_stamp_combined_receive_lease_from_injected_clock()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        var leaseDuration = TimeSpan.FromMinutes(7);
+        var message = await storage.StoreReceivedMessageAsync(
+            "clocked-combined-receive",
+            "group",
+            CreateMessage(),
+            AbortToken
+        );
+        message.InlineAttempts = 1;
+
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
+
+        message.LockedUntil.Should().Be(now.Add(leaseDuration));
     }
 
     [Fact]
@@ -291,12 +362,20 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
 
     [Fact]
+    public override Task should_reject_stale_published_lease_generation_writes() =>
+        base.should_reject_stale_published_lease_generation_writes();
+
+    [Fact]
+    public override Task should_reject_stale_received_lease_generation_writes() =>
+        base.should_reject_stale_received_lease_generation_writes();
+
+    [Fact]
     public async Task should_reserve_publish_attempt_with_inline_attempt_compare_and_swap()
     {
         _EnsureInitialized();
         var storage = GetStorage();
         var message = await storage.StoreMessageAsync("inline-cas", CreateMessage(), cancellationToken: AbortToken);
-        (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
 
         var reserved = await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
@@ -313,7 +392,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _EnsureInitialized();
         var storage = GetStorage();
         var message = await storage.StoreReceivedMessageAsync("inline-cas", "group", CreateMessage(), AbortToken);
-        (await storage.LeaseReceiveAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
 
         var reserved = await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken);
@@ -334,7 +413,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             CreateMessage(),
             cancellationToken: AbortToken
         );
-        (await storage.LeasePublishAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
 
@@ -363,7 +442,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             CreateMessage(),
             AbortToken
         );
-        (await storage.LeaseReceiveAsync(message, DateTime.UtcNow.AddMinutes(1), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
 
@@ -392,11 +471,9 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             cancellationToken: AbortToken
         );
         var lease = TimeSpan.FromSeconds(10);
-        (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
-        _fakeTimeProvider.Advance(lease);
+        _fakeTimeProvider!.Advance(lease);
 
         (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeFalse();
     }
@@ -413,11 +490,9 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             AbortToken
         );
         var lease = TimeSpan.FromSeconds(10);
-        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
-        _fakeTimeProvider.Advance(lease);
+        _fakeTimeProvider!.Advance(lease);
 
         (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeFalse();
     }
@@ -430,19 +505,15 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         NodeMembership.SetIdentity("owner-a");
         var message = await storage.StoreMessageAsync("stale-success", CreateMessage(), cancellationToken: AbortToken);
         var lease = TimeSpan.FromSeconds(10);
-        (await storage.LeasePublishAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
         var staleLockedUntil = message.LockedUntil;
         var staleOwner = message.Owner;
 
-        _fakeTimeProvider.Advance(lease);
+        _fakeTimeProvider!.Advance(lease);
         NodeMembership.SetIdentity("owner-b");
-        (await storage.LeasePublishAsync(message, _fakeTimeProvider.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
         message.LockedUntil = staleLockedUntil;
         message.Owner = staleOwner;
 
@@ -469,19 +540,15 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         NodeMembership.SetIdentity("owner-a");
         var message = await storage.StoreReceivedMessageAsync("stale-success", "group", CreateMessage(), AbortToken);
         var lease = TimeSpan.FromSeconds(10);
-        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
         var staleLockedUntil = message.LockedUntil;
         var staleOwner = message.Owner;
 
-        _fakeTimeProvider.Advance(lease);
+        _fakeTimeProvider!.Advance(lease);
         NodeMembership.SetIdentity("owner-b");
-        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider.GetUtcNow().UtcDateTime.Add(lease), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
         message.LockedUntil = staleLockedUntil;
         message.Owner = staleOwner;
 
@@ -507,9 +574,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var storage = GetStorage();
         var origin = CreateMessage();
         var message = await storage.StoreReceivedMessageAsync("redelivery-budget", "group", origin, AbortToken);
-        (await storage.LeaseReceiveAsync(message, _fakeTimeProvider!.GetUtcNow().UtcDateTime.AddMinutes(1), AbortToken))
-            .Should()
-            .BeTrue();
+        (await storage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
         message.Retries = 1;
@@ -518,7 +583,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Failed,
-                _fakeTimeProvider.GetUtcNow().UtcDateTime,
+                _fakeTimeProvider!.GetUtcNow().UtcDateTime,
                 null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -581,14 +646,14 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         );
 
         var leaseWindow = TimeSpan.FromMilliseconds(500);
-        var leased = await storage.LeaseReceiveAsync(storedMessage, now.Add(leaseWindow), AbortToken);
+        var leased = await storage.LeaseReceiveAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+        _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()

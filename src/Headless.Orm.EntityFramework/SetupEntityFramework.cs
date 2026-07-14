@@ -220,7 +220,6 @@ public static class SetupEntityFramework
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IClock, Clock>();
             services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.

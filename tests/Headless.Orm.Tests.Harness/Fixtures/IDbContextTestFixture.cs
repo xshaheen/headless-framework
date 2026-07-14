@@ -3,6 +3,7 @@
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Fixtures;
 
@@ -21,7 +22,7 @@ public interface IDbContextTestFixture<out TContext>
     /// <summary>
     /// Test clock for controlling time in tests.
     /// </summary>
-    TestClock Clock { get; }
+    FakeTimeProvider Clock { get; }
 
     /// <summary>
     /// Test current tenant for multi-tenancy testing.
