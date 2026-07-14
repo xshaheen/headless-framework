@@ -37,6 +37,9 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "now()";
 
+    // Npgsql translates a bare DateTime.UtcNow inside an expression tree to the server's now().
+    public string EfTranslatedDatabaseClockSql => "now()";
+
     public string ResetSql =>
         "DROP SCHEMA IF EXISTS jobs CASCADE;"
         + "DROP SCHEMA IF EXISTS messaging CASCADE;"

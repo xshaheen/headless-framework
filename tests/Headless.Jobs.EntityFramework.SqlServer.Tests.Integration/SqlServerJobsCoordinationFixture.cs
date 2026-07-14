@@ -34,6 +34,11 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
+    // The SQL Server EF provider translates a bare DateTime.UtcNow inside an expression tree to GETUTCDATE(), not
+    // SYSUTCDATETIME(). Its datetime precision (~3.33 ms) is immaterial against minute-scale leases, and unlike
+    // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.
+    public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
+
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),
     // then the schema, then the Coordination tables. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
