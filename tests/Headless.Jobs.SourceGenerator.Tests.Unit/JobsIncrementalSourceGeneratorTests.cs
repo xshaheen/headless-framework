@@ -1,11 +1,29 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Microsoft.CodeAnalysis;
 
 namespace Tests;
 
 public sealed class JobsIncrementalSourceGeneratorTests
 {
+    [Fact]
+    public void should_use_the_headless_framework_diagnostic_prefix_for_every_descriptor()
+    {
+        var descriptorsType = typeof(Headless.Jobs.SourceGenerator.JobsIncrementalSourceGenerator).Assembly.GetType(
+            "Headless.Jobs.SourceGenerator.Validation.DiagnosticDescriptors"
+        );
+
+        descriptorsType.Should().NotBeNull();
+        var diagnosticIds = descriptorsType!
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Select(field => field.GetValue(null))
+            .OfType<DiagnosticDescriptor>()
+            .Select(descriptor => descriptor.Id);
+
+        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 13).Select(number => $"HF{number:000}"));
+    }
+
     [Fact]
     public Task should_generate_descriptors_for_typed_and_requestless_functions()
     {
@@ -58,7 +76,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .GetRunResult()
             .Diagnostics;
 
-        diagnostics.Should().Contain(diagnostic => string.Equals(diagnostic.Id, "TQ005", StringComparison.Ordinal));
+        diagnostics.Should().Contain(diagnostic => string.Equals(diagnostic.Id, "HF005", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -87,7 +105,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
         diagnostics
             .Should()
             .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "TQ011", StringComparison.Ordinal)
+                string.Equals(diagnostic.Id, "HF011", StringComparison.Ordinal)
                 && diagnostic.Severity == DiagnosticSeverity.Error
             );
     }
@@ -113,7 +131,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .GetRunResult()
             .Diagnostics;
 
-        diagnostics.Should().NotContain(diagnostic => string.Equals(diagnostic.Id, "TQ011", StringComparison.Ordinal));
+        diagnostics.Should().NotContain(diagnostic => string.Equals(diagnostic.Id, "HF011", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -138,13 +156,13 @@ public sealed class JobsIncrementalSourceGeneratorTests
         diagnostics
             .Should()
             .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "TQ012", StringComparison.Ordinal)
+                string.Equals(diagnostic.Id, "HF012", StringComparison.Ordinal)
                 && diagnostic.Severity == DiagnosticSeverity.Error
             );
         diagnostics
             .Should()
             .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "TQ013", StringComparison.Ordinal)
+                string.Equals(diagnostic.Id, "HF013", StringComparison.Ordinal)
                 && diagnostic.Severity == DiagnosticSeverity.Error
             );
     }

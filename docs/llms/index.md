@@ -165,7 +165,7 @@ public interface IDocumentRepository
 public sealed class DocumentService(
     IBlobStorage storage,
     ICache cache,
-    ITimeJobManager<TimeJobEntity> jobs,
+    IJobScheduler jobs,
     IDocumentRepository repository
 )
 {
@@ -182,13 +182,11 @@ public sealed class DocumentService(
         );
 
         // Hand processing (virus scan, thumbnailing, ...) to a background job.
-        await jobs.AddAsync(
-            new TimeJobEntity
+        await jobs.EnqueueAsync(
+            new ProcessDocumentRequest(id),
+            new Headless.Jobs.Models.EnqueueOptions
             {
-                Function = "ProcessDocument",
                 Description = $"process-{id}",
-                ExecutionTime = DateTime.UtcNow,
-                Request = JobsHelper.SerializeRequest(new { DocumentId = id }),
                 Retries = 3,
                 RetryIntervals = [30, 60, 120],
             },

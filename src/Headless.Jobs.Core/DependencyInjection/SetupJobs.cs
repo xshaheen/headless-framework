@@ -88,6 +88,7 @@ public static class SetupJobs
 
         services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
+        services.AddSingleton<IJobScheduler, JobScheduler<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
         // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
         services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();

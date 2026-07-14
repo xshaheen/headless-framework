@@ -10,10 +10,12 @@ Without the source generator, every job class or method must be manually registe
 
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
+- **Descriptor indexes**: generates delegate-free `JobFunctionDescriptor` values for every typed and requestless function; `JobFunctionProvider` exposes frozen indexes by durable name and, for typed functions, request `Type`.
 - **Type safety**: compile-time validation of job method signatures and cron expression syntax.
 - **DI constructor injection**: generates constructor factory methods; uses `[JobsConstructor]` constructor when present, otherwise the first public constructor.
 - **Incremental**: only re-generates when marked methods change (fast on large solutions).
-- **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, and mismatched context types.
+- **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Runtime provider construction reports cross-assembly conflicts in deterministic ordinal order.
+- **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, mismatched context types, and ambiguous scheduling identities.
 
 ## Installation
 
@@ -64,6 +66,8 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Ta
 
 No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 
+`[JobFunction]` remains the only handler discovery model. Requestless functions have a descriptor whose `RequestType` is `null`; typed functions are indexed by both their durable function name and the exact request `Type`. Priority and maximum concurrency come from the attribute and remain descriptor metadata rather than per-schedule options.
+
 ## Dependencies
 
 - `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)
@@ -71,6 +75,6 @@ No runtime configuration. Attributes are the sole interface. Generated output fi
 ## Side Effects
 
 Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
-- Contains a `[ModuleInitializer]` that registers job delegates and request-type mappings with the Jobs runtime.
+- Contains a `[ModuleInitializer]` that registers job delegates, request-type mappings, and delegate-free descriptors with the Jobs runtime.
 - Contains constructor factory lambdas for each discovered job class.
 - Has no effect at runtime beyond the one-time module initializer invocation.
