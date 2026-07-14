@@ -343,8 +343,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [InlineData(false, false)]
     [InlineData(true, true)]
     [InlineData(false, true)]
-    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt) =>
-        base.should_stamp_fresh_dispatch_lease_from_database_clock(publish, reserveAttempt);
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool published, bool reserveAttempt) =>
+        base.should_stamp_fresh_dispatch_lease_from_database_clock(published, reserveAttempt);
 
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>

@@ -22,7 +22,7 @@ namespace Headless.DistributedLocks;
 /// <em>surfaces</em> cleanup failures — an <see cref="AggregateException"/> carrying the primary failure plus every
 /// cleanup error, or <see cref="LockCleanupFailedException"/> when there is no primary. Only disposal of a
 /// <em>successfully returned</em> <see cref="CompositeDistributedLease"/> swallows and logs, because it runs from a
-/// <c>finally</c> where a throw would replace the caller's in-flight exception.
+/// <see langword="finally"/> where a throw would replace the caller's in-flight exception.
 /// </para>
 /// </remarks>
 internal static class CompositeAcquireCoordinator
@@ -152,7 +152,9 @@ internal static class CompositeAcquireCoordinator
                     formationLossSource ??= new CancellationTokenSource();
                     formationLossRegistrations.Add(
                         child.LostToken.Register(
+#pragma warning disable MA0045 // CancellationToken.Register requires a synchronous callback.
                             static state => ((CancellationTokenSource)state!).Cancel(),
+#pragma warning restore MA0045
                             formationLossSource
                         )
                     );

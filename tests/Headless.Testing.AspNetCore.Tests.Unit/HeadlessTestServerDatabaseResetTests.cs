@@ -70,7 +70,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         result.Should().BeSameAs(_server);
     }
 
-    public static TheoryData<string> TransientResetExceptions => new() { "database", "io", "socket", "wrapped-socket" };
+    public static TheoryData<string> TransientResetExceptions => ["database", "io", "socket", "wrapped-socket"];
 
     [Theory]
     [MemberData(nameof(TransientResetExceptions))]
@@ -157,7 +157,9 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         _server.ResetAction = (_, _, _) =>
         {
             callCount++;
-            return Task.FromException(new ArgumentException("Invalid reset configuration.", "resetConfiguration"));
+#pragma warning disable MA0015 // The reset action has no parameter; this simulates a dependency validation failure.
+            return Task.FromException(new ArgumentException("Invalid reset configuration."));
+#pragma warning restore MA0015
         };
 
         await _server.InitializeAsync();

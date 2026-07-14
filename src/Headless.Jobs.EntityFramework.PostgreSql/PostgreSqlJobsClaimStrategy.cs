@@ -148,9 +148,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     _leaseDuration,
                     cancellationToken,
                     new NpgsqlParameter("fallbackThreshold", now.AddSeconds(-1)),
-                    new NpgsqlParameter("idle", JobStatus.Idle.ToString()),
-                    new NpgsqlParameter("queued", JobStatus.Queued.ToString()),
-                    new NpgsqlParameter("retry", NodeDeathPolicy.Retry.ToString())
+                    new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
+                    new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
+                    new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry))
                 )
                 .ConfigureAwait(false);
 
@@ -337,7 +337,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+
+#pragma warning disable CA2100 // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
         command.CommandText = $"""
             WITH claim_clock AS MATERIALIZED (
                 SELECT clock_timestamp() AS now
@@ -351,10 +352,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             RETURNING claim_clock.now;
             """;
 #pragma warning restore CA2100
+
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
-        command.Parameters.Add(
-            new NpgsqlParameter("occurrenceIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = occurrenceIds }
-        );
+        command.Parameters.Add(new NpgsqlParameter("occurrenceIds", occurrenceIds) { DataTypeName = "uuid[]" });
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         return (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
@@ -392,7 +392,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", id));
-        command.Parameters.Add(new NpgsqlParameter("status", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("status", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
@@ -461,10 +461,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", occurrence.Id));
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
-        command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
-        command.Parameters.Add(new NpgsqlParameter("queued", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -526,9 +526,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
 
         command.Parameters.Add(new NpgsqlParameter("fallbackThreshold", now.AddSeconds(-1)));
-        command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
-        command.Parameters.Add(new NpgsqlParameter("queued", JobStatus.Queued.ToString()));
-        command.Parameters.Add(new NpgsqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
+        command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now).TotalSeconds));
 
@@ -592,7 +592,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
-        command.Parameters.Add(new NpgsqlParameter("queuedStatus", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("queuedStatus", nameof(JobStatus.Queued)));
         command.Parameters.AddRange(candidateParameters);
 
         var ids = new List<Guid>();
@@ -647,10 +647,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             WHERE job.{mapping.Id} = descendants.{mapping.Id} AND job.{mapping.Status} = @idle;
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(
-            new NpgsqlParameter("rootIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = rootIds }
-        );
-        command.Parameters.Add(new NpgsqlParameter("idle", JobStatus.Idle.ToString()));
+        command.Parameters.Add(new NpgsqlParameter("rootIds", rootIds) { DataTypeName = "uuid[]" });
+        command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("claimedAt", claimedAt));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));

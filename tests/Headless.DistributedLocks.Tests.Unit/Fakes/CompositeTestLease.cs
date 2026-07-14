@@ -83,5 +83,7 @@ internal sealed class CompositeTestLease(
         return disposeException is null ? ValueTask.CompletedTask : ValueTask.FromException(disposeException);
     }
 
+#pragma warning disable MA0045 // Loss must be observed synchronously by the test double.
     public void MarkLost() => _lostSource!.Cancel();
+#pragma warning restore MA0045
 }

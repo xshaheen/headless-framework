@@ -264,7 +264,10 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     public async Task should_return_original_child_for_single_canonical_request()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        await using var child = new CompositeTestLease("a", fencingToken: 42);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var child = new CompositeTestLease("a", fencingToken: 42);
+#pragma warning restore CA2000
+
         provider
             .TryAcquireWriteLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(child));
@@ -397,7 +400,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
+#pragma warning disable CA2000 // Ownership transfers to the composite, which releases and disposes it on failure.
         var first = new CompositeTestLease("a", events);
+#pragma warning restore CA2000
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(first));
@@ -419,7 +424,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var cleanupError = new InvalidOperationException("release failed");
-        await using var first = new CompositeTestLease("a", releaseException: cleanupError);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var first = new CompositeTestLease("a", releaseException: cleanupError);
+#pragma warning restore CA2000
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(first));
@@ -444,7 +451,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var provider = _CreateProvider(new FakeTimeProvider());
         var primary = new InvalidOperationException("acquire failed");
         var cleanup = new IOException("release failed");
-        await using var first = new CompositeTestLease("a", releaseException: cleanup);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var first = new CompositeTestLease("a", releaseException: cleanup);
+#pragma warning restore CA2000
 
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -468,7 +477,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        await using var first = new CompositeTestLease("a");
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var first = new CompositeTestLease("a");
+#pragma warning restore CA2000
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -494,7 +505,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
         secondResult.SetResult(new CompositeTestLease("b"));
+#pragma warning restore CA2000
 
         (await acquireTask).Should().NotBeNull();
         first.RenewalCount.Should().Be(1);
@@ -512,7 +525,8 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var renewedWith = new ConcurrentQueue<TimeSpan?>();
-        await using var first = new CompositeTestLease(
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var first = new CompositeTestLease(
             "a",
             renewal: (timeUntilExpires, _) =>
             {
@@ -520,6 +534,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
                 return Task.FromResult(true);
             }
         );
+#pragma warning restore CA2000
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -545,7 +560,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
         secondResult.SetResult(new CompositeTestLease("b"));
+#pragma warning restore CA2000
 
         (await acquireTask).Should().NotBeNull();
         first.RenewalCount.Should().Be(1);
@@ -561,7 +578,9 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
         var events = new List<string>();
-        await using var first = new CompositeTestLease("a", events, renewResult: false);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var first = new CompositeTestLease("a", events, renewResult: false);
+#pragma warning restore CA2000
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         provider
@@ -637,8 +656,10 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
         // D4 carries loss linking over from the mutex composite, but nothing exercised it across MIXED modes: a read
         // child and a write child must agree on loss-observability and fold into a single signal.
         var provider = _CreateProvider(new FakeTimeProvider());
-        await using var readChild = new CompositeTestLease("a", canObserveLoss: true);
-        await using var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+#pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
+        var readChild = new CompositeTestLease("a", canObserveLoss: true);
+        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+#pragma warning restore CA2000
 
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -671,8 +692,10 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     public async Task should_reject_read_and_write_children_that_disagree_on_loss_observability()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        await using var readChild = new CompositeTestLease("a");
-        await using var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+#pragma warning disable CA2000 // Ownership transfers to the composite, including its rejection cleanup path.
+        var readChild = new CompositeTestLease("a");
+        var writeChild = new CompositeTestLease("b", canObserveLoss: true);
+#pragma warning restore CA2000
 
         provider
             .TryAcquireReadLockAsync("a", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())

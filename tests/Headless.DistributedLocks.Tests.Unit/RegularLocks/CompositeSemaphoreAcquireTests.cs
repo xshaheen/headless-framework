@@ -474,7 +474,11 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_surface_semaphore_rejection_of_infinite_ttl_so_formation_renewal_always_applies()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
+
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
         var rejection = new ArgumentException("a slot is stored with a finite expiry score");
+#pragma warning restore MA0015
+
         _StubSemaphore(
             provider,
             "a",

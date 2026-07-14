@@ -115,7 +115,9 @@ public sealed class RetryBehaviorTests : TestBase
             [],
             retries: 3,
             retryOptions: options,
-            exceptionFactory: static () => new ArgumentException("permanent")
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
+            exceptionFactory: static () => new ArgumentException("permanent", "request")
+#pragma warning restore MA0015
         );
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);

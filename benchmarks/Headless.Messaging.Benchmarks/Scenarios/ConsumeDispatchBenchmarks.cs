@@ -96,7 +96,7 @@ public class ConsumeDispatchBenchmarks
                 Origin = origin,
                 Content = "{}",
                 IntentType = IntentType.Bus,
-                Added = DateTime.UtcNow,
+                Added = DateTimeOffset.UtcNow,
             }
         );
     }
