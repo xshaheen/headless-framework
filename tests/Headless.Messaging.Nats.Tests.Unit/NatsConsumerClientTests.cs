@@ -208,11 +208,19 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_shave_floor_by_at_most_25_percent_when_next_is_below()
+    public void NextBackoff_should_never_return_below_the_floor_and_should_still_spread_above_it()
     {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
-        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(5));
-        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(3.75));
+        // The floor is a HARD guarantee: callers pass it to promise a minimum wait (JetStream API errors), so
+        // jitter must not undercut it. But the floor path is itself a herd — an API error hits every consumer at
+        // once — so it must still spread. When the floor pins the delay, jitter therefore goes UP, not down.
+        var results = Enumerable
+            .Range(0, 200)
+            .Select(_ => NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5)))
+            .ToList();
+
+        results.Should().OnlyContain(r => r >= TimeSpan.FromSeconds(5), "the floor must never be undercut");
+        results.Should().OnlyContain(r => r <= TimeSpan.FromSeconds(6.25), "the upward spread is 25% of the floor");
+        results.Distinct().Should().HaveCountGreaterThan(1, "the floor path must not collapse to a lockstep value");
     }
 
     [Fact]
@@ -251,19 +259,24 @@ public sealed class NatsConsumerClientTests : TestBase
     public void NextBackoff_with_floor_should_stay_within_jitter_budget_at_every_rung()
     {
         var floor = TimeSpan.FromSeconds(5);
-        (TimeSpan Current, TimeSpan ExpectedNext)[] rungs =
+
+        // Rung 1 is the floor-pinned case: max(2s, 5s) = 5s leaves no room to jitter downward without breaching
+        // the floor, so the band spreads upward to [5s, 6.25s]. Every later rung has the exponential value above
+        // the floor, so the band spreads downward as usual to [0.75x, 1x].
+        (TimeSpan Current, TimeSpan Lower, TimeSpan Upper)[] rungs =
         [
-            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)), // max(2, 5)
-            (TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)), // max(10, 5)
-            (TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)), // max(20, 5)
-            (TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30)), // max(30, 5), capped
+            (TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(6.25)),
+            (TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(7.5), TimeSpan.FromSeconds(10)),
+            (TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(20)),
+            (TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(22.5), TimeSpan.FromSeconds(30)),
         ];
 
-        foreach (var (current, expectedNext) in rungs)
+        foreach (var (current, lower, upper) in rungs)
         {
             var result = NatsConsumerClient.NextBackoff(current, floor);
-            result.Should().BeLessThanOrEqualTo(expectedNext);
-            result.Should().BeGreaterThanOrEqualTo(expectedNext * 0.75);
+            result.Should().BeGreaterThanOrEqualTo(lower);
+            result.Should().BeLessThanOrEqualTo(upper);
+            result.Should().BeGreaterThanOrEqualTo(floor, "the floor is a hard guarantee at every rung");
         }
     }
 
