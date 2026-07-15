@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -13,10 +14,12 @@ namespace Headless.Messaging.AzureServiceBus;
 /// <see cref="ServiceBusSender"/> instances keyed by entity path (topic or queue name).
 /// </summary>
 /// <remarks>
-/// One <see cref="ServiceBusClient"/> equals one multiplexed AMQP connection; senders created from it
-/// share that connection. The pool is registered as a singleton and shared by the bus and queue
-/// transports so co-registering both uses a single connection and a single sender per destination.
-/// Disposal drains every materialized sender before disposing the client.
+/// One <see cref="ServiceBusClient"/> equals one multiplexed AMQP connection; senders, processors,
+/// and receivers created from it share that connection. The pool is registered as a singleton and
+/// shared by the bus and queue transports and the consumer clients, so co-registering all of them
+/// uses a single connection. Disposal drains every materialized sender before disposing the client;
+/// consumers must stop their processors before the container disposes the pool (the bootstrapper
+/// stops consumers first, so this holds under normal host shutdown).
 /// </remarks>
 internal interface IAzureServiceBusClientPool : IAsyncDisposable
 {
@@ -28,6 +31,22 @@ internal interface IAzureServiceBusClientPool : IAsyncDisposable
     /// <param name="entityPath">The topic or queue name the sender publishes to.</param>
     /// <exception cref="ObjectDisposedException">The pool has been disposed.</exception>
     ServiceBusSender GetSender(string entityPath);
+
+    /// <summary>
+    /// Gets the shared namespace <see cref="ServiceBusClient"/>, creating it on first use.
+    /// Used by consumer clients to create processors that multiplex the same AMQP connection as
+    /// the publish senders. The returned client is shared and pool-owned; do not dispose it.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The pool has been disposed.</exception>
+    ServiceBusClient GetClient();
+
+    /// <summary>
+    /// Gets the shared <see cref="ServiceBusAdministrationClient"/> for topology provisioning,
+    /// creating it on first use. The administration client is HTTP-based and holds no connection;
+    /// it is shared for the same single-instance-per-namespace reason as the messaging client.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The pool has been disposed.</exception>
+    ServiceBusAdministrationClient GetAdministrationClient();
 }
 
 /// <summary>Default implementation of <see cref="IAzureServiceBusClientPool"/>.</summary>
@@ -40,9 +59,11 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
     private readonly ILogger _logger;
     private readonly IOptions<AzureServiceBusMessagingOptions> _options;
     private readonly Func<AzureServiceBusMessagingOptions, ServiceBusClient> _clientFactory;
+    private readonly Func<AzureServiceBusMessagingOptions, ServiceBusAdministrationClient> _adminClientFactory;
     private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
     private readonly Lock _clientLock = new();
     private ServiceBusClient? _client;
+    private ServiceBusAdministrationClient? _administrationClient;
     private int _disposed;
 
     public AzureServiceBusClientPool(
@@ -51,16 +72,44 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
     )
         : this(logger, options, ServiceBusHelpers.CreateClient) { }
 
-    /// <summary>Test seam: lets unit tests substitute the client and count creations.</summary>
+    /// <summary>Test seam: lets unit tests substitute the clients and count creations.</summary>
     internal AzureServiceBusClientPool(
         ILogger<AzureServiceBusClientPool> logger,
         IOptions<AzureServiceBusMessagingOptions> options,
-        Func<AzureServiceBusMessagingOptions, ServiceBusClient> clientFactory
+        Func<AzureServiceBusMessagingOptions, ServiceBusClient> clientFactory,
+        Func<AzureServiceBusMessagingOptions, ServiceBusAdministrationClient>? adminClientFactory = null
     )
     {
         _logger = logger;
         _options = options;
         _clientFactory = clientFactory;
+        _adminClientFactory = adminClientFactory ?? ServiceBusHelpers.CreateAdministrationClient;
+    }
+
+    public ServiceBusClient GetClient()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        return _GetOrCreateClient();
+    }
+
+    public ServiceBusAdministrationClient GetAdministrationClient()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        var adminClient = Volatile.Read(ref _administrationClient);
+
+        if (adminClient is not null)
+        {
+            return adminClient;
+        }
+
+        lock (_clientLock)
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+            return _administrationClient ??= _adminClientFactory(_options.Value);
+        }
     }
 
     public ServiceBusSender GetSender(string entityPath)

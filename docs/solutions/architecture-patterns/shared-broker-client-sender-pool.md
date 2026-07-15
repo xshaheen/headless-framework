@@ -94,7 +94,7 @@ private int _disposed;
 - Adding or reworking any broker/provider whose SDK exposes a connection-owning client plus per-destination senders/producers/channels.
 - Two-plus DI singletons need the same broker connection (publish transports, dispatchers) — hand them one pool, never per-consumer clients.
 - Reviewing code where a shared field is guarded by `??=` inside per-key lazy factories — the per-key guard does not protect the shared root; that is this pattern's trigger bug.
-- NOT for receive-side clients that own processor lifecycles with different disposal choreography — the ASB consumer client intentionally keeps its own connection today (consolidation tracked in issue #687).
+- Receive-side sharing works through the same pool but with inverted disposal ownership: consumers obtain the shared client (`GetClient()`) to create processors, dispose only their processors, and never the client — the container-owned pool disposes it after the bootstrapper has stopped all consumers (issue #687).
 
 ## Examples
 
