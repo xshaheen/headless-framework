@@ -59,6 +59,7 @@ public sealed class InMemoryCache
 
     private readonly AsyncLock _lock = new();
     private readonly FactoryCacheCoordinator _coordinator;
+    private readonly string _cacheName;
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
@@ -95,11 +96,20 @@ public sealed class InMemoryCache
         TimeProvider timeProvider,
         InMemoryCacheOptions options,
         ILogger<InMemoryCache>? logger = null,
-        ICacheFactoryLockProvider? factoryLockProvider = null
+        ICacheFactoryLockProvider? factoryLockProvider = null,
+        CacheInstrumentationConfig? instrumentation = null
     )
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
-        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger, factoryLockProvider);
+        _cacheName = string.IsNullOrEmpty(options.CacheName) ? CachingDiagnostics.DefaultCacheName : options.CacheName;
+        _coordinator = new FactoryCacheCoordinator(
+            timeProvider,
+            _logger,
+            factoryLockProvider,
+            _cacheName,
+            CachingMetrics.TierL1,
+            instrumentation?.IncludeKeyInTraces ?? false
+        );
         _timeProvider = timeProvider;
         DefaultEntryOptions = options.DefaultEntryOptions;
         _keyPrefix = options.KeyPrefix ?? "";
@@ -225,6 +235,7 @@ public sealed class InMemoryCache
             nowTicksOverride: nowTicks
         );
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
         return _SetInternalAsync(key, entry, nowTicks: nowTicks);
     }
 
@@ -242,6 +253,7 @@ public sealed class InMemoryCache
 
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
         return true;
     }
 
@@ -1353,6 +1365,7 @@ public sealed class InMemoryCache
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictRemoved, CachingMetrics.TierL1);
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
@@ -1721,6 +1734,18 @@ public sealed class InMemoryCache
     {
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Count the wiped entries only when a metrics listener is attached (Count is O(n)).
+        if (CachingMetrics.EvictionsEnabled)
+        {
+            CachingMetrics.RecordEviction(
+                _cacheName,
+                CachingMetrics.EvictFlushed,
+                CachingMetrics.TierL1,
+                _memory.Count
+            );
+        }
+
         _memory.Clear();
         // Physical wipe also resets the logical invalidation markers: no entry survives to be invalidated, so the
         // markers and clear generation can drop with the keyspace.
@@ -2343,6 +2368,13 @@ public sealed class InMemoryCache
                         break;
                     }
                 }
+
+                CachingMetrics.RecordEviction(
+                    _cacheName,
+                    CachingMetrics.EvictCapacity,
+                    CachingMetrics.TierL1,
+                    removalCount
+                );
             }
         }
         catch (OperationCanceledException)
@@ -2465,6 +2497,8 @@ public sealed class InMemoryCache
                 soonest = tracked.Ticks;
             }
         }
+
+        CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictExpired, CachingMetrics.TierL1, removalCount);
 
         // Re-arm the hint.
         //

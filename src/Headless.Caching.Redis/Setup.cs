@@ -163,6 +163,11 @@ public static class SetupRedisCache
         services.AddCacheProvider();
 
         var name = instance.Name;
+
+        // Surface the registered instance name on the headless.cache.name telemetry dimension (unless the user
+        // set one explicitly). Runs after the user's configure action.
+        services.PostConfigure<RedisCacheOptions>(name, options => options.CacheName ??= name);
+
         var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
         var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
 
@@ -205,7 +210,8 @@ public static class SetupRedisCache
                     sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name),
                     sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),
                     sp.GetService<ILogger<RedisCache>>(),
-                    sp.GetService<ICacheFactoryLockProvider>()
+                    sp.GetService<ICacheFactoryLockProvider>(),
+                    sp.GetService<CacheInstrumentationConfig>()
                 )
         );
 

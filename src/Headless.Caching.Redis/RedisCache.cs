@@ -35,7 +35,8 @@ public sealed class RedisCache(
     RedisCacheOptions cacheOptions,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
-    ICacheFactoryLockProvider? factoryLockProvider = null
+    ICacheFactoryLockProvider? factoryLockProvider = null,
+    CacheInstrumentationConfig? instrumentation = null
 ) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
@@ -113,7 +114,18 @@ public sealed class RedisCache(
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
-    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
+    private readonly string _cacheName = string.IsNullOrEmpty(cacheOptions.CacheName)
+        ? CachingDiagnostics.DefaultCacheName
+        : cacheOptions.CacheName;
+
+    private readonly FactoryCacheCoordinator _coordinator = new(
+        timeProvider,
+        logger,
+        factoryLockProvider,
+        string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
+        CachingMetrics.TierL2,
+        instrumentation?.IncludeKeyInTraces ?? false
+    );
 
     // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
     // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
@@ -279,6 +291,7 @@ public sealed class RedisCache(
         Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL2);
         return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
     }
 

@@ -200,7 +200,8 @@ public static class SetupHybridCache
             options,
             provider.GetService<ILogger<HybridCache>>(),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetService<ICacheFactoryLockProvider>()
+            provider.GetService<ICacheFactoryLockProvider>(),
+            provider.GetService<CacheInstrumentationConfig>()
         );
     }
 

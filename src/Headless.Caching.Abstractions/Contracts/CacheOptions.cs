@@ -18,6 +18,13 @@ public class CacheOptions
     public string KeyPrefix { get; set; } = "";
 
     /// <summary>
+    /// The registered cache-instance name surfaced on the <c>headless.cache.name</c> telemetry dimension. Set at
+    /// registration for named instances; <see langword="null"/> for the unkeyed default (which reports as
+    /// <c>"default"</c>). This is instrumentation metadata only and does not affect cache behavior.
+    /// </summary>
+    public string? CacheName { get; set; }
+
+    /// <summary>
     /// Default <see cref="CacheEntryOptions"/> for entries created through the option-less
     /// <c>GetOrAddAsync</c> extension overloads. Exposed by the cache instance as
     /// <see cref="ICache.DefaultEntryOptions"/>. When <see langword="null"/> (the default) those overloads

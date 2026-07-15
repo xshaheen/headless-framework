@@ -308,6 +308,27 @@ Consumers do not feature-detect by hand: `BufferCacheExtensions.TryGetToOrFallba
 
 `byte[]` and `string` are the cache's native wire types — the codec stores and reads them without invoking the configured serializer, so the buffer path is serializer-independent and `IBufferCache` works the same under any serializer choice.
 
+## Observability
+
+The caching subsystem emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.Caching` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `CachingDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddCachingInstrumentation()` and `metrics.AddCachingInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(CachingDiagnostics.SourceName)` / `AddSource(CachingDiagnostics.SourceName)`; both paths are first-class. When no listener is attached the instrumentation short-circuits (`CachingDiagnostics.IsEnabled` gates span creation and `TagList` building), so an unobserved cache pays no per-operation instrumentation cost.
+
+Every instrument carries a `headless.cache.name` dimension — the registered instance name, or `default` for the unkeyed default cache. Framework-owned attribute keys are `headless.cache.*`-namespaced. **The raw cache key is never a metric dimension** (cardinality + privacy) and appears on spans only when the opt-in `IncludeKeyInTraces` flag is set on the caching setup builder (default off) — `AddHeadlessCaching(setup => setup.IncludeKeyInTraces = true)`; because keys routinely carry tenant/user identifiers, the default keeps them out of trace backends.
+
+| Instrument | Kind | Unit | Meaning | Key dimensions (beyond `headless.cache.name`) |
+| --- | --- | --- | --- | --- |
+| `headless.cache.requests` | Counter (`long`) | count | Read outcomes (covers hit/miss/stale). | `headless.cache.operation`, `headless.cache.outcome` (`hit`/`miss`/`stale`), `headless.cache.tier` (`l1`/`l2`/`hybrid`) |
+| `headless.cache.writes` | Counter (`long`) | count | Set/upsert operations. | `headless.cache.operation`, `headless.cache.tier` |
+| `headless.cache.evictions` | Counter (`long`) | count | Entry evictions (in-memory tier only; Redis server-side evictions are not client-observable). | `headless.cache.evict_reason` (`expired`/`capacity`/`removed`/`flushed`), `headless.cache.tier` |
+| `headless.cache.factory.executions` | Counter (`long`) | count | Factory runs; the failure-rate denominator. | `headless.cache.outcome` (`success`/`error`/`timeout`) |
+| `headless.cache.factory.duration` | Histogram (`double`) | milliseconds | Factory execution latency. | `headless.cache.outcome` |
+| `headless.cache.failsafe.activations` | Counter (`long`) | count | Fail-safe stale serving. | `headless.cache.trigger` (`factory_error`/`factory_timeout`/`lock_acquire_failed`) |
+| `headless.cache.refreshes` | Counter (`long`) | count | Eager + background refresh. | `headless.cache.refresh_kind` (`eager`/`background`), `headless.cache.outcome` (`success`/`error`) |
+| `headless.cache.invalidations` | Counter (`long`) | count | Hybrid tag/clear/flush propagation. | `headless.cache.invalidation_kind` (`tag`/`clear`/`flush`), `headless.cache.direction` (`publish`/`receive`) |
+
+`GetOrAddAsync` starts a `cache.get_or_add` span carrying `headless.cache.name`, `headless.cache.tier`, and the resolved `headless.cache.outcome`; factory execution runs as a child `cache.factory` span and a distributed-lock acquire as a child `cache.factory_lock` span. A caller-visible failure (hard timeout with no fail-safe fallback, or a propagated exception) sets the span status to `Error`; a fail-safe activation is recorded as a span event (`cache.failsafe` with the trigger) plus a `headless.cache.failsafe=true` attribute, **not** as an error.
+
+**Counting model (avoid double-counting).** The `FactoryCacheCoordinator` owns the get-or-add outcome, factory, fail-safe, and refresh signals for every provider; its store reads go through `IFactoryCacheStore.TryGetEntryAsync`, which single-tier providers do **not** instrument (that would double-count the coordinator's reads). Direct `ICache` operations that bypass the coordinator are metered thinly at each provider (`writes`, `evictions`, tier `l1`/`l2`). The hybrid cache instruments its own per-tier store layer deliberately — an L1 miss followed by an L2 hit records `requests{outcome=miss,tier=l1}` and `requests{outcome=hit,tier=l2}` — which is the source of the `headless.cache.tier` attribution.
+
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |

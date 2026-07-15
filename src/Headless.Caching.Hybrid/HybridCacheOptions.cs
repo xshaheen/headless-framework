@@ -24,12 +24,6 @@ public sealed class HybridCacheOptions : CacheOptions
     public string? InstanceId { get; set; }
 
     /// <summary>
-    /// Optional named hybrid cache instance this options object configures. Set by the setup builder for
-    /// named hybrids so invalidation messages can be routed to the matching named instance on peer nodes.
-    /// </summary>
-    public string? CacheName { get; internal set; }
-
-    /// <summary>
     /// Optional name of a keyed <see cref="ICache"/> registration to use as the local (L1) tier. The named
     /// cache must implement <see cref="IInMemoryCache"/> (register it with
     /// <c>setup.AddNamed(name, i => i.UseInMemory(…))</c>);

@@ -43,17 +43,28 @@ public sealed partial class HybridCache(
     HybridCacheOptions cacheOptions,
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
-    ICacheFactoryLockProvider? factoryLockProvider = null
+    ICacheFactoryLockProvider? factoryLockProvider = null,
+    CacheInstrumentationConfig? instrumentation = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
     private readonly string? _cacheName = cacheOptions.CacheName;
+
+    // Non-null cache name for the headless.cache.name telemetry dimension (the nullable _cacheName above is used
+    // for invalidation routing and must stay null for the default instance).
+    private readonly string _metricCacheName = string.IsNullOrEmpty(cacheOptions.CacheName)
+        ? CachingDiagnostics.DefaultCacheName
+        : cacheOptions.CacheName;
+
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
-        factoryLockProvider
+        factoryLockProvider,
+        string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
+        CachingMetrics.TierHybrid,
+        instrumentation?.IncludeKeyInTraces ?? false
     );
 
     private long _localCacheHits;
@@ -114,6 +125,11 @@ public sealed partial class HybridCache(
         if (message.FlushAll)
         {
             _logger.LogFlushedLocalCache();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationFlush,
+                CachingMetrics.DirectionReceive
+            );
             // Seed the L2 provider's remove-generation marker from the origin timestamp FIRST, then wipe L1. The
             // order matters: if L1 were wiped first, a concurrent read in the window before the L2 marker is seeded
             // would miss the wiped L1 and fall through to L2 (marker not yet seeded), serving the stale entry. The
@@ -134,6 +150,11 @@ public sealed partial class HybridCache(
         if (message.Clear)
         {
             var clearAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationClear,
+                CachingMetrics.DirectionReceive
+            );
 
             // Seed the L1 clear-generation marker from the ORIGINATOR's timestamp (raise-only), not via ClearAsync
             // which would stamp the receiver's own clock: under cross-node clock skew a receiver lagging the origin
@@ -168,6 +189,11 @@ public sealed partial class HybridCache(
         if (!string.IsNullOrEmpty(message.Tag))
         {
             var tagAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationTag,
+                CachingMetrics.DirectionReceive
+            );
 
             // Seed the L1 tag marker from the ORIGINATOR's timestamp (raise-only), not via RemoveByTagAsync which
             // stamps the receiver's local clock — under clock skew a lagging receiver would record a marker older

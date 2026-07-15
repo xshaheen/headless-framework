@@ -72,12 +72,19 @@ Beyond the entry point, consumers do not use this package directly. Provider pac
 
 None.
 
+## Observability
+
+Emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.Caching` (both `Meter` and `ActivitySource`), exposed as `CachingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddCachingInstrumentation()` / `MeterProviderBuilder.AddCachingInstrumentation()` (typed helpers in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. When no listener is attached the emit sites short-circuit via `CachingDiagnostics.IsEnabled`, so an unobserved cache pays no per-operation cost.
+
+The `FactoryCacheCoordinator` owns the `cache.get_or_add` span plus the `headless.cache.requests` / `factory.executions` / `factory.duration` / `failsafe.activations` / `refreshes` instruments; providers add thin `writes` / `evictions` counters and the hybrid tier attribution. Every instrument carries `headless.cache.name` (the registered instance name, or `default`). The raw cache key is never a metric dimension and appears on spans only when the caching setup builder's `IncludeKeyInTraces` opt-in (default off) is enabled. See [docs/llms/caching.md](../../docs/llms/caching.md) for the full instrument table, span shape, and counting model.
+
 ## Dependencies
 
 - `Headless.Caching.Abstractions`
 - `Headless.Extensions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
+- `OpenTelemetry.Api` (typed registration helpers only)
 
 ## Side Effects
 
