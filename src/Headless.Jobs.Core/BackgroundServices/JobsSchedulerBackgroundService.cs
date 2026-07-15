@@ -116,7 +116,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             }
             finally
             {
-                _executionContext.SetFunctions(functions: null, _functionRegistry);
+                _executionContext.ClearFunctions();
                 _schedulerLoopCancellationTokenSource?.Dispose();
                 _schedulerLoopCancellationTokenSource = null;
             }
@@ -153,7 +153,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         .ConfigureAwait(false);
                 }
 
-                _executionContext.SetFunctions(functions: null, _functionRegistry);
+                _executionContext.ClearFunctions();
             }
 
             var (timeRemaining, functions) = await _internalJobsManager
@@ -167,7 +167,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             {
                 sleepDuration = TimeSpan.FromDays(1);
                 _executionContext.SetNextPlannedOccurrence(dt: null);
-                _executionContext.SetFunctions(functions: null, _functionRegistry);
+                _executionContext.ClearFunctions();
             }
             else
             {

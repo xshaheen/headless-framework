@@ -98,7 +98,10 @@ public sealed class JobFunctionProviderTests : IDisposable
     {
         JobFunctionProvider.MarkDiscoveryComplete();
 
-        var register = () => JobFunctionProvider.RegisterFunctions(new Dictionary<string, JobFunctionRegistration>());
+        var register = () =>
+            JobFunctionProvider.RegisterFunctions(
+                new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            );
 
         register
             .Should()
@@ -113,7 +116,9 @@ public sealed class JobFunctionProviderTests : IDisposable
         JobFunctionProvider.Build();
 
         var registerFunction = () =>
-            JobFunctionProvider.RegisterFunctions(new Dictionary<string, JobFunctionRegistration>());
+            JobFunctionProvider.RegisterFunctions(
+                new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            );
         var registerMiddleware = () =>
             JobMiddlewareRegistry.RegisterSchedule(
                 "Tests:Late",

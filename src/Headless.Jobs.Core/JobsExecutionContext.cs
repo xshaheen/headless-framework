@@ -42,6 +42,8 @@ internal sealed class JobsExecutionContext
         Volatile.Write(ref _functions, copy);
     }
 
+    public void ClearFunctions() => Volatile.Write(ref _functions, []);
+
     private static void _CacheFunctionReferences(
         Span<JobExecutionState> functions,
         JobFunctionRegistry functionRegistry
