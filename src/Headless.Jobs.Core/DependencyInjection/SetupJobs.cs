@@ -18,6 +18,7 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
 using Headless.Jobs.Transactions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -47,6 +48,8 @@ public static class SetupJobs
             schedulerOptionsBuilder
         );
         optionsBuilder?.Invoke(optionInstance);
+        JobFunctionProvider.MarkDiscoveryComplete();
+        JobFunctionProvider.Build();
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
         // lease that is already expired, defeating duplicate-suppression entirely (KTD2).
@@ -147,6 +150,9 @@ public static class SetupJobs
 
         services.AddSingleton<IJobFunctionConcurrencyGate, JobFunctionConcurrencyGate>();
         services.AddSingleton<IJobsInstrumentation, LoggerInstrumentation>();
+        services.TryAddSingleton<JobFunctionRegistry>(provider =>
+            JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
+        );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services);

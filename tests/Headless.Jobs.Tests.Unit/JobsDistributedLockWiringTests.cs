@@ -12,6 +12,7 @@ namespace Tests;
 /// live in the unit project (KTD8). Uses a <see cref="NullDistributedLock"/> as the supplied provider — wiring tests
 /// care only about which instance lands under the keyed slot, not lock behavior.
 /// </summary>
+[Collection<JobsHelperCollection>]
 public sealed class JobsDistributedLockWiringTests
 {
     private static int _CountJobsLockDescriptors(IServiceCollection services) =>

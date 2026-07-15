@@ -10,6 +10,7 @@ using Polly.Retry;
 #pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
+[Collection<JobsHelperCollection>]
 public sealed class JobsOptionsBuilderTests
 {
     private sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;

@@ -22,27 +22,14 @@ namespace Tests.Transactions;
 /// capture fork, the fail-loud cases, and post-commit side-effect deferral. Atomicity itself (rows committing /
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
-[Collection(nameof(JobsHelperCollection))]
+[Collection<JobsHelperCollection>]
 public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
 {
     private const string _FunctionName = "routing-test-fn";
 
     public JobsManagerCoordinatedRoutingTests()
     {
-        JobFunctionProvider.ResetForTests();
-        JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-            {
-                [_FunctionName] = new JobFunctionRegistration
-                {
-                    CronExpression = "0 0 * * *",
-                    Priority = JobPriority.LongRunning,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 1,
-                },
-            }
-        );
-        JobFunctionProvider.Build();
+        _BuildProvider();
     }
 
     public void Dispose() => JobFunctionProvider.ResetForTests();
@@ -723,14 +710,40 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task> dispatch
     )
     {
-        JobMiddlewareRegistry.ResetForTests();
-        JobMiddlewareRegistry.RegisterSchedule("Tests:ScheduleDispatch", null, 0, dispatch.Invoke);
-        return new ResetMiddlewareRegistry();
+        _BuildProvider(dispatch);
+        return new ResetFunctionProvider();
     }
 
-    private sealed class ResetMiddlewareRegistry : IDisposable
+    private static void _BuildProvider(
+        Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task>? dispatch = null
+    )
     {
-        public void Dispose() => JobMiddlewareRegistry.ResetForTests();
+        JobFunctionProvider.ResetForTests(discoveryComplete: false);
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                [_FunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = "0 0 * * *",
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
+            }
+        );
+
+        if (dispatch is not null)
+        {
+            JobMiddlewareRegistry.RegisterSchedule("Tests:ScheduleDispatch", null, 0, dispatch.Invoke);
+        }
+
+        JobFunctionProvider.MarkDiscoveryComplete();
+        JobFunctionProvider.Build();
+    }
+
+    private sealed class ResetFunctionProvider : IDisposable
+    {
+        public void Dispose() => JobFunctionProvider.ResetForTests();
     }
 
     private sealed class Sut

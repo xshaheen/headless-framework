@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Coordination;
 
+[Collection<JobsHelperCollection>]
 public sealed class RequireProviderTests
 {
     [Fact]

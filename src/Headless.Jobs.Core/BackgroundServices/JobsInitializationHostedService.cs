@@ -5,7 +5,6 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -27,7 +26,6 @@ internal sealed class JobsInitializationHostedService(
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
-        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
 
@@ -85,10 +83,6 @@ internal sealed class JobsInitializationHostedService(
             };
             executionContext.NotifyCoreAction += _notifyCoreHandler;
         }
-
-        // Build function metadata
-        JobFunctionProvider.UpdateCronExpressionsFromIConfiguration(configuration);
-        JobFunctionProvider.Build();
 
         // Seeding pipeline
         var options = executionContext.OptionsSeeding;

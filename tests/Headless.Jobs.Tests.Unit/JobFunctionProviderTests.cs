@@ -13,9 +13,154 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class JobFunctionProviderTests : IDisposable
 {
-    public JobFunctionProviderTests() => JobFunctionProvider.ResetForTests();
+    public JobFunctionProviderTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
 
     public void Dispose() => JobFunctionProvider.ResetForTests();
+
+    [Fact]
+    public void should_reject_build_before_discovery_is_complete()
+    {
+        var build = JobFunctionProvider.Build;
+
+        build
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Jobs discovery must complete before JobFunctionProvider.Build() can freeze the catalog.");
+    }
+
+    [Fact]
+    public void should_freeze_registered_metadata_after_discovery_completes()
+    {
+        var descriptor = _Descriptor("registered", typeof(FirstRequest), "%Jobs:Registered:Cron");
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                [descriptor.FunctionName] = _Function(descriptor.FunctionName, descriptor.CronExpression).Value,
+            }
+        );
+        JobFunctionProvider.RegisterRequestType(
+            new Dictionary<string, (string, Type)>(StringComparer.Ordinal)
+            {
+                [descriptor.FunctionName] = (typeof(FirstRequest).FullName!, typeof(FirstRequest)),
+            }
+        );
+        JobFunctionProvider.RegisterDescriptors(
+            new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
+            {
+                [descriptor.FunctionName] = descriptor,
+            }
+        );
+
+        JobFunctionProvider.MarkDiscoveryComplete();
+        JobFunctionProvider.Build();
+
+        JobFunctionProvider.JobFunctions.Should().ContainKey(descriptor.FunctionName);
+        JobFunctionProvider.JobFunctionRequestTypes.Should().ContainKey(descriptor.FunctionName);
+        JobFunctionProvider.JobFunctionDescriptors[descriptor.FunctionName].Should().BeSameAs(descriptor);
+        JobFunctionProvider.JobFunctionDescriptorsByRequestType[typeof(FirstRequest)].Should().BeSameAs(descriptor);
+        JobFunctionProvider
+            .JobFunctionDescriptors[descriptor.FunctionName]
+            .CronExpression.Should()
+            .Be(descriptor.CronExpression);
+    }
+
+    [Fact]
+    public void should_build_one_catalog_when_called_repeatedly_and_concurrently()
+    {
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                ["registered"] = _Function("registered").Value,
+            }
+        );
+        JobFunctionProvider.MarkDiscoveryComplete();
+
+        var catalogs = new System.Collections.Concurrent.ConcurrentBag<
+            FrozenDictionary<string, JobFunctionRegistration>
+        >();
+        Parallel.For(
+            0,
+            32,
+            _ =>
+            {
+                JobFunctionProvider.Build();
+                catalogs.Add(JobFunctionProvider.JobFunctions);
+            }
+        );
+
+        var catalog = catalogs.First();
+        catalogs.Should().OnlyContain(candidate => ReferenceEquals(candidate, catalog));
+        catalog.Should().ContainSingle().Which.Key.Should().Be("registered");
+    }
+
+    [Fact]
+    public void should_reject_registration_after_discovery_completes()
+    {
+        JobFunctionProvider.MarkDiscoveryComplete();
+
+        var register = () => JobFunctionProvider.RegisterFunctions(new Dictionary<string, JobFunctionRegistration>());
+
+        register
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Jobs generated registration is closed after discovery completes.");
+    }
+
+    [Fact]
+    public void should_reject_function_and_middleware_registration_after_freeze()
+    {
+        JobFunctionProvider.MarkDiscoveryComplete();
+        JobFunctionProvider.Build();
+
+        var registerFunction = () =>
+            JobFunctionProvider.RegisterFunctions(new Dictionary<string, JobFunctionRegistration>());
+        var registerMiddleware = () =>
+            JobMiddlewareRegistry.RegisterSchedule(
+                "Tests:Late",
+                null,
+                0,
+                static (_, next, cancellationToken) => next(cancellationToken)
+            );
+
+        registerFunction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Jobs generated registration is frozen after JobFunctionProvider.Build().");
+        registerMiddleware
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Jobs generated registration is frozen after JobFunctionProvider.Build().");
+    }
+
+    [Fact]
+    public void should_keep_duplicate_diagnostics_stable_across_failed_builds()
+    {
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                ["zeta"] = _Function("zeta").Value,
+                ["alpha"] = _Function("alpha").Value,
+            }
+        );
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                ["alpha"] = _Function("alpha").Value,
+                ["zeta"] = _Function("zeta").Value,
+            }
+        );
+        JobFunctionProvider.MarkDiscoveryComplete();
+
+        var build = JobFunctionProvider.Build;
+        var first = build.Should().Throw<InvalidOperationException>().Which;
+        var second = build.Should().Throw<InvalidOperationException>().Which;
+
+        second.Message.Should().Be(first.Message);
+        first
+            .Message.IndexOf("'alpha'", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(first.Message.IndexOf("'zeta'", StringComparison.Ordinal));
+    }
 
     [Fact]
     public void should_build_name_and_request_type_descriptor_indexes()

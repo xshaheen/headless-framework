@@ -13,7 +13,7 @@ using Polly.Retry;
 
 namespace Tests;
 
-[Collection(nameof(JobsHelperCollection))]
+[Collection<JobsHelperCollection>]
 public sealed class RetryBehaviorTests : TestBase
 {
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
@@ -299,6 +299,7 @@ public sealed class RetryBehaviorTests : TestBase
                     }
                 }
             );
+            JobFunctionProvider.MarkDiscoveryComplete();
             JobFunctionProvider.Build();
 
             var options = _ZeroDelayRetryOptions();
