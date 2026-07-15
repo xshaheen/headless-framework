@@ -333,9 +333,7 @@ internal sealed class AzureServiceBusConsumerClient(
             if (_serviceBusProcessor == null && (intentType != IntentType.Queue || _serviceBusClient == null))
 #pragma warning restore CA1508
             {
-                _serviceBusClient = _asbOptions.TokenCredential is not null
-                    ? new ServiceBusClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
-                    : new ServiceBusClient(_asbOptions.ConnectionString);
+                _serviceBusClient = ServiceBusHelpers.CreateClient(_asbOptions);
 
                 if (_asbOptions.AutoProvision)
                 {

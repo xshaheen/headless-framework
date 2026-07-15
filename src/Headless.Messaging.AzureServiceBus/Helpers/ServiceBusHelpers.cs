@@ -1,10 +1,25 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Messaging.ServiceBus;
+
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
 /// <summary>Utility helpers for Azure Service Bus connection and address resolution.</summary>
 public static class ServiceBusHelpers
 {
+    /// <summary>
+    /// Creates a <see cref="ServiceBusClient"/> from the configured authentication mode: token
+    /// credential + namespace when <see cref="AzureServiceBusMessagingOptions.TokenCredential"/> is
+    /// set, otherwise the SAS connection string.
+    /// </summary>
+    /// <param name="options">The messaging options carrying the authentication configuration.</param>
+    public static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
+    {
+        return options.TokenCredential is null
+            ? new ServiceBusClient(options.ConnectionString)
+            : new ServiceBusClient(options.Namespace, options.TokenCredential);
+    }
+
     /// <summary>
     /// Resolves the broker address from either a Service Bus connection string or a namespace hostname.
     /// </summary>

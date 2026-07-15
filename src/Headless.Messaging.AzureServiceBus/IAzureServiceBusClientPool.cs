@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
+using Headless.Messaging.AzureServiceBus.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -48,7 +49,7 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
         ILogger<AzureServiceBusClientPool> logger,
         IOptions<AzureServiceBusMessagingOptions> options
     )
-        : this(logger, options, _CreateClient) { }
+        : this(logger, options, ServiceBusHelpers.CreateClient) { }
 
     /// <summary>Test seam: lets unit tests substitute the client and count creations.</summary>
     internal AzureServiceBusClientPool(
@@ -100,6 +101,9 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             return;
         }
 
+        // Senders close independent AMQP links; drain them in parallel before the client.
+        var senderDisposals = new List<Task>();
+
         foreach (var (entityPath, lazy) in _senders)
         {
             if (!lazy.IsValueCreated)
@@ -108,12 +112,23 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             }
 
             _senders.TryRemove(entityPath, out _);
-            await lazy.Value.DisposeAsync().ConfigureAwait(false);
+            senderDisposals.Add(lazy.Value.DisposeAsync().AsTask());
         }
 
-        if (_client is not null)
+        await Task.WhenAll(senderDisposals).ConfigureAwait(false);
+
+        // Read under the client lock: creation checks _disposed inside the same lock, so a client
+        // is either visible here (and disposed) or was never created — no leak window.
+        ServiceBusClient? client;
+
+        lock (_clientLock)
         {
-            await _client.DisposeAsync().ConfigureAwait(false);
+            client = _client;
+        }
+
+        if (client is not null)
+        {
+            await client.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -140,6 +155,11 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
 
         lock (_clientLock)
         {
+            // Re-check disposal inside the lock: DisposeAsync reads _client under the same lock
+            // after setting _disposed, so a creation racing shutdown either publishes the client
+            // before the disposer reads it, or observes _disposed and throws — never leaks.
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
             if (_client is null)
             {
                 _client = _clientFactory(_options.Value);
@@ -149,19 +169,12 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             return _client;
         }
     }
-
-    private static ServiceBusClient _CreateClient(AzureServiceBusMessagingOptions options)
-    {
-        return options.TokenCredential is null
-            ? new ServiceBusClient(options.ConnectionString)
-            : new ServiceBusClient(options.Namespace, options.TokenCredential);
-    }
 }
 
 internal static partial class AzureServiceBusClientPoolLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 3021,
         EventName = "ServiceBusClientCreated",
         Level = LogLevel.Debug,
         Message = "Azure Service Bus client created for namespace {Namespace}."
@@ -169,7 +182,7 @@ internal static partial class AzureServiceBusClientPoolLog
     public static partial void ClientCreated(this ILogger logger, string @namespace);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 3022,
         EventName = "ServiceBusSenderCreated",
         Level = LogLevel.Debug,
         Message = "Azure Service Bus sender created for entity {EntityPath}."
