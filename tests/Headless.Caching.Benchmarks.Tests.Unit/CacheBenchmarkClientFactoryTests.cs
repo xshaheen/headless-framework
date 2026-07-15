@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class CacheBenchmarkClientFactoryTests
 {
     [Fact]
-    public void GetDescriptors_WithRedisFalse_ReturnsOnlyInProcessProviders()
+    public void get_descriptors_with_redis_false_returns_only_in_process_providers()
     {
         var descriptors = CacheBenchmarkClientFactory.GetDescriptors(includeRedis: false);
 
@@ -27,7 +27,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     }
 
     [Fact]
-    public void GetDescriptors_WithRedisTrue_IncludesRedisProviders()
+    public void get_descriptors_with_redis_true_includes_redis_providers()
     {
         var providerIds = CacheBenchmarkClientFactory.GetDescriptors(includeRedis: true).Select(x => x.Id);
 
@@ -39,7 +39,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     }
 
     [Fact]
-    public void MemoryOnlyProviderIds_ReturnsStandaloneMemoryProviders()
+    public void memory_only_provider_ids_returns_standalone_memory_providers()
     {
         CacheBenchmarkClientFactory
             .MemoryOnlyProviderIds()
@@ -53,7 +53,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     }
 
     [Fact]
-    public void DistributedOnlyProviderIds_WithoutRedis_ReturnsDistributedContractBaseline()
+    public void distributed_only_provider_ids_without_redis_returns_distributed_contract_baseline()
     {
         CacheBenchmarkClientFactory
             .DistributedOnlyProviderIds(includeRedis: false)
@@ -62,7 +62,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     }
 
     [Fact]
-    public void DistributedOnlyProviderIds_WithRedis_ReturnsStandaloneDistributedProviders()
+    public void distributed_only_provider_ids_with_redis_returns_standalone_distributed_providers()
     {
         CacheBenchmarkClientFactory
             .DistributedOnlyProviderIds(includeRedis: true)
@@ -76,7 +76,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     }
 
     [Fact]
-    public void FeatureProviders_ExcludeProvidersWithoutFeatureSemantics()
+    public void feature_providers_exclude_providers_without_feature_semantics()
     {
         var providerIds = BenchmarkScenarioSources.FeatureProviders().ToArray();
 
@@ -94,7 +94,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     [InlineData(BenchmarkProviderIds.FoundatioMemory)]
     [InlineData(BenchmarkProviderIds.MicrosoftMemory)]
     [InlineData(BenchmarkProviderIds.MicrosoftMemoryDistributed)]
-    public async Task Create_InProcessProvider_RoundTripsPayload(string providerId)
+    public async Task create_in_process_provider_round_trips_payload(string providerId)
     {
         await using var client = CacheBenchmarkClientFactory.Create(
             providerId,

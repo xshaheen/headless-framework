@@ -71,9 +71,15 @@ internal static class DistributedLockTestSupport
     public sealed class CapturingLogger<T>(List<int> eventIds) : ILogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull
+        {
+            return null;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

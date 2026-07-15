@@ -142,7 +142,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
     }
 
     [Fact]
-    public void should_respect_NoTrailingSlashAttribute()
+    public void should_respect_no_trailing_slash_attribute()
     {
         // given
         var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: false);
@@ -247,7 +247,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
     }
 
     [Fact]
-    public void should_respect_NoLowercaseQueryStringAttribute()
+    public void should_respect_no_lowercase_query_string_attribute()
     {
         // given
         var rule = _CreateRule(appendTrailingSlash: false, lowercaseUrls: true);
@@ -284,7 +284,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
     }
 
     [Fact]
-    public void should_only_redirect_GET_requests()
+    public void should_only_redirect_get_requests()
     {
         // given
         var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: true);
@@ -318,7 +318,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
     }
 
     [Fact]
-    public void should_set_EndResponse_result()
+    public void should_set_end_response_result()
     {
         // given
         var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: false);
@@ -332,7 +332,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
     }
 
     [Fact]
-    public void should_set_Location_header()
+    public void should_set_location_header()
     {
         // given
         var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: false);

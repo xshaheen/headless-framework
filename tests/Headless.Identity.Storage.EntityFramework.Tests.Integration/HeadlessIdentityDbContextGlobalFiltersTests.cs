@@ -21,7 +21,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixt
     private readonly IdentityTestFixture _fixture = fixture;
 
     [Fact]
-    public void add_headless_identity_db_context_should_default_identity_schema_to_version3()
+    public void should_default_identity_schema_to_version3_when_add_headless_identity_db_context()
     {
         // given
         var services = new ServiceCollection();
@@ -48,7 +48,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixt
     }
 
     [Fact]
-    public void add_headless_identity_db_context_should_allow_later_schema_override()
+    public void should_allow_later_schema_override_when_add_headless_identity_db_context()
     {
         // given
         var services = new ServiceCollection();
@@ -76,7 +76,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixt
     }
 
     [Fact]
-    public void add_headless_identity_db_context_should_register_headless_db_context_services()
+    public void should_register_headless_db_context_services_when_add_headless_identity_db_context()
     {
         // given — HeadlessIdentityDbContext's constructor depends on HeadlessDbContextServices
         // (scoped). The Identity setup must wire this through SetupEntityFramework so consumers
@@ -105,7 +105,7 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests(IdentityTestFixt
     }
 
     [Fact]
-    public async Task headless_identity_db_context_should_include_passkey_entity_by_default()
+    public async Task should_include_passkey_entity_by_default_when_headless_identity_db_context()
     {
         // given
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();

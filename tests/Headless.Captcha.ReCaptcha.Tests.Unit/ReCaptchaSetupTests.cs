@@ -259,8 +259,9 @@ public sealed class ReCaptchaSetupTests
         serviceProvider.GetRequiredService<ICaptchaProvider>().GetVerifier("v2-cfg").Should().NotBeNull();
     }
 
-    private static IConfigurationSection _Section(string section, string key, string secret) =>
-        new ConfigurationBuilder()
+    private static IConfigurationSection _Section(string section, string key, string secret)
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -270,4 +271,5 @@ public sealed class ReCaptchaSetupTests
             )
             .Build()
             .GetSection(section);
+    }
 }

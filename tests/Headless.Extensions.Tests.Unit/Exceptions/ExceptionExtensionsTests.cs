@@ -3,7 +3,7 @@ namespace Tests.Exceptions;
 public sealed partial class ExceptionExtensionsTests
 {
     [Fact]
-    public void ReThrow_should_preserve_stack_trace()
+    public void should_preserve_stack_trace_when_re_throw()
     {
         // given
         var exception = new InvalidOperationException("Test exception");
@@ -18,7 +18,7 @@ public sealed partial class ExceptionExtensionsTests
     }
 
     [Fact]
-    public void GetInnermostException_should_return_innermost_exception()
+    public void should_return_innermost_exception_when_get_innermost_exception()
     {
         // given
         var innerMostException = new InvalidOperationException("Innermost exception");
@@ -33,7 +33,7 @@ public sealed partial class ExceptionExtensionsTests
     }
 
     [Fact]
-    public void GetInnermostException_should_return_null_for_null()
+    public void should_return_null_for_null_when_get_innermost_exception()
     {
         // given
         Exception? exception = null;
@@ -43,7 +43,7 @@ public sealed partial class ExceptionExtensionsTests
     }
 
     [Fact]
-    public void GetInnermostException_should_terminate_on_cyclic_chain()
+    public void should_terminate_on_cyclic_chain_when_get_innermost_exception()
     {
         // given a cyclic InnerException chain (a -> b -> a) that would loop forever without a cycle guard
         var a = new Exception("a");
@@ -61,7 +61,7 @@ public sealed partial class ExceptionExtensionsTests
     }
 
     [Fact]
-    public void GetInnermostException_should_terminate_on_self_referential_chain()
+    public void should_terminate_on_self_referential_chain_when_get_innermost_exception()
     {
         // given an exception whose InnerException points back to itself
         var self = new Exception("self");

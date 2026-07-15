@@ -123,7 +123,10 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
         }
     }
 
-    public void Clear() => _trackers.Clear();
+    public void Clear()
+    {
+        _trackers.Clear();
+    }
 
     #region Helper Methods
 

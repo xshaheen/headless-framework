@@ -450,20 +450,29 @@ public sealed class DistributedReadWriteLockTests : TestBase
             string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
+        )
+        {
+            return inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
+        }
 
         public ValueTask<bool> TryExtendReadAsync(
             string resource,
             string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken);
+        )
+        {
+            return inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken);
+        }
 
         public ValueTask ReleaseReadAsync(
             string resource,
             string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
+        )
+        {
+            return inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
+        }
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
@@ -486,7 +495,10 @@ public sealed class DistributedReadWriteLockTests : TestBase
             string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryExtendWriteAsync(resource, leaseId, ttl, cancellationToken);
+        )
+        {
+            return inner.TryExtendWriteAsync(resource, leaseId, ttl, cancellationToken);
+        }
 
         public ValueTask ReleaseWriteAsync(
             string resource,
@@ -503,21 +515,33 @@ public sealed class DistributedReadWriteLockTests : TestBase
             string resource,
             string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ValidateReadAsync(resource, leaseId, cancellationToken);
+        )
+        {
+            return inner.ValidateReadAsync(resource, leaseId, cancellationToken);
+        }
 
         public ValueTask<bool> ValidateWriteAsync(
             string resource,
             string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ValidateWriteAsync(resource, leaseId, cancellationToken);
+        )
+        {
+            return inner.ValidateWriteAsync(resource, leaseId, cancellationToken);
+        }
 
-        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
-            inner.IsReadLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return inner.IsReadLockedAsync(resource, cancellationToken);
+        }
 
-        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default) =>
-            inner.IsWriteLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return inner.IsWriteLockedAsync(resource, cancellationToken);
+        }
 
-        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default) =>
-            inner.GetReaderCountAsync(resource, cancellationToken);
+        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return inner.GetReaderCountAsync(resource, cancellationToken);
+        }
     }
 }

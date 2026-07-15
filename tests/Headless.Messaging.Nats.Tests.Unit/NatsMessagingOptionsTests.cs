@@ -203,7 +203,7 @@ public sealed class NatsMessagingOptionsTests : TestBase
     // Validator tests
 
     [Fact]
-    public void validator_should_pass_for_valid_options()
+    public void should_pass_for_valid_options_when_validator()
     {
         var options = new NatsMessagingOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 5 };
         var validator = new NatsMessagingOptionsValidator();
@@ -214,7 +214,7 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_empty_servers()
+    public void should_fail_for_empty_servers_when_validator()
     {
         var options = new NatsMessagingOptions { Servers = "" };
         var validator = new NatsMessagingOptionsValidator();
@@ -226,7 +226,7 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_zero_pool_size()
+    public void should_fail_for_zero_pool_size_when_validator()
     {
         var options = new NatsMessagingOptions { ConnectionPoolSize = 0 };
         var validator = new NatsMessagingOptionsValidator();
@@ -238,7 +238,7 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_negative_pool_size()
+    public void should_fail_for_negative_pool_size_when_validator()
     {
         var options = new NatsMessagingOptions { ConnectionPoolSize = -1 };
         var validator = new NatsMessagingOptionsValidator();
@@ -249,7 +249,7 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_zero_max_consecutive_consume_failures()
+    public void should_fail_for_zero_max_consecutive_consume_failures_when_validator()
     {
         var options = new NatsMessagingOptions { MaxConsecutiveConsumeFailures = 0 };
         var validator = new NatsMessagingOptionsValidator();

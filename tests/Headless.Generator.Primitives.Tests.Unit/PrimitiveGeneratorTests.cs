@@ -434,7 +434,7 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_generate_all_converters_when_TimeSpan_primitive()
+    public Task should_generate_all_converters_when_time_span_primitive()
     {
         const string source = """
             using System;
@@ -460,7 +460,7 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_generate_all_converters_when_DateOnly_primitive()
+    public Task should_generate_all_converters_when_date_only_primitive()
     {
         const string source = """
             using System;
@@ -486,7 +486,7 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_generate_all_converters_when_TimeOnly_primitive()
+    public Task should_generate_all_converters_when_time_only_primitive()
     {
         const string source = """
             using System;
@@ -512,7 +512,7 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_generate_all_converters_when_DateTime_primitive()
+    public Task should_generate_all_converters_when_date_time_primitive()
     {
         const string source = """
             using System;
@@ -545,7 +545,7 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_generate_all_converters_when_DateTimeOffset_primitive()
+    public Task should_generate_all_converters_when_date_time_offset_primitive()
     {
         const string source = """
             using System;

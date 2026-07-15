@@ -7,7 +7,7 @@ namespace Tests.Reflections;
 public sealed class TypeHelperTests
 {
     [Fact]
-    public void get_default_value_should_work_as_expected()
+    public void should_work_as_expected_when_get_default_value()
     {
         typeof(bool).GetDefaultValue().Should().Be(false);
         typeof(byte).GetDefaultValue().Should().Be(0);

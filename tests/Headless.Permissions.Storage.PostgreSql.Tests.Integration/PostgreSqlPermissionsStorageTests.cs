@@ -260,6 +260,9 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
     private sealed class RestoreAction(Action action) : IDisposable
     {
-        public void Dispose() => action();
+        public void Dispose()
+        {
+            action();
+        }
     }
 }

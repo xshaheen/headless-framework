@@ -49,58 +49,90 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // and persistence faults all propagate. On the coordinated path a propagated failure is the point: it lets the
     // caller's ambient transaction roll back rather than commit without the job row. Update/Delete are plain CRUD and
     // keep returning JobResult.
-    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken) =>
-        _AddCronJobAsync(entity, cancellationToken);
+    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken)
+    {
+        return _AddCronJobAsync(entity, cancellationToken);
+    }
 
     // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
-    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken) =>
-        _AddTimeJobAsync(entity, cancellationToken);
+    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken)
+    {
+        return _AddTimeJobAsync(entity, cancellationToken);
+    }
 
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
         TCronJob cronJob,
         CancellationToken cancellationToken
-    ) => _UpdateCronJobAsync(cronJob, cancellationToken);
+    )
+    {
+        return _UpdateCronJobAsync(cronJob, cancellationToken);
+    }
 
     Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.UpdateAsync(
         TTimeJob timeJob,
         CancellationToken cancellationToken
-    ) => _UpdateTimeJobAsync(timeJob, cancellationToken);
+    )
+    {
+        return _UpdateTimeJobAsync(timeJob, cancellationToken);
+    }
 
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
-        _DeleteCronJobAsync(id, cancellationToken);
+    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return _DeleteCronJobAsync(id, cancellationToken);
+    }
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
-        _DeleteTimeJobAsync(id, cancellationToken);
+    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return _DeleteTimeJobAsync(id, cancellationToken);
+    }
 
     Task<List<TTimeJob>> ITimeJobManager<TTimeJob>.AddBatchAsync(
         List<TTimeJob> entities,
         CancellationToken cancellationToken
-    ) => _AddTimeJobsBatchAsync(entities, cancellationToken);
+    )
+    {
+        return _AddTimeJobsBatchAsync(entities, cancellationToken);
+    }
 
     Task<JobResult<List<TTimeJob>>> ITimeJobManager<TTimeJob>.UpdateBatchAsync(
         List<TTimeJob> timeJobs,
         CancellationToken cancellationToken
-    ) => _UpdateTimeJobsBatchAsync(timeJobs, cancellationToken);
+    )
+    {
+        return _UpdateTimeJobsBatchAsync(timeJobs, cancellationToken);
+    }
 
     Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteBatchAsync(
         List<Guid> ids,
         CancellationToken cancellationToken
-    ) => _DeleteTimeJobsBatchAsync(ids, cancellationToken);
+    )
+    {
+        return _DeleteTimeJobsBatchAsync(ids, cancellationToken);
+    }
 
     Task<List<TCronJob>> ICronJobManager<TCronJob>.AddBatchAsync(
         List<TCronJob> entities,
         CancellationToken cancellationToken
-    ) => _AddCronJobsBatchAsync(entities, cancellationToken);
+    )
+    {
+        return _AddCronJobsBatchAsync(entities, cancellationToken);
+    }
 
     Task<JobResult<List<TCronJob>>> ICronJobManager<TCronJob>.UpdateBatchAsync(
         List<TCronJob> cronJobs,
         CancellationToken cancellationToken
-    ) => _UpdateCronJobsBatchAsync(cronJobs, cancellationToken);
+    )
+    {
+        return _UpdateCronJobsBatchAsync(cronJobs, cancellationToken);
+    }
 
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteBatchAsync(
         List<Guid> ids,
         CancellationToken cancellationToken
-    ) => _DeleteCronJobsBatchAsync(ids, cancellationToken);
+    )
+    {
+        return _DeleteCronJobsBatchAsync(ids, cancellationToken);
+    }
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {

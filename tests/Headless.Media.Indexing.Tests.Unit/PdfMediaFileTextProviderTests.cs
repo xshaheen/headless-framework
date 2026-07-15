@@ -8,7 +8,7 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
     private readonly PdfMediaFileTextProvider _sut = new();
 
     [Fact]
-    public async Task get_text_async_should_extract_text_from_real_pdf_file()
+    public async Task should_extract_text_from_real_pdf_file_when_get_text_async()
     {
         // given
         var separator = Path.DirectorySeparatorChar;

@@ -18,7 +18,10 @@ public sealed record PreferredLocaleView(string Country, string Language)
     /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
     /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
-    public static PreferredLocaleView? FromPreferredLocale(PreferredLocale? operand) => operand;
+    public static PreferredLocaleView? FromPreferredLocale(PreferredLocale? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Implicitly converts a domain <see cref="PreferredLocale"/> to a <see cref="PreferredLocaleView"/>.

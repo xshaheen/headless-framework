@@ -16,7 +16,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     #region PersistKeysToBlobStorage(storage, loggerFactory) Tests
 
     [Fact]
-    public void should_configure_XmlRepository_with_storage()
+    public void should_configure_xml_repository_with_storage()
     {
         // given
         var services = new ServiceCollection();
@@ -466,7 +466,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     #region Provisioning guardrail (DI paths)
 
     [Fact]
-    public void factory_path_should_throw_at_first_resolution_when_manager_resolves_null_and_storage_requires_provisioning()
+    public void should_throw_at_first_resolution_when_factory_path_manager_resolves_null_and_storage_requires_provisioning()
     {
         // given: the manager factory is authoritative and returns null (the CloudflareR2 shape — no manager exists),
         // while the resolved storage demands a provisioned container.
@@ -485,7 +485,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public void factory_path_should_resolve_when_pre_provisioned_is_acknowledged()
+    public void should_resolve_when_factory_path_pre_provisioned_is_acknowledged()
     {
         // given
         var services = new ServiceCollection();
@@ -508,7 +508,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public void keyed_path_should_throw_at_first_resolution_when_no_keyed_manager_and_storage_requires_provisioning()
+    public void should_throw_at_first_resolution_when_keyed_path_no_keyed_manager_and_storage_requires_provisioning()
     {
         // given: a keyed store with no matching keyed manager cannot ensure its container.
         const string key = "dpkeys";
@@ -528,7 +528,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public void keyed_path_should_resolve_when_pre_provisioned_is_acknowledged()
+    public void should_resolve_when_keyed_path_pre_provisioned_is_acknowledged()
     {
         // given
         const string key = "dpkeys";
@@ -549,7 +549,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public void parameterless_path_should_throw_at_first_resolution_when_no_manager_registered_and_storage_requires_provisioning()
+    public void should_throw_at_first_resolution_when_parameterless_path_no_manager_registered_and_storage_requires_provisioning()
     {
         // given: an unkeyed store registered without any IBlobContainerManager.
         var services = new ServiceCollection();
@@ -568,7 +568,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public void parameterless_path_should_resolve_when_pre_provisioned_is_acknowledged()
+    public void should_resolve_when_parameterless_path_pre_provisioned_is_acknowledged()
     {
         // given
         var services = new ServiceCollection();
@@ -588,7 +588,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task di_paths_should_still_use_manager_even_when_pre_provisioned_is_acknowledged()
+    public async Task should_still_use_manager_even_when_di_paths_pre_provisioned_is_acknowledged()
     {
         // PreProvisioned only suppresses the guardrail; a manager that IS resolvable must still be wired so the
         // repository keeps ensuring the container before writes.

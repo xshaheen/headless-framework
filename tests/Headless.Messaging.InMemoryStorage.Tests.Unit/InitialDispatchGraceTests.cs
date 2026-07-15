@@ -113,8 +113,9 @@ public sealed class InitialDispatchGraceTests : TestBase
         return (storage, fakeClock);
     }
 
-    private static Message _CreateMessage() =>
-        new(
+    private static Message _CreateMessage()
+    {
+        return new(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["cap-msg-id"] = Guid.NewGuid().ToString("N"),
@@ -122,4 +123,5 @@ public sealed class InitialDispatchGraceTests : TestBase
             },
             value: null
         );
+    }
 }

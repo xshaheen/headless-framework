@@ -22,9 +22,15 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    internal static string Qualified(AuditLogStorageOptions options) => $"[{options.Schema}].[{options.TableName}]";
+    internal static string Qualified(AuditLogStorageOptions options)
+    {
+        return $"[{options.Schema}].[{options.TableName}]";
+    }
 
-    internal static string ObjectName(AuditLogStorageOptions options) => $"{options.Schema}.{options.TableName}";
+    internal static string ObjectName(AuditLogStorageOptions options)
+    {
+        return $"{options.Schema}.{options.TableName}";
+    }
 
     private static string _CreateScript(AuditLogStorageOptions options)
     {
@@ -168,8 +174,9 @@ internal sealed class SqlServerAuditLogStorageInitializer(
             """;
     }
 
-    private static string _IndexStatement(string indexName, string table, string objectName, string columns) =>
-        $"""
+    private static string _IndexStatement(string indexName, string table, string objectName, string columns)
+    {
+        return $"""
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{indexName}' AND object_id = OBJECT_ID(N'{objectName}'))
                     CREATE NONCLUSTERED INDEX [{indexName}] ON {table} ({columns});
@@ -178,4 +185,5 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             """;
+    }
 }

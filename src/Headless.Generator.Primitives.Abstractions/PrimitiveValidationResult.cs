@@ -41,7 +41,10 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     /// </summary>
     /// <param name="error">The error message associated with the result.</param>
     /// <returns>A new instance of the <see cref="PrimitiveValidationResult"/> struct with an error result.</returns>
-    public static PrimitiveValidationResult Error(string error) => new(isValid: false, error);
+    public static PrimitiveValidationResult Error(string error)
+    {
+        return new(isValid: false, error);
+    }
 
     /// <summary>
     /// Implicitly converts a string value to a <see cref="PrimitiveValidationResult"/> with an error result.
@@ -51,7 +54,10 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     public static implicit operator PrimitiveValidationResult(string value) => Error(value);
 
     /// <summary>Converts a string value to a <see cref="PrimitiveValidationResult"/> with an error result.</summary>
-    public static PrimitiveValidationResult FromString(string value) => Error(value);
+    public static PrimitiveValidationResult FromString(string value)
+    {
+        return Error(value);
+    }
 
     /// <inheritdoc/>
     public override bool Equals(object? obj)

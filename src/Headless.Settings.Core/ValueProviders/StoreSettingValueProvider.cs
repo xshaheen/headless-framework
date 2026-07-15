@@ -70,5 +70,8 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     /// <summary>Normalizes the provider key before it is forwarded to the store. Override to apply provider-specific scoping logic.</summary>
     /// <param name="providerKey">The raw provider key supplied by the caller.</param>
     /// <returns>The normalized key to use when accessing the store, or <see langword="null"/> if not scoped.</returns>
-    protected virtual string? NormalizeProviderKey(string? providerKey) => providerKey;
+    protected virtual string? NormalizeProviderKey(string? providerKey)
+    {
+        return providerKey;
+    }
 }

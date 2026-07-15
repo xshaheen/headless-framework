@@ -28,8 +28,9 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
     /// <inheritdoc />
-    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken) =>
-        CommitSignalSourceAttach.Attach(
+    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
+    {
+        return CommitSignalSourceAttach.Attach(
             scopeFactory,
             bindings,
             _scopes,
@@ -43,6 +44,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
             },
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Signals a commit for the scope correlated to the given transaction, draining its registered

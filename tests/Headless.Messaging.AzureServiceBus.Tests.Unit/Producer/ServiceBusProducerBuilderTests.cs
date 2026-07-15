@@ -7,7 +7,7 @@ public record MessagePublished;
 public sealed class ServiceBusProducerBuilderTests
 {
     [Fact]
-    public void Should_HavePropertiesCorrectlySet_When_Obsolete_BuildMethodIsExecuted()
+    public void should_have_properties_correctly_set_when_obsolete_build_method_is_executed()
     {
         var producer = new ServiceBusProducerDescriptorBuilder<MessagePublished>().UseTopic("my-destination").Build();
 
@@ -19,7 +19,10 @@ public sealed class ServiceBusProducerBuilderTests
     [Theory]
     [InlineData("my-destination1", true)]
     [InlineData("my-destination2", false)]
-    public void Should_HavePropertiesCorrectlySet_When_BuildMethodIsExecuted(string topicName, bool subscriptionEnabled)
+    public void should_have_properties_correctly_set_when_build_method_is_executed(
+        string topicName,
+        bool subscriptionEnabled
+    )
     {
         var builder = new ServiceBusProducerDescriptorBuilder<MessagePublished>().UseTopic(topicName);
 

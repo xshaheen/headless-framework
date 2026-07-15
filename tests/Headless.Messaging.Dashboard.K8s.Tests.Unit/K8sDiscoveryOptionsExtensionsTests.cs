@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
 {
     [Fact]
-    public void UseK8sDiscovery_should_return_same_setup_instance()
+    public void should_return_same_setup_instance_when_use_k8s_discovery()
     {
         // given
         var setup = _CreateSetup();
@@ -25,7 +25,7 @@ public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
     }
 
     [Fact]
-    public void UseK8sDiscovery_with_options_should_return_same_setup_instance()
+    public void should_return_same_setup_instance_when_use_k8s_discovery_with_options()
     {
         // given
         var setup = _CreateSetup();
@@ -38,7 +38,7 @@ public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
     }
 
     [Fact]
-    public void UseK8sDiscovery_should_throw_when_options_action_is_null()
+    public void should_throw_when_use_k8s_discovery_options_action_is_null()
     {
         // given
         var setup = _CreateSetup();
@@ -51,7 +51,7 @@ public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
     }
 
     [Fact]
-    public void UseK8sDiscovery_should_register_extension()
+    public void should_register_extension_when_use_k8s_discovery()
     {
         // given
         var setup = _CreateSetup();

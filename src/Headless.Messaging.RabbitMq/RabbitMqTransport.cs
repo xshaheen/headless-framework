@@ -83,7 +83,10 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }
 
 internal static partial class RabbitMqTransportLog

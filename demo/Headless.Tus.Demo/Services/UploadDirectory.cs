@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
-using System.Text;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Tus;
@@ -38,9 +36,7 @@ public sealed class UploadDirectory(BlobServiceClient blobServiceClient, IOption
         var uploads = new List<UploadSummary>();
 
         await foreach (
-            var blob in container
-                .GetBlobsAsync(BlobTraits.Metadata, BlobStates.None, prefix, cancellationToken)
-                .WithCancellation(cancellationToken)
+            var blob in container.GetBlobsAsync(BlobTraits.Metadata, BlobStates.None, prefix, cancellationToken)
         )
         {
             uploads.Add(_ToSummary(blob, prefix));

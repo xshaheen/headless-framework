@@ -61,7 +61,10 @@ public static class BufferCacheExtensions
         return _DiscardResultAsync(cache.UpsertEntryAsync(key, bytes, options, cancellationToken));
     }
 
-    private static async ValueTask _DiscardResultAsync(ValueTask<bool> pending) => await pending.ConfigureAwait(false);
+    private static async ValueTask _DiscardResultAsync(ValueTask<bool> pending)
+    {
+        await pending.ConfigureAwait(false);
+    }
 
     private static async ValueTask<bool> _FallbackGetAsync(
         ICache cache,

@@ -29,7 +29,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     private readonly HeadlessDistributedCacheAdapterOptions _options = Argument.IsNotNull(options).Value;
 
     /// <inheritdoc />
-    public byte[]? Get(string key) => GetAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    public byte[]? Get(string key)
+    {
+        return GetAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public async Task<byte[]?> GetAsync(string key, CancellationToken token = default)
@@ -42,8 +45,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     }
 
     /// <inheritdoc />
-    public void Set(string key, byte[] value, DistributedCacheEntryOptions options) =>
+    public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+    {
         SetAsync(key, value, options).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public async Task SetAsync(
@@ -66,8 +71,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     }
 
     /// <inheritdoc />
-    public bool TryGet(string key, IBufferWriter<byte> destination) =>
-        TryGetAsync(key, destination).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+    public bool TryGet(string key, IBufferWriter<byte> destination)
+    {
+        return TryGetAsync(key, destination).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public ValueTask<bool> TryGetAsync(string key, IBufferWriter<byte> destination, CancellationToken token = default)
@@ -83,8 +90,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     }
 
     /// <inheritdoc />
-    public void Set(string key, ReadOnlySequence<byte> value, DistributedCacheEntryOptions options) =>
+    public void Set(string key, ReadOnlySequence<byte> value, DistributedCacheEntryOptions options)
+    {
         SetAsync(key, value, options).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public ValueTask SetAsync(
@@ -110,7 +119,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     }
 
     /// <inheritdoc />
-    public void Refresh(string key) => RefreshAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    public void Refresh(string key)
+    {
+        RefreshAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public async Task RefreshAsync(string key, CancellationToken token = default)
@@ -121,7 +133,10 @@ internal sealed class HeadlessDistributedCacheAdapter(
     }
 
     /// <inheritdoc />
-    public void Remove(string key) => RemoveAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    public void Remove(string key)
+    {
+        RemoveAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 
     /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken token = default)

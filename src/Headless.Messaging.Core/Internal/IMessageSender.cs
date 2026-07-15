@@ -74,7 +74,10 @@ internal sealed class MessageSender : IMessageSender
             serviceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
     }
 
-    public Task<OperateResult> SendAsync(MediumMessage message) => SendAsync(message, _serviceProvider);
+    public Task<OperateResult> SendAsync(MediumMessage message)
+    {
+        return SendAsync(message, _serviceProvider);
+    }
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {
@@ -87,7 +90,7 @@ internal sealed class MessageSender : IMessageSender
         // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
         // it up on restart.
         return _retryPipeline.ExecuteAsync(
-            (inlineRetries, ct) => _SendWithoutRetryAsync(message, inlineRetries, ct),
+            (_, ct) => _SendWithoutRetryAsync(message, ct),
             (inlineRetries, exception, delay, strategyFailed, ct) =>
                 _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
             (inlineRetries, exception, ct) =>
@@ -99,7 +102,6 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<MessagingRetryAttempt> _SendWithoutRetryAsync(
         MediumMessage message,
-        int inlineRetries,
         CancellationToken cancellationToken
     )
     {
@@ -108,7 +110,7 @@ internal sealed class MessageSender : IMessageSender
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        inlineRetries = message.InlineAttempts;
+        var inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
             // The recovery transition still writes CAS-guarded state, which requires an active

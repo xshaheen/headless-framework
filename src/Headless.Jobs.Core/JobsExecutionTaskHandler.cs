@@ -54,11 +54,10 @@ internal sealed class JobsExecutionTaskHandler
         _retryPipeline = new JobsRetryPipeline(_retryOptions, timeProvider, logger);
     }
 
-    public Task ExecuteTaskAsync(
-        JobExecutionState context,
-        bool isDue,
-        CancellationToken cancellationToken = default
-    ) => _ExecuteTaskAsync(context, isDue, isChild: false, cancellationToken);
+    public Task ExecuteTaskAsync(JobExecutionState context, bool isDue, CancellationToken cancellationToken = default)
+    {
+        return _ExecuteTaskAsync(context, isDue, isChild: false, cancellationToken);
+    }
 
     private async Task _ExecuteTaskAsync(
         JobExecutionState context,

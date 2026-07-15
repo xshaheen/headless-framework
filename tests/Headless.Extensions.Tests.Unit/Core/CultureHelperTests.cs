@@ -12,7 +12,7 @@ public sealed class CultureHelperTests
     [InlineData("ar")]
     [InlineData("ar-SA")]
     [InlineData("fr-FR")]
-    public void is_valid_culture_code_should_accept_known_cultures(string code)
+    public void should_accept_known_cultures_when_is_valid_culture_code(string code)
     {
         // when / then
         CultureHelper.IsValidCultureCode(code).Should().BeTrue();
@@ -23,7 +23,7 @@ public sealed class CultureHelperTests
     [InlineData("zz")]
     [InlineData("klingon")]
     [InlineData("en-ZZ")]
-    public void is_valid_culture_code_should_reject_synthesized_cultures(string code)
+    public void should_reject_synthesized_cultures_when_is_valid_culture_code(string code)
     {
         // given - on ICU runtimes GetCultureInfo does not throw for well-formed-but-unknown tags; it
         // synthesizes a placeholder (UserCustomCulture) culture that must be treated as invalid.
@@ -36,7 +36,7 @@ public sealed class CultureHelperTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void is_valid_culture_code_should_reject_blank_input(string? code)
+    public void should_reject_blank_input_when_is_valid_culture_code(string? code)
     {
         // when / then
         CultureHelper.IsValidCultureCode(code).Should().BeFalse();

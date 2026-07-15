@@ -242,8 +242,10 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         return this;
     }
 
-    internal void UseExternalProviderApplication(Action<IServiceProvider> action) =>
+    internal void UseExternalProviderApplication(Action<IServiceProvider> action)
+    {
         _tickerExecutionContext.ExternalProviderApplicationAction = action;
+    }
 }
 
 /// <summary>

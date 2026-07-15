@@ -39,9 +39,13 @@ internal static class ValidationExtensions
         return validationRules.Select(r => new ValidationRuleContext(r));
     }
 
-    public static bool HasNoCondition(this IValidationRule rule) =>
-        rule is { HasCondition: false, HasAsyncCondition: false };
+    public static bool HasNoCondition(this IValidationRule rule)
+    {
+        return rule is { HasCondition: false, HasAsyncCondition: false };
+    }
 
-    public static bool IsSupportedSwaggerNumericNumeric(this object value) =>
-        value is int or long or float or double or decimal;
+    public static bool IsSupportedSwaggerNumericNumeric(this object value)
+    {
+        return value is int or long or float or double or decimal;
+    }
 }

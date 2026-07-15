@@ -13,7 +13,7 @@ namespace Tests;
 public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture) : TestBase
 {
     [Fact]
-    public async Task AddHeadlessDistributedLocks_should_register_and_run_redis_initializers_on_host_start()
+    public async Task should_register_and_run_redis_initializers_on_host_start_when_add_headless_distributed_locks()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -39,7 +39,7 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture) : T
     }
 
     [Fact]
-    public void AddHeadlessDistributedLocks_should_register_feature_specific_initializers()
+    public void should_register_feature_specific_initializers_when_add_headless_distributed_locks()
     {
         // given
         var services = new ServiceCollection();
@@ -55,7 +55,7 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture) : T
     }
 
     [Fact]
-    public void AddHeadlessDistributedLocks_should_fail_validation_when_options_are_invalid()
+    public void should_fail_validation_when_add_headless_distributed_locks_options_are_invalid()
     {
         // given
         var services = new ServiceCollection();

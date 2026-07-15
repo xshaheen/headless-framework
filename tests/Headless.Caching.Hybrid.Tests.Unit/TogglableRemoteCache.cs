@@ -76,11 +76,15 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
 
     // Shared throw-or-delegate gates for the toggleable write / marker-bump failure families. The flag is
     // evaluated synchronously before the delegate runs, matching the per-method ternaries these replace.
-    private ValueTask<TResult> _GuardWrite<TResult>(Func<ValueTask<TResult>> operation) =>
-        FailWrites ? throw new InvalidOperationException("L2 write failed") : operation();
+    private ValueTask<TResult> _GuardWrite<TResult>(Func<ValueTask<TResult>> operation)
+    {
+        return FailWrites ? throw new InvalidOperationException("L2 write failed") : operation();
+    }
 
-    private ValueTask _GuardMarkerBump(Func<ValueTask> operation) =>
-        FailMarkerBumps ? throw new InvalidOperationException("L2 marker bump failed") : operation();
+    private ValueTask _GuardMarkerBump(Func<ValueTask> operation)
+    {
+        return FailMarkerBumps ? throw new InvalidOperationException("L2 marker bump failed") : operation();
+    }
 
     public ValueTask<bool> SetEntryAsync<T>(
         string key,
@@ -102,28 +106,36 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         DateTime physicalExpiresAt,
         DateTime now,
         CancellationToken cancellationToken
-    ) =>
-        ((IFactoryCacheStore)_cache).TryRearmSlidingAsync(
+    )
+    {
+        return ((IFactoryCacheStore)_cache).TryRearmSlidingAsync(
             key,
             slidingExpiration,
             physicalExpiresAt,
             now,
             cancellationToken
         );
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public ValueTask<bool> UpsertAsync<T>(
         string key,
@@ -142,27 +154,39 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         T? value,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.UpsertEntryAsync(key, value, options, cancellationToken);
+    )
+    {
+        return _cache.UpsertEntryAsync(key, value, options, cancellationToken);
+    }
 
     public ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.UpsertAllAsync(value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.UpsertAllAsync(value, expiration, cancellationToken));
+    }
 
     public ValueTask<bool> TryInsertAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryInsertAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.TryInsertAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
@@ -170,56 +194,80 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken));
+    }
 
     public ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.IncrementAsync(key, amount, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.IncrementAsync(key, amount, expiration, cancellationToken));
+    }
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.IncrementAsync(key, amount, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.IncrementAsync(key, amount, expiration, cancellationToken));
+    }
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken));
+    }
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken));
+    }
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken));
+    }
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken));
+    }
 
     public ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetAddAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetAddAsync(key, value, expiration, cancellationToken));
+    }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
@@ -276,12 +324,18 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => _cache.GetByPrefixAsync<T>(prefix, cancellationToken);
+    )
+    {
+        return _cache.GetByPrefixAsync<T>(prefix, cancellationToken);
+    }
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    )
+    {
+        return _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    }
 
     public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
@@ -290,8 +344,10 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         return await _cache.GetAsync<T>(key, cancellationToken);
     }
 
-    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
-        _cache.GetCountAsync(prefix, cancellationToken);
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return _cache.GetCountAsync(prefix, cancellationToken);
+    }
 
     public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
@@ -345,61 +401,86 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         return _GuardWrite(() => _cache.ExpireAsync(key, cancellationToken));
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync<T>(
-        string key,
-        T? expected,
-        CancellationToken cancellationToken = default
-    ) => _cache.RemoveIfEqualAsync(key, expected, cancellationToken);
+    public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveIfEqualAsync(key, expected, cancellationToken);
+    }
 
-    public ValueTask<int> RemoveAllAsync(
-        IEnumerable<string> cacheKeys,
-        CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.RemoveAllAsync(cacheKeys, cancellationToken));
+    public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        return _GuardWrite(() => _cache.RemoveAllAsync(cacheKeys, cancellationToken));
+    }
 
-    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
-        _GuardWrite(() => _cache.RemoveByPrefixAsync(prefix, cancellationToken));
+    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        return _GuardWrite(() => _cache.RemoveByPrefixAsync(prefix, cancellationToken));
+    }
 
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
-        _GuardMarkerBump(() => _cache.RemoveByTagAsync(tag, cancellationToken));
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return _GuardMarkerBump(() => _cache.RemoveByTagAsync(tag, cancellationToken));
+    }
 
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default) =>
-        _GuardMarkerBump(() => _cache.ClearAsync(cancellationToken));
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return _GuardMarkerBump(() => _cache.ClearAsync(cancellationToken));
+    }
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _GuardWrite(() => _cache.SetRemoveAsync(key, value, expiration, cancellationToken));
+    )
+    {
+        return _GuardWrite(() => _cache.SetRemoveAsync(key, value, expiration, cancellationToken));
+    }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
-        _GuardMarkerBump(() => _cache.FlushAsync(cancellationToken));
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        return _GuardMarkerBump(() => _cache.FlushAsync(cancellationToken));
+    }
 
     // ISeedableTagMarkerCache: a seedable L2 so the Hybrid uses the timestamped marker-write path. Seed* delegate
     // to the inner cache's local marker state; Write* are the durable writes and honor FailMarkerBumps.
-    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt) => _cache.SeedTagMarker(tag, invalidatedAt);
+    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt)
+    {
+        _cache.SeedTagMarker(tag, invalidatedAt);
+    }
 
-    public void SeedClearMarker(DateTimeOffset invalidatedAt) => _cache.SeedClearMarker(invalidatedAt);
+    public void SeedClearMarker(DateTimeOffset invalidatedAt)
+    {
+        _cache.SeedClearMarker(invalidatedAt);
+    }
 
-    public void SeedRemoveMarker(DateTimeOffset invalidatedAt) => _cache.SeedRemoveMarker(invalidatedAt);
+    public void SeedRemoveMarker(DateTimeOffset invalidatedAt)
+    {
+        _cache.SeedRemoveMarker(invalidatedAt);
+    }
 
     public ValueTask WriteTagMarkerAsync(
         string tag,
         DateTimeOffset invalidatedAt,
         CancellationToken cancellationToken = default
-    ) => _GuardMarkerBump(() => _cache.WriteTagMarkerAsync(tag, invalidatedAt, cancellationToken));
+    )
+    {
+        return _GuardMarkerBump(() => _cache.WriteTagMarkerAsync(tag, invalidatedAt, cancellationToken));
+    }
 
-    public ValueTask WriteClearMarkerAsync(
-        DateTimeOffset invalidatedAt,
-        CancellationToken cancellationToken = default
-    ) => _GuardMarkerBump(() => _cache.WriteClearMarkerAsync(invalidatedAt, cancellationToken));
+    public ValueTask WriteClearMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default)
+    {
+        return _GuardMarkerBump(() => _cache.WriteClearMarkerAsync(invalidatedAt, cancellationToken));
+    }
 
     // Inner InMemoryCache has no logical remove marker (FlushAsync wipes physically), so model a durable remove on
     // this InMemory-backed L2 stand-in as a physical flush of the inner cache.
-    public ValueTask WriteRemoveMarkerAsync(
-        DateTimeOffset invalidatedAt,
-        CancellationToken cancellationToken = default
-    ) => _GuardMarkerBump(() => _cache.FlushAsync(cancellationToken));
+    public ValueTask WriteRemoveMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default)
+    {
+        return _GuardMarkerBump(() => _cache.FlushAsync(cancellationToken));
+    }
 
-    public void Dispose() => _cache.Dispose();
+    public void Dispose()
+    {
+        _cache.Dispose();
+    }
 }

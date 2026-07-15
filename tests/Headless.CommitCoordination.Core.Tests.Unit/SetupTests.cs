@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class SetupTests
 {
     [Fact]
-    public void add_commit_coordination_should_not_stack_duplicate_current_coordinator_descriptors()
+    public void should_not_stack_duplicate_current_coordinator_descriptors_when_add_commit_coordination()
     {
         // The ICurrentCommitCoordinator registration is deliberately unconditional (not TryAdd) so it wins
         // last over messaging's null-coordinator fallback. The sentinel keeps repeated calls from stacking
@@ -22,7 +22,7 @@ public sealed class SetupTests
     }
 
     [Fact]
-    public void add_commit_coordination_should_resolve_the_real_scope_stack_as_current_coordinator()
+    public void should_resolve_the_real_scope_stack_as_current_coordinator_when_add_commit_coordination()
     {
         var services = new ServiceCollection();
         services.AddCommitCoordination();

@@ -13,7 +13,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_should_match_invariant_for_integer_boundaries()
+    public void should_match_invariant_for_integer_boundaries_when_append_invariant()
     {
         new StringBuilder().AppendInvariant(byte.MinValue).ToString().Should().Be(_Invariant(byte.MinValue));
         new StringBuilder().AppendInvariant(byte.MaxValue).ToString().Should().Be(_Invariant(byte.MaxValue));
@@ -31,7 +31,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_should_match_invariant_for_floating_and_decimal_boundaries()
+    public void should_match_invariant_for_floating_and_decimal_boundaries_when_append_invariant()
     {
         new StringBuilder().AppendInvariant(Half.MaxValue).ToString().Should().Be(_Invariant(Half.MaxValue));
         new StringBuilder().AppendInvariant(float.MinValue).ToString().Should().Be(_Invariant(float.MinValue));
@@ -52,7 +52,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_should_use_invariant_culture_under_a_non_invariant_culture()
+    public void should_use_invariant_culture_under_a_non_invariant_culture_when_append_invariant()
     {
         using (CultureHelper.Use("de-DE")) // German formats decimals with ',' and groups with '.'
         {
@@ -63,7 +63,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_nullable_should_append_nothing_when_null()
+    public void should_append_nothing_when_append_invariant_nullable_null()
     {
         new StringBuilder().AppendInvariant((int?)null).ToString().Should().Be("");
         new StringBuilder().AppendInvariant((double?)null).ToString().Should().Be("");
@@ -71,7 +71,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_nullable_should_append_value_when_present()
+    public void should_append_value_when_append_invariant_nullable_present()
     {
         new StringBuilder().AppendInvariant((int?)42).ToString().Should().Be("42");
         new StringBuilder().AppendInvariant((long?)long.MaxValue).ToString().Should().Be(_Invariant(long.MaxValue));
@@ -79,7 +79,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_should_chain_multiple_appends()
+    public void should_chain_multiple_appends_when_append_invariant()
     {
         var result = new StringBuilder().AppendInvariant(1).Append('-').AppendInvariant(2.5d).ToString();
 
@@ -87,7 +87,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_generic_should_use_span_formattable_fast_path()
+    public void should_use_span_formattable_fast_path_when_append_invariant_generic()
     {
         var guid = Guid.NewGuid();
         var expected = guid.ToString(null, CultureInfo.InvariantCulture);
@@ -101,7 +101,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_generic_should_fall_back_for_formattable_only_values()
+    public void should_fall_back_for_formattable_only_values_when_append_invariant_generic()
     {
         // PlainFormattable implements IFormattable but not ISpanFormattable, exercising the ToString fallback.
         new StringBuilder()
@@ -112,7 +112,7 @@ public sealed class StringBuilderExtensionsTests
     }
 
     [Fact]
-    public void AppendInvariant_formattable_string_should_format_with_invariant_culture()
+    public void should_format_with_invariant_culture_when_append_invariant_formattable_string()
     {
         using (CultureHelper.Use("de-DE"))
         {

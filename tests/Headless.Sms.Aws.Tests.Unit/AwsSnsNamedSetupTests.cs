@@ -16,12 +16,14 @@ public sealed class AwsSnsNamedSetupTests
 {
     // Region + explicit (fake) credentials so the SNS client constructs deterministically without any
     // ambient AWS configuration or network access.
-    private static AWSOptions _AwsOptions(RegionEndpoint? region = null) =>
-        new()
+    private static AWSOptions _AwsOptions(RegionEndpoint? region = null)
+    {
+        return new()
         {
             Region = region ?? RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("fake-access-key", "fake-secret-key"),
         };
+    }
 
     private static IConfiguration _Config(string senderId)
     {
@@ -39,7 +41,7 @@ public sealed class AwsSnsNamedSetupTests
     }
 
     [Fact]
-    public void named_aws_should_resolve_via_factory_and_keyed_di_with_default_unaffected()
+    public void should_resolve_via_factory_and_keyed_di_with_default_unaffected_when_named_aws()
     {
         // given
         var services = _Services();
@@ -94,7 +96,7 @@ public sealed class AwsSnsNamedSetupTests
     }
 
     [Fact]
-    public void explicit_aws_options_should_win_over_ambient_options()
+    public void should_win_over_ambient_options_when_explicit_aws_options()
     {
         // given - an ambient AWSOptions in DI pointing at us-east-1, and an explicit override at eu-west-1.
         var services = _Services();
@@ -119,7 +121,7 @@ public sealed class AwsSnsNamedSetupTests
     }
 
     [Fact]
-    public void named_aws_with_null_options_should_fall_back_to_ambient_aws_options()
+    public void should_fall_back_to_ambient_aws_options_when_named_aws_with_null_options()
     {
         // given - parity with the default path: null options falls back to the ambient AWSOptions in DI.
         var services = _Services();
@@ -140,7 +142,7 @@ public sealed class AwsSnsNamedSetupTests
     }
 
     [Fact]
-    public void named_aws_sender_should_not_expose_bulk_capability()
+    public void should_not_expose_bulk_capability_when_named_aws_sender()
     {
         // given - AWS SNS sends one recipient per API call; the capability probe must be false.
         var services = _Services();

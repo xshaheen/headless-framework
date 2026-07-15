@@ -9,7 +9,7 @@ public sealed class StringToBooleanJsonConverterTests
     private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToBooleanJsonConverter() } };
 
     [Fact]
-    public void string_to_bool_converter_should_convert_valid_true_boolean_successfully()
+    public void should_convert_valid_true_boolean_successfully_when_string_to_bool_converter()
     {
         // given
         const string json = "\"true\"";
@@ -22,7 +22,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_convert_valid_false_boolean_successfully()
+    public void should_convert_valid_false_boolean_successfully_when_string_to_bool_converter()
     {
         // given
         const string json = "\"false\"";
@@ -35,7 +35,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_throw_when_converting_invalid_bool_json()
+    public void should_throw_when_string_to_bool_converter_converting_invalid_bool_json()
     {
         // given
         const string json = "\"not a bool\"";
@@ -48,7 +48,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_throw_exception_for_null_json_string()
+    public void should_throw_exception_for_null_json_string_when_string_to_bool_converter()
     {
         // given
         const string? json = "null";
@@ -61,7 +61,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_throw_for_empty_json_string()
+    public void should_throw_for_empty_json_string_when_string_to_bool_converter()
     {
         // given
         const string json = "\"\"";
@@ -74,7 +74,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_write_valid_true_boolean_to_json()
+    public void should_write_valid_true_boolean_to_json_when_string_to_bool_converter()
     {
         // given
         const bool value = true;
@@ -87,7 +87,7 @@ public sealed class StringToBooleanJsonConverterTests
     }
 
     [Fact]
-    public void string_to_bool_converter_should_write_valid_false_boolean_to_json()
+    public void should_write_valid_false_boolean_to_json_when_string_to_bool_converter()
     {
         // given
         const bool value = false;

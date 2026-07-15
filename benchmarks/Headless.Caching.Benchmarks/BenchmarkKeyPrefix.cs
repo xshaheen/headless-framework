@@ -15,5 +15,8 @@ internal static class BenchmarkKeyPrefix
         return $"bench:{_Sanitize(providerId)}:{_Sanitize(scenario)}:{_Sanitize(runId)}:";
     }
 
-    private static string _Sanitize(string value) => value.Replace(' ', '-').ToLowerInvariant();
+    private static string _Sanitize(string value)
+    {
+        return value.Replace(' ', '-').ToLowerInvariant();
+    }
 }

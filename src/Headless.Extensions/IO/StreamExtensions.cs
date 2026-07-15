@@ -44,7 +44,10 @@ public static class StreamExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="stream"/> does not support reading.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="length"/> is negative.</exception>
-    public static Stream ReadSlice(this Stream stream, long length) => new NestedStream(stream, length);
+    public static Stream ReadSlice(this Stream stream, long length)
+    {
+        return new NestedStream(stream, length);
+    }
 
     #endregion
 

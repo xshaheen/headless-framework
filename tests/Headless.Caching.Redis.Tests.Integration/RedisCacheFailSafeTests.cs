@@ -19,14 +19,16 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         TimeSpan? duration = null,
         TimeSpan? maxDuration = null,
         TimeSpan? throttleDuration = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = duration ?? TimeSpan.FromSeconds(1),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = maxDuration ?? TimeSpan.FromSeconds(3),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(1),
         };
+    }
 
     private async Task _AdvanceAsync(TimeSpan duration)
     {

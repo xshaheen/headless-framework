@@ -22,7 +22,7 @@ public sealed class RetryBehaviorTests : TestBase
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
 
     [Fact()]
-    public async Task ExecuteTaskAsync_CronJobOccurrence_AppliesRetryIntervals_AndUpdatesRetryCount()
+    public async Task execute_task_async_cron_job_occurrence_applies_retry_intervals_and_updates_retry_count()
     {
         // given: cron occurrence -> RunContextFunctionAsync path
         // Use three distinct short intervals so we can verify mapping without overly long waits
@@ -53,7 +53,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_CronJobOccurrence_UsesLastInterval_WhenRetriesExceedArrayLength()
+    public async Task execute_task_async_cron_job_occurrence_uses_last_interval_when_retries_exceed_array_length()
     {
         // Use zero intervals for speed
         var (handler, context, _, attempts) = _SetupRetryTestFixture([0, 0], retries: 4);
@@ -68,7 +68,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_CronJobOccurrence_StopsRetrying_WhenFunctionSucceeds()
+    public async Task execute_task_async_cron_job_occurrence_stops_retrying_when_function_succeeds()
     {
         // given: succeed on RetryCount==2
         // Use zero intervals for speed; succeed at retry=2
@@ -84,7 +84,7 @@ public sealed class RetryBehaviorTests : TestBase
     [Theory]
     [InlineData(0, 1)]
     [InlineData(1, 2)]
-    public async Task ExecuteTaskAsync_translates_retries_excluding_the_original_attempt(
+    public async Task execute_task_async_translates_retries_excluding_the_original_attempt(
         int retries,
         int expectedAttempts
     )
@@ -103,7 +103,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_does_not_retry_or_exhaust_permanent_failures()
+    public async Task execute_task_async_does_not_retry_or_exhaust_permanent_failures()
     {
         var exhausted = false;
         var options = _ZeroDelayRetryOptions();
@@ -130,7 +130,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_persists_retry_count_before_the_next_attempt()
+    public async Task execute_task_async_persists_retry_count_before_the_next_attempt()
     {
         var options = _ZeroDelayRetryOptions();
         var (handler, context, manager, attempts) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
@@ -155,7 +155,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_keeps_renewal_active_during_delay_and_fences_after_lease_loss()
+    public async Task execute_task_async_keeps_renewal_active_during_delay_and_fences_after_lease_loss()
     {
         var options = _ZeroDelayRetryOptions();
         var scheduler = new SchedulerOptionsBuilder
@@ -187,7 +187,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_resumes_from_the_durable_retry_count_without_resetting_the_budget()
+    public async Task execute_task_async_resumes_from_the_durable_retry_count_without_resetting_the_budget()
     {
         var options = _ZeroDelayRetryOptions();
         var (handler, context, _, attempts) = _SetupRetryTestFixture([], retries: 2, retryOptions: options);
@@ -200,7 +200,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_uses_a_fresh_scope_and_observes_each_failure()
+    public async Task execute_task_async_uses_a_fresh_scope_and_observes_each_failure()
     {
         var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
         var options = _ZeroDelayRetryOptions();
@@ -232,7 +232,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
+    public async Task execute_task_async_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
     {
         JobFunctionProvider.ResetForTests();
         try
@@ -335,7 +335,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_invokes_exhausted_callback_only_after_the_owned_terminal_write()
+    public async Task execute_task_async_invokes_exhausted_callback_only_after_the_owned_terminal_write()
     {
         var terminalWriteObserved = false;
         var callbackObservedTerminalWrite = false;
@@ -365,7 +365,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_does_not_invoke_exhausted_callback_after_a_stale_owner_write()
+    public async Task execute_task_async_does_not_invoke_exhausted_callback_after_a_stale_owner_write()
     {
         var callbackCount = 0;
         var options = _ZeroDelayRetryOptions();
@@ -385,7 +385,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_contains_exhausted_callback_failures_and_timeouts()
+    public async Task execute_task_async_contains_exhausted_callback_failures_and_timeouts()
     {
         var callbackTokenCancelled = false;
         var options = _ZeroDelayRetryOptions();
@@ -409,7 +409,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_bounds_a_hanging_per_retry_exception_observer()
+    public async Task execute_task_async_bounds_a_hanging_per_retry_exception_observer()
     {
         // #6 (sibling of the OnExhausted bound): a slow / hanging IJobExceptionHandler.HandleExceptionAsync on the
         // per-retry path must not stall retry progression until lease loss. A tiny OnExhaustedTimeout cancels the
@@ -449,7 +449,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_stamps_child_ownership_before_running_child_delegate()
+    public async Task execute_task_async_stamps_child_ownership_before_running_child_delegate()
     {
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
@@ -521,7 +521,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_marks_cooperative_base_operation_cancellation_as_cancelled()
+    public async Task execute_task_async_marks_cooperative_base_operation_cancellation_as_cancelled()
     {
         var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
         context.CachedDelegate = (cancellationToken, _, functionContext) =>
@@ -539,7 +539,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_treats_foreign_operation_cancellation_as_failure()
+    public async Task execute_task_async_treats_foreign_operation_cancellation_as_failure()
     {
         var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
         context.CachedDelegate = (_, _, _) => throw new OperationCanceledException("provider timeout");
@@ -553,7 +553,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
+    public async Task execute_task_async_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
     {
         // #463: a renewal that errors (DB unreachable) — or that cannot complete within the renewal cadence — must
         // trip cancel-on-loss for the in-flight job, not fault the renewal loop silently and leave the job running
@@ -570,11 +570,10 @@ public sealed class RetryBehaviorTests : TestBase
         internalManager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-            {
-                return Interlocked.Increment(ref renewalCalls) == 1
+                Interlocked.Increment(ref renewalCalls) == 1
                     ? Task.FromResult(1)
-                    : Task.FromException<int>(new TimeoutException("simulated DB outage"));
-            });
+                    : Task.FromException<int>(new TimeoutException("simulated DB outage"))
+            );
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
@@ -617,7 +616,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_renewal_deadline_elapsing_trips_cancel_on_loss_without_terminalizing()
+    public async Task execute_task_async_renewal_deadline_elapsing_trips_cancel_on_loss_without_terminalizing()
     {
         // #6/#463: exercises the DEADLINE branch of _TryRenewLeaseAsync (the per-cadence timeout CTS firing while the
         // renewal call hangs), distinct from the throw branch above. The blocking renewal is cancelled by the linked
@@ -682,7 +681,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_does_not_terminalize_when_delegate_ignores_lease_loss_cancellation()
+    public async Task execute_task_async_does_not_terminalize_when_delegate_ignores_lease_loss_cancellation()
     {
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
@@ -722,7 +721,7 @@ public sealed class RetryBehaviorTests : TestBase
         {
             while (!context.LeaseLost)
             {
-                await Task.Delay(5);
+                await Task.Delay(5, AbortToken);
             }
         };
 
@@ -736,7 +735,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_does_not_invoke_delegate_when_start_lease_check_loses_ownership()
+    public async Task execute_task_async_does_not_invoke_delegate_when_start_lease_check_loses_ownership()
     {
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
@@ -791,7 +790,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_skips_the_tick_without_cancelling_when_renewal_reports_membership_unknown()
+    public async Task execute_task_async_skips_the_tick_without_cancelling_when_renewal_reports_membership_unknown()
     {
         // #461: a negative RenewLeaseAsync result means coordination membership is momentarily unestablished, NOT a
         // lost lease. The renewal loop must skip the tick and let the healthy job keep running, not cancel it.
@@ -861,7 +860,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_cancels_on_loss_when_membership_stays_unknown_past_the_lease_window()
+    public async Task execute_task_async_cancels_on_loss_when_membership_stays_unknown_past_the_lease_window()
     {
         // #461 bound: a membership blip is tolerated only within the lease window. If membership stays unestablished
         // for the whole LeaseDuration (e.g. a permanent partition), the lease has lapsed and the row is being
@@ -916,7 +915,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_logs_reconciliation_when_a_successful_completion_write_is_fenced()
+    public async Task execute_task_async_logs_reconciliation_when_a_successful_completion_write_is_fenced()
     {
         // #462: a job that completes successfully but whose completion write matches 0 rows (the row was reclaimed/
         // terminalized by a sweep after a stall) must log a reconciliation warning so operators don't treat the
@@ -975,9 +974,15 @@ public sealed class RetryBehaviorTests : TestBase
         public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -985,7 +990,10 @@ public sealed class RetryBehaviorTests : TestBase
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+        )
+        {
+            Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+        }
 
         private sealed class NullScope : IDisposable
         {
@@ -1072,8 +1080,9 @@ public sealed class RetryBehaviorTests : TestBase
         return (handler, context, internalManager, attempts);
     }
 
-    private static JobsRetryOptions _ZeroDelayRetryOptions() =>
-        new()
+    private static JobsRetryOptions _ZeroDelayRetryOptions()
+    {
+        return new()
         {
             RetryStrategy = new RetryStrategyOptions
             {
@@ -1083,6 +1092,7 @@ public sealed class RetryBehaviorTests : TestBase
                     ValueTask.FromResult(args.Outcome.Exception is not null and not OperationCanceledException),
             },
         };
+    }
 
     private sealed class RetryScopeMarker;
 }

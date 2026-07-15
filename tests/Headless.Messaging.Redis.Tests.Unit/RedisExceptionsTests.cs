@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class RedisExceptionsTests : TestBase
 {
     [Fact]
-    public void redis_consume_missing_headers_exception_should_include_entry_id()
+    public void should_include_entry_id_when_redis_consume_missing_headers_exception()
     {
         // given
         const string entryId = "9876543-0";
@@ -25,7 +25,7 @@ public sealed class RedisExceptionsTests : TestBase
     }
 
     [Fact]
-    public void redis_consume_missing_body_exception_should_include_entry_id()
+    public void should_include_entry_id_when_redis_consume_missing_body_exception()
     {
         // given
         const string entryId = "1111111-0";
@@ -39,7 +39,7 @@ public sealed class RedisExceptionsTests : TestBase
     }
 
     [Fact]
-    public void redis_consume_invalid_headers_exception_should_include_entry_id_and_inner_exception()
+    public void should_include_entry_id_and_inner_exception_when_redis_consume_invalid_headers_exception()
     {
         // given
         const string entryId = "2222222-0";
@@ -56,7 +56,7 @@ public sealed class RedisExceptionsTests : TestBase
     }
 
     [Fact]
-    public void redis_consume_invalid_body_exception_should_include_entry_id_and_inner_exception()
+    public void should_include_entry_id_and_inner_exception_when_redis_consume_invalid_body_exception()
     {
         // given
         const string entryId = "3333333-0";

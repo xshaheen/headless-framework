@@ -194,9 +194,15 @@ public sealed class InMemoryCommitCoordinationSpecificTests
         public ConcurrentQueue<LogEntry> Entries { get; } = new();
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

@@ -25,7 +25,7 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void should_allow_anonymous_when_WithNoAuth()
+    public void should_allow_anonymous_when_with_no_auth()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithNoAuth();
@@ -58,7 +58,7 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void health_endpoint_should_always_be_anonymous()
+    public void should_always_be_anonymous_when_health_endpoint()
     {
         // The health endpoint is always anonymous regardless of auth mode.
         // This is by design for health check systems.
@@ -68,7 +68,7 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void ping_endpoint_should_always_be_anonymous()
+    public void should_always_be_anonymous_when_ping_endpoint()
     {
         // The ping endpoint is always anonymous regardless of auth mode.
         // In MessagingDashboardEndpoints: MapGet("/api/ping", _PingServices).AllowAnonymous()

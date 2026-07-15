@@ -31,7 +31,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     #region FilterNodesByTags Tests
 
     [Fact]
-    public void FilterNodesByTags_should_hide_node_when_visibility_is_hide()
+    public void should_hide_node_when_filter_nodes_by_tags_visibility_is_hide()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -47,7 +47,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_show_node_when_visibility_is_show()
+    public void should_show_node_when_filter_nodes_by_tags_visibility_is_show()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -63,7 +63,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_hide_node_by_default_when_ShowOnlyExplicitVisibleNodes_is_true()
+    public void should_hide_node_by_default_when_filter_nodes_by_tags_show_only_explicit_visible_nodes_is_true()
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = true;
@@ -77,7 +77,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_show_node_when_ShowOnlyExplicitVisibleNodes_is_false_and_no_hide_tag()
+    public void should_show_node_when_filter_nodes_by_tags_show_only_explicit_visible_nodes_is_false_and_no_hide_tag()
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
@@ -95,7 +95,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_extract_portIndex_from_tag()
+    public void should_extract_port_index_from_tag_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -112,7 +112,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_extract_portName_from_tag()
+    public void should_extract_port_name_from_tag_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -129,7 +129,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_handle_null_tags()
+    public void should_handle_null_tags_when_filter_nodes_by_tags()
     {
         // given & when
         var result = _InvokeFilterNodesByTags(null!);
@@ -141,7 +141,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_be_case_insensitive_for_tag_prefix()
+    public void should_be_case_insensitive_for_tag_prefix_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -157,7 +157,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_be_case_insensitive_for_visibility_value()
+    public void should_be_case_insensitive_for_visibility_value_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -173,7 +173,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_ignore_non_headless_tags()
+    public void should_ignore_non_headless_tags_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal) { ["app"] = "my-app", ["version"] = "1.0" };
@@ -186,7 +186,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_use_last_portIndex_when_multiple_exist()
+    public void should_use_last_port_index_when_filter_nodes_by_tags_multiple_exist()
     {
         // given - simulating multiple portIndex tags (unlikely but testing behavior)
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -203,7 +203,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void FilterNodesByTags_should_handle_invalid_portIndex_value()
+    public void should_handle_invalid_port_index_value_when_filter_nodes_by_tags()
     {
         // given
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -224,7 +224,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     #region GetPortByNameOrIndex Tests
 
     [Fact]
-    public void GetPortByNameOrIndex_should_return_zero_when_service_is_null()
+    public void should_return_zero_when_get_port_by_name_or_index_service_is_null()
     {
         // given & when
         var result = _InvokeGetPortByNameOrIndex(null, "", 0);
@@ -234,7 +234,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void GetPortByNameOrIndex_should_return_zero_when_service_ports_is_null()
+    public void should_return_zero_when_get_port_by_name_or_index_service_ports_is_null()
     {
         // given
         var service = new V1Service
@@ -251,7 +251,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void GetPortByNameOrIndex_should_return_first_port_when_no_filter()
+    public void should_return_first_port_when_get_port_by_name_or_index_no_filter()
     {
         // given
         var service = new V1Service
@@ -275,7 +275,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void GetPortByNameOrIndex_should_return_port_by_index()
+    public void should_return_port_by_index_when_get_port_by_name_or_index()
     {
         // given
         var service = new V1Service
@@ -300,7 +300,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void GetPortByNameOrIndex_should_return_first_port_when_index_out_of_range()
+    public void should_return_first_port_when_get_port_by_name_or_index_index_out_of_range()
     {
         // given
         var service = new V1Service
@@ -321,7 +321,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     #region GetTagScope Tests
 
     [Fact]
-    public void GetTagScope_should_extract_scope_from_tag()
+    public void should_extract_scope_from_tag_when_get_tag_scope()
     {
         // given
         var tag = new KeyValuePair<string, string>("headless.messaging.visibility", "show");
@@ -334,7 +334,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public void GetTagScope_should_handle_tag_without_dot_after_prefix()
+    public void should_handle_tag_without_dot_after_prefix_when_get_tag_scope()
     {
         // given
         var tag = new KeyValuePair<string, string>("headless.messagingvisibility", "show");
@@ -351,7 +351,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     #region Provider Interface Tests
 
     [Fact]
-    public void should_implement_INodeDiscoveryProvider()
+    public void should_implement_i_node_discovery_provider()
     {
         // given & when & then
         _provider.Should().BeAssignableTo<INodeDiscoveryProvider>();

@@ -56,7 +56,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void CreatePublishOpts_should_use_message_id_for_jetstream_deduplication()
+    public void should_use_message_id_for_jetstream_deduplication_when_create_publish_opts()
     {
         var opts = NatsTransport.CreatePublishOpts(_CreateTransportMessage("msg-123", "TestMessage"));
 
@@ -64,7 +64,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void ResolveSubject_should_append_valid_subject_shard()
+    public void should_append_valid_subject_shard_when_resolve_subject()
     {
         var message = _CreateTransportMessage("msg-123", "orders.created");
         message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant-a";
@@ -73,7 +73,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void ResolveSubject_should_ignore_invalid_subject_shard_and_fall_back_to_message_name()
+    public void should_ignore_invalid_subject_shard_and_fall_back_to_message_name_when_resolve_subject()
     {
         var message = _CreateTransportMessage("msg-123", "orders.created");
         message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant.a";
@@ -82,7 +82,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void CreatePublishHeaders_should_return_null_when_all_values_are_null()
+    public void should_return_null_when_create_publish_headers_all_values_are_null()
     {
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "key1", null }, { "key2", null } },
@@ -93,7 +93,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void CreatePublishHeaders_should_include_only_non_null_values()
+    public void should_include_only_non_null_values_when_create_publish_headers()
     {
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -114,7 +114,7 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void CreatePublishHeaders_should_return_null_when_headers_are_empty()
+    public void should_return_null_when_create_publish_headers_headers_are_empty()
     {
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal),

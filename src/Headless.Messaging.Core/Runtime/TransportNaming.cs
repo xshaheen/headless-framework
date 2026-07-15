@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using JetBrains.Annotations;
 
 namespace Headless.Messaging.Runtime;
 

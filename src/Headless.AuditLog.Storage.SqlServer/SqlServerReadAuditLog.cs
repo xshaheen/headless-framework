@@ -110,8 +110,12 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         SqlDataReader reader,
         int ordinal,
         CancellationToken cancellationToken
-    ) =>
-        await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(ordinal);
+    )
+    {
+        return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetString(ordinal);
+    }
 
     private async Task<T?> _DeserializeAsync<T>(SqlDataReader reader, int ordinal, CancellationToken cancellationToken)
     {
@@ -123,5 +127,8 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         return serializer.Deserialize<T>(reader.GetString(ordinal));
     }
 
-    private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
+    private static SqlParameter _Param(string name, object? value)
+    {
+        return new($"@{name}", value ?? DBNull.Value);
+    }
 }

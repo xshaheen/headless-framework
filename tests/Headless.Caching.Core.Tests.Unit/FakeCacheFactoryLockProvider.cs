@@ -33,7 +33,10 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
     /// <summary>When set, the lease's <see cref="IAsyncDisposable.DisposeAsync"/> throws after freeing the semaphore.</summary>
     public Func<Exception>? ReleaseFault { get; set; }
 
-    public bool IsHeld(string key) => _locks.TryGetValue(key, out var semaphore) && semaphore.CurrentCount == 0;
+    public bool IsHeld(string key)
+    {
+        return _locks.TryGetValue(key, out var semaphore) && semaphore.CurrentCount == 0;
+    }
 
     /// <summary>Acquires the key's lock out-of-band, simulating a remote node holding it.</summary>
     public IDisposable Hold(string key)
@@ -84,7 +87,10 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
         return true;
     }
 
-    private SemaphoreSlim _GetSemaphore(string key) => _locks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+    private SemaphoreSlim _GetSemaphore(string key)
+    {
+        return _locks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+    }
 
     private sealed class Releaser(FakeCacheFactoryLockProvider owner, SemaphoreSlim semaphore) : IAsyncDisposable
     {

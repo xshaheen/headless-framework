@@ -664,10 +664,16 @@ internal static class RedisCacheEntryFrame
     }
 
     /// <summary>Converts a (UTC) timestamp to the Unix-millisecond representation stored in the frame header.</summary>
-    internal static long ToUnixTimeMilliseconds(DateTime value) => _ToUnixTimeMilliseconds(value);
+    internal static long ToUnixTimeMilliseconds(DateTime value)
+    {
+        return _ToUnixTimeMilliseconds(value);
+    }
 
     /// <summary>Converts a Unix-millisecond marker value back to its UTC timestamp.</summary>
-    internal static DateTime FromUnixTimeMilliseconds(long value) => _FromUnixTimeMilliseconds(value);
+    internal static DateTime FromUnixTimeMilliseconds(long value)
+    {
+        return _FromUnixTimeMilliseconds(value);
+    }
 
     /// <summary>
     /// Parses an invalidation-marker Unix-millisecond string written by <c>RemoveByTagAsync</c>/<c>ClearAsync</c>
@@ -699,10 +705,15 @@ internal static class RedisCacheEntryFrame
         return new DateTimeOffset(utc).ToUnixTimeMilliseconds();
     }
 
-    private static DateTime _FromUnixTimeMilliseconds(long value) =>
-        DateTimeOffset.FromUnixTimeMilliseconds(value).UtcDateTime;
+    private static DateTime _FromUnixTimeMilliseconds(long value)
+    {
+        return DateTimeOffset.FromUnixTimeMilliseconds(value).UtcDateTime;
+    }
 
-    private static bool _IsOutOfRange(long value) => value is < MinUnixEpochMilliseconds or > MaxUnixEpochMilliseconds;
+    private static bool _IsOutOfRange(long value)
+    {
+        return value is < MinUnixEpochMilliseconds or > MaxUnixEpochMilliseconds;
+    }
 
     /// <summary>
     /// The subset of frame metadata recovered by <see cref="TryDecodeHeader"/> for the value-free re-arm path:

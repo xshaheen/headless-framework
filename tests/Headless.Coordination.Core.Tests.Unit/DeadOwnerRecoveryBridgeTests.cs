@@ -9,24 +9,32 @@ namespace Tests;
 
 public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 {
-    private static NodeIdentity _Identity(string node, long incarnation) =>
-        new(new NodeId(node), new NodeIncarnation(incarnation));
+    private static NodeIdentity _Identity(string node, long incarnation)
+    {
+        return new(new NodeId(node), new NodeIncarnation(incarnation));
+    }
 
-    private static NodeLivenessSnapshot _Dead(string node, long incarnation) =>
-        new(
+    private static NodeLivenessSnapshot _Dead(string node, long incarnation)
+    {
+        return new(
             _Identity(node, incarnation),
             NodeLivenessState.Dead,
             Role: null,
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
         );
+    }
 
     // The bridge reclaims a batch (one owner from the event path, the whole dead set from a reconcile tick), so
     // assertions match the owner set rather than a single string.
-    private static IReadOnlyCollection<string> _Batch(string owner) =>
-        Arg.Is<IReadOnlyCollection<string>>(owners => owners.Contains(owner));
+    private static IReadOnlyCollection<string> _Batch(string owner)
+    {
+        return Arg.Is<IReadOnlyCollection<string>>(owners => owners.Contains(owner));
+    }
 
-    private static IReadOnlyCollection<string> _BatchWithout(string owner) =>
-        Arg.Is<IReadOnlyCollection<string>>(owners => !owners.Contains(owner));
+    private static IReadOnlyCollection<string> _BatchWithout(string owner)
+    {
+        return Arg.Is<IReadOnlyCollection<string>>(owners => !owners.Contains(owner));
+    }
 
     private static (
         DeadOwnerRecoveryBridge<IDeadOwnerReclaimer> Bridge,
@@ -180,24 +188,37 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
-        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(default(NodeIdentity));
+        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(default(NodeIdentity));
+        }
 
-        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(true);
+        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(true);
+        }
 
-        public ValueTask LeaveAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(false);
+        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(false);
+        }
 
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(
-            CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
+        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
+        }
 
         public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult(Snapshot);
+        )
+        {
+            return ValueTask.FromResult(Snapshot);
+        }
 
         public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default

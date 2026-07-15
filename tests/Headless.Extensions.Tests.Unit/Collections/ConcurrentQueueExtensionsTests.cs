@@ -7,7 +7,7 @@ namespace Tests.Collections;
 public sealed class ConcurrentQueueExtensionsTests
 {
     [Fact]
-    public void enqueue_range_enumerable_should_append_in_order()
+    public void should_append_in_order_when_enqueue_range_enumerable()
     {
         // given
         var queue = new ConcurrentQueue<int>();
@@ -21,7 +21,7 @@ public sealed class ConcurrentQueueExtensionsTests
     }
 
     [Fact]
-    public void enqueue_range_span_should_append_in_order()
+    public void should_append_in_order_when_enqueue_range_span()
     {
         // given
         var queue = new ConcurrentQueue<int>();
@@ -34,7 +34,7 @@ public sealed class ConcurrentQueueExtensionsTests
     }
 
     [Fact]
-    public void enqueue_range_list_should_append_in_order()
+    public void should_append_in_order_when_enqueue_range_list()
     {
         // given
         var queue = new ConcurrentQueue<int>();
@@ -47,7 +47,7 @@ public sealed class ConcurrentQueueExtensionsTests
     }
 
     [Fact]
-    public void clear_should_empty_the_queue()
+    public void should_empty_the_queue_when_clear()
     {
         // given - Clear now resolves to the native ConcurrentQueue<T>.Clear (the shadowing extension was removed)
         var queue = new ConcurrentQueue<int>();

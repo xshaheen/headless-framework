@@ -40,14 +40,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
     // is still non-terminal. Extracted (#467) so the predicate that guards every completion/claim path lives in one
     // place — it was inlined 4× and a single typo would silently let one path clobber a swept/reclaimed row.
-    private bool _IsOwnedNonTerminal(string? ownerId, JobStatus status) =>
-        string.Equals(ownerId, _ownerId, StringComparison.Ordinal)
-        && status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+    private bool _IsOwnedNonTerminal(string? ownerId, JobStatus status)
+    {
+        return string.Equals(ownerId, _ownerId, StringComparison.Ordinal)
+            && status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+    }
 
     // Renewal slides a RUNNING lease only (mirror of the EF RenewTimeJobLeaseAsync InProgress fence): extending an
     // Idle/Queued row would read as "lease held" and suppress cancel-on-loss. Extracted (#467) — inlined 2×.
-    private bool _IsOwnedRunning(string? ownerId, JobStatus status) =>
-        string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
+    private bool _IsOwnedRunning(string? ownerId, JobStatus status)
+    {
+        return string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
+    }
 
     #region Time Job Methods
 
@@ -1627,8 +1631,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         children.TryAdd(childId, 0);
     }
 
-    private static bool _CanFallbackClaim(JobStatus status, DateTime? lockedUntil, DateTime now) =>
-        status == JobStatus.Idle || (status == JobStatus.Queued && (lockedUntil == null || lockedUntil <= now));
+    private static bool _CanFallbackClaim(JobStatus status, DateTime? lockedUntil, DateTime now)
+    {
+        return status == JobStatus.Idle || (status == JobStatus.Queued && (lockedUntil == null || lockedUntil <= now));
+    }
 
     private void _RemoveChildIndex(Guid parentId, Guid childId)
     {

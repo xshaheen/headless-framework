@@ -2,22 +2,15 @@
 
 namespace Headless.Jobs.SourceGenerator.Models;
 
-internal sealed class JobFunctionGenerationInfo
+internal sealed class JobFunctionGenerationInfo(
+    string delegateCode,
+    (string GenericTypeName, string FunctionName) requestType,
+    JobFunctionDescriptorInfo descriptor
+)
 {
-    public JobFunctionGenerationInfo(
-        string delegateCode,
-        (string GenericTypeName, string FunctionName) requestType,
-        JobFunctionDescriptorInfo descriptor
-    )
-    {
-        DelegateCode = delegateCode;
-        RequestType = requestType;
-        Descriptor = descriptor;
-    }
+    public string DelegateCode { get; } = delegateCode;
 
-    public string DelegateCode { get; }
+    public (string GenericTypeName, string FunctionName) RequestType { get; } = requestType;
 
-    public (string GenericTypeName, string FunctionName) RequestType { get; }
-
-    public JobFunctionDescriptorInfo Descriptor { get; }
+    public JobFunctionDescriptorInfo Descriptor { get; } = descriptor;
 }

@@ -196,26 +196,43 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
-    private string _InsertGroupSql() =>
-        $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+    private string _InsertGroupSql()
+    {
+        return $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+    }
 
-    private string _UpdateGroupSql() =>
-        $"""UPDATE {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    private string _UpdateGroupSql()
+    {
+        return $"""UPDATE {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    }
 
-    private string _DeleteGroupSql() =>
-        $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
+    private string _DeleteGroupSql()
+    {
+        return $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
+    }
 
-    private string _InsertPermissionSql() =>
-        $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} ("Id","GroupName","Name","DisplayName","IsEnabled","ParentName","Providers","ExtraProperties") VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);""";
+    private string _InsertPermissionSql()
+    {
+        return $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} ("Id","GroupName","Name","DisplayName","IsEnabled","ParentName","Providers","ExtraProperties") VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);""";
+    }
 
-    private string _UpdatePermissionSql() =>
-        $"""UPDATE {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} SET "GroupName"=@GroupName,"Name"=@Name,"DisplayName"=@DisplayName,"IsEnabled"=@IsEnabled,"ParentName"=@ParentName,"Providers"=@Providers,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    private string _UpdatePermissionSql()
+    {
+        return $"""UPDATE {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} SET "GroupName"=@GroupName,"Name"=@Name,"DisplayName"=@DisplayName,"IsEnabled"=@IsEnabled,"ParentName"=@ParentName,"Providers"=@Providers,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    }
 
-    private string _DeletePermissionSql() =>
-        $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE "Id"=@Id;""";
+    private string _DeletePermissionSql()
+    {
+        return $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE "Id"=@Id;""";
+    }
 
-    private ExtraProperties _DeserializeExtraProperties(string json) =>
-        serializer.Deserialize<ExtraProperties>(json) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json)
+    {
+        return serializer.Deserialize<ExtraProperties>(json) ?? [];
+    }
 }

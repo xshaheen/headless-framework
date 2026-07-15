@@ -22,7 +22,7 @@ namespace Tests.Endpoints;
 public sealed class DefaultCorsPipelineTests : TestBase
 {
     [Fact]
-    public async Task Health_endpoint_should_not_500_when_no_cors_policy_is_configured()
+    public async Task should_not_500_when_health_endpoint_no_cors_policy_is_configured()
     {
         // given - a builder with no SetCorsOrigins / SetCorsPolicy call (the shipped default)
         var config = new MessagingDashboardOptionsBuilder().WithNoAuth();

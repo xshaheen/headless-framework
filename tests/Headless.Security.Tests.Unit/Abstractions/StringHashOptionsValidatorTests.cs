@@ -8,14 +8,16 @@ namespace Tests.Abstractions;
 
 public sealed class StringHashOptionsValidatorTests
 {
-    private static StringHashOptions _CreateValidOptions() =>
-        new()
+    private static StringHashOptions _CreateValidOptions()
+    {
+        return new()
         {
             Iterations = 600_000,
             SizeInBytes = 32,
             Algorithm = HashAlgorithmName.SHA256,
             DefaultSalt = "DefaultSalt",
         };
+    }
 
     [Fact]
     public void should_success_when_valid_settings()

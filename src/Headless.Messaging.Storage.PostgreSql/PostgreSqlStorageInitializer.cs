@@ -22,7 +22,10 @@ internal sealed class PostgreSqlStorageInitializer(
     // probe, and the advisory-lock waits that gate them. Decoupled from the OLTP CommandTimeout because
     // these can run for minutes-to-hours on a large table. null (default) => TimeSpan.Zero => Npgsql
     // CommandTimeout 0 => no timeout (wait indefinitely). See PostgreSqlOptions.DdlCommandTimeout (#510).
-    private TimeSpan _GetDdlCommandTimeout() => postgreSqlOptions.Value.DdlCommandTimeout ?? TimeSpan.Zero;
+    private TimeSpan _GetDdlCommandTimeout()
+    {
+        return postgreSqlOptions.Value.DdlCommandTimeout ?? TimeSpan.Zero;
+    }
 
     /// <summary>
     /// Returns the fully-qualified PostgreSQL table name for published outbox messages,

@@ -10,14 +10,20 @@ public sealed class PostgreSqlDatabaseClockConformanceTests(PostgreSqlJobsCoordi
     : JobsDatabaseClockConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
-    public override Task claim_and_acquire_lease_sql_is_owned_by_the_database_clock() =>
-        base.claim_and_acquire_lease_sql_is_owned_by_the_database_clock();
+    public override Task claim_and_acquire_lease_sql_is_owned_by_the_database_clock()
+    {
+        return base.claim_and_acquire_lease_sql_is_owned_by_the_database_clock();
+    }
 
     [Fact]
-    public override Task lease_renewal_sql_is_owned_by_the_database_clock() =>
-        base.lease_renewal_sql_is_owned_by_the_database_clock();
+    public override Task lease_renewal_sql_is_owned_by_the_database_clock()
+    {
+        return base.lease_renewal_sql_is_owned_by_the_database_clock();
+    }
 
     [Fact]
-    public override Task reclaim_and_release_sweep_sql_is_owned_by_the_database_clock() =>
-        base.reclaim_and_release_sweep_sql_is_owned_by_the_database_clock();
+    public override Task reclaim_and_release_sweep_sql_is_owned_by_the_database_clock()
+    {
+        return base.reclaim_and_release_sweep_sql_is_owned_by_the_database_clock();
+    }
 }

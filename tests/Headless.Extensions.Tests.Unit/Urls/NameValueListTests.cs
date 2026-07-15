@@ -7,7 +7,7 @@ namespace Tests.Urls;
 public sealed class NameValueListTests
 {
     [Fact]
-    public void contains_name_value_should_honor_case_insensitive_names()
+    public void should_honor_case_insensitive_names_when_contains_name_value()
     {
         var list = new NameValueList<string>(caseSensitiveNames: false) { { "X", "v" } };
 
@@ -20,7 +20,7 @@ public sealed class NameValueListTests
     }
 
     [Fact]
-    public void contains_name_value_should_respect_case_sensitive_names()
+    public void should_respect_case_sensitive_names_when_contains_name_value()
     {
         var list = new NameValueList<string>(caseSensitiveNames: true) { { "X", "v" } };
 

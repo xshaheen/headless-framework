@@ -17,8 +17,14 @@ internal static class RedisCacheServiceKeys
     /// Per-instance loader key for named Redis caches: each named instance owns a loader bound to ITS
     /// multiplexer (named options may point at a different Redis than the default registration).
     /// </summary>
-    internal static string NamedScriptsLoader(string name) => $"{ScriptsLoader}:{name}";
+    internal static string NamedScriptsLoader(string name)
+    {
+        return $"{ScriptsLoader}:{name}";
+    }
 
     /// <summary>Per-instance scripts initializer key for named Redis caches.</summary>
-    internal static string NamedScriptsInitializer(string name) => $"Headless.Caching.Redis:ScriptsInitializer:{name}";
+    internal static string NamedScriptsInitializer(string name)
+    {
+        return $"Headless.Caching.Redis:ScriptsInitializer:{name}";
+    }
 }

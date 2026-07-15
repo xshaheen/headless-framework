@@ -179,9 +179,15 @@ internal static class IdempotencyTestApp
 
         public string? HeaderName { get; } = tenantHeaderName;
 
-        public void SetForCurrentRequest(string? id) => _current.Value = id;
+        public void SetForCurrentRequest(string? id)
+        {
+            _current.Value = id;
+        }
 
-        public ICurrentTenant CurrentForRequest() => new TestCurrentTenant(_current.Value);
+        public ICurrentTenant CurrentForRequest()
+        {
+            return new TestCurrentTenant(_current.Value);
+        }
     }
 
     private sealed class TestCurrentTenant(string? id) : ICurrentTenant
@@ -192,7 +198,10 @@ internal static class IdempotencyTestApp
 
         public string? Name => null;
 
-        public IDisposable Change(string? id, string? name = null) => DisposableFactory.Empty;
+        public IDisposable Change(string? id, string? name = null)
+        {
+            return DisposableFactory.Empty;
+        }
     }
 
     /// <summary>
@@ -209,12 +218,20 @@ internal static class IdempotencyTestApp
         private static readonly UserId _DefaultUserId = new("test-user");
         private bool _anonymous;
 
-        public void SetAnonymous() => _anonymous = true;
+        public void SetAnonymous()
+        {
+            _anonymous = true;
+        }
 
-        public void SetAuthenticated() => _anonymous = false;
+        public void SetAuthenticated()
+        {
+            _anonymous = false;
+        }
 
-        public ICurrentUser CurrentForRequest() =>
-            _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId);
+        public ICurrentUser CurrentForRequest()
+        {
+            return _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId);
+        }
     }
 
     private sealed class TestCurrentUser(UserId? userId) : ICurrentUser
@@ -234,17 +251,35 @@ internal static class IdempotencyTestApp
 
     private sealed class NullBuildInformationAccessor : IBuildInformationAccessor
     {
-        public string? GetVersion() => null;
+        public string? GetVersion()
+        {
+            return null;
+        }
 
-        public string? GetCommitNumber() => null;
+        public string? GetCommitNumber()
+        {
+            return null;
+        }
 
-        public string? GetTitle() => null;
+        public string? GetTitle()
+        {
+            return null;
+        }
 
-        public string? GetProduct() => null;
+        public string? GetProduct()
+        {
+            return null;
+        }
 
-        public string? GetDescription() => null;
+        public string? GetDescription()
+        {
+            return null;
+        }
 
-        public string? GetCompany() => null;
+        public string? GetCompany()
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -260,7 +295,10 @@ internal static class IdempotencyTestApp
         /// <summary>Number of handler invocations that have entered. Read by tests after Task.WhenAll.</summary>
         public int InvocationCount => Volatile.Read(ref _entered);
 
-        public void OnHandlerEntered() => Interlocked.Increment(ref _entered);
+        public void OnHandlerEntered()
+        {
+            Interlocked.Increment(ref _entered);
+        }
 
         public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
         {
@@ -272,7 +310,10 @@ internal static class IdempotencyTestApp
             await _release.Task.ConfigureAwait(false);
         }
 
-        public void Release() => _release.TrySetResult();
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
 
         /// <summary>
         /// Polls until at least <paramref name="count"/> handler invocations have entered, or the
@@ -431,31 +472,50 @@ internal static class IdempotencyTestApp
             string leaseId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw new NotSupportedException();
+        }
 
-        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
+        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
 
-        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
 
-        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) =>
+        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
+
+        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
 
         public Task<DistributedLockInfo?> GetLockInfoAsync(
             string resource,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
+        )
+        {
             throw new NotSupportedException();
+        }
+
+        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     /// <summary>
@@ -466,7 +526,10 @@ internal static class IdempotencyTestApp
     /// </summary>
     internal sealed class ThrowingCache : ICache
     {
-        private static InvalidOperationException _Boom() => new("simulated cache outage");
+        private static InvalidOperationException _Boom()
+        {
+            return new("simulated cache outage");
+        }
 
         public CacheEntryOptions? DefaultEntryOptions => null;
 
@@ -475,48 +538,69 @@ internal static class IdempotencyTestApp
             Func<CancellationToken, ValueTask<T?>> factory,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> UpsertAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> UpsertEntryAsync<T>(
             string key,
             T? value,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> TryInsertAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> TryReplaceAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> TryReplaceIfEqualAsync<T>(
             string key,
@@ -524,122 +608,196 @@ internal static class IdempotencyTestApp
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<double> IncrementAsync(
             string key,
             double amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<long> IncrementAsync(
             string key,
             long amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<double> SetIfHigherAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<long> SetIfHigherAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<double> SetIfLowerAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<long> SetIfLowerAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<long> SetAddAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
             IEnumerable<string> cacheKeys,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
             string prefix,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
             string prefix,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw _Boom();
+        }
 
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+        {
             throw _Boom();
+        }
 
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
-
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+        {
             throw _Boom();
+        }
+
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
+
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
         public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
             string key,
             int? pageIndex = null,
             int pageSize = 100,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
-        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
-        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
-        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
         public ValueTask<bool> RemoveIfEqualAsync<T>(
             string key,
             T? expected,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
         public ValueTask<int> RemoveAllAsync(
             IEnumerable<string> cacheKeys,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw _Boom();
+        }
 
-        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
-        public ValueTask ClearAsync(CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
+
+        public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw _Boom();
+        )
+        {
+            throw _Boom();
+        }
 
-        public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+        {
+            throw _Boom();
+        }
     }
 
     internal sealed class InMemoryDistributedLease(
@@ -673,10 +831,10 @@ internal static class IdempotencyTestApp
             return Task.CompletedTask;
         }
 
-        public Task<bool> RenewAsync(
-            TimeSpan? timeUntilExpires = null,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask DisposeAsync()
         {

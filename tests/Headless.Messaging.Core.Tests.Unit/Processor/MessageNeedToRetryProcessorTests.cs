@@ -25,7 +25,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
+    private static string _CircuitKey(string group)
+    {
+        return $"{IntentType.Bus:D}:{group}";
+    }
 
     private static MediumMessage _CreateMessage(string? group = _Group)
     {
@@ -122,23 +125,31 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
     // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.
 
-    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut) => sut.CurrentPollingInterval;
+    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)
+    {
+        return sut.CurrentPollingInterval;
+    }
 
-    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value) =>
+    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value)
+    {
         sut.SetCurrentIntervalForTest(value);
+    }
 
     private static void _InvokeAdjustPollingInterval(
         MessageNeedToRetryProcessor sut,
         int enqueued,
         int skippedCircuitOpen
-    ) => sut.AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    )
+    {
+        sut.AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    }
 
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessAsync_SkipsMessages_WhenCircuitIsOpenForGroup()
+    public async Task process_async_skips_messages_when_circuit_is_open_for_group()
     {
         // given
         var (sut, dispatcher, cb) = _Create();
@@ -164,7 +175,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_EnqueuesAllMessages_WhenNoCircuitBreakerRegistered()
+    public async Task process_async_enqueues_all_messages_when_no_circuit_breaker_registered()
     {
         // given — no circuit breaker in DI
         var dispatcher = Substitute.For<IDispatcher>();
@@ -197,7 +208,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_EnqueuesMessage_WhenGroupIsNull()
+    public async Task process_async_enqueues_message_when_group_is_null()
     {
         // given
         var (sut, dispatcher, cb) = _Create();
@@ -221,7 +232,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessAsync_DoublesInterval_WhenTransientRateExceedsThreshold()
+    public async Task process_async_doubles_interval_when_transient_rate_exceeds_threshold()
     {
         // given — 5 messages, 4 skipped (circuit open) = 80% > threshold
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.7);
@@ -261,7 +272,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_ResetsInterval_After3CleanCycles()
+    public async Task process_async_resets_interval_after3_clean_cycles()
     {
         // given
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1);
@@ -296,7 +307,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_DoesNotAdjustInterval_WhenAdaptivePollingDisabled()
+    public async Task process_async_does_not_adjust_interval_when_adaptive_polling_disabled()
     {
         // given
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, adaptivePolling: false);
@@ -324,7 +335,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_IntervalCappedAtMax_AfterManyDoublings()
+    public async Task process_async_interval_capped_at_max_after_many_doublings()
     {
         // given — maxPollingInterval=2s, base=1s, all messages skipped → high transient rate
         var maxPollingInterval = TimeSpan.FromSeconds(2);
@@ -354,7 +365,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_HalvesInterval_After2HealthyCyclesWithElevatedInterval()
+    public async Task process_async_halves_interval_after2_healthy_cycles_with_elevated_interval()
     {
         // given — first elevate interval via high transient rate, then 2 healthy cycles
         var (sut, dispatcher, cb) = _Create(
@@ -389,7 +400,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public void AdjustPollingInterval_DoesNotOverflow_WhenCurrentIntervalIsNearMaxValue()
+    public void adjust_polling_interval_does_not_overflow_when_current_interval_is_near_max_value()
     {
         // given — set current interval to a value where * 2 would overflow a long
         var (sut, _, _) = _Create(
@@ -412,7 +423,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ConcurrentResetAndAdjust_DoesNotPermanentlyOverrideReset()
+    public async Task concurrent_reset_and_adjust_does_not_permanently_override_reset()
     {
         // given — elevate interval to 4x base, then race Reset vs Adjust(double)
         var baseInterval = TimeSpan.FromSeconds(1);
@@ -463,7 +474,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_MidRangeRate_ResetsCountersWithoutChangingInterval()
+    public async Task process_async_mid_range_rate_resets_counters_without_changing_interval()
     {
         // given — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.8);
@@ -498,7 +509,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessAsync_AppliesJitter_OnFirstPollOnly()
+    public async Task process_async_applies_jitter_on_first_poll_only()
     {
         // given — generous base interval so jitter is measurable but bounded
         var baseInterval = TimeSpan.FromMilliseconds(500);
@@ -556,7 +567,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_FirstPollWait_DoesNotExceedBaseInterval()
+    public async Task process_async_first_poll_wait_does_not_exceed_base_interval()
     {
         // given — small base interval so the upper bound is easy to verify.
         var (sut, _, cb) = _Create(baseIntervalSeconds: 1);
@@ -629,7 +640,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessAsync_EscalatesToError_AfterThreeConsecutiveStorageFailures_AndResetsAfterSuccess()
+    public async Task process_async_escalates_to_error_after_three_consecutive_storage_failures_and_resets_after_success()
     {
         // given — capture EventId.Name from ILogger.Log invocations.
         var dispatcher = Substitute.For<IDispatcher>();
@@ -695,7 +706,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task ProcessAsync_DoesNotTreatStoragePickupFailureAsCleanCycle()
+    public async Task process_async_does_not_treat_storage_pickup_failure_as_clean_cycle()
     {
         var (sut, _, _) = _Create(baseIntervalSeconds: 1);
         var dataStorage = Substitute.For<IDataStorage>();
@@ -1121,7 +1132,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task should_skip_TryAcquireAsync_when_UseStorageLock_is_false()
+    public async Task should_skip_try_acquire_async_when_use_storage_lock_is_false()
     {
         // given — explicit construction so we can configure UseStorageLock=false and inspect the lock provider
         var dispatcher = Substitute.For<IDispatcher>();

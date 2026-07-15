@@ -14,7 +14,7 @@ public sealed class HybridCacheSetupTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
 
     [Fact]
-    public async Task default_hybrid_should_compose_memory_tier_and_remote_tier()
+    public async Task should_compose_memory_tier_and_remote_tier_when_default_hybrid()
     {
         // given - a memory tier plus a fake remote tier (the Redis-backed equivalent of AddRedisTier is
         // exercised in the Redis integration suite), composed under a default hybrid

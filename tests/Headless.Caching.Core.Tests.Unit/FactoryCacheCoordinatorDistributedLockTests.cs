@@ -577,8 +577,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         logged.Should().BeTrue();
     }
 
-    private FactoryCacheCoordinator _CreateCoordinator() =>
-        new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance, _lockProvider);
+    private FactoryCacheCoordinator _CreateCoordinator()
+    {
+        return new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance, _lockProvider);
+    }
 
     private static CacheEntryOptions _CreateOptions(
         TimeSpan? duration = null,
@@ -589,8 +591,9 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         float? eagerRefreshThreshold = null,
         bool useDistributedFactoryLock = true,
         bool skipCacheRead = false
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = duration ?? TimeSpan.FromSeconds(5),
             EagerRefreshThreshold = eagerRefreshThreshold,
@@ -603,4 +606,5 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             UseDistributedFactoryLock = useDistributedFactoryLock,
             SkipCacheRead = skipCacheRead,
         };
+    }
 }

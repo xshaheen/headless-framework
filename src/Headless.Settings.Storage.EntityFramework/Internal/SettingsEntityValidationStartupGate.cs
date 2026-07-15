@@ -36,19 +36,34 @@ internal sealed class SettingsEntityValidationStartupGate<TContext>(IDbContextFa
     }
 
     /// <inheritdoc/>
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Asserts that <paramref name="entityType"/> is present in <paramref name="context"/>'s EF model.

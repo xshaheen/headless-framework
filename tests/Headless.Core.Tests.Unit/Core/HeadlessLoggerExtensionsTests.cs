@@ -7,7 +7,7 @@ namespace Tests.Core;
 public sealed class HeadlessLoggerExtensionsTests
 {
     [Fact]
-    public void log_information_should_not_invoke_the_state_builder_when_level_disabled()
+    public void should_not_invoke_the_state_builder_when_log_information_level_disabled()
     {
         // given
         var logger = Substitute.For<ILogger>();
@@ -29,7 +29,7 @@ public sealed class HeadlessLoggerExtensionsTests
     }
 
     [Fact]
-    public void log_information_should_invoke_the_state_builder_when_level_enabled()
+    public void should_invoke_the_state_builder_when_log_information_level_enabled()
     {
         // given
         var logger = Substitute.For<ILogger>();

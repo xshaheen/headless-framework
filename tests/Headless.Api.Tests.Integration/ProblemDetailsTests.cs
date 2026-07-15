@@ -111,7 +111,7 @@ public sealed class ProblemDetailsTests : TestBase
     [Theory]
     [InlineData("/mvc/malformed-syntax")]
     [InlineData("/minimal/malformed-syntax")]
-    public async Task direct_problem_details_should_apply_customize_problem_details_once(string path)
+    public async Task should_apply_customize_problem_details_once_when_direct_problem_details(string path)
     {
         var customizeCount = 0;
         await using var factory = new CustomWebApplicationFactory(

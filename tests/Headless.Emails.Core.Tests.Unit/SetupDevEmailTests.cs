@@ -37,7 +37,7 @@ public sealed class SetupDevEmailTests
     }
 
     [Fact]
-    public void development_sender_should_be_singleton()
+    public void should_be_singleton_when_development_sender()
     {
         // given — DevEmailSender serializes file appends through an instance-level lock, so the
         // registration must produce a single shared instance.
@@ -54,7 +54,7 @@ public sealed class SetupDevEmailTests
     }
 
     [Fact]
-    public void use_development_should_reject_empty_path()
+    public void should_reject_empty_path_when_use_development()
     {
         // given
         var services = new ServiceCollection();

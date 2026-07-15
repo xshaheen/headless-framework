@@ -182,10 +182,15 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
         }
     }
 
-    private Result _GetAlreadyBrokenResultNoLock() =>
+    private Result _GetAlreadyBrokenResultNoLock()
+    {
         // Retry on any already-broken connection so the death of a connection has no observable effect (other than
         // perf) compared to not multiplexing.
-        new(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: _heldLockIdentitiesToKeepaliveCadences.Count == 0);
+        return new(
+            MultiplexedConnectionLockRetry.Retry,
+            canSafelyDispose: _heldLockIdentitiesToKeepaliveCadences.Count == 0
+        );
+    }
 
     private Result _GetFailureResultNoLock(bool isAlreadyHeld, bool opportunistic, TimeSpan timeout)
     {
@@ -398,7 +403,10 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
             }
         }
 
-        public async Task ReleaseAsync() => await DisposeAsync().ConfigureAwait(false);
+        public async Task ReleaseAsync()
+        {
+            await DisposeAsync().ConfigureAwait(false);
+        }
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {

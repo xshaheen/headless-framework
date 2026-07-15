@@ -8,7 +8,7 @@ namespace Tests.IO;
 public sealed class NonSeekableStreamTests : TestBase
 {
     [Fact]
-    public void CanSeek_should_return_false()
+    public void should_return_false_when_can_seek()
     {
         // given
         using var inner = new MemoryStream();
@@ -19,7 +19,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_should_throw_NotSupportedException()
+    public void should_throw_not_supported_exception_when_seek()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -33,7 +33,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Position_set_should_throw_NotSupportedException()
+    public void should_throw_not_supported_exception_when_position_set()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -47,7 +47,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Length_should_throw_NotSupportedException()
+    public void should_throw_not_supported_exception_when_length()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -61,7 +61,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void SetLength_should_throw_NotSupportedException()
+    public void should_throw_not_supported_exception_when_set_length()
     {
         // given
         using var inner = new MemoryStream();
@@ -75,7 +75,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanRead_to_inner_stream()
+    public void should_delegate_can_read_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -86,7 +86,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanWrite_to_inner_stream()
+    public void should_delegate_can_write_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -97,7 +97,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Position_get_should_throw_NotSupportedException()
+    public void should_throw_not_supported_exception_when_position_get()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
@@ -112,7 +112,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Position_get_should_throw_ObjectDisposedException_when_disposed()
+    public void should_throw_object_disposed_exception_when_position_get_disposed()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -127,7 +127,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Read_to_inner_stream()
+    public void should_delegate_read_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -144,7 +144,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Write_to_inner_stream()
+    public void should_delegate_write_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -159,7 +159,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Flush_to_inner_stream()
+    public void should_delegate_flush_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -170,7 +170,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Close_to_inner_stream()
+    public void should_delegate_close_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -185,7 +185,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_dispose_inner_stream_on_Dispose()
+    public void should_dispose_inner_stream_on_dispose()
     {
         // given
         using var inner = new MemoryStream();
@@ -200,7 +200,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_set_IsDisposed_on_Dispose()
+    public void should_set_is_disposed_on_dispose()
     {
         // given
         using var inner = new MemoryStream();
@@ -214,7 +214,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_handle_multiple_Dispose_calls()
+    public void should_handle_multiple_dispose_calls()
     {
         // given
         using var inner = new MemoryStream();
@@ -231,7 +231,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_should_throw_ObjectDisposedException_when_disposed()
+    public void should_throw_object_disposed_exception_when_seek_disposed()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -246,7 +246,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Position_set_should_throw_ObjectDisposedException_when_disposed()
+    public void should_throw_object_disposed_exception_when_position_set_disposed()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3]);
@@ -261,7 +261,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_ReadAsync_byte_array_to_inner_stream()
+    public async Task should_delegate_read_async_byte_array_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -278,7 +278,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_ReadAsync_memory_to_inner_stream()
+    public async Task should_delegate_read_async_memory_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -295,7 +295,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Read_span_to_inner_stream()
+    public void should_delegate_read_span_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -312,7 +312,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Write_span_to_inner_stream()
+    public void should_delegate_write_span_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -327,7 +327,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_WriteAsync_byte_array_to_inner_stream()
+    public async Task should_delegate_write_async_byte_array_to_inner_stream()
     {
         // given
         await using var inner = new MemoryStream();
@@ -342,7 +342,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_WriteAsync_memory_to_inner_stream()
+    public async Task should_delegate_write_async_memory_to_inner_stream()
     {
         // given
         await using var inner = new MemoryStream();
@@ -357,7 +357,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_FlushAsync_to_inner_stream()
+    public async Task should_delegate_flush_async_to_inner_stream()
     {
         // given
         await using var inner = new MemoryStream();
@@ -368,7 +368,7 @@ public sealed class NonSeekableStreamTests : TestBase
     }
 
     [Fact]
-    public void Close_should_dispose_inner_stream_exactly_once()
+    public void should_dispose_inner_stream_exactly_once_when_close()
     {
         // given
         var inner = new DisposeCountingStream();

@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class IsOneOfTests
 {
     [Fact]
-    public void is_one_of_int_should_return_argument_when_valid()
+    public void should_return_argument_when_is_one_of_int_valid()
     {
         // given
         const int argument = 5;
@@ -19,7 +19,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_int_should_throw_when_invalid()
+    public void should_throw_when_is_one_of_int_invalid()
     {
         // given
         const int argument = 6;
@@ -55,7 +55,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_long_should_return_argument_when_valid()
+    public void should_return_argument_when_is_one_of_long_valid()
     {
         // given
         const long argument = 10L;
@@ -66,7 +66,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_decimal_should_return_argument_when_valid()
+    public void should_return_argument_when_is_one_of_decimal_valid()
     {
         // given
         const decimal argument = 1.5m;
@@ -77,7 +77,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_float_should_return_argument_when_valid()
+    public void should_return_argument_when_is_one_of_float_valid()
     {
         // given
         const float argument = 2.5f;
@@ -88,7 +88,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_float_should_throw_when_invalid()
+    public void should_throw_when_is_one_of_float_invalid()
     {
         // given
         const float argument = 4.5f;
@@ -113,7 +113,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_string_should_return_argument_when_valid()
+    public void should_return_argument_when_is_one_of_string_valid()
     {
         // given
         const string argument = "apple";
@@ -124,7 +124,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_string_should_throw_when_invalid()
+    public void should_throw_when_is_one_of_string_invalid()
     {
         // given
         const string argument = "invalid";
@@ -143,7 +143,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_string_should_throw_when_invalid_and_use_only_first_5_valid_items_in_the_message()
+    public void should_throw_when_is_one_of_string_invalid_and_use_only_first_5_valid_items_in_the_message()
     {
         // given
         const string argument = "invalid";
@@ -215,7 +215,7 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
-    public void is_one_of_string_should_respect_string_comparer()
+    public void should_respect_string_comparer_when_is_one_of_string()
     {
         // given
         const string argument = "headless";

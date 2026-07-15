@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Net.Sockets;
 using Headless.Checks;
 using Headless.Messaging.Exceptions;
@@ -150,7 +149,10 @@ internal sealed class NatsConsumerClient(
     internal static IReadOnlyList<string> BuildStreamSubjects(
         IEnumerable<string> messageNames,
         ISet<string> shardedMessageNames
-    ) => _BuildSubjects(messageNames, shardedMessageNames);
+    )
+    {
+        return _BuildSubjects(messageNames, shardedMessageNames);
+    }
 
     internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
     {
@@ -162,7 +164,10 @@ internal sealed class NatsConsumerClient(
     internal static IReadOnlyList<string> BuildConsumerSubjects(
         IEnumerable<string> messageNames,
         ISet<string> shardedMessageNames
-    ) => _BuildSubjects(messageNames, shardedMessageNames);
+    )
+    {
+        return _BuildSubjects(messageNames, shardedMessageNames);
+    }
 
     // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
     // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'

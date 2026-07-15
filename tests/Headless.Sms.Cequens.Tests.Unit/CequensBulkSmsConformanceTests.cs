@@ -36,8 +36,10 @@ public sealed class CequensBulkSmsConformanceTests : SmsBulkSenderConformanceTes
         return _CreateSender(_fixture.BaseUrl, staticToken: null);
     }
 
-    protected override IBulkSmsSender CreateFaultingSender() =>
-        _CreateSender("http://localhost:1", staticToken: "static-token");
+    protected override IBulkSmsSender CreateFaultingSender()
+    {
+        return _CreateSender("http://localhost:1", staticToken: "static-token");
+    }
 
     private CequensSmsSender _CreateSender(string baseUrl, string? staticToken)
     {
@@ -64,27 +66,44 @@ public sealed class CequensBulkSmsConformanceTests : SmsBulkSenderConformanceTes
     }
 
     [Fact]
-    public override Task should_reject_a_null_request() => base.should_reject_a_null_request();
+    public override Task should_reject_a_null_request()
+    {
+        return base.should_reject_a_null_request();
+    }
 
     [Fact]
-    public override Task should_reject_a_request_without_destinations() =>
-        base.should_reject_a_request_without_destinations();
+    public override Task should_reject_a_request_without_destinations()
+    {
+        return base.should_reject_a_request_without_destinations();
+    }
 
     [Fact]
-    public override Task should_reject_null_destinations() => base.should_reject_null_destinations();
+    public override Task should_reject_null_destinations()
+    {
+        return base.should_reject_null_destinations();
+    }
 
     [Fact]
-    public override Task should_reject_a_request_with_an_empty_body() =>
-        base.should_reject_a_request_with_an_empty_body();
+    public override Task should_reject_a_request_with_an_empty_body()
+    {
+        return base.should_reject_a_request_with_an_empty_body();
+    }
 
     [Fact]
-    public override Task should_return_a_result_for_every_recipient() =>
-        base.should_return_a_result_for_every_recipient();
+    public override Task should_return_a_result_for_every_recipient()
+    {
+        return base.should_return_a_result_for_every_recipient();
+    }
 
     [Fact]
-    public override Task should_report_a_transient_failure_on_a_transport_fault() =>
-        base.should_report_a_transient_failure_on_a_transport_fault();
+    public override Task should_report_a_transient_failure_on_a_transport_fault()
+    {
+        return base.should_report_a_transient_failure_on_a_transport_fault();
+    }
 
     [Fact]
-    public override Task should_propagate_cancellation() => base.should_propagate_cancellation();
+    public override Task should_propagate_cancellation()
+    {
+        return base.should_propagate_cancellation();
+    }
 }

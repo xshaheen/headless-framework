@@ -16,7 +16,7 @@ public sealed class FixedTimezoneTimeProviderTests
 
     [Theory]
     [MemberData(nameof(SystemTimeZoneIds))]
-    public void local_timeZone_should_return_configured_time_zone(string id)
+    public void should_return_configured_time_zone_when_local_time_zone(string id)
     {
         // given
         var expectedTimeZone = TimeZoneInfo.FindSystemTimeZoneById(id);

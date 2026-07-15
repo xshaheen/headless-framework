@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;

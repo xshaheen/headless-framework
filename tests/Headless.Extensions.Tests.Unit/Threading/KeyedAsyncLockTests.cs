@@ -22,7 +22,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
-    public void try_lock_should_acquire_free_lock_and_observe_held_lock()
+    public void should_acquire_free_lock_and_observe_held_lock_when_try_lock()
     {
         // given
         using var keyedLock = new KeyedAsyncLock();
@@ -37,7 +37,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
-    public void try_lock_should_reacquire_after_release()
+    public void should_reacquire_after_release_when_try_lock()
     {
         // given
         using var keyedLock = new KeyedAsyncLock();
@@ -53,7 +53,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
-    public async Task try_lock_should_observe_lock_held_by_async_acquisition()
+    public async Task should_observe_lock_held_by_async_acquisition_when_try_lock()
     {
         // given
         using var keyedLock = new KeyedAsyncLock();
@@ -67,7 +67,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
-    public void try_lock_should_not_interfere_across_keys()
+    public void should_not_interfere_across_keys_when_try_lock()
     {
         // given
         using var keyedLock = new KeyedAsyncLock();

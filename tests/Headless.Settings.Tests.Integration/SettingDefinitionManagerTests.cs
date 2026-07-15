@@ -13,7 +13,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) :
     private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitions(5);
 
     [Fact]
-    public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
+    public async Task should_get_empty_when_call_get_all_async_and_no_definitions()
     {
         // given
         await Fixture.ResetAsync();
@@ -29,7 +29,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) :
     }
 
     [Fact]
-    public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
+    public async Task should_get_defined_settings_when_call_get_all_async_and_is_defined()
     {
         // given
         await Fixture.ResetAsync();
@@ -47,7 +47,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) :
     }
 
     [Fact]
-    public async Task should_get_defined_setting_when_call_GetOrDefaultAsync_and_is_defined()
+    public async Task should_get_defined_setting_when_call_get_or_default_async_and_is_defined()
     {
         // given
         await Fixture.ResetAsync();
@@ -65,7 +65,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) :
     }
 
     [Fact]
-    public async Task should_get_default_when_call_GetOrDefaultAsync_and_is_not_defined()
+    public async Task should_get_default_when_call_get_or_default_async_and_is_not_defined()
     {
         // given
         await Fixture.ResetAsync();

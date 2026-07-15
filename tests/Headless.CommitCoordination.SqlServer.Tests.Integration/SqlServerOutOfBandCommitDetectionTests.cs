@@ -36,6 +36,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         // Tear down this test's subscription so observers never accumulate across the run (cross-test diagnostic bleed).
         await base.DisposeAsyncCore();
         await _diagnostic.StopAsync(CancellationToken.None);
+        await _diagnostic.DisposeAsync();
         await _services.DisposeAsync();
     }
 

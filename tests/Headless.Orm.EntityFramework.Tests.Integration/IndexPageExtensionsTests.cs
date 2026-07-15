@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

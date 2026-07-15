@@ -150,8 +150,10 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
             """;
     }
 
-    internal static string Qualified(PermissionsStorageOptions options, string tableName) =>
-        _Qualified(options.Schema, tableName);
+    internal static string Qualified(PermissionsStorageOptions options, string tableName)
+    {
+        return _Qualified(options.Schema, tableName);
+    }
 
     private static string _Qualified(string schema, string tableName)
     {

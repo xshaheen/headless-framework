@@ -98,7 +98,10 @@ internal sealed class AzureServiceBusTransport(
 
     private sealed class SenderFactory(AzureServiceBusTransport transport, string topicPath)
     {
-        public ServiceBusSender Create() => transport._CreateSender(topicPath);
+        public ServiceBusSender Create()
+        {
+            return transport._CreateSender(topicPath);
+        }
     }
 
     public async ValueTask DisposeAsync()

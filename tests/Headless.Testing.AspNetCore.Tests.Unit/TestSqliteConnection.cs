@@ -11,7 +11,7 @@ internal static class TestSqliteConnection
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync(cancellationToken);
 
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE Dummy (Id INT PRIMARY KEY);";
         await command.ExecuteNonQueryAsync(cancellationToken);
         return connection;

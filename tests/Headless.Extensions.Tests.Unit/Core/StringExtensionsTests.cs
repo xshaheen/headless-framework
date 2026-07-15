@@ -17,21 +17,21 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public static void IsNullOrEmpty_should_allows_null()
+    public static void should_allows_null_when_is_null_or_empty()
     {
         var result = ((string?)null).IsNullOrEmpty();
         result.Should().BeTrue();
     }
 
     [Fact]
-    public static void IsNullOrWhiteSpace_should_allows_null()
+    public static void should_allows_null_when_is_null_or_white_space()
     {
         var result = ((string?)null).IsNullOrWhiteSpace();
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void NullIfEmpty_tests()
+    public void null_if_empty_tests()
     {
         ((string?)null).NullIfEmpty().Should().BeNull();
         "".NullIfEmpty().Should().BeNull();
@@ -39,7 +39,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void NullIfWhiteSpace_tests()
+    public void null_if_white_space_tests()
     {
         ((string?)null).NullIfWhiteSpace().Should().BeNull();
         "".NullIfWhiteSpace().Should().BeNull();
@@ -48,7 +48,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void NormalizeLineEndings_tests()
+    public void normalize_line_endings_tests()
     {
         const string str = "This\r\n is a\r test \n string";
 
@@ -59,7 +59,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void EnsureEndsWith_tests()
+    public void ensure_ends_with_tests()
     {
         // Expected use-cases
         "Test".EnsureEndsWith('!').Should().Be("Test!");
@@ -73,7 +73,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void EnsureEndsWith_culture_specific_tests()
+    public void ensure_ends_with_culture_specific_tests()
     {
         using (CultureHelper.Use("tr-TR"))
         {
@@ -82,7 +82,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void EnsureStartsWith_tests()
+    public void ensure_starts_with_tests()
     {
         // Expected use-cases
         "Test".EnsureStartsWith('~').Should().Be("~Test");
@@ -93,7 +93,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void RemovePostfix_tests()
+    public void remove_postfix_tests()
     {
         // null case
         const string? nullValue = null;
@@ -120,7 +120,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void RemovePrefix_tests()
+    public void remove_prefix_tests()
     {
         "Home.Index".RemovePrefix(StringComparison.Ordinal, "NotMatchedPostfix").Should().Be("Home.Index");
         "Home.About".RemovePrefix(StringComparison.Ordinal, "Home.").Should().Be("About");
@@ -133,7 +133,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void TruncateEnd_tests()
+    public void truncate_end_tests()
     {
         const string str = "This is a test string";
         const string? nullValue = null;
@@ -146,7 +146,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void TruncateEnd_with_postfix_overload_tests()
+    public void truncate_end_with_postfix_overload_tests()
     {
         const string str = "This is a test string";
         const string? nullValue = null;
@@ -167,7 +167,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void OneSpace_tests()
+    public void one_space_tests()
     {
         "   ".OneSpace().Should().Be(" ");
         "\n\n\n".OneSpace().Should().Be(" ");
@@ -175,7 +175,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void NthIndexOf_tests()
+    public void nth_index_of_tests()
     {
         const string str = "This is a test string";
 
@@ -189,7 +189,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [Theory]
     [InlineData("")]
     [InlineData("MyStringİ")]
-    public void GetBytes_tests(string str)
+    public void get_bytes_tests(string str)
     {
         var bytes = str.GetBytes();
         bytes.Should().NotBeNull();
@@ -200,7 +200,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [Theory]
     [InlineData("")]
     [InlineData("MyString")]
-    public void GetBytes_with_encoding_tests(string str)
+    public void get_bytes_with_encoding_tests(string str)
     {
         var bytes = str.GetBytes(Encoding.ASCII);
         bytes.Should().NotBeNull();
@@ -209,7 +209,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void ToEnum_tests()
+    public void to_enum_tests()
     {
         "MyValue1".ToEnum<MyEnum>().Should().Be(MyEnum.MyValue1);
         "MyValue2".ToEnum<MyEnum>().Should().Be(MyEnum.MyValue2);
@@ -277,7 +277,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void CamelizePropertyPath_WithNullInput_ShouldReturnNull()
+    public void should_return_null_when_camelize_property_path_with_null_input()
     {
         // given
         const string? input = null;
@@ -295,7 +295,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [InlineData("A..B", "a..b")]
     [InlineData("Trailing.", "trailing.")]
     [InlineData(".Leading", "leading")]
-    public void CamelizePropertyPath_WithEmptySegments_ShouldNotThrow(string input, string expected)
+    public void should_not_throw_when_camelize_property_path_with_empty_segments(string input, string expected)
     {
         // when
         var result = input.CamelizePropertyPath();
@@ -306,7 +306,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
     // Regression: slicing at a UTF-16 index must not split a surrogate pair into a lone surrogate.
     [Fact]
-    public void TruncateEnd_should_not_split_surrogate_pairs()
+    public void should_not_split_surrogate_pairs_when_truncate_end()
     {
         const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars: a, b, high, low, c, d
 
@@ -318,7 +318,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void TruncateEnd_with_suffix_should_not_split_surrogate_pairs()
+    public void should_not_split_surrogate_pairs_when_truncate_end_with_suffix()
     {
         const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
 
@@ -327,7 +327,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void TruncateStart_should_not_split_surrogate_pairs()
+    public void should_not_split_surrogate_pairs_when_truncate_start()
     {
         const string input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
 
@@ -342,7 +342,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [InlineData("192.168.0.1")]
     [InlineData("0.0.0.0")]
     [InlineData("255.255.255.255")]
-    public void IsIp4_should_accept_valid_addresses(string value)
+    public void should_accept_valid_addresses_when_is_ip4(string value)
     {
         value.IsIp4().Should().BeTrue();
     }
@@ -366,7 +366,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void RemoveCharacter_tests()
+    public void remove_character_tests()
     {
         "a-b-c".RemoveCharacter('-').Should().Be("abc");
         // Absent character returns the input unchanged.
@@ -375,7 +375,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void RemoveCharacters_tests()
+    public void remove_characters_tests()
     {
         "a-b_c".RemoveCharacters('-', '_').Should().Be("abc");
         // Absent characters return the input unchanged.
@@ -386,7 +386,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void NormalizeLineEndings_should_return_input_unchanged_when_no_line_breaks()
+    public void should_return_input_unchanged_when_normalize_line_endings_no_line_breaks()
     {
         const string input = "no line breaks here";
 
@@ -394,7 +394,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Fact]
-    public void NormalizeLineEndings_should_normalize_all_break_styles()
+    public void should_normalize_all_break_styles_when_normalize_line_endings()
     {
         const string input = "a\r\nb\rc\nd";
 

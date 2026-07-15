@@ -48,11 +48,17 @@ internal sealed class RecordingDatabaseConnection : DatabaseConnection
 
     public override bool ShouldPrepareCommands => false;
 
-    public override bool IsCommandCancellationException(Exception exception) => exception is OperationCanceledException;
+    public override bool IsCommandCancellationException(Exception exception)
+    {
+        return exception is OperationCanceledException;
+    }
 
     public override Task SleepAsync(
         TimeSpan sleepTime,
         Func<DatabaseCommand, CancellationToken, ValueTask<int>> executor,
         CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    )
+    {
+        return Task.CompletedTask;
+    }
 }

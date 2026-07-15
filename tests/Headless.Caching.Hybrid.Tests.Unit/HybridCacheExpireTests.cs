@@ -64,14 +64,16 @@ public sealed class HybridCacheExpireTests : TestBase
         await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
-    private static CacheEntryOptions _FailSafeOptions() =>
-        new()
+    private static CacheEntryOptions _FailSafeOptions()
+    {
+        return new()
         {
             Duration = TimeSpan.FromMinutes(1),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMinutes(10),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
         };
+    }
 
     [Fact]
     public async Task should_expire_both_tiers_and_publish_expire_invalidation()

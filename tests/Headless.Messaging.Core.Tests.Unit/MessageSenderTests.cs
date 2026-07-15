@@ -7,14 +7,12 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.Helpers;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
@@ -592,7 +590,7 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
     {
         // given — a Scoped marker service. The Dispatcher creates a per-message scope and
         // passes its IServiceProvider; MessageSender must surface that SAME provider via
@@ -982,20 +980,30 @@ public sealed class MessageSenderTests : TestBase
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private sealed class TestQueueTransportAdapter(ITransport transport) : IQueueTransport
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private sealed class ScopedMarker;

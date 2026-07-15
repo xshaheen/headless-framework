@@ -21,7 +21,10 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
     private readonly ICache _cache = Substitute.For<ICache>();
     private readonly HeadlessOutputCacheStoreOptions _options = new() { DefaultExpiration = TimeSpan.FromMinutes(2) };
 
-    private HeadlessOutputCacheStore _CreateStore() => new(_cache, Options.Create(_options));
+    private HeadlessOutputCacheStore _CreateStore()
+    {
+        return new(_cache, Options.Create(_options));
+    }
 
     [Fact]
     public async Task get_async_returns_null_when_cache_reports_no_value()
@@ -278,8 +281,9 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
     /// method; the unconfigured <see cref="ValueTask{Boolean}"/> return is a completed <see langword="false"/> the store
     /// ignores.
     /// </summary>
-    private IReadOnlyList<(string Key, byte[] Value, CacheEntryOptions Options)> _UpsertCalls() =>
-        _cache
+    private IReadOnlyList<(string Key, byte[] Value, CacheEntryOptions Options)> _UpsertCalls()
+    {
+        return _cache
             .ReceivedCalls()
             .Where(call =>
                 string.Equals(call.GetMethodInfo().Name, nameof(ICache.UpsertEntryAsync), StringComparison.Ordinal)
@@ -291,6 +295,7 @@ public sealed class HeadlessOutputCacheStoreTests : TestBase
                 return ((string)args[0]!, (byte[])args[1]!, (CacheEntryOptions)args[2]!);
             })
             .ToList();
+    }
 
     private static ReadOnlySequence<byte> _MultiSegment(params byte[][] segments)
     {

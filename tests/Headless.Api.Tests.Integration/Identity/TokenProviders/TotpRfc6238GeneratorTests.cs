@@ -6,7 +6,7 @@ namespace Tests.Identity.TokenProviders;
 public sealed class TotpRfc6238GeneratorTests
 {
     [Fact]
-    public void generate_and_validate_code_should_succeed()
+    public void should_succeed_when_generate_and_validate_code()
     {
         //given
         var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
@@ -25,7 +25,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void validate_code_with_wrong_code_should_fail()
+    public void should_fail_when_validate_code_with_wrong_code()
     {
         //given
         var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
@@ -42,7 +42,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void generate_code_with_null_secret_should_throw()
+    public void should_throw_when_generate_code_with_null_secret()
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -56,7 +56,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void validate_code_with_null_secret_should_throw()
+    public void should_throw_when_validate_code_with_null_secret()
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -73,7 +73,7 @@ public sealed class TotpRfc6238GeneratorTests
     [InlineData(1)]
     [InlineData(5)]
     [InlineData(10)]
-    public void generate_and_validate_code_with_different_timestep_should_succeed(int minutes)
+    public void should_succeed_when_generate_and_validate_code_with_different_timestep(int minutes)
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -92,7 +92,7 @@ public sealed class TotpRfc6238GeneratorTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(3)]
-    public void validate_code_with_different_variance_should_behave_correctly(int variance)
+    public void should_behave_correctly_when_validate_code_with_different_variance(int variance)
     {
         //given
         var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
@@ -110,7 +110,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void generate_and_validate_code_with_null_modifier_should_succeed()
+    public void should_succeed_when_generate_and_validate_code_with_null_modifier()
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -126,7 +126,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void generate_and_validate_code_with_empty_modifier_should_succeed()
+    public void should_succeed_when_generate_and_validate_code_with_empty_modifier()
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -142,7 +142,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void generate_and_validate_code_with_different_modifiers_should_fail()
+    public void should_fail_when_generate_and_validate_code_with_different_modifiers()
     {
         //given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -159,7 +159,7 @@ public sealed class TotpRfc6238GeneratorTests
     }
 
     [Fact]
-    public void validate_code_at_timestep_boundary_should_succeed_within_variance()
+    public void should_succeed_within_variance_when_validate_code_at_timestep_boundary()
     {
         //given
         var baseTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);

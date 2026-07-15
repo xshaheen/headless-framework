@@ -13,7 +13,7 @@ namespace Tests.PostgreSql;
 public sealed class NpgsqlConnectionFactoryTests
 {
     [Fact]
-    public void should_implement_ISqlConnectionFactory()
+    public void should_implement_i_sql_connection_factory()
     {
         // given
         const string connectionString = "Host=localhost;Database=test";

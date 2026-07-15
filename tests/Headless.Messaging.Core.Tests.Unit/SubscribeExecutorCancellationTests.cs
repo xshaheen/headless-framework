@@ -8,7 +8,6 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -136,7 +135,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithoutRequestedToken_ShouldPropagate_As_Failed()
+    public async Task should_propagate_as_failed_when_task_canceled_exception_without_requested_token()
     {
         // given — simulate HttpClient / downstream timeout:
         //   TaskCanceledException where CancellationToken.IsCancellationRequested = false
@@ -183,7 +182,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     }
 
     [Fact]
-    public async Task OperationCanceledException_WithRequestedToken_ShouldNotWriteState()
+    public async Task should_not_write_state_when_operation_canceled_exception_with_requested_token()
     {
         // given — simulate app-shutdown cancellation:
         //   OperationCanceledException where CancellationToken.IsCancellationRequested = true.
@@ -253,7 +252,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithRequestedToken_ShouldNotWriteState()
+    public async Task should_not_write_state_when_task_canceled_exception_with_requested_token()
     {
         // given — TaskCanceledException but the token IS requested (handler respected shutdown CT).
         // X4 invariant: shutdown-classified cancellations leave the row untouched so the persisted

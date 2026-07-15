@@ -47,5 +47,8 @@ internal sealed class Bus(
         );
     }
 
-    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    private long _NowUnixTimeMilliseconds()
+    {
+        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    }
 }

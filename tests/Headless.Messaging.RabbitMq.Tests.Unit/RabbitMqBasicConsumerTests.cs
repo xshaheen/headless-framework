@@ -793,7 +793,10 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _loggedEvents[0].Reason.Should().Contain("bad header builder");
     }
 
-    private TaskCompletionSource _CreateSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _CreateSignal()
+    {
+        return new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     private void _RecordLog(LogMessageEventArgs args, TaskCompletionSource signal)
     {
@@ -801,7 +804,10 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         signal.TrySetResult();
     }
 
-    private async Task _WaitForSignalAsync(Task signal) => await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    private async Task _WaitForSignalAsync(Task signal)
+    {
+        await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
 
     [Fact]
     public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()

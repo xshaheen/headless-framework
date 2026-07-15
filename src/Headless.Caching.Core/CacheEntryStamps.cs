@@ -178,15 +178,27 @@ public readonly record struct CacheEntryStamps(
         Argument.IsPositive(timeout, paramName: paramName);
     }
 
-    private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
+    private static TimeSpan _Max(TimeSpan left, TimeSpan right)
+    {
+        return left >= right ? left : right;
+    }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
-    private static long _GetRandomTicks(TimeSpan exclusiveMax) => (long)(exclusiveMax.Ticks * _GetRandomUnitDouble());
+    private static long _GetRandomTicks(TimeSpan exclusiveMax)
+    {
+        return (long)(exclusiveMax.Ticks * _GetRandomUnitDouble());
+    }
 
     // Random.Shared, not a CSPRNG: jitter only desynchronizes expiry, so predictability has no security
     // consequence, and this runs on every jittered write.
 #pragma warning disable CA5394 // Non-security cache-expiry jitter; keep Random.Shared on the hot path.
-    private static double _GetRandomUnitDouble() => Random.Shared.NextDouble();
+    private static double _GetRandomUnitDouble()
+    {
+        return Random.Shared.NextDouble();
+    }
 #pragma warning restore CA5394
 }

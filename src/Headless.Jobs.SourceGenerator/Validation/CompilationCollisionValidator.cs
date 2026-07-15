@@ -30,12 +30,12 @@ internal static class CompilationCollisionValidator
                 continue;
             }
 
-            var values = attribute.GetJobFunctionAttributeValues();
+            var (functionName, _, _, _) = attribute.GetJobFunctionAttributeValues();
             var location = _GetAttributeLocation(attribute, methodDeclaration);
-            if (!string.IsNullOrWhiteSpace(values.functionName) && !functionNames.Add(values.functionName!))
+            if (!string.IsNullOrWhiteSpace(functionName) && !functionNames.Add(functionName!))
             {
                 context.ReportDiagnostic(
-                    Diagnostic.Create(DiagnosticDescriptors.DuplicateFunctionName, location, values.functionName)
+                    Diagnostic.Create(DiagnosticDescriptors.DuplicateFunctionName, location, functionName)
                 );
                 isValid = false;
             }

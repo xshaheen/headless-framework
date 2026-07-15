@@ -14,14 +14,20 @@ namespace Headless.Api.Contracts;
 public sealed record GeoCoordinateView(double Latitude, double Longitude)
 {
     /// <summary>Returns a string formatted as <c>(&lt;latitude&gt;, &lt;longitude&gt;)</c>.</summary>
-    public override string ToString() => $"({Latitude}, {Longitude})";
+    public override string ToString()
+    {
+        return $"({Latitude}, {Longitude})";
+    }
 
     /// <summary>
     /// Maps a domain <see cref="GeoCoordinate"/> to a <see cref="GeoCoordinateView"/>.
     /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
     /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
-    public static GeoCoordinateView? FromGeoCoordinate(GeoCoordinate? operand) => operand;
+    public static GeoCoordinateView? FromGeoCoordinate(GeoCoordinate? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Implicitly converts a domain <see cref="GeoCoordinate"/> to a <see cref="GeoCoordinateView"/>.

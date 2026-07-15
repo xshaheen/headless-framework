@@ -110,8 +110,10 @@ public abstract class PublishContext
         MessageName = options?.MessageName;
     }
 
-    private static MessageHeader _CreateHeaders(MessageOptions? options) =>
-        options?.Headers is null ? new MessageHeader() : new MessageHeader(options.Headers);
+    private static MessageHeader _CreateHeaders(MessageOptions? options)
+    {
+        return options?.Headers is null ? new MessageHeader() : new MessageHeader(options.Headers);
+    }
 
     private protected bool IsCompleted { get; private set; }
 

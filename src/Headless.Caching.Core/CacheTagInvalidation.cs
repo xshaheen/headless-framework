@@ -19,6 +19,8 @@ internal static class CacheTagInvalidation
     /// </summary>
     /// <param name="createdAt">The entry's birth time (UTC), or <see langword="null"/> when unknown.</param>
     /// <param name="newestMarker">The newest applicable invalidation marker (UTC), or <see langword="null"/> when none applies.</param>
-    public static bool IsInvalidated(DateTime? createdAt, DateTime? newestMarker) =>
-        newestMarker.HasValue && (createdAt is null || newestMarker.Value > createdAt.Value);
+    public static bool IsInvalidated(DateTime? createdAt, DateTime? newestMarker)
+    {
+        return newestMarker.HasValue && (createdAt is null || newestMarker.Value > createdAt.Value);
+    }
 }

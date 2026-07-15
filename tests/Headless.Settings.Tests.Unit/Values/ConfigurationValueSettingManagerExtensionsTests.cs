@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public ConfigurationValueSettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueInConfigurationAsync
 

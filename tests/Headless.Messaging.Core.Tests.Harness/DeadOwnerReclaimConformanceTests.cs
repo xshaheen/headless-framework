@@ -43,7 +43,10 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     protected abstract void ConfigureStorage(MessagingSetupBuilder setup);
 
     /// <summary>Clears the store before a test seeds it (a no-op for per-instance InMemory; TRUNCATE for shared SQL DBs).</summary>
-    protected virtual Task ResetStorageAsync(IDataStorage storage) => Task.CompletedTask;
+    protected virtual Task ResetStorageAsync(IDataStorage storage)
+    {
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Whether a second concurrent bridge host shares the <em>same</em> <see cref="IDataStorage"/> instance
@@ -327,14 +330,26 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         return retriable.Any(message => message.StorageId == storageId);
     }
 
-    private static DateTimeOffset _Now() => TimeProvider.System.GetUtcNow();
+    private static DateTimeOffset _Now()
+    {
+        return TimeProvider.System.GetUtcNow();
+    }
 
-    private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
+    private static TimeSpan _FutureLease()
+    {
+        return TimeSpan.FromHours(1);
+    }
 
     /// <summary>A negative lease: the DB stamps a deadline already in its own past, so the row seeds as expired.</summary>
-    private static TimeSpan _ExpiredLease() => TimeSpan.FromSeconds(-1);
+    private static TimeSpan _ExpiredLease()
+    {
+        return TimeSpan.FromSeconds(-1);
+    }
 
-    private static long _NextId() => Interlocked.Increment(ref _messageCounter);
+    private static long _NextId()
+    {
+        return Interlocked.Increment(ref _messageCounter);
+    }
 
     private static Message _CreateMessage()
     {

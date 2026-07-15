@@ -126,15 +126,6 @@ Single-backend packages with no provider choice keep plain `Add{Feature}` extens
 - The overload trio applies to **provider** `Use{Provider}` / `Add{Feature}` members that bind that backend's options. **Cross-cutting consumer extensions** that adapt an already-composed feature (for example `UseOutputCache` / `UseBclCache`, which consume a named `ICache` rather than supply a provider) intentionally expose a single `Action<TOptions>` overload plus the consumed feature's builder — they do not bind a provider's option section, so the `IConfiguration` / `Action<TOptions, IServiceProvider>` overloads do not apply.
 - **Provider `Setup*`/fluent-extension holders live in the family root namespace** (the `Setup*` and `Setup*Named` classes, plus the messaging `*MessageBuilderExtensions` holders), so a single `using Headless.<Feature>;` exposes the entire registration surface — the `AddHeadless{Feature}` entry, the builder, AND every installed provider's `Use{Provider}` members. Every other provider type (options, storage/client implementations, headers, exceptions) stays in the provider's own namespace; lambda type inference means an options callback needs no extra `using`. Because the `Setup*.cs` file usually sits at the provider package root while declaring the family namespace, prefix its `namespace` with `#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace`.
 
-**Public API Discipline:**
-
-- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them — "DI resolves it" is not a reason to be public.
-- Namespace placement follows a three-tier rule (see Namespace Policy): **types** (options, records, builders, exceptions, interfaces, enums) live in the package/family-owned namespace and NEVER go foreign; the **registration surface** (`Add*`/`Use*`/`Map*`/`Setup*` + fluent-builder holders) lives in the family root namespace; **helper extension methods on foreign BCL/framework types** (e.g. `ILogger`, `HttpContext`, `IQueryable`, `DbContext`, `SqlConnection`) live in the augmented type's namespace with `Headless`-prefixed, collision-proof holder names so they surface in IntelliSense next to the type they extend. Never use bare BCL-collision holder names (`ServiceCollectionExtensions`, `CollectionExtensions`).
-- Async public methods take a trailing CancellationToken cancellationToken = default — including "callback" and "handler" interfaces.
-- Public contracts return IReadOnlyList<>/IReadOnlyDictionary<,>, never mutable List<>/Dictionary<,>.
-- New enums get explicit values; enums consumers may switch on ship a catch-all member and a "members may be added" doc note; sentinel value = 0.
-- [PublicAPI] on externally-consumed types; [EditorBrowsable(Never)] on must-be-public plumbing; XML docs on everything public
-
 **Namespace Policy:**
 
 - The namespace anchor is the project's **`<RootNamespace>`**, not the package name. A package's ENTIRE public surface — types, interfaces, enums, AND registration/extension holder classes (`Add*`/`Use*`/`Map*`) — lives under its root namespace. When the root namespace differs from the package name (e.g. `Headless.Orm.EntityFramework` ships `Headless.EntityFramework`, `Headless.Orm.Couchbase` ships `Headless.Couchbase`), declare `<RootNamespace>` explicitly in the csproj so the identity is intentional, not accidental.
@@ -161,26 +152,6 @@ This framework delegates certain input validation to consuming applications:
 - **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
 - **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
 
-### Annotations Usage
-
-Use `JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props) only when it adds value beyond standard .NET/BCL annotations and C# nullable reference types.
-
-### Prefer important JetBrains annotations
-
-Use these annotations when appropriate:
-
-- `[PublicAPI]` for public framework/package APIs that are consumed externally but may look unused internally.
-- `[UsedImplicitly]` for types, members, constructors, or properties used by reflection, DI, serializers, source generators, EF Core, ASP.NET Core, test frameworks, or conventions.
-- `[ContractAnnotation]` for guard/helper methods where Rider cannot infer null-state or control flow.
-- `[Pure]` for side-effect-free methods where ignoring the result is likely a bug.
-- `[InstantHandle]` for delegates/lambdas that are invoked immediately and are not stored.
-- `[RequireStaticDelegate]` for hot-path APIs where delegate captures should be avoided.
-- `[StringFormatMethod]` for custom formatting/logging methods.
-- `[RegexPattern]` for parameters that expect regular expression patterns.
-- `[LocalizationRequired]` for string values, properties, parameters, or APIs where localization intent must be explicit.
-
-Do not over-annotate. Add annotations only when they prevent false positives, document framework/convention usage, or help detect real bugs.
-
 ## Package Management
 
 - All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
@@ -199,34 +170,6 @@ When adding a new `.csproj` to the solution, set the project SDK to one of the H
 | WPF / Windows Forms | `Headless.NET.Sdk.WindowsDesktop` |
 
 After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://raw.githubusercontent.com/xshaheen/headless-sdk/refs/heads/main/README.md.
-
-## Date & Time
-
-Full rationale: [docs/solutions/design-patterns/temporal-authority-standard.md](docs/solutions/design-patterns/temporal-authority-standard.md). The one rule:
-
-> **Time semantics belong to whichever authority owns the decision — never to the ambient environment of whichever process happens to be running.**
-
-Every timestamp answers exactly one of four questions, and each has exactly one correct authority:
-
-| The timestamp answers… | Authority | Use |
-|---|---|---|
-| "Who owns this, and until when?" (leases, locks, liveness, visibility) | **The store** | DB/Redis server clock, inlined into the atomic statement |
-| "How long has this taken?" (timeouts, backoff, deadlines) | **Monotonic** | `TimeProvider.GetTimestamp()` / `GetElapsedTime()` |
-| "When should this fire in human terms?" (cron, calendars) | **The tz database** | `TimeZoneInfo` — explicit, never `TimeZoneInfo.Local` |
-| "When did this happen?" (audit, `CreatedAt`, logs) | **The app clock** | Injected `TimeProvider` |
-
-Using the wrong row is how every date/time defect in this repo has happened. Concretely:
-
-- **Ownership time must be written AND compared by the store**, in one statement. Never sample a clock into a variable and bind it as a parameter — that reintroduces the app clock and adds a round trip whose latency silently shortens the lease. Pass a **duration**, never an absolute deadline, across any API that reaches the store.
-- **PostgreSQL:** `clock_timestamp()` (real time) or `statement_timestamp()` (stable across one statement — preferred when the WHERE arm and the SET arm must agree). **Never `now()`/`CURRENT_TIMESTAMP`** — those are transaction-start time. **SQL Server:** `SYSUTCDATETIME()`. **Never `GETUTCDATE()`** — `datetime` precision (~3.33 ms).
-- **Redis:** send a *relative* duration (`PX`/`PEXPIRE`) or compute inside Lua with `redis.call('TIME')`. Never `PEXPIREAT` with a client-computed absolute epoch.
-- **In an EF `ExecuteUpdate`/`Where` expression tree, a bare `DateTime.UtcNow` is NOT evaluated in-process** — the provider translates it to server time. This is the correct way to express the DB clock in LINQ. Prove it with a SQL-capturing test; a skewed-`TimeProvider` test cannot catch a client-evaluation regression (a client-evaluated `DateTime.UtcNow` ignores `TimeProvider` and dodges the skew).
-- **Prefer `TimeProvider.GetTimestamp()` over `Stopwatch`/`Environment.TickCount64`** — all three are monotonic, but only `TimeProvider` is fakeable.
-- **Types:** `DateTimeOffset` for persisted instants and public APIs. PostgreSQL `timestamptz`; SQL Server `datetime2(7)`.
-- **Never trust an external SDK's `DateTime.Kind`** (AWS S3 returns `Unspecified`); `new DateTimeOffset(DateTime)` applies the *host's* offset to an Unspecified value. Use `DateTime.SpecifyKind(v, DateTimeKind.Utc)`.
-- **Clamp any caller-supplied delay** (non-negative, capped). Backoff must be jittered.
-- **Enforcement:** `DateTime.Now`/`DateTimeOffset.Now` are banned at compile time by the Headless SDK (`RS0030`, `BannedSymbols.txt`) — including inside `<see cref>` doc comments (use `<c>…</c>`). **`DateTime.UtcNow`/`DateTimeOffset.UtcNow` are NOT banned by any analyzer** — enforcement there is convention and code review only, because a bare `DateTime.UtcNow` inside an EF `ExecuteUpdate`/`Where` expression tree is the *correct* way to express the DB clock (it translates to server time, not client time), and a blanket ban would break that idiom across dozens of sites. Closing this gap would need either a `BannedSymbols.txt` change upstream in headless-sdk plus a documented suppression for the EF expression-tree sites, or a custom Roslyn analyzer that understands expression-tree context — neither exists today; treat this as a known gap, not a resolved one.
-- **Tests:** frozen clock (`FakeTimeProvider`) by default. Wall-clock waits only where a real server clock genuinely cannot be faked (Redis/DB TTL). Anything that decides ownership needs a skew test.
 
 ## Documentation
 

@@ -115,6 +115,8 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
 
     // A positive validFor is the relative TTL ASP.NET hands us; a non-positive validFor (an edge the middleware
     // can produce) falls back to the configured default rather than expiring the entry immediately.
-    private TimeSpan _ResolveDuration(TimeSpan validFor) =>
-        validFor > TimeSpan.Zero ? validFor : _options.DefaultExpiration;
+    private TimeSpan _ResolveDuration(TimeSpan validFor)
+    {
+        return validFor > TimeSpan.Zero ? validFor : _options.DefaultExpiration;
+    }
 }

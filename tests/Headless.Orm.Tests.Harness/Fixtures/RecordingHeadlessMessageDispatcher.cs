@@ -30,7 +30,10 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
 
     public IReadOnlyList<DispatchCall> Calls => _calls;
 
-    public int NextIndex() => Interlocked.Increment(ref _callIndex);
+    public int NextIndex()
+    {
+        return Interlocked.Increment(ref _callIndex);
+    }
 
     public void RecordExternal(DispatchKind kind, object payload)
     {
@@ -38,9 +41,15 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
     }
 
     public void Publish<T>(T domainEvent)
-        where T : class, IDomainEvent => _RecordLocal(domainEvent);
+        where T : class, IDomainEvent
+    {
+        _RecordLocal(domainEvent);
+    }
 
-    public void Publish(IDomainEvent domainEvent) => _RecordLocal(domainEvent);
+    public void Publish(IDomainEvent domainEvent)
+    {
+        _RecordLocal(domainEvent);
+    }
 
     public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
         where T : class, IDomainEvent
@@ -64,7 +73,10 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return Task.CompletedTask;
     }
 
-    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) => _RecordDistributed(integrationEvents);
+    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
+    {
+        _RecordDistributed(integrationEvents);
+    }
 
     private void _RecordLocal(IDomainEvent domainEvent)
     {

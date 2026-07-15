@@ -66,7 +66,10 @@ public sealed class AwsMessageConfigBuilder<TMessage>
         return this;
     }
 
-    internal AwsMessageConfig<TMessage> Build() => new(_messageGroupIdSelector);
+    internal AwsMessageConfig<TMessage> Build()
+    {
+        return new(_messageGroupIdSelector);
+    }
 }
 
 internal sealed class AwsMessageConfig<TMessage>(Func<TMessage, string?>? messageGroupIdSelector)

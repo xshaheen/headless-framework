@@ -2,30 +2,21 @@
 
 namespace Headless.Jobs.SourceGenerator.Models;
 
-internal sealed class JobFunctionDescriptorInfo
+internal sealed class JobFunctionDescriptorInfo(
+    string functionName,
+    string? requestTypeName,
+    string cronExpression,
+    int priority,
+    int maxConcurrency
+)
 {
-    public JobFunctionDescriptorInfo(
-        string functionName,
-        string? requestTypeName,
-        string cronExpression,
-        int priority,
-        int maxConcurrency
-    )
-    {
-        FunctionName = functionName;
-        RequestTypeName = requestTypeName;
-        CronExpression = cronExpression;
-        Priority = priority;
-        MaxConcurrency = maxConcurrency;
-    }
+    public string FunctionName { get; } = functionName;
 
-    public string FunctionName { get; }
+    public string? RequestTypeName { get; } = requestTypeName;
 
-    public string? RequestTypeName { get; }
+    public string CronExpression { get; } = cronExpression;
 
-    public string CronExpression { get; }
+    public int Priority { get; } = priority;
 
-    public int Priority { get; }
-
-    public int MaxConcurrency { get; }
+    public int MaxConcurrency { get; } = maxConcurrency;
 }

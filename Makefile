@@ -27,9 +27,11 @@ MSBUILD_ARGS ?=
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
 DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
 NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
-QUALITY_SEVERITY ?= info
+QUALITY_SEVERITY ?= hidden
 QUALITY_DIAGNOSTICS ?=
-QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
+QUALITY_REPORT_DIR ?= $(ARTIFACTS_DIR)/quality-analyzers-report
+QUALITY_FORMAT_LOG ?= $(ARTIFACTS_DIR)/quality-analyzers-format.log
+QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$(QUALITY_REPORT_DIR)" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
 QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
@@ -145,7 +147,11 @@ quality-analyzers: ## Report build warnings/errors and analyzer suggestions with
 	@if ! $(DOTNET) build "$(SOLUTION)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
 		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers.log"; exit 1; \
 	fi
-	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS)
+	@format_status=0; \
+		Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FORMAT_ARGS) > "$(QUALITY_FORMAT_LOG)" 2>&1 || format_status=$$?; \
+		awk '!/: hidden [[:alnum:]]+:/' "$(QUALITY_FORMAT_LOG)"; \
+		if awk '/: (info|warning|error) [[:alnum:]]+:/ { found=1 } END { exit found ? 0 : 1 }' "$(QUALITY_FORMAT_LOG)"; then exit 2; fi; \
+		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 .PHONY: quality-analyzers-project
 quality-analyzers-project: ## Report build warnings/errors and analyzer suggestions for PROJECT.
@@ -155,7 +161,11 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 	@if ! $(DOTNET) build "$(PROJECT)" $(QUALITY_BUILD_ARGS) 2>&1 | tee "$(ARTIFACTS_DIR)/quality-analyzers-project.log" | awk '/(^|: )(warning|error) [A-Z]+[0-9]+:/'; then \
 		echo "Build failed. Full output:"; cat "$(ARTIFACTS_DIR)/quality-analyzers-project.log"; exit 1; \
 	fi
-	@Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS)
+	@format_status=0; \
+		Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FORMAT_ARGS) > "$(QUALITY_FORMAT_LOG)" 2>&1 || format_status=$$?; \
+		awk '!/: hidden [[:alnum:]]+:/' "$(QUALITY_FORMAT_LOG)"; \
+		if awk '/: (info|warning|error) [[:alnum:]]+:/ { found=1 } END { exit found ? 0 : 1 }' "$(QUALITY_FORMAT_LOG)"; then exit 2; fi; \
+		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).

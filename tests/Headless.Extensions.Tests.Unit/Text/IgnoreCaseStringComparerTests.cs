@@ -9,7 +9,7 @@ public sealed class IgnoreCaseStringComparerTests
     // Compare tests
 
     [Fact]
-    public void compare_should_return_zero_when_both_null()
+    public void should_return_zero_when_compare_both_null()
     {
         // given
         const string? x = null;
@@ -23,7 +23,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void compare_should_return_negative_when_x_is_null()
+    public void should_return_negative_when_compare_x_is_null()
     {
         // given
         const string? x = null;
@@ -37,7 +37,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void compare_should_return_positive_when_y_is_null()
+    public void should_return_positive_when_compare_y_is_null()
     {
         // given
         const string x = "test";
@@ -56,7 +56,7 @@ public sealed class IgnoreCaseStringComparerTests
     [InlineData("snake_case", "snakeCase")]
     [InlineData("kebab-case", "kebabCase")]
     [InlineData("UPPER", "upper")]
-    public void compare_should_return_zero_for_equivalent_identifiers(string x, string y)
+    public void should_return_zero_for_equivalent_identifiers_when_compare(string x, string y)
     {
         // when
         var result = IgnoreCaseStringComparer.Instance.Compare(x, y);
@@ -66,7 +66,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void compare_should_return_negative_when_x_less_than_y()
+    public void should_return_negative_when_compare_x_less_than_y()
     {
         // given
         const string x = "apple";
@@ -80,7 +80,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void compare_should_return_positive_when_x_greater_than_y()
+    public void should_return_positive_when_compare_x_greater_than_y()
     {
         // given
         const string x = "banana";
@@ -96,7 +96,7 @@ public sealed class IgnoreCaseStringComparerTests
     // Equals tests
 
     [Fact]
-    public void equals_should_return_false_when_x_is_null()
+    public void should_return_false_when_equals_x_is_null()
     {
         // given
         const string? x = null;
@@ -110,7 +110,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void equals_should_return_false_when_y_is_null()
+    public void should_return_false_when_equals_y_is_null()
     {
         // given
         const string x = "test";
@@ -124,7 +124,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void equals_should_return_true_when_both_null()
+    public void should_return_true_when_equals_both_null()
     {
         // given
         const string? x = null;
@@ -146,7 +146,7 @@ public sealed class IgnoreCaseStringComparerTests
     [InlineData("mixed_case-Style", "MixedCaseStyle")]
     [InlineData("UPPER_CASE", "upperCase")]
     [InlineData("lower_case", "LOWERCASE")]
-    public void equals_should_return_true_for_equivalent_identifiers(string x, string y)
+    public void should_return_true_for_equivalent_identifiers_when_equals(string x, string y)
     {
         // when
         var result = IgnoreCaseStringComparer.Instance.Equals(x, y);
@@ -159,7 +159,7 @@ public sealed class IgnoreCaseStringComparerTests
     [InlineData("abc", "abcd")]
     [InlineData("abc", "ab")]
     [InlineData("test", "rest")]
-    public void equals_should_return_false_for_different_strings(string x, string y)
+    public void should_return_false_for_different_strings_when_equals(string x, string y)
     {
         // when
         var result = IgnoreCaseStringComparer.Instance.Equals(x, y);
@@ -169,7 +169,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void equals_should_ignore_non_alphanumeric_characters()
+    public void should_ignore_non_alphanumeric_characters_when_equals()
     {
         // given
         const string x = "get_user_by_id";
@@ -183,7 +183,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void equals_should_handle_digits()
+    public void should_handle_digits_when_equals()
     {
         // given
         const string x = "item1";
@@ -202,7 +202,7 @@ public sealed class IgnoreCaseStringComparerTests
     [InlineData("camelCase", "CamelCase")]
     [InlineData("snake_case", "snakeCase")]
     [InlineData("kebab-case", "kebabCase")]
-    public void get_hash_code_should_return_same_value_for_equivalent_identifiers(string x, string y)
+    public void should_return_same_value_for_equivalent_identifiers_when_get_hash_code(string x, string y)
     {
         // when
         var hashX = IgnoreCaseStringComparer.Instance.GetHashCode(x);
@@ -213,7 +213,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void get_hash_code_should_return_different_values_for_different_strings()
+    public void should_return_different_values_for_different_strings_when_get_hash_code()
     {
         // given
         const string x = "apple";
@@ -228,7 +228,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void get_hash_code_should_handle_empty_string()
+    public void should_handle_empty_string_when_get_hash_code()
     {
         // given
         const string x = "";
@@ -241,7 +241,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void get_hash_code_should_handle_only_separators()
+    public void should_handle_only_separators_when_get_hash_code()
     {
         // given
         const string x = "___---";
@@ -254,7 +254,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void get_hash_code_should_return_zero_for_null()
+    public void should_return_zero_for_null_when_get_hash_code()
     {
         // when
         var hash = IgnoreCaseStringComparer.Instance.GetHashCode(null!);
@@ -266,7 +266,7 @@ public sealed class IgnoreCaseStringComparerTests
     // Instance tests
 
     [Fact]
-    public void instance_should_be_singleton()
+    public void should_be_singleton_when_instance()
     {
         // when
         var instance1 = IgnoreCaseStringComparer.Instance;

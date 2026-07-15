@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
 using Headless.Api.Security.Claims;
 using Headless.Checks;
 using Headless.Constants;
@@ -162,7 +161,10 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         return new(_CreateSecurityKey(key), JwtConstants.DirectKeyUseAlg, SecurityAlgorithms.Aes256CbcHmacSha512);
     }
 
-    private static SymmetricSecurityKey _CreateSecurityKey(string key) => new(Encoding.UTF8.GetBytes(key));
+    private static SymmetricSecurityKey _CreateSecurityKey(string key)
+    {
+        return new(Encoding.UTF8.GetBytes(key));
+    }
 
     #endregion
 }

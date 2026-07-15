@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Abstractions;
+using Headless.Abstractions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -54,7 +54,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     #region ApiResult (void) Tests
 
     [Fact]
-    public void should_return_NoContent_when_success()
+    public void should_return_no_content_when_success()
     {
         // given
         var controller = _CreateController();
@@ -92,7 +92,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     #region ResultError Mapping Tests
 
     [Fact]
-    public void should_map_NotFoundError_to_404()
+    public void should_map_not_found_error_to_404()
     {
         // given
         var controller = _CreateController();
@@ -112,7 +112,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ValidationError_to_422()
+    public void should_map_validation_error_to_422()
     {
         // given
         var controller = _CreateController();
@@ -132,7 +132,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ForbiddenError_to_403()
+    public void should_map_forbidden_error_to_403()
     {
         // given
         var controller = _CreateController();
@@ -152,7 +152,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_UnauthorizedError_to_401()
+    public void should_map_unauthorized_error_to_401()
     {
         // given
         var controller = _CreateController();
@@ -172,7 +172,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_AggregateError_to_409()
+    public void should_map_aggregate_error_to_409()
     {
         // given
         var controller = _CreateController();
@@ -195,7 +195,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ConflictError_to_409()
+    public void should_map_conflict_error_to_409()
     {
         // given
         var controller = _CreateController();

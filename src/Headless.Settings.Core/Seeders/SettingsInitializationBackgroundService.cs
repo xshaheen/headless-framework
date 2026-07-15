@@ -37,8 +37,10 @@ public sealed class SettingsInitializationBackgroundService(
     /// <param name="cancellationToken">Token to cancel the wait.</param>
     /// <returns>A <see cref="Task"/> that completes when the service is initialized.</returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before initialization completed.</exception>
-    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
-        _tcs.Task.WaitAsync(cancellationToken);
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+    {
+        return _tcs.Task.WaitAsync(cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)

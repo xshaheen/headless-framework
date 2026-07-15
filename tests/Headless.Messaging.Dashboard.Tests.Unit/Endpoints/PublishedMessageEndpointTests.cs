@@ -24,7 +24,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
 
     [Fact]
-    public async Task PublishedMessageDetails_should_return_message_content()
+    public async Task should_return_message_content_when_published_message_details()
     {
         // given
         var messageId = Guid.Parse("11111111-1111-1111-1111-111111111123");
@@ -65,7 +65,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedMessageDetails_should_return_404_for_missing_message()
+    public async Task should_return_404_for_missing_message_when_published_message_details()
     {
         // given
         var messageId = Guid.Parse("11111111-1111-1111-1111-111111111999");
@@ -86,7 +86,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedList_should_bind_intent_filter_and_project_intent_with_pagination_metadata()
+    public async Task should_bind_intent_filter_and_project_intent_with_pagination_metadata_when_published_list()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -160,7 +160,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedList_should_bind_null_intent_filter_when_intentType_is_omitted()
+    public async Task should_bind_null_intent_filter_when_published_list_intent_type_is_omitted()
     {
         // given
         var result = new IndexPage<MessageView>([], index: 1, size: 20, totalItems: 0);
@@ -195,7 +195,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedRequeue_should_return_422_for_empty_array()
+    public async Task should_return_422_for_empty_array_when_published_requeue()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -212,7 +212,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedDelete_should_return_422_for_null_body()
+    public async Task should_return_422_for_null_body_when_published_delete()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -230,7 +230,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedDelete_should_return_204_on_success()
+    public async Task should_return_204_on_success_when_published_delete()
     {
         // given
         var messageId = Guid.Parse("11111111-1111-1111-1111-111111111123");

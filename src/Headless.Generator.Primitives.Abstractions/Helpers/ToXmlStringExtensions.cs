@@ -20,8 +20,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The DateTime value to convert.</param>
     /// <returns>The XML string representation of the DateTime value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this DateTime value) =>
-        value.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+    public static string ToXmlString(this DateTime value)
+    {
+        return value.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Converts a <see cref="DateOnly" /> value to its XML string representation in the format "yyyy-MM-dd".
@@ -29,7 +31,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The DateOnly value to convert.</param>
     /// <returns>The XML string representation of the DateOnly value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    public static string ToXmlString(this DateOnly value)
+    {
+        return value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Converts a <see cref="TimeOnly" /> value to its XML string representation in the format "HH:mm:sszzz".
@@ -37,8 +42,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The TimeOnly value to convert.</param>
     /// <returns>The XML string representation of the TimeOnly value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this TimeOnly value) =>
-        value.ToString("HH:mm:sszzz", CultureInfo.InvariantCulture);
+    public static string ToXmlString(this TimeOnly value)
+    {
+        return value.ToString("HH:mm:sszzz", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Converts a <see cref="DateTimeOffset" /> value to its XML string representation.
@@ -46,7 +53,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The DateTimeOffset value to convert.</param>
     /// <returns>The XML string representation of the DateTimeOffset value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this DateTimeOffset value) => XmlConvert.ToString(value);
+    public static string ToXmlString(this DateTimeOffset value)
+    {
+        return XmlConvert.ToString(value);
+    }
 
     /// <summary>
     /// Converts a <see cref="TimeSpan" /> value to its XML string representation.
@@ -54,7 +64,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The TimeSpan value to convert.</param>
     /// <returns>The XML string representation of the TimeSpan value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this TimeSpan value) => XmlConvert.ToString(value);
+    public static string ToXmlString(this TimeSpan value)
+    {
+        return XmlConvert.ToString(value);
+    }
 
     /// <summary>
     /// Converts a <see cref="byte" /> value to its XML string representation.
@@ -183,7 +196,10 @@ public static class ToXmlStringExtensions
     /// <param name="value">The decimal value to convert.</param>
     /// <returns>The XML string representation of the decimal value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string ToXmlString(this Guid value) => value.ToString();
+    public static string ToXmlString(this Guid value)
+    {
+        return value.ToString();
+    }
 
     /// <summary>
     /// Converts a <see cref="bool" /> value to its XML string representation.

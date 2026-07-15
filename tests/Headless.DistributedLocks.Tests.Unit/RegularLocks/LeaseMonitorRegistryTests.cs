@@ -62,7 +62,10 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         _GetRawBucketCount(sut).Should().Be(0);
     }
 
-    private LeaseMonitorRegistry _CreateRegistry() => new(LoggerFactory.CreateLogger(nameof(LeaseMonitorRegistry)));
+    private LeaseMonitorRegistry _CreateRegistry()
+    {
+        return new(LoggerFactory.CreateLogger(nameof(LeaseMonitorRegistry)));
+    }
 
     private LeaseMonitor _CreateMonitor(string resource, string leaseId)
     {

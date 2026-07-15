@@ -14,7 +14,7 @@ namespace Tests.Transactions;
 public sealed class CoordinatedWriteContextFactoryTests
 {
     [Fact]
-    public void RequireOptionsConstructor_returns_ctor_when_options_ctor_is_present()
+    public void require_options_constructor_returns_ctor_when_options_ctor_is_present()
     {
         var act = CoordinatedWriteContextFactory.RequireOptionsConstructor<WellFormedContext>;
 
@@ -23,7 +23,7 @@ public sealed class CoordinatedWriteContextFactoryTests
     }
 
     [Fact]
-    public void RequireOptionsConstructor_throws_direct_invalid_operation_when_options_ctor_is_missing()
+    public void require_options_constructor_throws_direct_invalid_operation_when_options_ctor_is_missing()
     {
         var act = CoordinatedWriteContextFactory.RequireOptionsConstructor<MissingOptionsCtorContext>;
 

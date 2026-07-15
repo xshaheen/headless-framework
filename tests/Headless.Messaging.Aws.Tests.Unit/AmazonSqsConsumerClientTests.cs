@@ -16,8 +16,9 @@ namespace Tests;
 
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
-    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
-        Options.Create(
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions()
+    {
+        return Options.Create(
             new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
@@ -25,6 +26,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 SnsServiceUrl = "http://localhost:4566",
             }
         );
+    }
 
     private static void _SetPrivateFields(AmazonSqsConsumerClient client, IAmazonSQS sqsClient, string queueUrl)
     {
@@ -104,7 +106,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task queue_intent_subscribe_should_not_create_group_queue()
+    public async Task should_not_create_group_queue_when_queue_intent_subscribe()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -128,7 +130,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task queue_intent_fetch_should_propagate_exact_token()
+    public async Task should_propagate_exact_token_when_queue_intent_fetch()
     {
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         await using var client = new AmazonSqsConsumerClient(
@@ -151,7 +153,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_error_when_consumeAsync_throws_in_concurrent_mode()
+    public async Task should_log_error_when_consume_async_throws_in_concurrent_mode()
     {
         // given
         var options = _CreateOptions();
@@ -926,7 +928,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -940,7 +942,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -953,7 +955,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -967,7 +969,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_blocks_listening_loop()
+    public async Task pause_async_blocks_listening_loop()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();

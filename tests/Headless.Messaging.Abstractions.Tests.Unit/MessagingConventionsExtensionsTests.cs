@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class MessagingConventionsExtensionsTests
 {
     [Fact]
-    public void use_kebab_case_topics_should_mutate_conventions_and_return_same_instance()
+    public void should_mutate_conventions_and_return_same_instance_when_use_kebab_case_topics()
     {
         // given
         var conventions = new MessagingConventions();
@@ -21,7 +21,7 @@ public sealed class MessagingConventionsExtensionsTests
     }
 
     [Fact]
-    public void use_type_name_topics_should_mutate_conventions_and_return_same_instance()
+    public void should_mutate_conventions_and_return_same_instance_when_use_type_name_topics()
     {
         // given
         var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
@@ -35,7 +35,7 @@ public sealed class MessagingConventionsExtensionsTests
     }
 
     [Fact]
-    public void topic_prefix_suffix_and_default_group_should_mutate_only_the_targeted_properties()
+    public void should_mutate_only_the_targeted_properties_when_topic_prefix_suffix_and_default_group()
     {
         // given
         var conventions = new MessagingConventions
@@ -57,7 +57,7 @@ public sealed class MessagingConventionsExtensionsTests
     }
 
     [Fact]
-    public void extension_helpers_should_support_chaining_without_resetting_prior_values()
+    public void should_support_chaining_without_resetting_prior_values_when_extension_helpers()
     {
         // given
         var conventions = new MessagingConventions();

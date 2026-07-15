@@ -21,5 +21,8 @@ internal static class AuditLogFieldLimits
     public const int ErrorCode = 256;
 
     [return: NotNullIfNotNull(nameof(value))]
-    public static string? Truncate(string? value, int maxLength) => value.TruncateEnd(maxLength);
+    public static string? Truncate(string? value, int maxLength)
+    {
+        return value.TruncateEnd(maxLength);
+    }
 }

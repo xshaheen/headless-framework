@@ -13,7 +13,10 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
 
     // Unique per-test keys keep these tests isolated within the shared (parallel) Redis collection
     // without a global FLUSHALL that would clobber concurrent storage tests.
-    private static RedisKey _NewKey() => (RedisKey)("remove-if-equal:" + Guid.NewGuid().ToString("N"));
+    private static RedisKey _NewKey()
+    {
+        return (RedisKey)("remove-if-equal:" + Guid.NewGuid().ToString("N"));
+    }
 
     [Fact]
     public async Task should_remove_when_expected_value_matches()

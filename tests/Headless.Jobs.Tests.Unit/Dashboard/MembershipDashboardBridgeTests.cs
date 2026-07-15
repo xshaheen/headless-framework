@@ -12,15 +12,15 @@ namespace Tests.Dashboard;
 
 public sealed class MembershipDashboardBridgeTests
 {
-    private static NodeIdentity _Identity(string node, long incarnation) =>
-        new(new NodeId(node), new NodeIncarnation(incarnation));
+    private static NodeIdentity _Identity(string node, long incarnation)
+    {
+        return new(new NodeId(node), new NodeIncarnation(incarnation));
+    }
 
-    private static NodeLivenessSnapshot _Snapshot(
-        string node,
-        long incarnation,
-        NodeLivenessState state,
-        string? role
-    ) => new(_Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
+    private static NodeLivenessSnapshot _Snapshot(string node, long incarnation, NodeLivenessState state, string? role)
+    {
+        return new(_Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
+    }
 
     private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) _Create()
     {
@@ -144,24 +144,37 @@ public sealed class MembershipDashboardBridgeTests
 
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
-        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(default(NodeIdentity));
+        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(default(NodeIdentity));
+        }
 
-        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(true);
+        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(true);
+        }
 
-        public ValueTask LeaveAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(false);
+        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(false);
+        }
 
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(
-            CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
+        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
+        }
 
         public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
+        )
+        {
+            return ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
+        }
 
         public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default

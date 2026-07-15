@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -8,13 +7,15 @@ namespace Tests;
 
 internal static class CompilationFixture
 {
-    private static readonly ImmutableArray<MetadataReference> _PlatformReferences = (
-        (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-        ?? throw new InvalidOperationException("Trusted platform assemblies are unavailable.")
-    )
-        .Split(Path.PathSeparator)
-        .Select(static path => MetadataReference.CreateFromFile(path))
-        .ToImmutableArray<MetadataReference>();
+    private static readonly ImmutableArray<MetadataReference> _PlatformReferences =
+    [
+        .. (
+            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Trusted platform assemblies are unavailable.")
+        )
+            .Split(Path.PathSeparator)
+            .Select(static path => MetadataReference.CreateFromFile(path)),
+    ];
 
     private static readonly Lazy<MetadataReference> _ProducerReference = new(static () =>
         EmitReference(CreateCompilation("Producer", FixtureSources.Producer))

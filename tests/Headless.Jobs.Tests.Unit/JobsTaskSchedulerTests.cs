@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class JobsTaskSchedulerTests : TestBase
 {
     [Fact]
-    public async Task WaitForRunningTasksAsync_waits_for_active_async_work()
+    public async Task wait_for_running_tasks_async_waits_for_active_async_work()
     {
         await using var scheduler = new JobsTaskScheduler(
             maxConcurrency: 1,
@@ -40,7 +40,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task QueueAsync_counts_active_async_work_against_max_concurrency()
+    public async Task queue_async_counts_active_async_work_against_max_concurrency()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,7 +84,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task QueueAsync_dispatches_high_then_normal_then_low_priority()
+    public async Task queue_async_dispatches_high_then_normal_then_low_priority()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -122,7 +122,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task QueueAsync_steals_higher_priority_work_from_other_workers_before_local_low_priority()
+    public async Task queue_async_steals_higher_priority_work_from_other_workers_before_local_low_priority()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
 
@@ -211,7 +211,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task QueueAsync_capacity_wait_honors_cancellation()
+    public async Task queue_async_capacity_wait_honors_cancellation()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -254,7 +254,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task QueueAsync_capacity_cancellation_does_not_cancel_admitted_work()
+    public async Task queue_async_capacity_cancellation_does_not_cancel_admitted_work()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -290,7 +290,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task Dispose_while_worker_idles_in_backoff_completes_cleanly()
+    public async Task dispose_while_worker_idles_in_backoff_completes_cleanly()
     {
         // A worker that finished its work parks in the idle backoff delay awaiting the shutdown
         // token. DisposeAsync cancels that token; the resulting OperationCanceledException must

@@ -2,8 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
-using Headless.Redis;
-using Headless.Redis.Testing;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -37,30 +35,44 @@ public sealed class RedisDistributedSemaphoreProviderTests(RedisTestFixture fixt
     }
 
     [Fact]
-    public override Task should_acquire_composite_slots_across_differently_sized_semaphores() =>
-        base.should_acquire_composite_slots_across_differently_sized_semaphores();
+    public override Task should_acquire_composite_slots_across_differently_sized_semaphores()
+    {
+        return base.should_acquire_composite_slots_across_differently_sized_semaphores();
+    }
 
     [Fact]
-    public override Task should_reject_conflicting_max_count_for_one_resource() =>
-        base.should_reject_conflicting_max_count_for_one_resource();
+    public override Task should_reject_conflicting_max_count_for_one_resource()
+    {
+        return base.should_reject_conflicting_max_count_for_one_resource();
+    }
 
     [Fact]
-    public override Task should_acquire_composite_slots_in_canonical_order_and_deduplicate() =>
-        base.should_acquire_composite_slots_in_canonical_order_and_deduplicate();
+    public override Task should_acquire_composite_slots_in_canonical_order_and_deduplicate()
+    {
+        return base.should_acquire_composite_slots_in_canonical_order_and_deduplicate();
+    }
 
     [Fact]
-    public override Task should_release_earlier_slots_when_later_semaphore_is_saturated() =>
-        base.should_release_earlier_slots_when_later_semaphore_is_saturated();
+    public override Task should_release_earlier_slots_when_later_semaphore_is_saturated()
+    {
+        return base.should_release_earlier_slots_when_later_semaphore_is_saturated();
+    }
 
     [Fact]
-    public override Task should_renew_and_release_composite_slot_lease() =>
-        base.should_renew_and_release_composite_slot_lease();
+    public override Task should_renew_and_release_composite_slot_lease()
+    {
+        return base.should_renew_and_release_composite_slot_lease();
+    }
 
     [Fact]
-    public override Task should_return_child_lease_for_single_canonical_semaphore_resource() =>
-        base.should_return_child_lease_for_single_canonical_semaphore_resource();
+    public override Task should_return_child_lease_for_single_canonical_semaphore_resource()
+    {
+        return base.should_return_child_lease_for_single_canonical_semaphore_resource();
+    }
 
     [Fact]
-    public override Task should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently() =>
-        base.should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently();
+    public override Task should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently()
+    {
+        return base.should_not_deadlock_when_two_callers_request_opposite_semaphore_orders_concurrently();
+    }
 }

@@ -431,10 +431,12 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     private static bool _RequiresExplicitTransaction(
         IReadOnlyList<AuditLogEntryData>? auditEntries,
         HeadlessSaveEntryContext saveContext
-    ) =>
-        _HasAuditEntries(auditEntries)
-        || saveContext.IntegrationEventEmitters.Count > 0
-        || saveContext.DomainEventEmitters.Count > 0;
+    )
+    {
+        return _HasAuditEntries(auditEntries)
+            || saveContext.IntegrationEventEmitters.Count > 0
+            || saveContext.DomainEventEmitters.Count > 0;
+    }
 
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)
     {

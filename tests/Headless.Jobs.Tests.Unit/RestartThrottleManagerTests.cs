@@ -9,7 +9,7 @@ namespace Tests;
 public sealed class RestartThrottleManagerTests : TestBase
 {
     [Fact]
-    public void RequestRestart_debounces_requests_and_invokes_outside_the_manager_lock()
+    public void request_restart_debounces_requests_and_invokes_outside_the_manager_lock()
     {
         var timeProvider = new FakeTimeProvider();
         RestartThrottleManager? manager = null;
@@ -36,7 +36,7 @@ public sealed class RestartThrottleManagerTests : TestBase
     }
 
     [Fact]
-    public void Dispose_before_the_deadline_prevents_the_callback_and_is_idempotent()
+    public void dispose_before_the_deadline_prevents_the_callback_and_is_idempotent()
     {
         var timeProvider = new FakeTimeProvider();
         var calls = 0;

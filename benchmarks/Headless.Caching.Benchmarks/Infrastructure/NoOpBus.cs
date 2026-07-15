@@ -10,5 +10,8 @@ internal sealed class NoOpBus : IBus
         T? contentObj,
         PublishOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => Task.CompletedTask;
+    )
+    {
+        return Task.CompletedTask;
+    }
 }

@@ -12,17 +12,14 @@ public sealed partial class PaymobCashInBrokerTests
 {
     public static Fixture AutoFixture { get; } = new();
 
-    public static readonly TheoryData<CashInPaymentKeyRequest> RequestPaymentKeyData =
-    [
-        _GetPaymentKeyRequest(expiration: null),
-        _GetPaymentKeyRequest(expiration: AutoFixture.Create<int>()),
-    ];
+    public static readonly TheoryData<int?> RequestPaymentKeyData = [default(int?), AutoFixture.Create<int>()];
 
     [Theory]
     [MemberData(nameof(RequestPaymentKeyData))]
-    public async Task should_make_call_and_return_response_when_request_payment_key(CashInPaymentKeyRequest request)
+    public async Task should_make_call_and_return_response_when_request_payment_key(int? requestExpiration)
     {
         // given
+        var request = _GetPaymentKeyRequest(requestExpiration);
         var (authenticator, token) = _SetupGentAuthenticationToken();
         var expiration = fixture.AutoFixture.Create<int>();
         var config = fixture.CashInOptions with { ExpirationPeriod = expiration };

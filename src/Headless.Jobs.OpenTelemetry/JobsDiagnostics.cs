@@ -11,6 +11,8 @@ internal static class JobsDiagnostics
 
     public static readonly ActivitySource ActivitySource = HeadlessDiagnostics.CreateActivitySource("Jobs");
 
-    public static Activity? Start(string name, ActivityKind kind = ActivityKind.Internal) =>
-        ActivitySource.StartActivity(name, kind, default(ActivityContext));
+    public static Activity? Start(string name, ActivityKind kind = ActivityKind.Internal)
+    {
+        return ActivitySource.StartActivity(name, kind, default(ActivityContext));
+    }
 }

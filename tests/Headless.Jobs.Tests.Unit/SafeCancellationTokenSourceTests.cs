@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class SafeCancellationTokenSourceTests : TestBase
 {
     [Fact]
-    public void cancel_should_cancel_token()
+    public void should_cancel_token_when_cancel()
     {
         // given
         using var source = new SafeCancellationTokenSource();
@@ -22,7 +22,7 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
     }
 
     [Fact]
-    public void cancel_should_be_no_op_after_dispose()
+    public void should_be_no_op_after_dispose_when_cancel()
     {
         // given
         var source = new SafeCancellationTokenSource();
@@ -37,7 +37,7 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
     }
 
     [Fact]
-    public void dispose_should_be_idempotent()
+    public void should_be_idempotent_when_dispose()
     {
         // given
         var source = new SafeCancellationTokenSource();
@@ -52,7 +52,7 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
     }
 
     [Fact]
-    public void is_cancellation_requested_should_remain_observable_after_cancel_then_dispose()
+    public void should_remain_observable_after_cancel_then_dispose_when_is_cancellation_requested()
     {
         // given
         var source = new SafeCancellationTokenSource();
@@ -66,7 +66,7 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
     }
 
     [Fact]
-    public void create_linked_should_cancel_when_any_linked_token_cancels()
+    public void should_cancel_when_create_linked_any_linked_token_cancels()
     {
         // given
         using var external = new CancellationTokenSource();

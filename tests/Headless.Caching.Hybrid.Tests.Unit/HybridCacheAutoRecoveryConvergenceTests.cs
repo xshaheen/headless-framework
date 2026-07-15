@@ -408,9 +408,15 @@ internal sealed class RecordingHybridCacheLogger : ILogger<HybridCache>
     public List<(LogLevel Level, EventId Event)> Entries { get; } = [];
 
     public IDisposable? BeginScope<TState>(TState state)
-        where TState : notnull => null;
+        where TState : notnull
+    {
+        return null;
+    }
 
-    public bool IsEnabled(LogLevel logLevel) => true;
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return true;
+    }
 
     public void Log<TState>(
         LogLevel logLevel,
@@ -418,7 +424,10 @@ internal sealed class RecordingHybridCacheLogger : ILogger<HybridCache>
         TState state,
         Exception? exception,
         Func<TState, Exception?, string> formatter
-    ) => Entries.Add((logLevel, eventId));
+    )
+    {
+        Entries.Add((logLevel, eventId));
+    }
 }
 
 /// <summary>
@@ -445,13 +454,19 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         string key,
         CancellationToken cancellationToken,
         FactoryCacheReadOptions readOptions = default
-    ) => ((IFactoryCacheStore)backend).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+    )
+    {
+        return ((IFactoryCacheStore)backend).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+    }
 
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
         CancellationToken cancellationToken,
         FactoryCacheReadOptions readOptions = default
-    ) => ((IFactoryCacheStore)backend).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+    )
+    {
+        return ((IFactoryCacheStore)backend).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+    }
 
     public ValueTask<bool> SetEntryAsync<T>(
         string key,
@@ -472,28 +487,36 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         DateTime physicalExpiresAt,
         DateTime now,
         CancellationToken cancellationToken
-    ) =>
-        ((IFactoryCacheStore)backend).TryRearmSlidingAsync(
+    )
+    {
+        return ((IFactoryCacheStore)backend).TryRearmSlidingAsync(
             key,
             slidingExpiration,
             physicalExpiresAt,
             now,
             cancellationToken
         );
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => backend.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return backend.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => backend.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return backend.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public ValueTask<bool> UpsertAsync<T>(
         string key,
@@ -514,27 +537,39 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         T? value,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => backend.UpsertEntryAsync(key, value, options, cancellationToken);
+    )
+    {
+        return backend.UpsertEntryAsync(key, value, options, cancellationToken);
+    }
 
     public ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.UpsertAllAsync(value, expiration, cancellationToken);
+    )
+    {
+        return backend.UpsertAllAsync(value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryInsertAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.TryInsertAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.TryInsertAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.TryReplaceAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.TryReplaceAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
@@ -542,61 +577,88 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+    )
+    {
+        return backend.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+    }
 
     public ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.IncrementAsync(key, amount, expiration, cancellationToken);
+    )
+    {
+        return backend.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.IncrementAsync(key, amount, expiration, cancellationToken);
+    )
+    {
+        return backend.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetAddAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetAddAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
-    ) => backend.GetAllAsync<T>(cacheKeys, cancellationToken);
+    )
+    {
+        return backend.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
 
     public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
         string key,
@@ -639,34 +701,53 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => backend.GetByPrefixAsync<T>(prefix, cancellationToken);
+    )
+    {
+        return backend.GetByPrefixAsync<T>(prefix, cancellationToken);
+    }
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => backend.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    )
+    {
+        return backend.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    }
 
-    public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
-        backend.GetAsync<T>(key, cancellationToken);
+    public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    {
+        return backend.GetAsync<T>(key, cancellationToken);
+    }
 
-    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
-        backend.GetCountAsync(prefix, cancellationToken);
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return backend.GetCountAsync(prefix, cancellationToken);
+    }
 
-    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-        backend.ExistsAsync(key, cancellationToken);
+    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return backend.ExistsAsync(key, cancellationToken);
+    }
 
-    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
-        backend.GetExpirationAsync(key, cancellationToken);
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return backend.GetExpirationAsync(key, cancellationToken);
+    }
 
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
-    ) => backend.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    )
+    {
+        return backend.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
 
-    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
-        backend.RefreshAsync(key, cancellationToken);
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return backend.RefreshAsync(key, cancellationToken);
+    }
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
@@ -686,31 +767,43 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
             : backend.ExpireAsync(key, cancellationToken);
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync<T>(
-        string key,
-        T? expected,
-        CancellationToken cancellationToken = default
-    ) => backend.RemoveIfEqualAsync(key, expected, cancellationToken);
+    public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
+    {
+        return backend.RemoveIfEqualAsync(key, expected, cancellationToken);
+    }
 
-    public ValueTask<int> RemoveAllAsync(
-        IEnumerable<string> cacheKeys,
-        CancellationToken cancellationToken = default
-    ) => backend.RemoveAllAsync(cacheKeys, cancellationToken);
+    public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        return backend.RemoveAllAsync(cacheKeys, cancellationToken);
+    }
 
-    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
-        backend.RemoveByPrefixAsync(prefix, cancellationToken);
+    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        return backend.RemoveByPrefixAsync(prefix, cancellationToken);
+    }
 
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
-        backend.RemoveByTagAsync(tag, cancellationToken);
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return backend.RemoveByTagAsync(tag, cancellationToken);
+    }
 
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => backend.ClearAsync(cancellationToken);
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return backend.ClearAsync(cancellationToken);
+    }
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => backend.SetRemoveAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return backend.SetRemoveAsync(key, value, expiration, cancellationToken);
+    }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default) => backend.FlushAsync(cancellationToken);
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        return backend.FlushAsync(cancellationToken);
+    }
 }

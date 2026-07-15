@@ -17,7 +17,7 @@ public sealed class InternalJobsManagerTests : TestBase
     public sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
-    public async Task SetTickersInProgress_returns_and_notifies_only_rows_stamped_by_provider()
+    public async Task set_tickers_in_progress_returns_and_notifies_only_rows_stamped_by_provider()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -58,7 +58,7 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Fact]
-    public async Task RunTimedOutTickers_projects_each_descendant_with_its_own_run_condition()
+    public async Task run_timed_out_tickers_projects_each_descendant_with_its_own_run_condition()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();

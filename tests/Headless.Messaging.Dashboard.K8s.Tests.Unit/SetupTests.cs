@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void AddMessagingDashboardStandalone_should_register_required_services()
+    public void should_register_required_services_when_add_messaging_dashboard_standalone()
     {
         // given
         var services = new ServiceCollection();
@@ -31,7 +31,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void AddMessagingDashboardStandalone_should_register_http_services()
+    public void should_register_http_services_when_add_messaging_dashboard_standalone()
     {
         // given
         var services = new ServiceCollection();
@@ -51,7 +51,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void AddMessagingDashboardStandalone_should_apply_dashboard_options()
+    public void should_apply_dashboard_options_when_add_messaging_dashboard_standalone()
     {
         // given
         var services = new ServiceCollection();
@@ -73,7 +73,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void AddMessagingDashboardStandalone_should_work_with_null_k8s_options()
+    public void should_work_with_null_k8s_options_when_add_messaging_dashboard_standalone()
     {
         // given
         var services = new ServiceCollection();
@@ -91,7 +91,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void AddMessagingDashboardStandalone_should_register_services_as_singletons()
+    public void should_register_services_as_singletons_when_add_messaging_dashboard_standalone()
     {
         // given
         var services = new ServiceCollection();

@@ -64,14 +64,16 @@ public sealed class HybridCacheFailSafeTests : TestBase
         TimeSpan? duration = null,
         TimeSpan? failSafeMaxDuration = null,
         TimeSpan? throttleDuration = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = duration ?? TimeSpan.FromMinutes(5),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = failSafeMaxDuration ?? TimeSpan.FromHours(1),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(30),
         };
+    }
 
     #region U7-1: stale from L1 when factory throws
 

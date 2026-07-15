@@ -5,7 +5,7 @@ namespace Tests.Collections;
 public sealed class CollectionChangeDetectorExtensionsTests
 {
     [Fact]
-    public void detect_updates_should_identify_updated_and_same_items_correctly()
+    public void should_identify_updated_and_same_items_correctly_when_detect_updates()
     {
         // given
         var existItems = new List<(KeyValue, KeyValue)>
@@ -25,7 +25,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_with_update_logic_should_identify_added_removed_updated_and_same_items()
+    public void should_identify_added_removed_updated_and_same_items_when_detect_changes_with_update_logic()
     {
         // given
         var oldItems = new List<KeyValue> { new(1, "A"), new(2, "B"), new(3, "C") };
@@ -47,7 +47,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_identify_added_removed_and_exist_items()
+    public void should_identify_added_removed_and_exist_items_when_detect_changes()
     {
         // given
         List<KeyValue> oldItems = [new(1, "Alice"), new(2, "Bob"), new(3, "Charlie")];
@@ -69,7 +69,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_classify_value_type_elements_without_misclassification()
+    public void should_classify_value_type_elements_without_misclassification_when_detect_changes()
     {
         // given - value-type elements: the previous `FirstOrDefault(...) is null` match misclassified these.
         int[] oldItems = [1, 2, 3];
@@ -85,7 +85,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_match_across_different_old_and_new_types()
+    public void should_match_across_different_old_and_new_types_when_detect_changes()
     {
         // given - old items are raw ids, new items are entities keyed by Id
         int[] oldIds = [1, 2];
@@ -101,7 +101,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_match_keys_using_the_supplied_comparer()
+    public void should_match_keys_using_the_supplied_comparer_when_detect_changes()
     {
         // given - keys differ only by case
         List<KeyValue> oldItems = [new(1, "alice")];
@@ -122,7 +122,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_treat_all_as_added_when_old_is_empty()
+    public void should_treat_all_as_added_when_detect_changes_old_is_empty()
     {
         // given
         List<KeyValue> oldItems = [];
@@ -138,7 +138,7 @@ public sealed class CollectionChangeDetectorExtensionsTests
     }
 
     [Fact]
-    public void detect_changes_should_treat_all_as_removed_when_new_is_empty()
+    public void should_treat_all_as_removed_when_detect_changes_new_is_empty()
     {
         // given
         List<KeyValue> oldItems = [new(1, "A"), new(2, "B")];

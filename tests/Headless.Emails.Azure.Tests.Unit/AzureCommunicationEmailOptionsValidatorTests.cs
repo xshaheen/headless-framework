@@ -101,7 +101,7 @@ public sealed class AzureCommunicationEmailOptionsValidatorTests
     }
 
     [Fact]
-    public void to_string_should_not_leak_connection_string_or_access_key()
+    public void should_not_leak_connection_string_or_access_key_when_to_string()
     {
         // given
         var options = new AzureCommunicationEmailOptions

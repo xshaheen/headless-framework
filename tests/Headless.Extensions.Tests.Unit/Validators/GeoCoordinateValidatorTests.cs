@@ -86,7 +86,7 @@ public sealed class GeoCoordinateValidatorTests
     }
 
     [Fact]
-    public void should_return_false_for_NaN_latitude()
+    public void should_return_false_for_na_n_latitude()
     {
         var result = GeoCoordinateValidator.IsValidLatitude(double.NaN);
         result.Should().BeFalse();
@@ -95,14 +95,14 @@ public sealed class GeoCoordinateValidatorTests
     [Theory]
     [InlineData(double.PositiveInfinity)]
     [InlineData(double.NegativeInfinity)]
-    public void should_return_false_for_Infinity_longitude(double longitude)
+    public void should_return_false_for_infinity_longitude(double longitude)
     {
         var result = GeoCoordinateValidator.IsValidLongitude(longitude);
         result.Should().BeFalse();
     }
 
     [Fact]
-    public void should_return_false_for_NaN_longitude()
+    public void should_return_false_for_na_n_longitude()
     {
         var result = GeoCoordinateValidator.IsValidLongitude(double.NaN);
         result.Should().BeFalse();
@@ -111,7 +111,7 @@ public sealed class GeoCoordinateValidatorTests
     [Theory]
     [InlineData(double.PositiveInfinity)]
     [InlineData(double.NegativeInfinity)]
-    public void should_return_false_for_Infinity_latitude(double latitude)
+    public void should_return_false_for_infinity_latitude(double latitude)
     {
         var result = GeoCoordinateValidator.IsValidLatitude(latitude);
         result.Should().BeFalse();

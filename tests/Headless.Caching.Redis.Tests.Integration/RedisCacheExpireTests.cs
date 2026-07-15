@@ -13,14 +13,16 @@ public sealed class RedisCacheExpireTests(RedisCacheFixture fixture) : RedisCach
 {
     private IDatabase Database => Fixture.ConnectionMultiplexer.GetDatabase();
 
-    private static CacheEntryOptions _FailSafeOptions() =>
-        new()
+    private static CacheEntryOptions _FailSafeOptions()
+    {
+        return new()
         {
             Duration = TimeSpan.FromSeconds(1),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromSeconds(5),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
         };
+    }
 
     [Fact]
     public async Task should_preserve_reserve_and_ttl_when_expiring_a_failsafe_entry()

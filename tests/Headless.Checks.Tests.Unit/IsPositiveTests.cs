@@ -10,7 +10,7 @@ public sealed class IsPositiveTests
     private readonly InputsTestArgument _validValues = new();
 
     [Fact]
-    public void is_positive_should_return_same_value_when_positive()
+    public void should_return_same_value_when_is_positive_positive()
     {
         Argument.IsPositive(_validValues.IntValue).Should().Be(_validValues.IntValue);
         Argument.IsPositive(_validValues.DecimalValue).Should().Be(_validValues.DecimalValue);
@@ -39,7 +39,7 @@ public sealed class IsPositiveTests
 
     [Theory]
     [MemberData(nameof(TestData))]
-    public void is_positive_should_throw_argument_out_of_range_exception_when_negative(NumericKind kind)
+    public void should_throw_argument_out_of_range_exception_when_is_positive_negative(NumericKind kind)
     {
         Action action = kind switch
         {

@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Primitives;
-using Headless.Validators;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;

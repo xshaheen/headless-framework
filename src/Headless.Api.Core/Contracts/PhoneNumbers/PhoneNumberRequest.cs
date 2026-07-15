@@ -18,10 +18,16 @@ public sealed record PhoneNumberRequest(int Code, string Number)
     /// <summary>
     /// Returns the phone number in E.164-like format (e.g., <c>+1555123456</c>).
     /// </summary>
-    public override string ToString() => $"+{Code.ToString(CultureInfo.InvariantCulture)}{Number}";
+    public override string ToString()
+    {
+        return $"+{Code.ToString(CultureInfo.InvariantCulture)}{Number}";
+    }
 
     /// <summary>Maps this request to the domain <see cref="PhoneNumber"/> primitive.</summary>
-    public PhoneNumber ToPhoneNumber() => this;
+    public PhoneNumber ToPhoneNumber()
+    {
+        return this;
+    }
 
     /// <summary>
     /// Implicitly converts to the domain <see cref="PhoneNumber"/> primitive.

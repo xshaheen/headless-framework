@@ -400,7 +400,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_acquire_lock_when_resource_is_free_and_acquireTimeout_is_zero()
+    public async Task should_acquire_lock_when_resource_is_free_and_acquire_timeout_is_zero()
     {
         // Regression guard for issue #282: TimeSpan.Zero must mean "try once with no
         // wait/retry budget", not "fail immediately". On a free resource, the first
@@ -716,7 +716,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_null_when_storage_hangs_and_acquireTimeout_is_zero_and_caller_token_is_none()
+    public async Task should_return_null_when_storage_hangs_and_acquire_timeout_is_zero_and_caller_token_is_none()
     {
         // given — substitute storage that blocks forever on InsertAsync
         var storage = Substitute.For<IDistributedLockStorage>();
@@ -854,7 +854,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_OperationCanceledException_when_caller_already_cancelled_and_acquireTimeout_is_zero()
+    public async Task should_throw_operation_canceled_exception_when_caller_already_cancelled_and_acquire_timeout_is_zero()
     {
         // given
         var provider = _CreateProvider();
@@ -875,7 +875,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_OperationCanceledException_when_caller_cancels_mid_call_during_acquireTimeout_zero()
+    public async Task should_throw_operation_canceled_exception_when_caller_cancels_mid_call_during_acquire_timeout_zero()
     {
         // given — substitute storage that cancels the caller token mid-call (mirrors the existing
         // should_cleanup_orphan_lock_when_acquisition_is_cancelled idiom for the non-Zero path).
@@ -916,7 +916,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_call_storage_exactly_once_when_acquireTimeout_is_zero_and_resource_is_held()
+    public async Task should_call_storage_exactly_once_when_acquire_timeout_is_zero_and_resource_is_held()
     {
         // given — substitute storage that returns false (resource held) on every call
         var callCount = 0;
@@ -954,7 +954,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_call_orphan_cleanup_when_safety_deadline_fires_during_acquireTimeout_zero()
+    public async Task should_call_orphan_cleanup_when_safety_deadline_fires_during_acquire_timeout_zero()
     {
         // given — storage that hangs InsertAsync until the attempt token fires
         var storage = Substitute.For<IDistributedLockStorage>();
@@ -987,7 +987,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_acquire_lock_when_acquireTimeout_is_zero_and_caller_token_is_cancellable()
+    public async Task should_acquire_lock_when_acquire_timeout_is_zero_and_caller_token_is_cancellable()
     {
         // Regression guard: the CanBeCanceled short-circuit (skipping the linked CTS for
         // CancellationToken.None) must not regress the cancellable-caller path. Both paths

@@ -9,7 +9,7 @@ public sealed class PasswordGeneratorTests
     private readonly PasswordGenerator _passwordGenerator = new();
 
     [Fact]
-    public void generate_password_should_return_password_of_specified_length()
+    public void should_return_password_of_specified_length_when_generate_password()
     {
         // given
         const int length = 12;
@@ -22,7 +22,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_contain_required_unique_characters()
+    public void should_contain_required_unique_characters_when_generate_password()
     {
         // given
         const int length = 10;
@@ -38,7 +38,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_throw_if_invalid_configuration()
+    public void should_throw_if_invalid_configuration_when_generate_password()
     {
         // when
         Action act = () =>
@@ -61,7 +61,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_allow_no_remaining_pool_when_required_sets_fill_length()
+    public void should_allow_no_remaining_pool_when_generate_password_required_sets_fill_length()
     {
         // when
         var password = _passwordGenerator.GeneratePassword(
@@ -83,7 +83,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_bound_required_unique_chars_by_length_before_requiring_remaining_pool()
+    public void should_bound_required_unique_chars_by_length_before_requiring_remaining_pool_when_generate_password()
     {
         // when
         var password = _passwordGenerator.GeneratePassword(
@@ -103,7 +103,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void validate_required_unique_chars_should_throw_invalid_operation_exception()
+    public void should_throw_invalid_operation_exception_when_validate_required_unique_chars()
     {
         // when
         Action action = () =>
@@ -119,7 +119,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_throw_argument_out_of_range_exception()
+    public void should_throw_argument_out_of_range_exception_when_generate_password()
     {
         // given
         const int length = -1;
@@ -132,7 +132,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_throw_when_length_is_smaller_than_required_character_sets()
+    public void should_throw_when_generate_password_length_is_smaller_than_required_character_sets()
     {
         // when (defaults require digit + lowercase + uppercase + non-alphanumeric => 4 required sets)
         Action action = () => _passwordGenerator.GeneratePassword(new GeneratePasswordOptions(2));
@@ -142,7 +142,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_return_exactly_the_requested_length()
+    public void should_return_exactly_the_requested_length_when_generate_password()
     {
         // when
         var password = _passwordGenerator.GeneratePassword(new GeneratePasswordOptions(6));
@@ -152,7 +152,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_should_not_crash_when_required_unique_chars_exceed_enabled_remaining_set()
+    public void should_not_crash_when_generate_password_required_unique_chars_exceed_enabled_remaining_set()
     {
         // when (only digits are enabled for the "remaining" pool, so fewer than 20 distinct chars exist)
         Action action = () =>
@@ -163,7 +163,7 @@ public sealed class PasswordGeneratorTests
     }
 
     [Fact]
-    public void generate_password_with_defaults_should_contain_each_required_character_set()
+    public void should_contain_each_required_character_set_when_generate_password_with_defaults()
     {
         // given — defaults require a digit, lowercase, uppercase, and non-alphanumeric character
         var password = _passwordGenerator.GeneratePassword(new GeneratePasswordOptions(16));

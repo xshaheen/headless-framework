@@ -226,8 +226,9 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             );
     }
 
-    private ConcurrentQueue<RecordedMessage> _GetQueue(MessageObservationType type) =>
-        type switch
+    private ConcurrentQueue<RecordedMessage> _GetQueue(MessageObservationType type)
+    {
+        return type switch
         {
             MessageObservationType.Published => _published,
             MessageObservationType.Consumed => _consumed,
@@ -235,8 +236,12 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             MessageObservationType.Exhausted => _exhausted,
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, message: null),
         };
+    }
 
-    internal DateTimeOffset GetUtcNow() => _timeProvider.GetUtcNow();
+    internal DateTimeOffset GetUtcNow()
+    {
+        return _timeProvider.GetUtcNow();
+    }
 
     private sealed record WaiterEntry(
         Type MessageType,

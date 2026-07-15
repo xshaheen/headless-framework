@@ -19,7 +19,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
     }
 
     [Fact]
-    public async Task maintenance_overhead_should_be_independent_of_cache_size()
+    public async Task should_be_independent_of_cache_size_when_maintenance_overhead()
     {
         // given - a large cache
         using var cache = _CreateCache();

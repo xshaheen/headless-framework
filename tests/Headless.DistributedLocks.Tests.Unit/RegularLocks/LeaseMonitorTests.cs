@@ -336,7 +336,6 @@ public sealed class LeaseMonitorTests : TestBase
 
     private sealed class BlockingLeaseHandle(CancellationToken externalAbort) : LeaseMonitor.ILeaseHandle
     {
-        private readonly CancellationToken _externalAbort = externalAbort;
         public string Resource => "blocking-resource";
         public string LeaseId => "blocking-lock";
         public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
@@ -351,7 +350,7 @@ public sealed class LeaseMonitorTests : TestBase
             try
             {
                 // Block until the disposal token (passed by the monitor loop) cancels.
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _externalAbort);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, externalAbort);
                 await Task.Delay(Timeout.Infinite, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

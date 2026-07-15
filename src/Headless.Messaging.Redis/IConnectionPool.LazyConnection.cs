@@ -26,12 +26,15 @@ internal sealed class AsyncLazyRedisConnection(
     /// resolved; otherwise <see langword="null"/>.
     /// </summary>
 #pragma warning disable VSTHRD104 // Offer async methods
+#pragma warning disable MA0045 // The task has completed successfully, so reading Result cannot block.
     public RedisConnection? CreatedConnection => IsValueCreated && Value.IsCompletedSuccessfully ? Value.Result : null;
-#pragma warning restore VSTHRD104
+#pragma warning restore MA0045, VSTHRD104
 
     /// <summary>Returns the connection task, cancelling only this caller's wait when requested.</summary>
-    public async Task<RedisConnection> GetValueAsync(CancellationToken cancellationToken = default) =>
-        await Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+    public async Task<RedisConnection> GetValueAsync(CancellationToken cancellationToken = default)
+    {
+        return await Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>Returns an awaiter so the connection can be awaited directly.</summary>
     public TaskAwaiter<RedisConnection> GetAwaiter()

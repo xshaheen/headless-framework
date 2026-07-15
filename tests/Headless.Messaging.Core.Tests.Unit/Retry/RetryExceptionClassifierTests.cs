@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 
