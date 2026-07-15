@@ -454,7 +454,8 @@
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
+          "Headless.Serializer.Abstractions": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )"
         }
       },
       "headless.caching.inmemory": {
@@ -529,6 +530,7 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.7.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -639,6 +641,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },

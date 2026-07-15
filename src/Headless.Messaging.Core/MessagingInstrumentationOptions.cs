@@ -1,21 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.OpenTelemetry.Internal;
+using Headless.Messaging.Internal;
 
-namespace Headless.Messaging.OpenTelemetry;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
-/// <summary>Options for <c>AddMessagingInstrumentation</c>.</summary>
+/// <summary>
+/// Configures messaging span enrichment and the framework's built-in tag enrichers. Exposed on the messaging
+/// setup builder (<c>setup.Instrumentation</c>) — the enricher pipeline runs natively inside
+/// <c>Headless.Messaging.Core</c>, so registration happens at <c>AddHeadlessMessaging</c> time rather than at
+/// OpenTelemetry-registration time.
+/// </summary>
 [PublicAPI]
 public sealed class MessagingInstrumentationOptions
 {
     private readonly List<IActivityTagEnricher> _enrichers = [];
-
-    /// <summary>
-    /// When <see langword="true"/>, OpenTelemetry metrics (message sizes, latencies, etc.) are
-    /// collected in addition to traces. Default: <see langword="false"/>.
-    /// </summary>
-    public bool EnableMetrics { get; set; }
 
     /// <summary>
     /// When <see langword="true"/>, the built-in <c>headless.messaging.tenant_id</c> tag enricher
@@ -47,7 +47,7 @@ public sealed class MessagingInstrumentationOptions
     /// <summary>
     /// Custom enrichers appended after the built-in enrichers. Enrichers are invoked in insertion
     /// order for every span type. The collection is snapshotted at registration time
-    /// (<c>AddMessagingInstrumentation</c>); changes after registration are ignored.
+    /// (<c>AddHeadlessMessaging</c>); changes after registration are ignored.
     /// </summary>
     /// <remarks>
     /// Built-in enrichers run first, in the following order:
@@ -74,9 +74,8 @@ public sealed class MessagingInstrumentationOptions
     }
 
     /// <summary>
-    /// Builds the snapshot of enrichers that <c>AddMessagingInstrumentation</c> would register
-    /// for the current options state. Returns the built-in enrichers (gated by
-    /// <see cref="SuppressTenantIdTag"/>, <see cref="SuppressIntentTags"/>, and
+    /// Builds the snapshot of enrichers to register for the current options state. Returns the built-in
+    /// enrichers (gated by <see cref="SuppressTenantIdTag"/>, <see cref="SuppressIntentTags"/>, and
     /// <see cref="SuppressRetryCountTag"/>) followed by any custom enrichers added via
     /// <see cref="AddEnricher"/>, in registration order.
     /// </summary>

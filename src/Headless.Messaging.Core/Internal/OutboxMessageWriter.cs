@@ -22,12 +22,11 @@ internal sealed class OutboxMessageWriter(
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> messagingOptions,
-    ILogger<MessageOutboxBuffer> outboxBufferLogger
+    ILogger<MessageOutboxBuffer> outboxBufferLogger,
+    MessagingTelemetry? telemetry = null
 )
 {
-    // ReSharper disable once InconsistentNaming
-    private static DiagnosticListener DiagnosticListener { get; } =
-        new(MessageDiagnosticListenerNames.DiagnosticListenerName);
+    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
 
     internal Task PublishAsync<T>(
         T? contentObj,
@@ -109,10 +108,10 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        long? tracingTimestamp = null;
+        MessagingTraceHandle traceHandle = default;
         try
         {
-            tracingTimestamp = _TracingBefore(publishRequest.Message, publishRequest.IntentType, cancellationToken);
+            traceHandle = _TracingBefore(publishRequest.Message, publishRequest.IntentType);
 
             // Use the coordinator/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
@@ -128,7 +127,7 @@ internal sealed class OutboxMessageWriter(
                     )
                     .ConfigureAwait(false);
 
-                _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
+                _TracingAfter(traceHandle, publishRequest.Message);
 
                 var bufferState = new MessageOutboxBufferState(
                     dispatcher,
@@ -163,7 +162,7 @@ internal sealed class OutboxMessageWriter(
                 )
                 .ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
+            _TracingAfter(traceHandle, publishRequest.Message);
 
             if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
             {
@@ -183,7 +182,7 @@ internal sealed class OutboxMessageWriter(
         }
         catch (Exception e)
         {
-            _TracingError(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, e, cancellationToken);
+            _TracingError(traceHandle, e);
 
             throw;
         }
@@ -213,81 +212,38 @@ internal sealed class OutboxMessageWriter(
 
     #region Tracing
 
-    private long? _TracingBefore(Message message, IntentType intentType, CancellationToken cancellationToken)
+    private MessagingTraceHandle _TracingBefore(Message message, IntentType intentType)
     {
-        if (DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublishMessageStore))
+        if (!MessagingDiagnostics.IsEnabled)
         {
-            var eventData = new MessageEventDataPubStore
-            {
-                OperationTimestamp = _NowUnixTimeMilliseconds(),
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                CancellationToken = cancellationToken,
-            };
-
-            DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData);
-
-            return eventData.OperationTimestamp;
+            return default;
         }
 
-        return null;
+        var now = _NowUnixTimeMilliseconds();
+        var activity = _telemetry.PersistStart(message, message.Name, intentType, now);
+
+        return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(
-        long? tracingTimestamp,
-        Message message,
-        IntentType intentType,
-        CancellationToken cancellationToken
-    )
+    private void _TracingAfter(MessagingTraceHandle traceHandle, Message message)
     {
-        if (
-            tracingTimestamp != null
-            && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublishMessageStore)
-        )
+        if (!traceHandle.IsRecording)
         {
-            var now = _NowUnixTimeMilliseconds();
-            var eventData = new MessageEventDataPubStore
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                CancellationToken = cancellationToken,
-            };
-
-            DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublishMessageStore, eventData);
+            return;
         }
+
+        var now = _NowUnixTimeMilliseconds();
+        MessagingTelemetry.PersistStop(traceHandle.Activity, message.Name, traceHandle.StartTimestampMs!.Value, now);
     }
 
-    private void _TracingError(
-        long? tracingTimestamp,
-        Message message,
-        IntentType intentType,
-        Exception ex,
-        CancellationToken cancellationToken
-    )
+    private static void _TracingError(MessagingTraceHandle traceHandle, Exception ex)
     {
-        if (
-            tracingTimestamp != null
-            && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore)
-        )
+        if (!traceHandle.IsRecording)
         {
-            var now = _NowUnixTimeMilliseconds();
-            var eventData = new MessageEventDataPubStore
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                Exception = ex,
-                CancellationToken = cancellationToken,
-            };
-
-            DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
+            return;
         }
+
+        MessagingTelemetry.PersistError(traceHandle.Activity, ex);
     }
 
     private long _NowUnixTimeMilliseconds()

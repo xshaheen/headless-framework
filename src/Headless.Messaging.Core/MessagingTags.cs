@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.OpenTelemetry;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>
 /// Well-known messaging tag names emitted by the framework on activity spans.

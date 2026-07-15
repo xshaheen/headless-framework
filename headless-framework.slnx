@@ -295,7 +295,6 @@
         <Project Path="src/Headless.Messaging.InMemoryStorage/Headless.Messaging.InMemoryStorage.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
-        <Project Path="src/Headless.Messaging.OpenTelemetry/Headless.Messaging.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql/Headless.Messaging.Storage.PostgreSql.csproj" />
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
@@ -307,7 +306,6 @@
     <Folder Name="/Messaging/Tests/">
         <Project Path="tests/Headless.Messaging.Testing.Tests.Unit/Headless.Messaging.Testing.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />

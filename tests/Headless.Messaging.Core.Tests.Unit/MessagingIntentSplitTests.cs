@@ -5,7 +5,6 @@ using System.Reflection;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
@@ -300,7 +299,8 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
 
         await using var transport = new CapturingBusTransport();
-        using var diagnostics = new CapturingDiagnosticObserver("events.prepared");
+        var activities = new List<Activity>();
+        using var listener = _CreatePublishActivityListener(activities);
         var bus = _CreateBus(transport, publishRequestFactory);
 
         // when
@@ -316,11 +316,11 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Bus
             );
         transport.LastMessage!.Value.Name.Should().Be("events.prepared");
-        diagnostics
-            .BeforePublishData.Should()
-            .BeOfType<MessageEventDataPubSend>()
-            .Which.IntentType.Should()
-            .Be(IntentType.Bus);
+        var publishActivity = activities.Single(a =>
+            string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
+        );
+        publishActivity.GetTagItem("messaging.destination.name").Should().Be("events.prepared");
+        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
     }
 
     [Fact]
@@ -347,7 +347,8 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
 
         await using var transport = new CapturingQueueTransport();
-        using var diagnostics = new CapturingDiagnosticObserver("jobs.prepared");
+        var activities = new List<Activity>();
+        using var listener = _CreatePublishActivityListener(activities);
         var queue = _CreateQueue(transport, publishRequestFactory);
 
         // when
@@ -363,11 +364,11 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Queue
             );
         transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
-        diagnostics
-            .BeforePublishData.Should()
-            .BeOfType<MessageEventDataPubSend>()
-            .Which.IntentType.Should()
-            .Be(IntentType.Queue);
+        var publishActivity = activities.Single(a =>
+            string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
+        );
+        publishActivity.GetTagItem("messaging.destination.name").Should().Be("jobs.prepared");
+        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
     }
 
     private static IBus _CreateBus(IBusTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
@@ -612,61 +613,18 @@ public sealed class MessagingIntentSplitTests : TestBase
         }
     }
 
-    private sealed class CapturingDiagnosticObserver
-        : IObserver<DiagnosticListener>,
-            IObserver<KeyValuePair<string, object?>>,
-            IDisposable
+    private static ActivityListener _CreatePublishActivityListener(List<Activity> captured)
     {
-        private readonly IDisposable _allListenersSubscription;
-        private readonly string _expectedMessageName;
-        private IDisposable? _listenerSubscription;
-
-        public object? BeforePublishData { get; private set; }
-
-        public CapturingDiagnosticObserver(string expectedMessageName)
+        var listener = new ActivityListener
         {
-            _expectedMessageName = expectedMessageName;
-            _allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
-        }
+            ShouldListenTo = source =>
+                string.Equals(source.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal),
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStarted = captured.Add,
+        };
 
-        public void OnNext(DiagnosticListener value)
-        {
-            if (
-                string.Equals(
-                    value.Name,
-                    MessageDiagnosticListenerNames.DiagnosticListenerName,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                _listenerSubscription = value.Subscribe(this, _IsBeforePublish);
-            }
-        }
+        ActivitySource.AddActivityListener(listener);
 
-        public void OnNext(KeyValuePair<string, object?> value)
-        {
-            if (
-                value.Value is MessageEventDataPubSend eventData
-                && string.Equals(eventData.TransportMessage.Name, _expectedMessageName, StringComparison.Ordinal)
-            )
-            {
-                BeforePublishData = eventData;
-            }
-        }
-
-        public void OnError(Exception error) { }
-
-        public void OnCompleted() { }
-
-        public void Dispose()
-        {
-            _listenerSubscription?.Dispose();
-            _allListenersSubscription.Dispose();
-        }
-
-        private static bool _IsBeforePublish(string eventName, object? _, object? __)
-        {
-            return string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
-        }
+        return listener;
     }
 }

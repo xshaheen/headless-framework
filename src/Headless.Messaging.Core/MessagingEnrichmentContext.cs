@@ -2,7 +2,8 @@
 
 using System.Diagnostics;
 
-namespace Headless.Messaging.OpenTelemetry;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Messaging;
 
 /// <summary>
 /// Contextual data passed to each <see cref="IActivityTagEnricher"/> when a messaging span starts.

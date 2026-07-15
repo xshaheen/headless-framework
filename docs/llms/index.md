@@ -385,7 +385,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Core` — Outbox runtime, retries, delayed delivery, consumer orchestration.
 - `Headless.Messaging.Dashboard` — Web UI for monitoring messages, failures, retries.
 - `Headless.Messaging.Dashboard.K8s` — Kubernetes node auto-discovery for the dashboard.
-- `Headless.Messaging.OpenTelemetry` — Tracing, metrics, context propagation.
 - `Headless.Messaging.RabbitMq` — RabbitMQ (AMQP) transport.
 - `Headless.Messaging.Kafka` — Apache Kafka transport.
 - `Headless.Messaging.Aws` — AWS SQS + SNS transport.

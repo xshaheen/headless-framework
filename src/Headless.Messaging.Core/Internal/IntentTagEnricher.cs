@@ -2,15 +2,11 @@
 
 using System.Diagnostics;
 
-namespace Headless.Messaging.OpenTelemetry.Internal;
+namespace Headless.Messaging.Internal;
 
 internal sealed class IntentTagEnricher : IActivityTagEnricher
 {
-    public ValueTask Enrich(
-        Activity activity,
-        in MessagingEnrichmentContext context,
-        CancellationToken cancellationToken = default
-    )
+    public void Enrich(Activity activity, in MessagingEnrichmentContext context)
     {
         switch (context.IntentType)
         {
@@ -24,7 +20,5 @@ internal sealed class IntentTagEnricher : IActivityTagEnricher
                 activity.SetTag(MessagingTags.DestinationKind, "queue");
                 break;
         }
-
-        return ValueTask.CompletedTask;
     }
 }
