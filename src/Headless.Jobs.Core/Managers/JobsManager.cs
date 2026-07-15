@@ -507,6 +507,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
@@ -527,11 +529,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (errors is not null)
         {
             throw new JobValidatorException(errors);
-        }
-
-        foreach (var entity in entities)
-        {
-            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
         }
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
@@ -620,6 +617,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+
             if (
                 _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
@@ -640,11 +639,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (errors is not null)
         {
             throw new JobValidatorException(errors);
-        }
-
-        foreach (var entity in validEntities)
-        {
-            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
         }
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).

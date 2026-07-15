@@ -23,14 +23,13 @@ namespace Tests.Transactions;
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
 [Collection(nameof(JobsHelperCollection))]
-public sealed class JobsManagerCoordinatedRoutingTests : TestBase
+public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
 {
     private const string _FunctionName = "routing-test-fn";
 
-    static JobsManagerCoordinatedRoutingTests()
+    public JobsManagerCoordinatedRoutingTests()
     {
-        // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
-        // a one-time static registration is stable for this assembly.
+        JobFunctionProvider.ResetForTests();
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
@@ -45,6 +44,8 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         );
         JobFunctionProvider.Build();
     }
+
+    public void Dispose() => JobFunctionProvider.ResetForTests();
 
     [Fact]
     public async Task TimeJob_without_coordinator_takes_direct_path()
@@ -98,6 +99,54 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
                 .Persistence.DidNotReceive()
                 .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
             await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Time_batch_schedule_middleware_runs_before_manager_normalizes_the_entity()
+    {
+        DateTime? executionTimeSeenByMiddleware = DateTime.MaxValue;
+        using (
+            _ReplaceScheduleDispatch(
+                (context, next, token) =>
+                {
+                    executionTimeSeenByMiddleware = ((TimeJobEntity)context.Job).ExecutionTime;
+                    return next(token);
+                }
+            )
+        )
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+            var job = _FutureTimeJob();
+            job.ExecutionTime = null;
+
+            await sut.Time.AddBatchAsync([job], AbortToken);
+
+            executionTimeSeenByMiddleware.Should().BeNull();
+            job.ExecutionTime.Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task Cron_batch_schedule_middleware_runs_before_expression_validation()
+    {
+        using (
+            _ReplaceScheduleDispatch(
+                (context, next, token) =>
+                {
+                    ((CronJobEntity)context.Job).Expression = "0 0 0 * * *";
+                    return next(token);
+                }
+            )
+        )
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+            var job = _CronJob();
+            job.Expression = "invalid";
+
+            var result = await sut.Cron.AddBatchAsync([job], AbortToken);
+
+            result.Should().ContainSingle().Which.Should().BeSameAs(job);
         }
     }
 
