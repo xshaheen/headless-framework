@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Reflection;
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
@@ -22,14 +20,16 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
         }
     );
 
+    private static AzureServiceBusQueueTransport _CreateTransport(IAzureServiceBusClientPool pool)
+    {
+        return new AzureServiceBusQueueTransport(NullLogger<AzureServiceBusQueueTransport>.Instance, _Options, pool);
+    }
+
     [Fact]
     public async Task should_return_correct_broker_address()
     {
         // given
-        await using var transport = new AzureServiceBusQueueTransport(
-            NullLogger<AzureServiceBusQueueTransport>.Instance,
-            _Options
-        );
+        await using var transport = _CreateTransport(Substitute.For<IAzureServiceBusClientPool>());
 
         // when
         var brokerAddress = transport.BrokerAddress;
@@ -40,17 +40,16 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_send_message_to_cached_queue_sender()
+    public async Task should_send_message_to_pooled_queue_sender()
     {
         // given
-        await using var transport = new AzureServiceBusQueueTransport(
-            NullLogger<AzureServiceBusQueueTransport>.Instance,
-            _Options
-        );
-
         var sender = Substitute.For<ServiceBusSender>();
         sender.SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        _SetSender(transport, "OrderCreated", sender);
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("OrderCreated").Returns(sender);
+
+        await using var transport = _CreateTransport(pool);
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -66,6 +65,7 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
+        pool.Received(1).GetSender("OrderCreated");
         await sender
             .Received(1)
             .SendMessageAsync(
@@ -80,16 +80,15 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
     public async Task should_return_failed_when_send_fails()
     {
         // given
-        await using var transport = new AzureServiceBusQueueTransport(
-            NullLogger<AzureServiceBusQueueTransport>.Instance,
-            _Options
-        );
-
         var sender = Substitute.For<ServiceBusSender>();
         sender
             .SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new ServiceBusException("Network error", ServiceBusFailureReason.ServiceBusy));
-        _SetSender(transport, "OrderCreated", sender);
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("OrderCreated").Returns(sender);
+
+        await using var transport = _CreateTransport(pool);
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -113,16 +112,15 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
     public async Task should_propagate_cancellation()
     {
         // given
-        await using var transport = new AzureServiceBusQueueTransport(
-            NullLogger<AzureServiceBusQueueTransport>.Instance,
-            _Options
-        );
-
         var sender = Substitute.For<ServiceBusSender>();
         sender
             .SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new OperationCanceledException());
-        _SetSender(transport, "OrderCreated", sender);
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("OrderCreated").Returns(sender);
+
+        await using var transport = _CreateTransport(pool);
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -138,15 +136,5 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-    }
-
-    private static void _SetSender(AzureServiceBusQueueTransport transport, string queueName, ServiceBusSender sender)
-    {
-        var field = typeof(AzureServiceBusQueueTransport).GetField(
-            "_senders",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        )!;
-        var senders = (ConcurrentDictionary<string, Lazy<ServiceBusSender>>)field.GetValue(transport)!;
-        senders[queueName] = new Lazy<ServiceBusSender>(() => sender);
     }
 }

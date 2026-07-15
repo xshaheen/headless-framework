@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using Azure.Messaging.ServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,12 +8,10 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal sealed class AzureServiceBusQueueTransport(
     ILogger<AzureServiceBusQueueTransport> logger,
-    IOptions<AzureServiceBusMessagingOptions> busOptions
+    IOptions<AzureServiceBusMessagingOptions> busOptions,
+    IAzureServiceBusClientPool clientPool
 ) : IQueueTransport
 {
-    private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
-    private ServiceBusClient? _client;
-
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
 
@@ -27,7 +23,7 @@ internal sealed class AzureServiceBusQueueTransport(
         try
         {
             var queueName = transportMessage.Name;
-            var sender = _GetSender(queueName).Value;
+            var sender = clientPool.GetSender(queueName);
             var message = AzureServiceBusMessageBuilder.Build(transportMessage, busOptions.Value.EnableSessions);
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
@@ -46,41 +42,8 @@ internal sealed class AzureServiceBusQueueTransport(
         }
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (_client is not null)
-        {
-            await _client.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    private Lazy<ServiceBusSender> _GetSender(string queueName)
-    {
-        return _senders.GetOrAdd(
-            queueName,
-            static (name, transport) =>
-            {
-                var factory = new SenderFactory(transport, name);
-
-                return new Lazy<ServiceBusSender>(factory.Create, LazyThreadSafetyMode.ExecutionAndPublication);
-            },
-            this
-        );
-    }
-
-    private ServiceBusSender _CreateSender(string queueName)
-    {
-        _client ??= busOptions.Value.TokenCredential is not null
-            ? new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential)
-            : new ServiceBusClient(busOptions.Value.ConnectionString);
-
-        return _client.CreateSender(queueName);
-    }
-
-    private sealed class SenderFactory(AzureServiceBusQueueTransport transport, string queueName)
-    {
-        public ServiceBusSender Create() => transport._CreateSender(queueName);
-    }
+    // The shared client/sender pool owns connection lifetime and is disposed by the container.
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
 internal static partial class AzureServiceBusQueueTransportLog

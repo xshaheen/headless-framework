@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using Azure.Messaging.ServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Headless.Messaging.AzureServiceBus.Producer;
 using Microsoft.Extensions.Logging;
@@ -11,12 +9,11 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal sealed class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
-    IOptions<AzureServiceBusMessagingOptions> busOptions
+    IOptions<AzureServiceBusMessagingOptions> busOptions,
+    IAzureServiceBusClientPool clientPool
 ) : IBusTransport, IServiceBusProducerDescriptorFactory
 {
     private readonly ILogger _logger = logger;
-    private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
-    private ServiceBusClient? _client;
 
     /// <summary>
     /// Creates a producer descriptor for the given message. If there's no custom producer configuration for the
@@ -42,7 +39,7 @@ internal sealed class AzureServiceBusTransport(
         try
         {
             var producer = CreateProducerForMessage(transportMessage);
-            var sender = _GetSenderForProducer(producer).Value;
+            var sender = clientPool.GetSender(producer.TopicPath);
 
             var message = AzureServiceBusMessageBuilder.Build(
                 transportMessage,
@@ -68,46 +65,8 @@ internal sealed class AzureServiceBusTransport(
         }
     }
 
-    /// <summary>
-    /// Gets the <see cref="ServiceBusSender"/> for the specified producer descriptor, creating it on first access.
-    /// Thread-safe via <see cref="ConcurrentDictionary{TKey,TValue}"/> and <see cref="Lazy{T}"/> double-init protection.
-    /// </summary>
-    private Lazy<ServiceBusSender> _GetSenderForProducer(IServiceBusProducerDescriptor producerDescriptor)
-    {
-        return _senders.GetOrAdd(
-            producerDescriptor.TopicPath,
-            static (topicPath, transport) =>
-            {
-                var factory = new SenderFactory(transport, topicPath);
-
-                return new Lazy<ServiceBusSender>(factory.Create, LazyThreadSafetyMode.ExecutionAndPublication);
-            },
-            this
-        );
-    }
-
-    private ServiceBusSender _CreateSender(string topicPath)
-    {
-        _logger.TopicConnectionExists(topicPath);
-        _client ??= busOptions.Value.TokenCredential is null
-            ? new ServiceBusClient(busOptions.Value.ConnectionString)
-            : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
-
-        return _client.CreateSender(topicPath);
-    }
-
-    private sealed class SenderFactory(AzureServiceBusTransport transport, string topicPath)
-    {
-        public ServiceBusSender Create() => transport._CreateSender(topicPath);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_client is not null)
-        {
-            await _client.DisposeAsync().ConfigureAwait(false);
-        }
-    }
+    // The shared client/sender pool owns connection lifetime and is disposed by the container.
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
 internal static partial class AzureServiceBusTransportLog
@@ -118,11 +77,4 @@ internal static partial class AzureServiceBusTransportLog
         Message = "Azure Service Bus message [{GetName}] has been published."
     )]
     public static partial void MessagePublished(this ILogger logger, string getName);
-
-    [LoggerMessage(
-        EventId = 3007,
-        Level = LogLevel.Trace,
-        Message = "Topic {TopicPath} connection already present as a Publish destination."
-    )]
-    public static partial void TopicConnectionExists(this ILogger logger, string topicPath);
 }

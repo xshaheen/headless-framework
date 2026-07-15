@@ -14,6 +14,7 @@ Enables enterprise messaging using Azure Service Bus with topics, subscriptions,
 - **Advanced Routing**: Message routing rules and filters
 - **Enterprise Features**: Transactions, duplicate detection, dead-lettering
 - **Host-Cancellable Startup**: Client, topology, and processor setup honor host shutdown.
+- **Shared Publish Connection**: Bus and queue publishing share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders; senders are drained before the client on shutdown.
 
 ## Installation
 
@@ -127,5 +128,5 @@ options.EnableSubscriberParallelExecute = false;
 ## Side Effects
 
 - Creates Service Bus topics and subscriptions if they don't exist
-- Establishes persistent connections to Azure Service Bus
+- Establishes a persistent connection to Azure Service Bus (publishing shares a single client per namespace)
 - Configures message routing rules and filters

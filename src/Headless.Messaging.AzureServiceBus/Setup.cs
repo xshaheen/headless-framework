@@ -125,6 +125,7 @@ public static class SetupAzureServiceBusMessaging
             configureOptions(services);
 
             services.AddSingleton<IConsumerClientFactory, AzureServiceBusConsumerClientFactory>();
+            services.AddSingleton<IAzureServiceBusClientPool, AzureServiceBusClientPool>();
             services.AddSingleton<AzureServiceBusTransport>();
             services.AddSingleton<AzureServiceBusQueueTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<AzureServiceBusTransport>());

@@ -25,14 +25,20 @@ public sealed class ServiceBusTransportTests
         _options = Options.Create(config);
     }
 
+    private static AzureServiceBusTransport _CreateTransport(IOptions<AzureServiceBusMessagingOptions> options)
+    {
+        return new AzureServiceBusTransport(
+            NullLogger<AzureServiceBusTransport>.Instance,
+            options,
+            Substitute.For<IAzureServiceBusClientPool>()
+        );
+    }
+
     [Fact]
     public async Task should_have_correct_broker_address()
     {
         // given, when
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         // then
         transport.BrokerAddress.Name.Should().Be("servicebus");
@@ -48,10 +54,7 @@ public sealed class ServiceBusTransportTests
         );
 
         // when
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            options
-        );
+        await using var transport = _CreateTransport(options);
 
         // then
         transport.BrokerAddress.Endpoint.Should().Be("sb://custom.servicebus.windows.net/");
@@ -61,10 +64,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_use_custom_topic_for_configured_producer()
     {
         // given
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -86,10 +86,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_use_default_topic_for_unconfigured_producer()
     {
         // given
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -111,10 +108,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_preserve_create_subscription_setting_from_custom_producer()
     {
         // given
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -135,10 +129,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_use_default_subscription_setting_for_unconfigured_producer()
     {
         // given
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -168,10 +159,7 @@ public sealed class ServiceBusTransportTests
             }
         );
 
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            options
-        );
+        await using var transport = _CreateTransport(options);
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { Headers.MessageName, "SomeMessage" } },
@@ -189,10 +177,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_dispose_without_error_when_no_messages_sent()
     {
         // given
-        await using var transport = new AzureServiceBusTransport(
-            NullLogger<AzureServiceBusTransport>.Instance,
-            _options
-        );
+        await using var transport = _CreateTransport(_options);
 
         // when
         var act = async () => await transport.DisposeAsync();
