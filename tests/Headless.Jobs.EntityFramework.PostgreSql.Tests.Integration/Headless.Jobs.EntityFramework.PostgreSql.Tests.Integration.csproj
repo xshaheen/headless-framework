@@ -28,9 +28,7 @@
   </ItemGroup>
   <Target Name="CopyJobsCancellationProcessFixture" AfterTargets="Build">
     <ItemGroup>
-      <JobsCancellationProcessFixtureFiles
-        Include="..\..\test-assets\Headless.Jobs.CancellationProcessFixture\bin\$(Configuration)\net10.0\*"
-      />
+      <JobsCancellationProcessFixtureFiles Include="..\..\test-assets\Headless.Jobs.CancellationProcessFixture\bin\$(Configuration)\net10.0\*" />
     </ItemGroup>
     <Copy
       SourceFiles="@(JobsCancellationProcessFixtureFiles)"
