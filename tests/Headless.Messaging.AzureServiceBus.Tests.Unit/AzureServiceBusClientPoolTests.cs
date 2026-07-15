@@ -238,6 +238,113 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_dispose_client_even_when_sender_dispose_throws()
+    {
+        // given: a materialized sender whose DisposeAsync faults during the drain
+        var client = Substitute.For<ServiceBusClient>();
+        var badSender = Substitute.For<ServiceBusSender>();
+        badSender.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("close failed")));
+        client.CreateSender("orders").Returns(badSender);
+        var pool = _CreatePool(client, () => 0);
+        _ = pool.GetSender("orders");
+
+        // when
+        var act = async () => await pool.DisposeAsync();
+
+        // then: the sender fault propagates, but the client is still disposed (disposal is
+        // one-shot, so skipping it here would leak the AMQP connection forever)
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_dispose_client_exactly_once_under_concurrent_dispose()
+    {
+        // given
+        var client = _CreateClientSubstitute();
+        var pool = _CreatePool(client, () => 0);
+        _ = pool.GetSender("orders");
+
+        // when: two dispose calls race
+        await Task.WhenAll(pool.DisposeAsync().AsTask(), pool.DisposeAsync().AsTask());
+
+        // then
+        await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_not_leak_client_created_concurrently_with_dispose()
+    {
+        // given: a client factory blocked mid-creation (holding the pool's creation lock)
+        var factoryEntered = new TaskCompletionSource();
+        var releaseFactory = new TaskCompletionSource();
+        var client = _CreateClientSubstitute();
+
+        var pool = new AzureServiceBusClientPool(
+            NullLogger<AzureServiceBusClientPool>.Instance,
+            _Options,
+            _ =>
+            {
+                factoryEntered.SetResult();
+                releaseFactory.Task.Wait(AbortToken);
+                return client;
+            }
+        );
+
+        var getSenderTask = Task.Run(() => pool.GetSender("orders"), AbortToken);
+        await factoryEntered.Task;
+
+        // when: dispose races the in-flight creation, then the factory completes
+        var disposeTask = Task.Run(async () => await pool.DisposeAsync(), AbortToken);
+        releaseFactory.SetResult();
+        _ = await getSenderTask;
+        await disposeTask;
+
+        // then: the client created during the race is still disposed — never leaked
+        await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_complete_dispose_while_sender_creation_in_flight()
+    {
+        // given: client already materialized; a second sender blocked inside CreateSender
+        var client = Substitute.For<ServiceBusClient>();
+        var warmupSender = Substitute.For<ServiceBusSender>();
+        client.CreateSender("warmup").Returns(warmupSender);
+
+        var createEntered = new TaskCompletionSource();
+        var releaseCreate = new TaskCompletionSource();
+        var lateSender = Substitute.For<ServiceBusSender>();
+        client
+            .CreateSender("blocked")
+            .Returns(_ =>
+            {
+                createEntered.SetResult();
+                releaseCreate.Task.Wait(AbortToken);
+                return lateSender;
+            });
+
+        var pool = _CreatePool(client, () => 0);
+        _ = pool.GetSender("warmup");
+
+        var blockedTask = Task.Run(() => pool.GetSender("blocked"), AbortToken);
+        await createEntered.Task;
+
+        // when: dispose runs while the sender is mid-creation
+        var disposeTask = pool.DisposeAsync().AsTask();
+        var completed = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
+
+        // then: dispose skips the unmaterialized lazy instead of blocking on it, drains the
+        // warmed sender, and disposes the client
+        completed.Should().BeSameAs(disposeTask);
+        releaseCreate.SetResult();
+        _ = await blockedTask;
+        await disposeTask;
+        await warmupSender.Received(1).DisposeAsync();
+        await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_throw_when_used_after_dispose()
     {
         // given

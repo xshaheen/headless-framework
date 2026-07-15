@@ -1,9 +1,45 @@
+using Azure.Core;
+using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 
 namespace Tests.Helpers;
 
 public sealed class ServiceBusHelpersTests
 {
+    [Fact]
+    public void CreateClient_ShouldUseConnectionString_WhenNoTokenCredential()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString =
+                "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+        };
+
+        // when
+        var client = ServiceBusHelpers.CreateClient(options);
+
+        // then
+        client.FullyQualifiedNamespace.Should().Be("mynamespace.servicebus.windows.net");
+    }
+
+    [Fact]
+    public void CreateClient_ShouldUseNamespaceAndCredential_WhenTokenCredentialSet()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            Namespace = "othernamespace.servicebus.windows.net",
+            TokenCredential = Substitute.For<TokenCredential>(),
+        };
+
+        // when
+        var client = ServiceBusHelpers.CreateClient(options);
+
+        // then
+        client.FullyQualifiedNamespace.Should().Be("othernamespace.servicebus.windows.net");
+    }
+
     [Fact]
     public void GetBrokerAddress_ShouldThrowArgumentException_WhenBothInputsAreNull()
     {

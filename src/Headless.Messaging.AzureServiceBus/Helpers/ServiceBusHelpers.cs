@@ -13,7 +13,7 @@ public static class ServiceBusHelpers
     /// set, otherwise the SAS connection string.
     /// </summary>
     /// <param name="options">The messaging options carrying the authentication configuration.</param>
-    public static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
+    internal static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
     {
         return options.TokenCredential is null
             ? new ServiceBusClient(options.ConnectionString)

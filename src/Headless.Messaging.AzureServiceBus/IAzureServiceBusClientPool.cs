@@ -101,34 +101,45 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             return;
         }
 
-        // Senders close independent AMQP links; drain them in parallel before the client.
-        var senderDisposals = new List<Task>();
-
-        foreach (var (entityPath, lazy) in _senders)
-        {
-            if (!lazy.IsValueCreated)
-            {
-                continue;
-            }
-
-            _senders.TryRemove(entityPath, out _);
-            senderDisposals.Add(lazy.Value.DisposeAsync().AsTask());
-        }
-
-        await Task.WhenAll(senderDisposals).ConfigureAwait(false);
-
-        // Read under the client lock: creation checks _disposed inside the same lock, so a client
-        // is either visible here (and disposed) or was never created — no leak window.
+        // Capture AND null the client under the creation lock before draining: creation checks
+        // _disposed inside the same lock, so a client is either visible here (and disposed below)
+        // or was never created — no leak window. Nulling also stops the lock-free fast path from
+        // handing out the disposed client to a publish racing shutdown; it falls into the slow
+        // path and throws ObjectDisposedException instead.
         ServiceBusClient? client;
 
         lock (_clientLock)
         {
             client = _client;
+            _client = null;
         }
 
-        if (client is not null)
+        try
         {
-            await client.DisposeAsync().ConfigureAwait(false);
+            // Senders close independent AMQP links; drain them in parallel before the client.
+            var senderDisposals = new List<Task>();
+
+            foreach (var (entityPath, lazy) in _senders)
+            {
+                if (!lazy.IsValueCreated)
+                {
+                    continue;
+                }
+
+                _senders.TryRemove(entityPath, out _);
+                senderDisposals.Add(lazy.Value.DisposeAsync().AsTask());
+            }
+
+            await Task.WhenAll(senderDisposals).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Disposal is one-shot (the Interlocked guard above), so a faulted sender dispose
+            // must not skip client disposal — a skipped client here would never be reclaimed.
+            if (client is not null)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
