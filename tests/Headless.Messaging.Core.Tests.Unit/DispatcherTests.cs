@@ -911,14 +911,20 @@ public sealed class DispatcherTests : TestBase
 
         _logger
             .ReceivedCalls()
-            .Any(call =>
-                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
-                && call.GetArguments() is { Length: >= 2 } args
-                && args[1] is EventId eventId
-                && string.Equals(eventId.Name, "ProcessorStopFailed", StringComparison.Ordinal)
-            )
             .Should()
-            .BeTrue("the timeout path logs ProcessorStopFailed");
+            .Contain(
+                call =>
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                    && call.GetArguments().Length >= 2
+                    && call.GetArguments()[1] != null
+                    && call.GetArguments()[1]!.GetType() == typeof(EventId)
+                    && string.Equals(
+                        ((EventId)call.GetArguments()[1]!).Name,
+                        "ProcessorStopFailed",
+                        StringComparison.Ordinal
+                    ),
+                "the timeout path logs ProcessorStopFailed"
+            );
 
         // A reentrant dispose uses only the caller's remaining shared budget, not the full configured
         // ShutdownTimeout again. Eventual cleanup remains fault-observed after this join times out.

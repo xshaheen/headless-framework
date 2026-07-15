@@ -198,9 +198,8 @@ internal sealed class MiddlewareDiscoverySpikeGenerator : IIncrementalGenerator
     )
     {
         if (
-            attribute.ConstructorArguments.Length < 2
-            || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol middlewareType
-            || attribute.ConstructorArguments[1].Value is not int priority
+            attribute.ConstructorArguments
+            is not [{ Value: INamedTypeSymbol middlewareType }, { Value: int priority }, ..]
         )
         {
             return null;

@@ -387,10 +387,10 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
 
             foreach (var job in new[] { root, child })
             {
-                var detail = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
-                detail.Status.Should().Be((int)JobStatus.Idle);
-                detail.OwnerId.Should().BeNull();
-                detail.LockedUntil.Should().BeNull();
+                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+                status.Should().Be((int)JobStatus.Idle);
+                ownerId.Should().BeNull();
+                lockedUntil.Should().BeNull();
             }
         }
         finally

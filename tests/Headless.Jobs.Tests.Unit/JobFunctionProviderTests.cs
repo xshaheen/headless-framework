@@ -102,11 +102,7 @@ public sealed class JobFunctionProviderTests
 
         var build = () => JobFunctionRegistryBuilder.Build([], [], descriptors);
 
-        build
-            .Should()
-            .Throw<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain(typeof(FirstRequest).FullName!);
+        build.Should().Throw<InvalidOperationException>().WithMessage($"*{typeof(FirstRequest).FullName}*");
     }
 
     [Fact]

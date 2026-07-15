@@ -21,8 +21,7 @@ public sealed class InMemorySetPagingBenchmarks : IDisposable
     [Params(1, 50)]
     public int PageIndex { get; set; }
 
-    [Params(50)]
-    public int PageSize { get; set; }
+    public int PageSize { get; set; } = 50;
 
     [GlobalSetup]
     public async Task GlobalSetup()

@@ -106,7 +106,7 @@ public sealed class PollyRetryConformanceTests : TestBase
             (_, _) =>
             {
                 Exception exception =
-                    attempts++ == 0 ? new TimeoutException("transient") : new ArgumentException("permanent");
+                    attempts++ == 0 ? new TimeoutException("transient") : new InvalidOperationException("permanent");
                 return Task.FromResult(MessagingRetryAttempt.Retryable(OperateResult.Failed(exception)));
             },
             static (_, _, _, _, _) => Task.FromResult(true),
@@ -120,7 +120,7 @@ public sealed class PollyRetryConformanceTests : TestBase
         );
 
         attempts.Should().Be(2);
-        stoppedException.Should().BeOfType<ArgumentException>();
+        stoppedException.Should().BeOfType<InvalidOperationException>();
     }
 
     [Fact]

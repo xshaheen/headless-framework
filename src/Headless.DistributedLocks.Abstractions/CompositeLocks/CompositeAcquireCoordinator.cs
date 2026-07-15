@@ -216,7 +216,7 @@ internal static class CompositeAcquireCoordinator
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            return new CompositeAcquireResult(null, compositeResource, tryOnce);
+            return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: tryOnce);
         }
         catch (Exception exception)
         {
@@ -331,7 +331,11 @@ internal static class CompositeAcquireCoordinator
                     }
                     else
                     {
-                        cadenceTask = Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+                        cadenceTask = Task.Delay(
+                            Timeout.InfiniteTimeSpan,
+                            environment.TimeProvider,
+                            CancellationToken.None
+                        );
                     }
 
                     var completed = await Task.WhenAny(pendingWinner, cadenceTask).ConfigureAwait(false);
@@ -639,7 +643,7 @@ internal static class CompositeAcquireCoordinator
             _ThrowCombined(new OperationCanceledException(deadlineToken), cleanupErrors);
         }
 
-        return new CompositeAcquireResult(null, compositeResource, TryOnce: false);
+        return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: false);
     }
 
     private static async Task<CompositeAcquireResult> _RollbackForNullAsync(
@@ -674,7 +678,7 @@ internal static class CompositeAcquireCoordinator
 
         callerToken.ThrowIfCancellationRequested();
 
-        return new CompositeAcquireResult(null, compositeResource, tryOnce);
+        return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: tryOnce);
     }
 
     private static async Task<List<Exception>?> _RollbackAsync(List<IDistributedLease> acquired)

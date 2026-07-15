@@ -55,14 +55,18 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var claimedRootIds = claimedRoots.Select(x => x.Id).ToHashSet();
             foreach (var root in roots.Where(x => claimedRootIds.Contains(x.Id)))
             {
-                var rootClaim = await fixture.ReadTimeJobDetailAsync(root.Id, ct);
-                rootClaim.OwnerId.Should().NotBeNullOrWhiteSpace();
-                rootClaim.LockedUntil.Should().NotBeNull();
+                var (_, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(root.Id, ct);
+                ownerId.Should().NotBeNullOrWhiteSpace();
+                lockedUntil.Should().NotBeNull();
+
                 foreach (var descendant in root.Children.SelectMany(x => x.Children.Prepend(x)))
                 {
-                    var detail = await fixture.ReadTimeJobDetailAsync(descendant.Id, ct);
-                    detail.OwnerId.Should().Be(rootClaim.OwnerId);
-                    detail.LockedUntil.Should().Be(rootClaim.LockedUntil);
+                    var (_, descendantOwnerId, descendantLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(
+                        descendant.Id,
+                        ct
+                    );
+                    descendantOwnerId.Should().Be(ownerId);
+                    descendantLockedUntil.Should().Be(lockedUntil);
                 }
             }
         }
@@ -507,8 +511,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
             claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
 
-            var persisted = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
-            persisted.LockedUntil.Should().Be(claimed[0].LockedUntil);
+            var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
+            lockedUntil.Should().Be(claimed[0].LockedUntil);
         }
         finally
         {
