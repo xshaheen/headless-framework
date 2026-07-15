@@ -132,6 +132,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
+- Configure every `AddJobsDiscovery(...)` assembly inside the `AddHeadlessJobs` callback. Jobs loads those assemblies before freezing the process-wide generated catalog; late generated registrations fail deterministically. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
 - Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path.
 - For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
@@ -184,7 +185,7 @@ public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, Cancell
 
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
-Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer.
+Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after all configured `AddJobsDiscovery(...)` assemblies load.
 
 ### Lease Model and Sliding Renewal
 
@@ -349,7 +350,7 @@ var recurringId = await scheduler.ScheduleRecurringAsync(
 );
 ```
 
-All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
 
 ### Configuration
 
@@ -393,6 +394,10 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
+
+Generated module initializers populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddJobsDiscovery(...)` assembly is loaded, then freezes that catalog exactly once. Repeated builds are idempotent; registrations attempted after discovery or freeze fail deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
+
+Each `IHost` receives its own immutable runtime registry projected from the canonical catalog and that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.
 
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 

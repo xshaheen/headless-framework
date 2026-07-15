@@ -236,6 +236,7 @@ Using the wrong row is how every date/time defect in this repo has happened. Con
 
 ## Learnings
 
+- Jobs generated registration freezes once only after the `AddHeadlessJobs` options callback has loaded every `AddJobsDiscovery` assembly; public descriptors remain configuration-independent, while all live runtime and Dashboard reads must use the immutable per-`IHost` registry. (2026-07-15)
 - Messaging retry ceilings require an atomic durable attempt reservation before transport or consumer invocation; persisting progress only after failure lets a crash reset an inline burst. Recovery of a consumed reservation advances Messaging-owned persisted state without applying domain exception classification. (2026-07-10)
 - Jobs retry recovery depends on carrying `RetryCount` through every EF and in-memory pickup projection and persisting it before Polly waits; omitting it from a projection silently restores a fresh retry budget after process restart. (2026-07-10)
 - `[JsonExtensionData]` properties must be `{ get; set; }` (never `init`) and every source-gen `JsonSerializerContext` whose models carry extension data needs `[JsonSerializable(typeof(object))]` + `[JsonSerializable(typeof(JsonElement))]`. `init` binding throws on EVERY deserialization; missing object metadata throws on any unknown response field — both at runtime only, build stays green. Found via Paymob CashOut/CashIn unit tests. (2026-07-07)
