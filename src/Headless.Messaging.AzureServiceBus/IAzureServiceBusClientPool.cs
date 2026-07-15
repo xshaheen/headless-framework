@@ -141,7 +141,9 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
 
     /// <summary>
     /// Disposes every materialized sender, then the shared client. Idempotent and safe when no
-    /// sender (or no client) was ever created.
+    /// sender (or no client) was ever created. If a sender or the client fails to dispose, every
+    /// failure is aggregated into a single <see cref="AggregateException"/> instead of letting one
+    /// mask another.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -163,32 +165,62 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             _client = null;
         }
 
-        try
+        // Disposal is one-shot (the Interlocked guard above), so client disposal below is
+        // unconditional even when a sender drain faults — skipping it would leak the AMQP
+        // connection forever. Every fault (from any sender and from the client itself) is
+        // collected into `failures` instead of letting one dispose failure mask another; they
+        // all surface together via a single AggregateException.
+        List<Exception>? failures = null;
+
+        // Senders close independent AMQP links; start every disposal before awaiting so they
+        // drain in parallel, before the client.
+        var senderDisposals = new List<Task>();
+
+        foreach (var (entityPath, lazy) in _senders)
         {
-            // Senders close independent AMQP links; drain them in parallel before the client.
-            var senderDisposals = new List<Task>();
-
-            foreach (var (entityPath, lazy) in _senders)
+            if (!lazy.IsValueCreated)
             {
-                if (!lazy.IsValueCreated)
-                {
-                    continue;
-                }
-
-                _senders.TryRemove(entityPath, out _);
-                senderDisposals.Add(lazy.Value.DisposeAsync().AsTask());
+                continue;
             }
 
-            await Task.WhenAll(senderDisposals).ConfigureAwait(false);
+            _senders.TryRemove(entityPath, out _);
+            senderDisposals.Add(lazy.Value.DisposeAsync().AsTask());
         }
-        finally
+
+        // Await each drain individually (not Task.WhenAll, which surfaces only the first fault)
+        // so a second (or later) sender fault is not silently dropped.
+        foreach (var task in senderDisposals)
         {
-            // Disposal is one-shot (the Interlocked guard above), so a faulted sender dispose
-            // must not skip client disposal — a skipped client here would never be reclaimed.
-            if (client is not null)
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                failures ??= [];
+                failures.Add(ex);
+            }
+        }
+
+        if (client is not null)
+        {
+            try
             {
                 await client.DisposeAsync().ConfigureAwait(false);
             }
+            catch (Exception ex)
+            {
+                failures ??= [];
+                failures.Add(ex);
+            }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            throw new AggregateException(
+                "One or more failures occurred while disposing the Azure Service Bus client pool.",
+                failures
+            );
         }
     }
 

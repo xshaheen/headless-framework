@@ -252,10 +252,36 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         // when
         var act = async () => await pool.DisposeAsync();
 
-        // then: the sender fault propagates, but the client is still disposed (disposal is
-        // one-shot, so skipping it here would leak the AMQP connection forever)
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        // then: the sender fault surfaces via AggregateException, but the client is still
+        // disposed (disposal is one-shot, so skipping it here would leak the AMQP connection
+        // forever)
+        var aggregate = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        aggregate.InnerExceptions.Should().ContainSingle(ex => ex.Message == "close failed");
         await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_aggregate_sender_and_client_dispose_failures()
+    {
+        // given: a materialized sender whose DisposeAsync faults AND a client whose DisposeAsync
+        // also faults — neither fault must mask the other
+        var client = Substitute.For<ServiceBusClient>();
+        var badSender = Substitute.For<ServiceBusSender>();
+        badSender.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("sender close failed")));
+        client.CreateSender("orders").Returns(badSender);
+        client.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("client close failed")));
+        var pool = _CreatePool(client, () => 0);
+        _ = pool.GetSender("orders");
+
+        // when
+        var act = async () => await pool.DisposeAsync();
+
+        // then
+        var aggregate = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        aggregate
+            .InnerExceptions.Select(ex => ex.Message)
+            .Should()
+            .Contain("sender close failed", "client close failed");
     }
 
     [Fact]

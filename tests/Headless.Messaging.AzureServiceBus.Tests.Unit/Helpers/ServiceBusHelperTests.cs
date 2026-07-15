@@ -43,6 +43,40 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
+    public void should_create_administration_client_from_connection_string_when_no_token_credential()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString =
+                "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+        };
+
+        // when
+        var client = ServiceBusHelpers.CreateAdministrationClient(options);
+
+        // then
+        client.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_create_administration_client_from_namespace_when_token_credential_set()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            Namespace = "othernamespace.servicebus.windows.net",
+            TokenCredential = Substitute.For<TokenCredential>(),
+        };
+
+        // when
+        var client = ServiceBusHelpers.CreateAdministrationClient(options);
+
+        // then
+        client.Should().NotBeNull();
+    }
+
+    [Fact]
     public void should_throw_argument_exception_when_get_broker_address_both_inputs_are_null()
     {
         // given

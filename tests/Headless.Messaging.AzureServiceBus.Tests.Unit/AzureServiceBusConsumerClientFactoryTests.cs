@@ -53,12 +53,9 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
-        var factory = new AzureServiceBusConsumerClientFactory(
-            loggerFactory,
-            options,
-            serviceProvider,
-            Substitute.For<IAzureServiceBusClientPool>()
-        );
+        // Real pool: the invalid options must fail through the actual client creation path.
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
         var act = async () => await factory.CreateAsync("test-group", 5);
@@ -83,12 +80,9 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
-        var factory = new AzureServiceBusConsumerClientFactory(
-            loggerFactory,
-            options,
-            serviceProvider,
-            Substitute.For<IAzureServiceBusClientPool>()
-        );
+        // Real pool: the malformed connection string must fail through the actual client creation path.
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
         var act = async () => await factory.CreateAsync("test-group", 5);

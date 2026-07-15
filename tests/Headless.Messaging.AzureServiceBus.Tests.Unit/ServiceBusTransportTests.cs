@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Messaging.ServiceBus;
 using Demo.Contracts.DomainEvents;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
@@ -32,6 +34,14 @@ public sealed class ServiceBusTransportTests
             options,
             Substitute.For<IAzureServiceBusClientPool>()
         );
+    }
+
+    private static AzureServiceBusTransport _CreateTransport(
+        IOptions<AzureServiceBusMessagingOptions> options,
+        IAzureServiceBusClientPool pool
+    )
+    {
+        return new AzureServiceBusTransport(NullLogger<AzureServiceBusTransport>.Instance, options, pool);
     }
 
     [Fact]
@@ -184,5 +194,105 @@ public sealed class ServiceBusTransportTests
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_send_message_to_pooled_topic_sender()
+    {
+        // given
+        var sender = Substitute.For<ServiceBusSender>();
+        sender.SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("entity-created").Returns(sender);
+
+        await using var transport = _CreateTransport(_options, pool);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { Headers.MessageName, nameof(EntityCreated) },
+                { Headers.MessageId, "message-1" },
+            },
+            body: """{"id":42}"""u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        pool.Received(1).GetSender("entity-created");
+        await sender
+            .Received(1)
+            .SendMessageAsync(
+                Arg.Is<ServiceBusMessage>(m =>
+                    m.Subject == nameof(EntityCreated)
+                    && m.ApplicationProperties[Headers.MessageId].ToString() == "message-1"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_return_failed_when_send_fails()
+    {
+        // given
+        var sender = Substitute.For<ServiceBusSender>();
+        sender
+            .SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ServiceBusException("Network error", ServiceBusFailureReason.ServiceBusy));
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("entity-created").Returns(sender);
+
+        await using var transport = _CreateTransport(_options, pool);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { Headers.MessageName, nameof(EntityCreated) },
+                { Headers.MessageId, "message-1" },
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().NotBeNull();
+        result.Exception!.Message.Should().Contain("Network error");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation()
+    {
+        // given
+        var sender = Substitute.For<ServiceBusSender>();
+        sender
+            .SendMessageAsync(Arg.Any<ServiceBusMessage>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetSender("entity-created").Returns(sender);
+
+        await using var transport = _CreateTransport(_options, pool);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { Headers.MessageName, nameof(EntityCreated) },
+                { Headers.MessageId, "message-1" },
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var act = () => transport.SendAsync(message);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 }
