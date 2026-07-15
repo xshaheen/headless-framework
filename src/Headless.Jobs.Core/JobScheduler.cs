@@ -17,6 +17,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly ICronJobManager<TCronJob> _cronJobManager;
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByRequestType;
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
+    private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
 
     public JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
@@ -27,20 +28,23 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             timeJobManager,
             cronJobManager,
             functionRegistry.DescriptorsByRequestType.GetValueOrDefault,
-            functionRegistry.Descriptors.GetValueOrDefault
+            functionRegistry.Descriptors.GetValueOrDefault,
+            functionRegistry.CanonicalDescriptors.GetValueOrDefault
         ) { }
 
     internal JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
         ICronJobManager<TCronJob> cronJobManager,
         Func<Type, JobFunctionDescriptor?> descriptorByRequestType,
-        Func<string, JobFunctionDescriptor?> descriptorByName
+        Func<string, JobFunctionDescriptor?> descriptorByName,
+        Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null
     )
     {
         _timeJobManager = Argument.IsNotNull(timeJobManager);
         _cronJobManager = Argument.IsNotNull(cronJobManager);
         _descriptorByRequestType = Argument.IsNotNull(descriptorByRequestType);
         _descriptorByName = Argument.IsNotNull(descriptorByName);
+        _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
     }
 
     public Task<Guid> EnqueueAsync<TArgs>(
@@ -169,6 +173,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         }
 
         var registered = _descriptorByName(descriptor.FunctionName);
-        return registered == descriptor ? registered : throw new JobFunctionNotFoundException(descriptor.FunctionName);
+        var canonical = _canonicalDescriptorByName(descriptor.FunctionName);
+        return canonical == descriptor && registered != null
+            ? registered
+            : throw new JobFunctionNotFoundException(descriptor.FunctionName);
     }
 }

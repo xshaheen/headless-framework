@@ -146,6 +146,7 @@ public static class JobMiddlewareRegistry
     private static ExecuteRegistration[] _execute = [];
 
     /// <summary>Registers generated schedule dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterSchedule(
         string identity,
         string? function,
@@ -159,6 +160,7 @@ public static class JobMiddlewareRegistry
     }
 
     /// <summary>Registers generated execute dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterExecute(
         string identity,
         string? function,

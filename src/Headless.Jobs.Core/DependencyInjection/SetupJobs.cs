@@ -47,9 +47,18 @@ public static class SetupJobs
             tickerExecutionContext,
             schedulerOptionsBuilder
         );
-        optionsBuilder?.Invoke(optionInstance);
-        JobFunctionProvider.MarkDiscoveryComplete();
-        JobFunctionProvider.Build();
+        var discoveryParticipant = JobFunctionProvider.BeginDiscovery();
+        try
+        {
+            optionsBuilder?.Invoke(optionInstance);
+        }
+        catch (Exception exception)
+        {
+            JobFunctionProvider.AbandonDiscovery(discoveryParticipant, exception);
+            throw;
+        }
+
+        JobFunctionProvider.CompleteDiscovery(discoveryParticipant);
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
         // lease that is already expired, defeating duplicate-suppression entirely (KTD2).

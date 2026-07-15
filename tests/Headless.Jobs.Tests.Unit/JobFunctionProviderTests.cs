@@ -94,6 +94,114 @@ public sealed class JobFunctionProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task should_wait_for_overlapping_host_discovery_callbacks_before_freezing()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var firstCanReturn = new ManualResetEventSlim();
+        using var secondCanReturn = new ManualResetEventSlim();
+        using var firstEntered = new ManualResetEventSlim();
+        using var secondEntered = new ManualResetEventSlim();
+
+        var firstHost = Task.Run(() =>
+            new ServiceCollection().AddHeadlessJobs(options =>
+            {
+                JobFunctionProvider.RegisterFunctions(
+                    new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                    {
+                        ["first-host"] = _Function("first-host").Value,
+                    }
+                );
+                firstEntered.Set();
+                firstCanReturn.Wait(cancellationToken);
+            })
+        );
+        firstEntered.Wait(cancellationToken);
+
+        var secondHost = Task.Run(() =>
+            new ServiceCollection().AddHeadlessJobs(options =>
+            {
+                JobFunctionProvider.RegisterFunctions(
+                    new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                    {
+                        ["second-host"] = _Function("second-host").Value,
+                    }
+                );
+                secondEntered.Set();
+                secondCanReturn.Wait(cancellationToken);
+            })
+        );
+        secondEntered.Wait(cancellationToken);
+
+        firstCanReturn.Set();
+        await Task.Delay(50, cancellationToken);
+        firstHost.IsCompleted.Should().BeFalse("the other configured discovery callback is still active");
+
+        secondCanReturn.Set();
+        await Task.WhenAll(firstHost, secondHost).WaitAsync(cancellationToken);
+
+        JobFunctionProvider.JobFunctions.Keys.Should().BeEquivalentTo("first-host", "second-host");
+    }
+
+    [Fact]
+    public void should_allow_nested_discovery_on_the_same_synchronous_callback()
+    {
+        var services = new ServiceCollection();
+
+        services.AddHeadlessJobs(_ => services.AddHeadlessJobs());
+
+        JobFunctionProvider.JobFunctions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_freeze_generated_discovery_metadata_and_middleware_loaded_by_the_options_callback()
+    {
+        const string assemblyName = "Headless.Jobs.GeneratedDiscoveryFixture.dll";
+        const string functionName = "tests.discovery.generated";
+        const string requestTypeName = "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryRequest";
+        const string middlewareTypeName =
+            "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryScheduleMiddleware";
+        Assembly? discoveredAssembly = null;
+        AssemblyLoadContext
+            .Default.Assemblies.Should()
+            .NotContain(assembly =>
+                string.Equals(
+                    assembly.GetName().Name,
+                    Path.GetFileNameWithoutExtension(assemblyName),
+                    StringComparison.Ordinal
+                )
+            );
+
+        new ServiceCollection().AddHeadlessJobs(options =>
+        {
+            discoveredAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(
+                Path.Combine(AppContext.BaseDirectory, "fixtures", assemblyName)
+            );
+            options.AddJobsDiscovery([discoveredAssembly]);
+        });
+
+        JobFunctionProvider.JobFunctions.Should().ContainKey(functionName);
+        JobFunctionProvider.JobFunctionDescriptors.Should().ContainKey(functionName);
+        JobFunctionProvider.JobFunctionRequestTypes[functionName].Item2.FullName.Should().Be(requestTypeName);
+
+        var middlewareType = discoveredAssembly!.GetType(middlewareTypeName, throwOnError: true)!;
+        var services = new ServiceCollection().AddSingleton(middlewareType).BuildServiceProvider();
+        var descriptor = JobFunctionProvider.JobFunctionDescriptors[functionName];
+        var nextCalled = false;
+        await JobMiddlewareRegistry.DispatchScheduleAsync(
+            new JobScheduleContext(descriptor, new TimeJobEntity(), services),
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        nextCalled.Should().BeTrue();
+        middlewareType.GetProperty("InvocationCount")!.GetValue(null).Should().Be(1);
+    }
+
+    [Fact]
     public void should_reject_registration_after_discovery_completes()
     {
         JobFunctionProvider.MarkDiscoveryComplete();

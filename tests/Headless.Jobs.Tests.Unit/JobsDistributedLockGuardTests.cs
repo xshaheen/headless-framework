@@ -6,6 +6,7 @@ using Headless.DistributedLocks.InMemory;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
@@ -53,7 +54,8 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         IInternalJobManager manager,
         SchedulerOptionsBuilder options,
         IDistributedLock lockProvider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        JobFunctionRegistry? functionRegistry = null
     )
     {
         var services = new ServiceCollection();
@@ -68,11 +70,52 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         // JobFunctionProvider static state. A rename breaks the build, not at runtime.
         var hostedService = new JobsInitializationHostedService(
             sp,
-            _EmptyRegistry,
+            functionRegistry ?? _EmptyRegistry,
             NullLogger<JobsInitializationHostedService>.Instance
         );
 
         await hostedService.SeedDefinedCronJobsAsync(options, cancellationToken);
+    }
+
+    [Fact]
+    public async Task Seed_uses_the_host_registry_resolved_cron_expression()
+    {
+        const string functionName = "host-seeded";
+        const string resolvedCron = "0 */7 * * * *";
+        var manager = Substitute.For<IInternalJobManager>();
+        var registry = JobFunctionRegistryBuilder.Build(
+            [
+                new KeyValuePair<string, JobFunctionRegistration>(
+                    functionName,
+                    new()
+                    {
+                        CronExpression = resolvedCron,
+                        Priority = JobPriority.Normal,
+                        Delegate = static (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 0,
+                    }
+                ),
+            ],
+            [],
+            []
+        );
+
+        await _InvokeSeedAsync(
+            manager,
+            new SchedulerOptionsBuilder { UseStorageLock = false },
+            Substitute.For<IDistributedLock>(),
+            AbortToken,
+            registry
+        );
+
+        await manager
+            .Received(1)
+            .MigrateDefinedCronJobs(
+                Arg.Is<(string, string)[]>(functions =>
+                    functions.Length == 1 && functions[0].Item1 == functionName && functions[0].Item2 == resolvedCron
+                ),
+                AbortToken
+            );
     }
 
     [Fact]
