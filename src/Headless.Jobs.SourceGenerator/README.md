@@ -68,6 +68,8 @@ No runtime configuration. Attributes are the sole interface. Generated output fi
 
 `[JobFunction]` remains the only handler discovery model. Requestless functions have a descriptor whose `RequestType` is `null`; typed functions are indexed by both their durable function name and the exact request `Type`. Priority and maximum concurrency come from the attribute and remain descriptor metadata rather than per-schedule options.
 
+Assembly-level `JobMiddleware` declarations are discovered at compile time and produce direct schedule/execute calls in the consuming assembly. A declaration may be global or target a descriptor function name; ordering is priority then stable middleware type identity. Generated descriptor metadata makes those identities available to referencing compilations without runtime scanning.
+
 ## Dependencies
 
 - `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)

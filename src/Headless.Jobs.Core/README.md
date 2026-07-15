@@ -122,6 +122,17 @@ var cleanupId = await scheduler.EnqueueAsync(cleanup, cancellationToken: ct);
 
 Low-level managers are not deprecated. Continue using `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
 
+## Middleware
+
+Jobs middleware is declared once as assembly metadata. `Schedule` middleware runs in the manager exactly once per submitted entity, before validation, persistence, or coordinated post-commit work; `Execute` middleware runs inside every retry attempt. Middleware is resolved from a bounded DI scope and must invoke `next` to accept the operation.
+
+```csharp
+[assembly: JobMiddleware(typeof(AuditScheduleMiddleware), JobMiddlewareStage.Schedule, Priority = JobMiddlewarePriority.Early)]
+[assembly: JobMiddleware(typeof(InvoiceExecutionMiddleware), JobMiddlewareStage.Execute, Function = "invoice.create")]
+```
+
+Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery, class-handler targeting, and registration after `JobFunctionProvider.Build()` are unsupported.
+
 Facade calls still flow through those managers, so scheduling inside an established `Headless.CommitCoordination` scope preserves the same atomic row write and deferred post-commit side effects.
 
 ## Configuration

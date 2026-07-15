@@ -21,7 +21,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id);
 
-        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 13).Select(number => $"HF{number:000}"));
+        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 15).Select(number => $"HF{number:000}"));
     }
 
     [Fact]
@@ -165,5 +165,64 @@ public sealed class JobsIncrementalSourceGeneratorTests
                 string.Equals(diagnostic.Id, "HF013", StringComparison.Ordinal)
                 && diagnostic.Severity == DiagnosticSeverity.Error
             );
+    }
+
+    [Fact]
+    public void should_report_unknown_and_duplicate_middleware_declarations()
+    {
+        var diagnostics = GeneratorTestHelper
+            .Run(
+                """
+                using Headless.Jobs;
+                using Headless.Jobs.Base;
+
+                [assembly: JobMiddleware(typeof(ScheduleMiddleware), JobMiddlewareStage.Schedule, Function = "missing")]
+                [assembly: JobMiddleware(typeof(ScheduleMiddleware), JobMiddlewareStage.Schedule)]
+                [assembly: JobMiddleware(typeof(ScheduleMiddleware), JobMiddlewareStage.Schedule)]
+
+                public sealed class ScheduleMiddleware : IJobScheduleMiddleware
+                {
+                    public Task InvokeAsync(JobScheduleContext context, JobScheduleNext next, CancellationToken cancellationToken) => next(cancellationToken);
+                }
+
+                public sealed class Jobs { [JobFunction("known")] public void Run() { } }
+                """
+            )
+            .GetRunResult()
+            .Diagnostics;
+
+        diagnostics.Should().Contain(diagnostic => diagnostic.Id == "HF014");
+        diagnostics.Should().Contain(diagnostic => diagnostic.Id == "HF015");
+    }
+
+    [Fact]
+    public void should_emit_direct_deterministic_middleware_dispatch()
+    {
+        var generated = GeneratorTestHelper
+            .Run(
+                """
+                using Headless.Jobs;
+                using Headless.Jobs.Base;
+
+                [assembly: JobMiddleware(typeof(Last), JobMiddlewareStage.Schedule, Priority = 10)]
+                [assembly: JobMiddleware(typeof(First), JobMiddlewareStage.Schedule, Priority = -10, Function = "known")]
+
+                public sealed class First : IJobScheduleMiddleware { public Task InvokeAsync(JobScheduleContext c, JobScheduleNext n, CancellationToken t) => n(t); }
+                public sealed class Last : IJobScheduleMiddleware { public Task InvokeAsync(JobScheduleContext c, JobScheduleNext n, CancellationToken t) => n(t); }
+                public sealed class Jobs { [JobFunction("known")] public void Run() { } }
+                """
+            )
+            .GetRunResult()
+            .Results.Single()
+            .GeneratedSources.Single()
+            .SourceText.ToString();
+
+        generated
+            .Should()
+            .Contain("JobMiddlewareRegistry.RegisterSchedule(\"Jobs.SourceGenerator.Tests:First\", \"known\", -10");
+        generated.Should().Contain("global::First");
+        generated.Should().Contain("global::Last");
+        generated.Should().NotContain("Assembly.Load");
+        generated.Should().NotContain("Expression.Compile");
     }
 }

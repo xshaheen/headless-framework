@@ -5,11 +5,13 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
@@ -25,7 +27,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     ICurrentCommitCoordinator currentCommitCoordinator,
     CronScheduleCache cronScheduleCache,
     SchedulerOptionsBuilder schedulerOptions,
-    ILogger<JobsManager<TTimeJob, TCronJob>> logger
+    ILogger<JobsManager<TTimeJob, TCronJob>> logger,
+    IServiceScopeFactory? serviceScopeFactory = null
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -37,6 +40,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
+    private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
     // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
@@ -98,6 +102,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+
         if (entity.Id == Guid.Empty)
         {
             entity.Id = guidGenerator.Create();
@@ -191,6 +197,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+
         if (entity.Id == Guid.Empty)
         {
             entity.Id = guidGenerator.Create();
@@ -364,6 +372,53 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return new JobResult<TTimeJob>(affectedRows);
     }
 
+    private async Task _RunSchedulePipelineAsync(BaseJobEntity entity, CancellationToken cancellationToken)
+    {
+        if (!JobFunctionProvider.JobFunctionDescriptors.TryGetValue(entity.Function, out var descriptor))
+        {
+            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
+        }
+
+        var completed = false;
+        JobScheduleNext terminal = _ =>
+        {
+            completed = true;
+            return Task.CompletedTask;
+        };
+
+        if (_serviceScopeFactory is null)
+        {
+            await JobMiddlewareRegistry
+                .DispatchScheduleAsync(
+                    new(descriptor, entity, EmptyServiceProvider.Instance),
+                    terminal,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            await JobMiddlewareRegistry
+                .DispatchScheduleAsync(new(descriptor, entity, scope.ServiceProvider), terminal, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!completed)
+        {
+            throw new JobValidatorException(
+                $"Job scheduling middleware did not invoke the terminal delegate for {entity.Function}"
+            );
+        }
+    }
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public static readonly EmptyServiceProvider Instance = new();
+
+        public object? GetService(Type serviceType) => null;
+    }
+
     private DateTime _ConvertToUtcIfNeeded(DateTime dateTime)
     {
         // If DateTime.Kind is Unspecified, assume it's in system timezone
@@ -474,6 +529,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             throw new JobValidatorException(errors);
         }
 
+        foreach (var entity in entities)
+        {
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        }
+
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
 
@@ -580,6 +640,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (errors is not null)
         {
             throw new JobValidatorException(errors);
+        }
+
+        foreach (var entity in validEntities)
+        {
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
         }
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).

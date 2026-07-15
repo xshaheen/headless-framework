@@ -6,6 +6,7 @@ using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
@@ -21,6 +22,7 @@ namespace Tests.Transactions;
 /// capture fork, the fail-loud cases, and post-commit side-effect deferral. Atomicity itself (rows committing /
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
+[Collection(nameof(JobsHelperCollection))]
 public sealed class JobsManagerCoordinatedRoutingTests : TestBase
 {
     private const string _FunctionName = "routing-test-fn";
@@ -55,6 +57,48 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task Schedule_middleware_that_omits_next_rejects_before_direct_or_coordinated_write()
+    {
+        using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
+        {
+            var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+
+            var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+
+            await act.Should().ThrowAsync<JobValidatorException>();
+            await sut
+                .Persistence.DidNotReceive()
+                .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+            await sut
+                .Writer.DidNotReceive()
+                .WriteTimeJobsAsync(
+                    Arg.Any<TimeJobEntity[]>(),
+                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<CancellationToken>()
+                );
+            sut.Coordinator!.OnCommitCount.Should().Be(0);
+            sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+        }
+    }
+
+    [Fact]
+    public async Task Schedule_middleware_that_omits_next_aborts_the_entire_batch_before_one_writer_call()
+    {
+        using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+
+            var act = () => sut.Time.AddBatchAsync([_FutureTimeJob(), _FutureTimeJob()], AbortToken);
+
+            await act.Should().ThrowAsync<JobValidatorException>();
+            await sut
+                .Persistence.DidNotReceive()
+                .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+            await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
+        }
     }
 
     [Fact]
@@ -624,6 +668,20 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             Manager = manager,
             Logger = logger,
         };
+    }
+
+    private static IDisposable _ReplaceScheduleDispatch(
+        Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task> dispatch
+    )
+    {
+        JobMiddlewareRegistry.ResetForTests();
+        JobMiddlewareRegistry.RegisterSchedule("Tests:ScheduleDispatch", null, 0, dispatch.Invoke);
+        return new ResetMiddlewareRegistry();
+    }
+
+    private sealed class ResetMiddlewareRegistry : IDisposable
+    {
+        public void Dispose() => JobMiddlewareRegistry.ResetForTests();
     }
 
     private sealed class Sut

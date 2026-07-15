@@ -15,6 +15,8 @@ HF010   | Headless.Jobs.SourceGenerator | Error | Multiple constructors with [Jo
 HF011   | Headless.Jobs.SourceGenerator | Error | Duplicate request type across [JobFunction] methods
 HF012   | Headless.Jobs.SourceGenerator | Error | Undefined JobPriority value on [JobFunction]
 HF013   | Headless.Jobs.SourceGenerator | Error | Negative maximum concurrency on [JobFunction]
+HF014   | Headless.Jobs.SourceGenerator | Error | Unknown Jobs middleware target descriptor
+HF015   | Headless.Jobs.SourceGenerator | Error | Duplicate Jobs middleware declaration
 
 ### Removed Rules
 

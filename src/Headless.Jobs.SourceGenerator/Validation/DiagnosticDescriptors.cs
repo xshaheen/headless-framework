@@ -112,6 +112,24 @@ internal static class DiagnosticDescriptors
         DiagnosticSeverity.Error
     );
 
+    public static readonly DiagnosticDescriptor UnknownMiddlewareTarget = new(
+        "HF014",
+        "Unknown Jobs middleware target",
+        "The Jobs middleware target '{0}' does not match a generated job-function descriptor",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor DuplicateMiddleware = new(
+        "HF015",
+        "Duplicate Jobs middleware declaration",
+        "The Jobs middleware declaration for '{0}' is duplicated",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     private static DiagnosticDescriptor _Create(
         string id,
         string titleResourceName,

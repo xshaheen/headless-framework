@@ -12,6 +12,8 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Base;
 using Jobs.SourceGenerator.Tests;
 
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.cleanup")]
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create")]
 namespace Jobs.SourceGenerator.Tests
 {
     internal static class JobsInstanceFactoryExtensions

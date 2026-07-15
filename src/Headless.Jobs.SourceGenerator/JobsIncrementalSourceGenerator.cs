@@ -94,12 +94,19 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var delegateCodes = delegatesWithMetadata.ConvertAll(info => info.DelegateCode);
                 var requestTypes = delegatesWithMetadata.ConvertAll(info => info.RequestType);
                 var descriptors = delegatesWithMetadata.ConvertAll(info => info.Descriptor);
+                var middleware = _GetMiddlewareRegistrations(
+                        compilation,
+                        descriptors.Select(x => x.FunctionName),
+                        productionContext
+                    )
+                    .ToList();
 
                 var generatedCode = _GenerateSourceWithFullNamespaces(
                     delegateCodes,
                     constructorCalls,
                     requestTypes,
                     descriptors,
+                    middleware,
                     compilation.Assembly.Name,
                     typeNameConflicts
                 );
@@ -294,6 +301,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         IReadOnlyList<string> ctorCalls,
         IReadOnlyList<(string GenericTypeName, string FunctionName)> requestTypes,
         IReadOnlyList<JobFunctionDescriptorInfo> descriptors,
+        IReadOnlyList<MiddlewareRegistrationInfo> middleware,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -304,8 +312,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         var includeBaseUtilities = requestTypes.Any(rt => !string.IsNullOrEmpty(rt.GenericTypeName));
 
         _GenerateFileHeaderWithJobsUsings(sb, includeBaseUtilities, assemblyName);
+        _GenerateDescriptorMetadata(sb, descriptors);
         _GenerateClassDeclarationWithFullNamespaces(sb, assemblyName);
-        _GenerateInitializeMethodWithFullNamespaces(sb, delegates);
+        _GenerateInitializeMethodWithFullNamespaces(sb, delegates, middleware);
         _GenerateDescriptorRegistrationWithFullNamespaces(sb, descriptors);
         _GenerateConstructorMethods(sb, ctorCalls); // Constructor methods already handle their own namespacing
 
@@ -319,6 +328,153 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         _GenerateClassFooter(sb);
 
         return sb.ToString();
+    }
+
+    private static void _GenerateDescriptorMetadata(
+        StringBuilder sb,
+        IReadOnlyList<JobFunctionDescriptorInfo> descriptors
+    )
+    {
+        foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
+        {
+            sb.AppendLine(
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute(\"{descriptor.FunctionName}\")]"
+            );
+        }
+
+        if (descriptors.Count > 0)
+        {
+            sb.AppendLine();
+        }
+    }
+
+    private sealed class MiddlewareRegistrationInfo
+    {
+        public MiddlewareRegistrationInfo(
+            string typeName,
+            string identity,
+            string? function,
+            int priority,
+            bool isSchedule
+        )
+        {
+            TypeName = typeName;
+            Identity = identity;
+            Function = function;
+            Priority = priority;
+            IsSchedule = isSchedule;
+        }
+
+        public string TypeName { get; }
+        public string Identity { get; }
+        public string? Function { get; }
+        public int Priority { get; }
+        public bool IsSchedule { get; }
+    }
+
+    private static IEnumerable<MiddlewareRegistrationInfo> _GetMiddlewareRegistrations(
+        Compilation compilation,
+        IEnumerable<string> ownFunctionNames,
+        SourceProductionContext context
+    )
+    {
+        var functions = new HashSet<string>(ownFunctionNames, StringComparer.Ordinal);
+        foreach (var assembly in _GetReferencedAssemblies(compilation))
+        {
+            foreach (
+                var descriptor in assembly
+                    .GetAttributes()
+                    .Where(attribute =>
+                        string.Equals(
+                            attribute.AttributeClass?.ToDisplayString(),
+                            "Headless.Jobs.JobFunctionDescriptorMetadataAttribute",
+                            StringComparison.Ordinal
+                        )
+                    )
+            )
+            {
+                if (
+                    descriptor.ConstructorArguments.Length == 1
+                    && descriptor.ConstructorArguments[0].Value is string name
+                )
+                {
+                    functions.Add(name);
+                }
+            }
+        }
+        var declarations = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var attribute in compilation.Assembly.GetAttributes())
+        {
+            if (
+                !string.Equals(
+                    attribute.AttributeClass?.ToDisplayString(),
+                    "Headless.Jobs.JobMiddlewareAttribute",
+                    StringComparison.Ordinal
+                )
+                || attribute.ConstructorArguments.Length < 2
+                || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol middlewareType
+                || attribute.ConstructorArguments[1].Value is not int stage
+            )
+            {
+                continue;
+            }
+
+            var target =
+                attribute
+                    .NamedArguments.FirstOrDefault(x => string.Equals(x.Key, "Function", StringComparison.Ordinal))
+                    .Value.Value as string;
+            if (target is not null && !functions.Contains(target))
+            {
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.UnknownMiddlewareTarget, Location.None, target)
+                );
+                continue;
+            }
+
+            var priority =
+                attribute
+                    .NamedArguments.FirstOrDefault(x => string.Equals(x.Key, "Priority", StringComparison.Ordinal))
+                    .Value.Value as int?
+                ?? 0;
+            var typeName = middlewareType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var identity = $"{compilation.Assembly.Name}:{_GetMetadataName(middlewareType)}";
+            var declarationKey = $"{stage}|{target}|{priority}|{identity}";
+            if (!declarations.Add(declarationKey))
+            {
+                context.ReportDiagnostic(
+                    Diagnostic.Create(DiagnosticDescriptors.DuplicateMiddleware, Location.None, identity)
+                );
+                continue;
+            }
+            yield return new(typeName, identity, target, priority, stage == 0);
+        }
+    }
+
+    private static string _GetMetadataName(INamedTypeSymbol symbol)
+    {
+        var names = new Stack<string>();
+        for (var current = symbol; current is not null; current = current.ContainingType)
+        {
+            names.Push(current.MetadataName);
+        }
+
+        var namespaceName = symbol.ContainingNamespace.IsGlobalNamespace
+            ? string.Empty
+            : symbol.ContainingNamespace.ToDisplayString();
+        return string.IsNullOrEmpty(namespaceName)
+            ? string.Join("+", names)
+            : $"{namespaceName}.{string.Join("+", names)}";
+    }
+
+    private static IEnumerable<IAssemblySymbol> _GetReferencedAssemblies(Compilation compilation)
+    {
+        foreach (var reference in compilation.References)
+        {
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly)
+            {
+                yield return assembly;
+            }
+        }
     }
 
     /// <summary>
@@ -529,7 +685,11 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// Generates the Initialize method with delegate registrations using full namespaces.
     /// </summary>
-    private static void _GenerateInitializeMethodWithFullNamespaces(StringBuilder sb, IEnumerable<string> delegates)
+    private static void _GenerateInitializeMethodWithFullNamespaces(
+        StringBuilder sb,
+        IEnumerable<string> delegates,
+        IReadOnlyList<MiddlewareRegistrationInfo> middleware
+    )
     {
         var delegateList = delegates.ToList();
         var delegateCount = delegateList.Count;
@@ -556,6 +716,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         sb.AppendLine("            RegisterRequestTypes();");
         sb.AppendLine("            RegisterDescriptors();");
+        foreach (var entry in middleware)
+        {
+            var identity = SymbolDisplay.FormatLiteral(entry.Identity, quote: true);
+            var function = entry.Function is null ? "null" : SymbolDisplay.FormatLiteral(entry.Function, quote: true);
+            var registrationMethod = entry.IsSchedule ? "RegisterSchedule" : "RegisterExecute";
+            sb.AppendLine(
+                $"            JobMiddlewareRegistry.{registrationMethod}({identity}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
+            );
+        }
         sb.AppendLine("        }");
     }
 
