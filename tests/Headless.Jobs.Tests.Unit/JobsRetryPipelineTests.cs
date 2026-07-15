@@ -15,7 +15,7 @@ namespace Tests;
 public sealed class JobsRetryPipelineTests : TestBase
 {
     [Fact]
-    public async Task should_delegate_fixed_exponential_and_jittered_delays_to_Polly()
+    public async Task should_delegate_fixed_exponential_and_jittered_delays_to_polly()
     {
         var fixedDelays = await _CaptureDelaysAsync(DelayBackoffType.Constant, useJitter: false);
         fixedDelays.Should().Equal(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
@@ -48,7 +48,7 @@ public sealed class JobsRetryPipelineTests : TestBase
     }
 
     [Fact]
-    public async Task should_preserve_Polly_attempt_numbers_after_process_recovery()
+    public async Task should_preserve_polly_attempt_numbers_after_process_recovery()
     {
         var shouldHandleAttempts = new List<int>();
         var delayAttempt = -1;
@@ -101,7 +101,7 @@ public sealed class JobsRetryPipelineTests : TestBase
     }
 
     [Fact]
-    public async Task should_classify_final_failure_in_the_original_Polly_context()
+    public async Task should_classify_final_failure_in_the_original_polly_context()
     {
         var observedKey = new ResiliencePropertyKey<bool>("tests.jobs.retry-observed");
         var finalRetryable = false;

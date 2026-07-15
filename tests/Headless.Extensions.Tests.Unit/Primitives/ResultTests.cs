@@ -7,7 +7,7 @@ namespace Tests.Primitives;
 public sealed class ResultTests
 {
     [Fact]
-    public void result_error_should_throw_invalid_operation_not_nre_on_default_struct()
+    public void should_throw_invalid_operation_not_nre_on_default_struct_when_result_error()
     {
         // given - a default(Result<TError>) is a failure state carrying no error
         var result = default(Result<string>);
@@ -21,7 +21,7 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void result_error_match_failure_should_throw_invalid_operation_on_default_struct()
+    public void should_throw_invalid_operation_on_default_struct_when_result_error_match_failure()
     {
         // given
         var result = default(Result<string>);
@@ -34,7 +34,7 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void result_error_on_failure_should_throw_invalid_operation_on_default_struct()
+    public void should_throw_invalid_operation_on_default_struct_when_result_error_on_failure()
     {
         // given
         var result = default(Result<string>);
@@ -47,7 +47,7 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void result_value_error_should_throw_invalid_operation_not_nre_on_default_struct()
+    public void should_throw_invalid_operation_not_nre_on_default_struct_when_result_value_error()
     {
         // given - a default(Result<TValue, TError>) is a failure state carrying no error
         var result = default(Result<int, string>);
@@ -61,7 +61,7 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void result_value_error_match_failure_should_throw_invalid_operation_on_default_struct()
+    public void should_throw_invalid_operation_on_default_struct_when_result_value_error_match_failure()
     {
         // given
         var result = default(Result<int, string>);
@@ -74,7 +74,7 @@ public sealed class ResultTests
     }
 
     [Fact]
-    public void result_value_error_on_failure_should_throw_invalid_operation_on_default_struct()
+    public void should_throw_invalid_operation_on_default_struct_when_result_value_error_on_failure()
     {
         // given
         var result = default(Result<int, string>);

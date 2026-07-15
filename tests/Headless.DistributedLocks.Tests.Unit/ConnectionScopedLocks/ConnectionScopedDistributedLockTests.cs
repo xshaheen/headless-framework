@@ -25,7 +25,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
-    public void read_write_lock_should_delegate_clock_and_logger_to_backing_mutex_provider()
+    public void should_delegate_clock_and_logger_to_backing_mutex_provider_when_read_write_lock()
     {
         // given — the connection-scoped RW wrapper owns neither dependency; it republishes the mutex provider's
         var mutexProvider = _CreateProvider();

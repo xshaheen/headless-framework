@@ -97,7 +97,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     }
 
     [Fact]
-    public async Task write_should_add_xhtml_namespace_when_define_alternatives()
+    public async Task should_add_xhtml_namespace_when_write_define_alternatives()
     {
         var urls = new List<SitemapUrl>
         {
@@ -122,7 +122,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     }
 
     [Fact]
-    public async Task write_should_write_alternative_urls_when_provide_any()
+    public async Task should_write_alternative_urls_when_write_provide_any()
     {
         var urls = new List<SitemapUrl>
         {
@@ -273,7 +273,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     #region WriteAlternateLanguageCodes Filter (P1)
 
     [Fact]
-    public async Task should_filter_alternates_by_WriteAlternateLanguageCodes()
+    public async Task should_filter_alternates_by_write_alternate_language_codes()
     {
         var urls = new List<SitemapUrl>
         {
@@ -474,7 +474,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     }
 
     [Fact]
-    public async Task should_format_lastmod_as_yyyy_MM_dd()
+    public async Task should_format_lastmod_as_yyyy_mm_dd()
     {
         var urls = new List<SitemapUrl>
         {

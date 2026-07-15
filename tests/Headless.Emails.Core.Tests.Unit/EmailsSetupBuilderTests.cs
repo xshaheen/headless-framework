@@ -24,7 +24,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public void named_only_setup_should_not_register_default_email_sender()
+    public void should_not_register_default_email_sender_when_named_only_setup()
     {
         // given
         var services = new ServiceCollection();
@@ -126,7 +126,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public async Task named_keyed_registration_should_be_reachable_via_email_sender_provider()
+    public async Task should_be_reachable_via_email_sender_provider_when_named_keyed_registration()
     {
         // given - the instance-scoped Use* overloads land per provider (U2-U5); this exercises the
         // provider-agnostic slot mechanics directly through RegisterProvider, mirroring Caching.
@@ -156,7 +156,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_zero_providers()
+    public void should_reject_zero_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -172,7 +172,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_multiple_providers()
+    public void should_reject_multiple_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -195,7 +195,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_whitespace_name()
+    public void should_reject_whitespace_name_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -211,7 +211,7 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_duplicate_names()
+    public void should_reject_duplicate_names_when_add_named()
     {
         // given
         var services = new ServiceCollection();

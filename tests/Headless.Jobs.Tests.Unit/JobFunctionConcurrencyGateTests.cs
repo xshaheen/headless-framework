@@ -7,7 +7,7 @@ public sealed class JobFunctionConcurrencyGateTests
     private readonly JobFunctionConcurrencyGate _sut = new();
 
     [Fact]
-    public void GetSemaphoreOrNull_Returns_Null_When_MaxConcurrency_Is_Zero()
+    public void get_semaphore_or_null_returns_null_when_max_concurrency_is_zero()
     {
         var result = _sut.GetSemaphoreOrNull("fn-a", 0);
 
@@ -15,7 +15,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Returns_Null_When_MaxConcurrency_Is_Negative()
+    public void get_semaphore_or_null_returns_null_when_max_concurrency_is_negative()
     {
         var result = _sut.GetSemaphoreOrNull("fn-a", -1);
 
@@ -23,7 +23,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Returns_Semaphore_When_MaxConcurrency_Is_Positive()
+    public void get_semaphore_or_null_returns_semaphore_when_max_concurrency_is_positive()
     {
         var result = _sut.GetSemaphoreOrNull("fn-a", 3);
 
@@ -32,7 +32,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Returns_Same_Instance_For_Same_Function()
+    public void get_semaphore_or_null_returns_same_instance_for_same_function()
     {
         var first = _sut.GetSemaphoreOrNull("fn-a", 5);
         var second = _sut.GetSemaphoreOrNull("fn-a", 5);
@@ -41,7 +41,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Returns_Different_Instances_For_Different_Functions()
+    public void get_semaphore_or_null_returns_different_instances_for_different_functions()
     {
         var a = _sut.GetSemaphoreOrNull("fn-a", 2);
         var b = _sut.GetSemaphoreOrNull("fn-b", 2);
@@ -50,7 +50,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Uses_Ordinal_Comparison()
+    public void get_semaphore_or_null_uses_ordinal_comparison()
     {
         var lower = _sut.GetSemaphoreOrNull("SendEmail", 1);
         var upper = _sut.GetSemaphoreOrNull("sendemail", 1);
@@ -59,7 +59,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Preserves_Initial_MaxConcurrency_On_Subsequent_Calls()
+    public void get_semaphore_or_null_preserves_initial_max_concurrency_on_subsequent_calls()
     {
         // First call creates with maxConcurrency=2
         var first = _sut.GetSemaphoreOrNull("fn-a", 2);
@@ -71,7 +71,7 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void GetSemaphoreOrNull_Is_Thread_Safe()
+    public void get_semaphore_or_null_is_thread_safe()
     {
         const int threadCount = 50;
         var semaphores = new SemaphoreSlim?[threadCount];

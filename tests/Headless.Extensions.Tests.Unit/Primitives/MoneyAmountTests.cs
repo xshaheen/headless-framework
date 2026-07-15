@@ -8,7 +8,7 @@ namespace Tests.Primitives;
 public sealed class MoneyAmountTests
 {
     [Fact]
-    public void money_zero_should_be_zero()
+    public void should_be_zero_when_money_zero()
     {
         // given & when
         var result = MoneyAmount.Zero;
@@ -18,7 +18,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void get_rounded_should_round_up_to_two_decimal_places()
+    public void should_round_up_to_two_decimal_places_when_get_rounded()
     {
         // given
         var money = new MoneyAmount(5.678m);
@@ -31,7 +31,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void validate_should_return_ok_for_valid_value()
+    public void should_return_ok_for_valid_value_when_validate()
     {
         // given
         const decimal value = 10m;
@@ -126,7 +126,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void default_get_hash_code_should_not_throw_and_return_zero()
+    public void should_not_throw_and_return_zero_when_default_get_hash_code()
     {
         // given
         var act = () => default(MoneyAmount).GetHashCode();
@@ -136,7 +136,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void default_should_equal_default_but_not_an_initialized_value()
+    public void should_equal_default_but_not_an_initialized_value_when_default()
     {
         // given
         var uninitialized = default(MoneyAmount);
@@ -150,7 +150,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void default_should_compare_consistently_with_equals()
+    public void should_compare_consistently_with_equals_when_default()
     {
         // given
         var uninitialized = default(MoneyAmount);
@@ -163,7 +163,7 @@ public sealed class MoneyAmountTests
     }
 
     [Fact]
-    public void default_should_be_usable_as_a_hash_set_member()
+    public void should_be_usable_as_a_hash_set_member_when_default()
     {
         // given & when
         var set = new HashSet<MoneyAmount> { default, default, new(0m) };

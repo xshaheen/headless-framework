@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class RedisCacheSetupTests(RedisCacheFixture fixture) : TestBase
 {
     [Fact]
-    public async Task use_redis_should_register_and_run_script_initializer_on_host_start()
+    public async Task should_register_and_run_script_initializer_on_host_start_when_use_redis()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -34,7 +34,7 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task default_plus_named_should_register_one_initializer_each()
+    public async Task should_register_one_initializer_each_when_default_plus_named()
     {
         // given - a default Redis cache plus a named instance, each owning its own scripts initializer
         var builder = Host.CreateApplicationBuilder();
@@ -71,7 +71,7 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task use_redis_should_register_default_cache_role_key_and_generic_adapters()
+    public async Task should_register_default_cache_role_key_and_generic_adapters_when_use_redis()
     {
         // given
         var builder = Host.CreateApplicationBuilder();

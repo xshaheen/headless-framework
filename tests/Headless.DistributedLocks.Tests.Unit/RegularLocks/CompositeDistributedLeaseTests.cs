@@ -193,7 +193,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_not_throw_but_still_attempt_every_child_when_cleanup_fails()
+    public async Task should_not_throw_but_still_attempt_every_child_when_dispose_cleanup_fails()
     {
 #pragma warning disable CA2000 // This test deliberately verifies the composite's failed child-disposal behavior.
         // Disposal must never throw, matching every other IDistributedLease. `await using` lowers to try/finally,
@@ -217,7 +217,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task await_using_should_preserve_the_callers_exception_when_cleanup_fails()
+    public async Task should_preserve_the_callers_exception_when_await_using_cleanup_fails()
     {
         // The regression this guards: a caller whose body throws a domain exception, whose lock release then hits a
         // storage blip, must still see their own exception — not the storage one. `await using` puts DisposeAsync in
@@ -334,7 +334,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_extensions_should_fan_out_without_touching_composite_lifecycle()
+    public async Task should_fan_out_without_touching_composite_lifecycle_when_provider_extensions()
     {
         var provider = Substitute.For<IDistributedLock>();
         await using var first = new TestLease("a", "lease-a");
@@ -363,7 +363,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_release_should_surface_pre_cancelled_caller_token_when_all_children_cancel()
+    public async Task should_surface_pre_cancelled_caller_token_when_provider_release_all_children_cancel()
     {
         var provider = Substitute.For<IDistributedLock>();
         await using var first = new TestLease("a", "lease-a");
@@ -386,7 +386,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_release_should_surface_mid_flight_caller_cancellation_when_all_children_cancel()
+    public async Task should_surface_mid_flight_caller_cancellation_when_provider_release_all_children_cancel()
     {
         var provider = Substitute.For<IDistributedLock>();
         await using var first = new TestLease("a", "lease-a");

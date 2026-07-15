@@ -22,7 +22,7 @@ public sealed class JobsDistributedLockWiringTests
         );
 
     [Fact]
-    public void UseDistributedLock_instance_registers_provider_and_enables_flag()
+    public void use_distributed_lock_instance_registers_provider_and_enables_flag()
     {
         var provider = new NullDistributedLock(TimeProvider.System);
 
@@ -36,7 +36,7 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
-    public void UseDistributedLock_factory_registers_factory_output_and_enables_flag()
+    public void use_distributed_lock_factory_registers_factory_output_and_enables_flag()
     {
         var provider = new NullDistributedLock(TimeProvider.System);
 
@@ -50,7 +50,7 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
-    public void Default_registration_resolves_null_lock_and_flag_is_false()
+    public void default_registration_resolves_null_lock_and_flag_is_false()
     {
         var services = new ServiceCollection();
         services.AddHeadlessJobs();
@@ -62,7 +62,7 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
-    public void UseDistributedLock_called_twice_keeps_only_the_last_registration()
+    public void use_distributed_lock_called_twice_keeps_only_the_last_registration()
     {
         var first = new NullDistributedLock(TimeProvider.System);
         var second = new NullDistributedLock(TimeProvider.System);
@@ -82,7 +82,7 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
-    public void Factory_then_instance_keeps_only_the_instance()
+    public void factory_then_instance_keeps_only_the_instance()
     {
         var factoryOutput = new NullDistributedLock(TimeProvider.System);
         var instance = new NullDistributedLock(TimeProvider.System);
@@ -101,7 +101,7 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
-    public void Instance_then_factory_keeps_only_the_factory()
+    public void instance_then_factory_keeps_only_the_factory()
     {
         var instance = new NullDistributedLock(TimeProvider.System);
         var factoryOutput = new NullDistributedLock(TimeProvider.System);

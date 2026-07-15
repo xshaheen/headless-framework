@@ -9,7 +9,7 @@ namespace Tests.Transport;
 public sealed class IDispatcherCompatibilityTests : TestBase
 {
     [Fact]
-    public async Task DisposeAsync_with_timeout_should_delegate_to_legacy_dispose_implementation()
+    public async Task should_delegate_to_legacy_dispose_implementation_when_dispose_async_with_timeout()
     {
         // given
         await using var dispatcher = new LegacyDispatcher();

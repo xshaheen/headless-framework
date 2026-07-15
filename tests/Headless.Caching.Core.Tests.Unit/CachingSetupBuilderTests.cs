@@ -102,7 +102,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_duplicate_names()
+    public void should_reject_duplicate_names_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -125,7 +125,7 @@ public sealed class CachingSetupBuilderTests
     [InlineData(CacheConstants.RemoteCacheProvider)]
     [InlineData(CacheConstants.HybridCacheProvider)]
     [InlineData("Headless.Caching:custom")]
-    public void add_named_should_reject_reserved_names(string reservedName)
+    public void should_reject_reserved_names_when_add_named(string reservedName)
     {
         // given
         var services = new ServiceCollection();
@@ -141,7 +141,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_whitespace_name()
+    public void should_reject_whitespace_name_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -157,7 +157,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_zero_providers()
+    public void should_reject_zero_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -173,7 +173,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_multiple_providers()
+    public void should_reject_multiple_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -196,7 +196,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void register_tier_should_reject_non_reserved_role_key()
+    public void should_reject_non_reserved_role_key_when_register_tier()
     {
         // given
         var services = new ServiceCollection();
@@ -209,7 +209,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void register_tier_should_reject_bare_role_alias()
+    public void should_reject_bare_role_alias_when_register_tier()
     {
         // given - "memory" is a reserved short alias, but the tier role key must be the namespaced constant
         var services = new ServiceCollection();
@@ -222,7 +222,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void register_tier_should_reject_duplicate_role()
+    public void should_reject_duplicate_role_when_register_tier()
     {
         // given
         var services = new ServiceCollection();
@@ -243,7 +243,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void register_tier_should_reject_role_already_claimed_by_default_provider()
+    public void should_reject_role_already_claimed_by_default_provider_when_register_tier()
     {
         // given
         var services = new ServiceCollection();
@@ -264,7 +264,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public async Task named_extension_keyed_registration_should_be_reachable_via_cache_provider()
+    public async Task should_be_reachable_via_cache_provider_when_named_extension_keyed_registration()
     {
         // given
         var namedCache = Substitute.For<ICache>();
@@ -293,7 +293,7 @@ public sealed class CachingSetupBuilderTests
     // The public WithSerializer overloads live in the Redis provider package (serialization is a Redis-tier
     // concern); these tests cover the provider-agnostic slot mechanics directly via the internal setter.
     [Fact]
-    public void named_instance_should_capture_serializer_factory()
+    public void should_capture_serializer_factory_when_named_instance()
     {
         // given
         var serializer = new TestSerializer();
@@ -309,7 +309,7 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
-    public void named_instance_should_reject_multiple_serializer_configurations()
+    public void should_reject_multiple_serializer_configurations_when_named_instance()
     {
         // given
         var instance = new HeadlessCacheInstanceBuilder("orders");

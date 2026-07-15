@@ -102,7 +102,7 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
-    public async Task group_handle_shutdown_should_dispose_clients_concurrently()
+    public async Task should_dispose_clients_concurrently_when_group_handle_shutdown()
     {
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -452,7 +452,7 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
-    public async Task pulse_should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds()
+    public async Task should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds_when_pulse()
     {
         var fakeTime = new FakeTimeProvider();
         await using var provider = _CreateProvider(configureServices: services =>

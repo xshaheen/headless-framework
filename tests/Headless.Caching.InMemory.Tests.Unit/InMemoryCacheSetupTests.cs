@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class InMemoryCacheSetupTests : TestBase
 {
     [Fact]
-    public void use_in_memory_should_register_default_cache_role_keys_and_adapters()
+    public void should_register_default_cache_role_keys_and_adapters_when_use_in_memory()
     {
         // given
         var services = new ServiceCollection();

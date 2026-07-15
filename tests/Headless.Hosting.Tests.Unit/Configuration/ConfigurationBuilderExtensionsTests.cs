@@ -5,7 +5,7 @@ namespace Tests.Configuration;
 public sealed class ConfigurationBuilderExtensionsTests
 {
     [Fact]
-    public void configuration_builder_add_if_should_add_configuration_if_condition_is_true()
+    public void should_add_configuration_if_condition_is_true_when_configuration_builder_add_if()
     {
         // given
         var builder = new ConfigurationBuilder();
@@ -31,7 +31,7 @@ public sealed class ConfigurationBuilderExtensionsTests
     }
 
     [Fact]
-    public void configuration_builder_add_if_should_not_add_configuration_if_condition_is_false()
+    public void should_not_add_configuration_if_condition_is_false_when_configuration_builder_add_if()
     {
         // given
         var builder = new ConfigurationBuilder();
@@ -57,7 +57,7 @@ public sealed class ConfigurationBuilderExtensionsTests
     }
 
     [Fact]
-    public void configuration_builder_add_if_else_should_execute_if_action_when_condition_is_true()
+    public void should_execute_if_action_when_configuration_builder_add_if_else_condition_is_true()
     {
         // given
         var builder = new ConfigurationBuilder();
@@ -89,7 +89,7 @@ public sealed class ConfigurationBuilderExtensionsTests
     }
 
     [Fact]
-    public void configuration_builder_add_if_else_should_execute_else_action_when_condition_is_false()
+    public void should_execute_else_action_when_configuration_builder_add_if_else_condition_is_false()
     {
         // given
         var builder = new ConfigurationBuilder();

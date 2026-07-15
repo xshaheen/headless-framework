@@ -7,7 +7,7 @@ namespace Tests.Collections;
 public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
 {
     [Fact]
-    public async Task for_each_async_should_process_items_sequentially_in_order()
+    public async Task should_process_items_sequentially_in_order_when_for_each_async()
     {
         // given
         var source = Enumerable.Range(1, 10).ToList();
@@ -28,7 +28,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_pass_zero_based_index_to_action()
+    public async Task should_pass_zero_based_index_to_action_when_for_each_async()
     {
         // given
         var source = new[] { "a", "b", "c" };
@@ -49,7 +49,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_pass_the_caller_token_to_the_action()
+    public async Task should_pass_the_caller_token_to_the_action_when_for_each_async()
     {
         // given
         var source = new[] { 1 };
@@ -72,7 +72,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_throw_before_processing_when_token_already_cancelled()
+    public async Task should_throw_before_processing_when_for_each_async_token_already_cancelled()
     {
         // given
         var source = new[] { 1, 2, 3 };
@@ -97,7 +97,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_complete_when_token_cancelled_but_source_is_empty()
+    public async Task should_complete_when_for_each_async_token_cancelled_but_source_is_empty()
     {
         // given - the token is only observed per element, so an empty source never reaches a check
         var source = Array.Empty<int>();
@@ -112,7 +112,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_stop_between_elements_when_cancelled_during_processing()
+    public async Task should_stop_between_elements_when_for_each_async_cancelled_during_processing()
     {
         // given
         var source = new[] { 1, 2, 3 };
@@ -136,7 +136,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_throw_when_source_is_null()
+    public async Task should_throw_when_for_each_async_source_is_null()
     {
         // given
         IEnumerable<int> source = null!;
@@ -149,7 +149,7 @@ public sealed class EnumerableExtensionsForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task for_each_async_should_throw_when_action_is_null()
+    public async Task should_throw_when_for_each_async_action_is_null()
     {
         // given
         var source = new[] { 1 };

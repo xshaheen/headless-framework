@@ -80,7 +80,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task RecordingBusTransport_records_published_message_on_success()
+    public async Task recording_bus_transport_records_published_message_on_success()
     {
         // given
         var store = new MessageObservationStore();
@@ -98,7 +98,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_does_not_record_on_failure()
+    public async Task recording_bus_transport_does_not_record_on_failure()
     {
         // given
         var store = new MessageObservationStore();
@@ -114,7 +114,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_extracts_message_id_and_topic_from_headers()
+    public async Task recording_bus_transport_extracts_message_id_and_topic_from_headers()
     {
         // given
         var store = new MessageObservationStore();
@@ -135,7 +135,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_extracts_correlation_id_from_headers()
+    public async Task recording_bus_transport_extracts_correlation_id_from_headers()
     {
         // given
         var store = new MessageObservationStore();
@@ -154,7 +154,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_sets_null_correlation_id_when_absent()
+    public async Task recording_bus_transport_sets_null_correlation_id_when_absent()
     {
         // given
         var store = new MessageObservationStore();
@@ -170,7 +170,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_deserializes_body_when_type_header_present()
+    public async Task recording_bus_transport_deserializes_body_when_type_header_present()
     {
         // given
         var store = new MessageObservationStore();
@@ -193,7 +193,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_falls_back_to_TransportMessage_when_type_unresolvable()
+    public async Task recording_bus_transport_falls_back_to_transport_message_when_type_unresolvable()
     {
         // given
         var store = new MessageObservationStore();
@@ -213,7 +213,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_falls_back_gracefully_when_deserialization_throws()
+    public async Task recording_bus_transport_falls_back_gracefully_when_deserialization_throws()
     {
         // given
         var store = new MessageObservationStore();
@@ -232,7 +232,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_forwards_to_inner_transport()
+    public async Task recording_bus_transport_forwards_to_inner_transport()
     {
         // given
         var store = new MessageObservationStore();
@@ -248,7 +248,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingBusTransport_sets_timestamp_to_utc_now()
+    public async Task recording_bus_transport_sets_timestamp_to_utc_now()
     {
         // given
         var store = new MessageObservationStore();
@@ -271,7 +271,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_records_consumed_on_success()
+    public async Task recording_consume_middleware_pipeline_records_consumed_on_success()
     {
         // given
         var store = new MessageObservationStore();
@@ -291,7 +291,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_records_faulted_and_rethrows_on_handler_failure()
+    public async Task recording_consume_middleware_pipeline_records_faulted_and_rethrows_on_handler_failure()
     {
         // given
         var store = new MessageObservationStore();
@@ -312,7 +312,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_faulted_entry_carries_exception()
+    public async Task recording_consume_middleware_pipeline_faulted_entry_carries_exception()
     {
         // given
         var store = new MessageObservationStore();
@@ -340,7 +340,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_extracts_message_id_and_topic_from_context()
+    public async Task recording_consume_middleware_pipeline_extracts_message_id_and_topic_from_context()
     {
         // given
         var store = new MessageObservationStore();
@@ -360,7 +360,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_extracts_correlation_id_from_context()
+    public async Task recording_consume_middleware_pipeline_extracts_correlation_id_from_context()
     {
         // given
         var store = new MessageObservationStore();
@@ -378,7 +378,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_sets_correct_message_type()
+    public async Task recording_consume_middleware_pipeline_sets_correct_message_type()
     {
         // given
         var store = new MessageObservationStore();
@@ -396,7 +396,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_forwards_to_inner_pipeline()
+    public async Task recording_consume_middleware_pipeline_forwards_to_inner_pipeline()
     {
         // given
         var store = new MessageObservationStore();
@@ -414,7 +414,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeMiddlewarePipeline_sets_null_correlation_id_when_absent()
+    public async Task recording_consume_middleware_pipeline_sets_null_correlation_id_when_absent()
     {
         // given
         var store = new MessageObservationStore();

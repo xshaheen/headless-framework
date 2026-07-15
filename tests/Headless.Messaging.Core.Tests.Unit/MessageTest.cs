@@ -19,7 +19,7 @@ public sealed class MessageTest
     }
 
     [Fact]
-    public void Serialize_then_Deserialize_Message_With_Utf8JsonSerializer()
+    public void serialize_then_deserialize_message_with_utf8_json_serializer()
     {
         // given
         var givenMessage = new Message(

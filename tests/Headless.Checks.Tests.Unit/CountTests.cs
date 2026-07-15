@@ -9,13 +9,13 @@ public sealed class CountTests
     private static readonly List<int> _Three = [1, 2, 3];
 
     [Fact]
-    public void has_count_should_return_collection_when_exact()
+    public void should_return_collection_when_has_count_exact()
     {
         Argument.HasCount(_Three, 3).Should().BeSameAs(_Three);
     }
 
     [Fact]
-    public void has_count_should_throw_when_not_exact()
+    public void should_throw_when_has_count_not_exact()
     {
         var collection = _Three;
         var action = () => Argument.HasCount(collection, 2);
@@ -29,14 +29,14 @@ public sealed class CountTests
     }
 
     [Fact]
-    public void has_count_should_throw_argument_null_when_null()
+    public void should_throw_argument_null_when_has_count_null()
     {
         var action = () => Argument.HasCount((IReadOnlyCollection<int>?)null, 0);
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]
-    public void has_count_should_work_on_lazy_enumerable()
+    public void should_work_on_lazy_enumerable_when_has_count()
     {
         IEnumerable<int> lazy = _Three.Where(x => x > 0);
 
@@ -47,7 +47,7 @@ public sealed class CountTests
     }
 
     [Fact]
-    public void has_min_count_should_validate_lower_bound()
+    public void should_validate_lower_bound_when_has_min_count()
     {
         Argument.HasMinCount(_Three, 3).Should().BeSameAs(_Three);
         Argument.HasMinCount(_Three, 1).Should().BeSameAs(_Three);
@@ -57,7 +57,7 @@ public sealed class CountTests
     }
 
     [Fact]
-    public void has_max_count_should_validate_upper_bound()
+    public void should_validate_upper_bound_when_has_max_count()
     {
         Argument.HasMaxCount(_Three, 3).Should().BeSameAs(_Three);
         Argument.HasMaxCount(_Three, 5).Should().BeSameAs(_Three);
@@ -70,7 +70,7 @@ public sealed class CountTests
     [InlineData(2, 4)]
     [InlineData(3, 3)]
     [InlineData(1, 10)]
-    public void has_count_between_should_return_collection_when_in_range(int min, int max)
+    public void should_return_collection_when_has_count_between_in_range(int min, int max)
     {
         Argument.HasCountBetween(_Three, min, max).Should().BeSameAs(_Three);
     }
@@ -78,14 +78,14 @@ public sealed class CountTests
     [Theory]
     [InlineData(4, 6)]
     [InlineData(0, 2)]
-    public void has_count_between_should_throw_when_out_of_range(int min, int max)
+    public void should_throw_when_has_count_between_out_of_range(int min, int max)
     {
         var action = () => Argument.HasCountBetween(_Three, min, max);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void has_count_between_should_throw_when_bounds_inverted()
+    public void should_throw_when_has_count_between_bounds_inverted()
     {
         var action = () => Argument.HasCountBetween(_Three, 5, 2);
         action.Should().ThrowExactly<ArgumentException>();

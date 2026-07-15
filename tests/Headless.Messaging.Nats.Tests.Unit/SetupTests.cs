@@ -82,7 +82,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_register_nats_transport_services_through_AddHeadlessMessaging()
+    public async Task should_register_nats_transport_services_through_add_headless_messaging()
     {
         var services = new ServiceCollection();
         services.AddLogging();

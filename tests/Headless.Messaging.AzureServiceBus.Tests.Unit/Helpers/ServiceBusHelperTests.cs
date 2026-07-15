@@ -5,7 +5,7 @@ namespace Tests.Helpers;
 public sealed class ServiceBusHelpersTests
 {
     [Fact]
-    public void GetBrokerAddress_ShouldThrowArgumentException_WhenBothInputsAreNull()
+    public void should_throw_argument_exception_when_get_broker_address_both_inputs_are_null()
     {
         // given
         const string? connectionString = null;
@@ -21,7 +21,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldReturnNamespace_WhenConnectionStringIsNull()
+    public void should_return_namespace_when_get_broker_address_connection_string_is_null()
     {
         // given
         const string? connectionString = null;
@@ -36,7 +36,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldReturnExtractedNamespace_WhenNamespaceIsNull()
+    public void should_return_extracted_namespace_when_get_broker_address_namespace_is_null()
     {
         // given
         const string? connectionString =
@@ -52,7 +52,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldThrowInvalidOperationException_WhenNamespaceExtractionFails()
+    public void should_throw_invalid_operation_exception_when_get_broker_address_namespace_extraction_fails()
     {
         // given
         const string? connectionString = "InvalidConnectionString";
@@ -67,7 +67,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldReturnNamespace_WhenBothNamespaceAndConnectionStringAreProvided()
+    public void should_return_namespace_when_get_broker_address_both_namespace_and_connection_string_are_provided()
     {
         // given
         const string? connectionString =
@@ -83,7 +83,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldReturnExtractedNamespace_WhenConnectionStringIsValidAndNamespaceIsEmpty()
+    public void should_return_extracted_namespace_when_get_broker_address_connection_string_is_valid_and_namespace_is_empty()
     {
         // given
         const string? connectionString =
@@ -99,7 +99,7 @@ public sealed class ServiceBusHelpersTests
     }
 
     [Fact]
-    public void GetBrokerAddress_ShouldReturnNamespace_WhenConnectionStringIsEmpty()
+    public void should_return_namespace_when_get_broker_address_connection_string_is_empty()
     {
         // given
         const string? connectionString = "";

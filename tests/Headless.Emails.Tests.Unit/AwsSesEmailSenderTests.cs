@@ -22,7 +22,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task no_attachments_should_use_the_simple_content_path()
+    public async Task should_use_the_simple_content_path_when_no_attachments()
     {
         var captured = _CaptureRequest(HttpStatusCode.OK);
 
@@ -35,7 +35,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task attachments_should_use_the_raw_content_path()
+    public async Task should_use_the_raw_content_path_when_attachments()
     {
         var captured = _CaptureRequest(HttpStatusCode.OK);
 
@@ -52,7 +52,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task raw_path_should_carry_bcc_on_the_envelope_and_hide_it_from_the_mime()
+    public async Task should_carry_bcc_on_the_envelope_and_hide_it_from_the_mime_when_raw_path()
     {
         byte[]? rawBytes = null;
         SendEmailRequest? captured = null;
@@ -87,7 +87,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task non_success_status_should_return_failed()
+    public async Task should_return_failed_when_non_success_status()
     {
         _CaptureRequest(HttpStatusCode.ServiceUnavailable);
 
@@ -98,7 +98,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task ses_typed_exception_should_return_failed_and_surface_the_provider_message()
+    public async Task should_return_failed_and_surface_the_provider_message_when_ses_typed_exception()
     {
         _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
             .Returns(
@@ -113,7 +113,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task transport_exception_should_return_failed()
+    public async Task should_return_failed_when_transport_exception()
     {
         _ses.SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<SendEmailResponse>(new HttpRequestException("connection reset")));
@@ -125,7 +125,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task operation_canceled_should_propagate()
+    public async Task should_propagate_when_operation_canceled()
     {
         // Only the CALLER's own cancellation propagates. The sender rethrows under
         // `when (cancellationToken.IsCancellationRequested)`, so the caller's token must actually be cancelled --
@@ -141,7 +141,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task provider_side_cancellation_should_return_failed_when_the_caller_did_not_cancel()
+    public async Task should_return_failed_when_provider_side_cancellation_the_caller_did_not_cancel()
     {
         // The other side of that guard, previously untested: an AWS SDK internal timeout surfaces as a
         // TaskCanceledException while the caller's token is untouched. That is a delivery failure, not a
@@ -155,7 +155,7 @@ public sealed class AwsSesEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task missing_body_should_throw_before_calling_ses()
+    public async Task should_throw_before_calling_ses_when_missing_body()
     {
         var request = _Request() with { MessageText = null, MessageHtml = null };
 

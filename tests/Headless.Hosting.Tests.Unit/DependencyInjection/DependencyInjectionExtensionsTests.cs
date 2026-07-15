@@ -7,7 +7,7 @@ namespace Tests.DependencyInjection;
 public sealed class DependencyInjectionExtensionsTests
 {
     [Fact]
-    public void add_if_should_execute_the_action_if_the_condition_to_add_is_true()
+    public void should_execute_the_action_if_the_condition_to_add_is_true_when_add_if()
     {
         // given
         var services = new ServiceCollection();
@@ -29,7 +29,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_should_not_execute_the_action_if_the_condition_to_add_is_false()
+    public void should_not_execute_the_action_if_the_condition_to_add_is_false_when_add_if()
     {
         // given
         var services = new ServiceCollection();
@@ -51,7 +51,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_should_add_the_service_to_the_service_collection_if_the_add_condition_is_true()
+    public void should_add_the_service_to_the_service_collection_if_the_add_condition_is_true_when_add_if()
     {
         // given
         var services = new ServiceCollection();
@@ -73,7 +73,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_should_not_add_the_service_to_the_service_collection_if_the_add_condition_is_false()
+    public void should_not_add_the_service_to_the_service_collection_if_the_add_condition_is_false_when_add_if()
     {
         // given
         var services = new ServiceCollection();
@@ -95,7 +95,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_else_should_invoke_if_action_when_condition_is_true()
+    public void should_invoke_if_action_when_add_if_else_condition_is_true()
     {
         // given
         var services = new ServiceCollection();
@@ -126,7 +126,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_else_should_invoke_else_action_when_condition_is_false()
+    public void should_invoke_else_action_when_add_if_else_condition_is_false()
     {
         // given
         var services = new ServiceCollection();
@@ -157,7 +157,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_else_should_add_if_action_when_condition_is_false()
+    public void should_add_if_action_when_add_if_else_condition_is_false()
     {
         // given
         var services = new ServiceCollection();
@@ -188,7 +188,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_if_else_should_add_else_action_when_condition_is_false()
+    public void should_add_else_action_when_add_if_else_condition_is_false()
     {
         // given
         var services = new ServiceCollection();
@@ -219,7 +219,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void decorate_should_wrap_registered_service_and_resolve_extra_dependencies()
+    public void should_wrap_registered_service_and_resolve_extra_dependencies_when_decorate()
     {
         // given
         var services = new ServiceCollection();
@@ -237,7 +237,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void decorate_should_wrap_all_unkeyed_registrations_and_preserve_order()
+    public void should_wrap_all_unkeyed_registrations_and_preserve_order_when_decorate()
     {
         // given
         var services = new ServiceCollection();
@@ -255,7 +255,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void decorate_should_preserve_original_lifetime()
+    public void should_preserve_original_lifetime_when_decorate()
     {
         // given
         var services = new ServiceCollection();
@@ -271,7 +271,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void decorate_should_support_factory_decorators()
+    public void should_support_factory_decorators_when_decorate()
     {
         // given
         var services = new ServiceCollection();
@@ -286,7 +286,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void decorate_should_throw_when_service_is_missing()
+    public void should_throw_when_decorate_service_is_missing()
     {
         // given
         var services = new ServiceCollection();
@@ -299,7 +299,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void try_decorate_should_return_false_when_service_is_missing()
+    public void should_return_false_when_try_decorate_service_is_missing()
     {
         // given
         var services = new ServiceCollection();
@@ -312,7 +312,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_scoped_should_replace_service_when_it_exists()
+    public void should_replace_service_when_replace_scoped_it_exists()
     {
         // given
         var services = new ServiceCollection();
@@ -338,7 +338,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_scoped_with_implementation_params_should_replace_service()
+    public void should_replace_service_when_replace_scoped_with_implementation_params()
     {
         // given
         var services = new ServiceCollection();
@@ -356,7 +356,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_scoped_should_replace_service_when_it_doesnt_exist()
+    public void should_replace_service_when_add_or_replace_scoped_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -378,7 +378,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_transient_should_replace_service_when_it_exists()
+    public void should_replace_service_when_add_or_replace_transient_it_exists()
     {
         // given
         var services = new ServiceCollection();
@@ -404,7 +404,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_transient_with_implementation_params_should_replace_service()
+    public void should_replace_service_when_add_or_replace_transient_with_implementation_params()
     {
         // given
         var services = new ServiceCollection();
@@ -422,7 +422,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_transient_should_replace_service_when_it_exists_as_another_lifetime()
+    public void should_replace_service_when_add_or_replace_transient_it_exists_as_another_lifetime()
     {
         // given
         var services = new ServiceCollection();
@@ -448,7 +448,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_transient_should_replace_service_when_it_doesnt_exist()
+    public void should_replace_service_when_add_or_replace_transient_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -470,7 +470,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_singleton_should_replace_service_when_it_exists()
+    public void should_replace_service_when_add_or_replace_singleton_it_exists()
     {
         // given
         var services = new ServiceCollection();
@@ -496,7 +496,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_singleton_with_implementation_params_should_replace_service()
+    public void should_replace_service_when_add_or_replace_singleton_with_implementation_params()
     {
         // given
         var services = new ServiceCollection();
@@ -514,7 +514,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_singleton_should_replace_service_when_it_doesnt_exist()
+    public void should_replace_service_when_add_or_replace_singleton_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -536,7 +536,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_replace_fallback_service()
+    public void should_replace_fallback_service_when_add_or_replace_fallback_singleton()
     {
         // given
         var services = new ServiceCollection();
@@ -552,7 +552,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_replace_fallback_instance()
+    public void should_replace_fallback_instance_when_add_or_replace_fallback_singleton()
     {
         // given
         var services = new ServiceCollection();
@@ -568,7 +568,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_preserve_custom_service()
+    public void should_preserve_custom_service_when_add_or_replace_fallback_singleton()
     {
         // given
         var services = new ServiceCollection();
@@ -584,7 +584,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_remove_fallback_and_preserve_custom_service()
+    public void should_remove_fallback_and_preserve_custom_service_when_add_or_replace_fallback_singleton()
     {
         // given
         var services = new ServiceCollection();
@@ -602,7 +602,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_add_default_when_service_is_missing()
+    public void should_add_default_when_add_or_replace_fallback_singleton_service_is_missing()
     {
         // given
         var services = new ServiceCollection();
@@ -617,7 +617,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_or_replace_fallback_singleton_should_preserve_factory_registered_fallback()
+    public void should_preserve_factory_registered_fallback_when_add_or_replace_fallback_singleton()
     {
         // given — a fallback registered via a factory delegate is indistinguishable from a consumer
         // override, so it is intentionally preserved (only type-/instance-based fallbacks are removed).
@@ -634,7 +634,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_should_replace_service_with_new_factory()
+    public void should_replace_service_with_new_factory_when_replace()
     {
         // given
         var services = new ServiceCollection();
@@ -654,7 +654,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void is_added_should_return_true_when_service_is_added()
+    public void should_return_true_when_is_added_service_is_added()
     {
         // given
         var services = new ServiceCollection();
@@ -668,7 +668,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void is_added_should_return_false_when_service_is_not_added()
+    public void should_return_false_when_is_added_service_is_not_added()
     {
         // given
         var services = new ServiceCollection();
@@ -681,7 +681,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_keyed_scoped_should_register_service_with_key()
+    public void should_register_service_with_key_when_add_keyed_scoped()
     {
         // given
         var services = new ServiceCollection();
@@ -698,7 +698,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void service_provider_should_return_null_when_retrieving_invalid_scoped_keyed_service()
+    public void should_return_null_when_service_provider_retrieving_invalid_scoped_keyed_service()
     {
         // given
         var services = new ServiceCollection();
@@ -714,7 +714,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_keyed_transient_should_register_service_with_key()
+    public void should_register_service_with_key_when_add_keyed_transient()
     {
         // given
         var services = new ServiceCollection();
@@ -731,7 +731,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void service_provider_should_return_null_when_retrieving_invalid_transient_keyed_service()
+    public void should_return_null_when_service_provider_retrieving_invalid_transient_keyed_service()
     {
         // given
         var services = new ServiceCollection();
@@ -749,7 +749,7 @@ public sealed class DependencyInjectionExtensionsTests
     #region AddInitializerHostedService
 
     [Fact]
-    public void add_initializer_hosted_service_should_register_T_as_singleton()
+    public void should_register_t_as_singleton_when_add_initializer_hosted_service()
     {
         // given
         var services = new ServiceCollection();
@@ -765,7 +765,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_initializer_hosted_service_should_forward_as_IInitializer_using_same_singleton_instance()
+    public void should_forward_as_i_initializer_using_same_singleton_instance_when_add_initializer_hosted_service()
     {
         // given
         var services = new ServiceCollection();
@@ -782,7 +782,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_initializer_hosted_service_should_forward_as_IHostedService_using_same_singleton_instance()
+    public void should_forward_as_i_hosted_service_using_same_singleton_instance_when_add_initializer_hosted_service()
     {
         // given
         var services = new ServiceCollection();
@@ -799,7 +799,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_initializer_hosted_service_should_be_idempotent_when_called_twice()
+    public void should_be_idempotent_when_add_initializer_hosted_service_called_twice()
     {
         // given
         var services = new ServiceCollection();
@@ -815,7 +815,7 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void add_initializer_hosted_service_should_register_multiple_distinct_types_independently()
+    public void should_register_multiple_distinct_types_independently_when_add_initializer_hosted_service()
     {
         // given
         var services = new ServiceCollection();

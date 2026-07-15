@@ -24,7 +24,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
 
     [Fact]
-    public async Task ReceivedMessageDetails_should_return_message_content()
+    public async Task should_return_message_content_when_received_message_details()
     {
         // given
         var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x14, 0x56);
@@ -68,7 +68,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedMessageDetails_should_return_404_for_missing_message()
+    public async Task should_return_404_for_missing_message_when_received_message_details()
     {
         // given
         var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x18, 0x88);
@@ -89,7 +89,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedList_should_bind_intent_filter_and_project_intent_with_pagination_metadata()
+    public async Task should_bind_intent_filter_and_project_intent_with_pagination_metadata_when_received_list()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -163,7 +163,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedList_should_bind_null_intent_filter_when_intentType_is_omitted()
+    public async Task should_bind_null_intent_filter_when_received_list_intent_type_is_omitted()
     {
         // given
         var result = new IndexPage<MessageView>([], index: 0, size: 10, totalItems: 0);
@@ -199,7 +199,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedRequeue_should_return_422_for_empty_array()
+    public async Task should_return_422_for_empty_array_when_received_requeue()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -216,7 +216,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedDelete_should_return_422_for_null_body()
+    public async Task should_return_422_for_null_body_when_received_delete()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -234,7 +234,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ReceivedDelete_should_return_204_on_success()
+    public async Task should_return_204_on_success_when_received_delete()
     {
         // given
         var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x17, 0x89);

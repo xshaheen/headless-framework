@@ -604,7 +604,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_5006_via_early_guard_and_skip_TryWriteAsync_when_response_has_started_at_entry()
+    public async Task should_log_5006_via_early_guard_and_skip_try_write_async_when_response_has_started_at_entry()
     {
         // given - response has already started before the handler runs; the early guard must
         // short-circuit before attempting to mutate StatusCode or call TryWriteAsync.
@@ -630,7 +630,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_5006_via_fallback_guard_when_TryWriteAsync_starts_response_then_fails()
+    public async Task should_log_5006_via_fallback_guard_when_try_write_async_starts_response_then_fails()
     {
         // given - HasStarted is false at entry (early guard passes), but TryWriteAsync flips it to
         // true mid-write and then returns false. The fallback guard must catch this and log 5006.

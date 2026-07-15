@@ -13,7 +13,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void UseKafka_with_bootstrap_servers_should_register_services()
+    public void should_register_services_when_use_kafka_with_bootstrap_servers()
     {
         // given
         var services = new ServiceCollection();
@@ -33,7 +33,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void UseKafka_with_configure_action_should_configure_options()
+    public void should_configure_options_when_use_kafka_with_configure_action()
     {
         // given
         var services = new ServiceCollection();
@@ -58,7 +58,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void UseKafka_should_throw_when_configure_is_null()
+    public void should_throw_when_use_kafka_configure_is_null()
     {
         // given
         var services = new ServiceCollection();
@@ -72,7 +72,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void UseKafka_should_register_MessageQueueMarkerService()
+    public void should_register_message_queue_marker_service_when_use_kafka()
     {
         // given
         var services = new ServiceCollection();
@@ -90,7 +90,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void UseKafka_should_register_as_singletons()
+    public void should_register_as_singletons_when_use_kafka()
     {
         // given
         var services = new ServiceCollection();

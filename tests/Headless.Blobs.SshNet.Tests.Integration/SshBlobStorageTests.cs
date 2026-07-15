@@ -37,7 +37,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     #region SSH-specific
 
     [Fact]
-    public async Task can_create_ssh_file_storage_without_Connection_string_password()
+    public async Task can_create_ssh_file_storage_without_connection_string_password()
     {
         // given
         var options = new SshBlobStorageOptions { ConnectionString = "sftp://headless@localhost:2222" };

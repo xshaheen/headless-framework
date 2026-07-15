@@ -7,7 +7,7 @@ namespace Tests.Collections;
 public sealed class ConcurrentDictionaryExtensionsTests
 {
     [Fact]
-    public void get_or_default_should_return_default_if_key_does_not_exist()
+    public void should_return_default_if_key_does_not_exist_when_get_or_default()
     {
         // given
         var dictionary = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);

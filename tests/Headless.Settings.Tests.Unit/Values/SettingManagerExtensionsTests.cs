@@ -30,7 +30,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_true_when_value_is_TRUE_case_insensitive()
+    public async Task should_return_true_when_value_is_true_case_insensitive()
     {
         // given
         const string settingName = "TestSetting";
@@ -62,7 +62,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_pass_provider_name_and_key_to_IsTrue()
+    public async Task should_pass_provider_name_and_key_to_is_true()
     {
         // given
         const string settingName = "TestSetting";
@@ -108,7 +108,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_true_when_value_is_FALSE_case_insensitive()
+    public async Task should_return_true_when_value_is_false_case_insensitive()
     {
         // given
         const string settingName = "TestSetting";

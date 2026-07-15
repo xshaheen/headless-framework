@@ -29,7 +29,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- Record ---
 
     [Fact]
-    public void Record_adds_to_published_collection()
+    public void record_adds_to_published_collection()
     {
         // given
         var store = new MessageObservationStore();
@@ -45,7 +45,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public void Record_adds_to_consumed_collection()
+    public void record_adds_to_consumed_collection()
     {
         // given
         var store = new MessageObservationStore();
@@ -61,7 +61,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public void Record_adds_to_faulted_collection()
+    public void record_adds_to_faulted_collection()
     {
         // given
         var store = new MessageObservationStore();
@@ -77,7 +77,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public void Record_multiple_messages_preserves_order()
+    public void record_multiple_messages_preserves_order()
     {
         // given
         var store = new MessageObservationStore();
@@ -98,7 +98,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- WaitForAsync — already-existing messages ---
 
     [Fact]
-    public async Task WaitForAsync_completes_immediately_when_message_already_exists()
+    public async Task wait_for_async_completes_immediately_when_message_already_exists()
     {
         // given
         var store = new MessageObservationStore();
@@ -120,7 +120,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public async Task WaitForAsync_matches_by_assignability()
+    public async Task wait_for_async_matches_by_assignability()
     {
         // given
         var store = new MessageObservationStore();
@@ -144,7 +144,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- WaitForAsync — message arrives later ---
 
     [Fact]
-    public async Task WaitForAsync_completes_when_message_arrives_after_registration()
+    public async Task wait_for_async_completes_when_message_arrives_after_registration()
     {
         // given
         var store = new MessageObservationStore();
@@ -179,7 +179,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- WaitForAsync — predicate ---
 
     [Fact]
-    public async Task WaitForAsync_with_predicate_skips_non_matching_existing_messages()
+    public async Task wait_for_async_with_predicate_skips_non_matching_existing_messages()
     {
         // given
         var store = new MessageObservationStore();
@@ -213,7 +213,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public async Task WaitForAsync_with_predicate_matches_existing_when_predicate_true()
+    public async Task wait_for_async_with_predicate_matches_existing_when_predicate_true()
     {
         // given
         var store = new MessageObservationStore();
@@ -235,7 +235,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public async Task WaitForAsync_with_intent_type_skips_same_payload_under_other_intent()
+    public async Task wait_for_async_with_intent_type_skips_same_payload_under_other_intent()
     {
         // given
         var store = new MessageObservationStore();
@@ -272,7 +272,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- WaitForAsync — timeout ---
 
     [Fact]
-    public async Task WaitForAsync_times_out_and_throws_MessageObservationTimeoutException()
+    public async Task wait_for_async_times_out_and_throws_message_observation_timeout_exception()
     {
         // given
         var store = new MessageObservationStore();
@@ -293,7 +293,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public async Task WaitForAsync_timeout_exception_carries_diagnostic_info()
+    public async Task wait_for_async_timeout_exception_carries_diagnostic_info()
     {
         // given
         var store = new MessageObservationStore();
@@ -332,7 +332,7 @@ public sealed class MessageObservationStoreTests : TestBase
     }
 
     [Fact]
-    public async Task WaitForAsync_timeout_exception_message_mentions_no_messages_when_bucket_empty()
+    public async Task wait_for_async_timeout_exception_message_mentions_no_messages_when_bucket_empty()
     {
         // given
         var store = new MessageObservationStore();
@@ -364,7 +364,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- External cancellation ---
 
     [Fact]
-    public async Task WaitForAsync_propagates_external_cancellation_as_OperationCanceledException()
+    public async Task wait_for_async_propagates_external_cancellation_as_operation_canceled_exception()
     {
         // given
         var store = new MessageObservationStore();
@@ -390,7 +390,7 @@ public sealed class MessageObservationStoreTests : TestBase
     // --- Clear ---
 
     [Fact]
-    public void Clear_empties_all_collections()
+    public void clear_empties_all_collections()
     {
         // given
         var store = new MessageObservationStore();

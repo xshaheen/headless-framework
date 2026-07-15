@@ -7,7 +7,7 @@ namespace Tests.Collections;
 public sealed class ComparerFactoryTests
 {
     [Fact]
-    public void key_based_comparer_should_treat_equal_keys_as_equal()
+    public void should_treat_equal_keys_as_equal_when_key_based_comparer()
     {
         // given
         var comparer = ComparerFactory.Create<Person, int>(p => p.Id);
@@ -20,7 +20,7 @@ public sealed class ComparerFactoryTests
     }
 
     [Fact]
-    public void key_based_comparer_should_treat_different_keys_as_not_equal()
+    public void should_treat_different_keys_as_not_equal_when_key_based_comparer()
     {
         // given
         var comparer = ComparerFactory.Create<Person, int>(p => p.Id);
@@ -30,7 +30,7 @@ public sealed class ComparerFactoryTests
     }
 
     [Fact]
-    public void key_based_comparer_should_handle_nulls()
+    public void should_handle_nulls_when_key_based_comparer()
     {
         // given
         var comparer = ComparerFactory.Create<Person, int>(p => p.Id);
@@ -42,7 +42,7 @@ public sealed class ComparerFactoryTests
     }
 
     [Fact]
-    public void key_based_comparer_should_compare_value_type_instances_by_key()
+    public void should_compare_value_type_instances_by_key_when_key_based_comparer()
     {
         // given - value-type T exercises the no-boxing path (default(T) is not null)
         var comparer = ComparerFactory.Create<Point, int>(p => p.X);
@@ -54,7 +54,7 @@ public sealed class ComparerFactoryTests
     }
 
     [Fact]
-    public void comparison_func_comparer_should_use_supplied_functions()
+    public void should_use_supplied_functions_when_comparison_func_comparer()
     {
         // given - compare strings case-insensitively
         var comparer = ComparerFactory.Create<string>(
@@ -69,7 +69,7 @@ public sealed class ComparerFactoryTests
     }
 
     [Fact]
-    public void comparison_func_comparer_should_handle_nulls_without_invoking_func()
+    public void should_handle_nulls_without_invoking_func_when_comparison_func_comparer()
     {
         // given - the func must never run for null operands
         var comparer = ComparerFactory.Create<string>(

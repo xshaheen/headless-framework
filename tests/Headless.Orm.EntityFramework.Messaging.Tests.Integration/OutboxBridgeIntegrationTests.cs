@@ -45,7 +45,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task save_emitting_an_integration_event_should_write_one_outbox_row()
+    public async Task should_write_one_outbox_row_when_save_emitting_an_integration_event()
     {
         // given
         const string marker = "evt-single";
@@ -66,7 +66,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task save_emitting_multiple_concrete_event_types_should_route_each_to_its_own_overload()
+    public async Task should_route_each_to_its_own_overload_when_save_emitting_multiple_concrete_event_types()
     {
         // given
         const string marker = "evt-multi";
@@ -89,7 +89,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task sync_save_should_write_outbox_rows_identically_to_async()
+    public async Task should_write_outbox_rows_identically_to_async_when_sync_save()
     {
         // given
         const string marker = "evt-sync";
@@ -111,7 +111,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task save_emitting_events_under_a_consumer_opened_plain_transaction_should_fail_loud()
+    public async Task should_fail_loud_when_save_emitting_events_under_a_consumer_opened_plain_transaction()
     {
         // given — a CONSUMER opens its own PLAIN EF transaction (BeginTransactionAsync) WITHOUT calling
         // EnlistCommitCoordination, then saves with integration events. The pipeline reuses the consumer's
@@ -141,7 +141,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task coordinated_transaction_wrapping_a_save_should_dispatch_the_event_atomically()
+    public async Task should_dispatch_the_event_atomically_when_coordinated_transaction_wrapping_a_save()
     {
         // given — the welded ExecuteCoordinatedTransactionAsync helper opens the coordinated transaction and
         // pushes the ambient coordinator. The inner SaveChanges runs WITHIN that transaction (current-transaction
@@ -198,7 +198,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task enlisted_publish_rolled_back_should_discard_the_outbox_row()
+    public async Task should_discard_the_outbox_row_when_enlisted_publish_rolled_back()
     {
         // given — the consumer enlist seam (DatabaseFacade.EnlistCommitCoordination) pushes the ambient coordinator
         // SYNCHRONOUSLY in this frame, so the outbox writer stores the row INSIDE the transaction (not on an
@@ -228,7 +228,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task enlisted_publish_committed_should_persist_the_outbox_row_atomically()
+    public async Task should_persist_the_outbox_row_atomically_when_enlisted_publish_committed()
     {
         // given — same enlist seam, but commit. Proves the in-tx write path (not the autonomous fallback): the row
         // is only visible after commit and survives. Paired with the rollback test, this pins atomic enlistment.

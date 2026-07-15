@@ -102,7 +102,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 1: publish → consume → assert ──────────────────────────────────
 
     [Fact]
-    public async Task Publish_and_consume_flow_works_end_to_end()
+    public async Task publish_and_consume_flow_works_end_to_end()
     {
         // given
         await using var harness = await _CreateHarnessAsync(
@@ -132,7 +132,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 2: faulted observation captures exception ───────────────────────
 
     [Fact]
-    public async Task Faulted_observation_captures_exception()
+    public async Task faulted_observation_captures_exception()
     {
         // given
         await using var harness = await _CreateHarnessAsync(
@@ -159,7 +159,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 3: WaitForConsumed with predicate filters correctly ─────────────
 
     [Fact]
-    public async Task WaitForConsumed_with_predicate_filters_correctly()
+    public async Task wait_for_consumed_with_predicate_filters_correctly()
     {
         // given — use TestConsumer so we get a singleton that handles the messages
         await using var harness = await MessagingTestHarness.CreateAsync(
@@ -199,7 +199,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 4: timeout produces descriptive exception ───────────────────────
 
     [Fact]
-    public async Task Timeout_produces_descriptive_exception()
+    public async Task timeout_produces_descriptive_exception()
     {
         // given — no consumer registered; message never arrives
         await using var harness = await _CreateHarnessAsync();
@@ -219,7 +219,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 5: two harness instances do not cross-contaminate ──────────────
 
     [Fact]
-    public async Task Two_harness_instances_do_not_cross_contaminate()
+    public async Task two_harness_instances_do_not_cross_contaminate()
     {
         // given
         await using var harness1 = await _CreateHarnessAsync(
@@ -253,7 +253,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 6: consumer with injected dependency resolves correctly ─────────
 
     [Fact]
-    public async Task Consumer_with_injected_dependency_resolves_correctly()
+    public async Task consumer_with_injected_dependency_resolves_correctly()
     {
         // given
         var notifier = Substitute.For<INotificationService>();
@@ -283,7 +283,7 @@ public sealed class EndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task Bus_and_queue_observations_are_distinguished_by_intent()
+    public async Task bus_and_queue_observations_are_distinguished_by_intent()
     {
         // given
         await using var harness = await MessagingTestHarness.CreateAsync(
@@ -361,7 +361,7 @@ public sealed class EndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task Outbox_bus_and_queue_flow_through_inmemory_transport_with_intent()
+    public async Task outbox_bus_and_queue_flow_through_inmemory_transport_with_intent()
     {
         // given
         await using var harness = await MessagingTestHarness.CreateAsync(
@@ -430,7 +430,7 @@ public sealed class EndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task Queue_observation_is_not_double_recorded_as_bus_for_queue_transport()
+    public async Task queue_observation_is_not_double_recorded_as_bus_for_queue_transport()
     {
         // given
         await using var harness = await MessagingTestHarness.CreateAsync(
@@ -506,7 +506,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───
 
     [Fact]
-    public async Task AddMessagingTestHarness_registers_into_existing_container()
+    public async Task add_messaging_test_harness_registers_into_existing_container()
     {
         // given — simulate a host-owned ServiceCollection
         var services = new ServiceCollection();
@@ -545,7 +545,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 8: WaitForExhausted observes user OnExhausted callback ──────────
 
     [Fact]
-    public async Task WaitForExhausted_observes_user_callback_invocation()
+    public async Task wait_for_exhausted_observes_user_callback_invocation()
     {
         // given — single-attempt budget so failure becomes terminal immediately
         var userCallbackFired = 0;
@@ -593,7 +593,7 @@ public sealed class EndToEndTests : TestBase
     // ─── Test 9: WaitForExhausted survives a hanging user callback ───────────
 
     [Fact]
-    public async Task WaitForExhausted_records_before_user_callback_runs()
+    public async Task wait_for_exhausted_records_before_user_callback_runs()
     {
         // given — user callback hangs; observation must still be visible
         using var hangGate = new ManualResetEventSlim(initialState: false);

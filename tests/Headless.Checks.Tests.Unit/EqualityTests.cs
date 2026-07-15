@@ -7,14 +7,14 @@ namespace Tests;
 public sealed class EqualityTests
 {
     [Fact]
-    public void is_equal_to_should_return_value_when_equal()
+    public void should_return_value_when_is_equal_to_equal()
     {
         Argument.IsEqualTo(5, 5).Should().Be(5);
         Argument.IsEqualTo("abc", "abc").Should().Be("abc");
     }
 
     [Fact]
-    public void is_equal_to_should_throw_when_not_equal()
+    public void should_throw_when_is_equal_to_not_equal()
     {
         // given
         const int value = 5;
@@ -35,7 +35,7 @@ public sealed class EqualityTests
     }
 
     [Fact]
-    public void is_equal_to_should_use_supplied_comparer()
+    public void should_use_supplied_comparer_when_is_equal_to()
     {
         Argument.IsEqualTo("ABC", "abc", StringComparer.OrdinalIgnoreCase).Should().Be("ABC");
 
@@ -44,13 +44,13 @@ public sealed class EqualityTests
     }
 
     [Fact]
-    public void is_not_equal_to_should_return_value_when_not_equal()
+    public void should_return_value_when_is_not_equal_to_not_equal()
     {
         Argument.IsNotEqualTo(5, 6).Should().Be(5);
     }
 
     [Fact]
-    public void is_not_equal_to_should_throw_when_equal()
+    public void should_throw_when_is_not_equal_to_equal()
     {
         // given
         const int value = 5;
@@ -64,7 +64,7 @@ public sealed class EqualityTests
     }
 
     [Fact]
-    public void is_not_equal_to_should_use_supplied_comparer()
+    public void should_use_supplied_comparer_when_is_not_equal_to()
     {
         var action = () => Argument.IsNotEqualTo("ABC", "abc", StringComparer.OrdinalIgnoreCase);
         action.Should().ThrowExactly<ArgumentException>();
@@ -73,7 +73,7 @@ public sealed class EqualityTests
     }
 
     [Fact]
-    public void equality_with_null_comparer_should_throw_argument_null()
+    public void should_throw_argument_null_when_equality_with_null_comparer()
     {
         var action = () => Argument.IsEqualTo(1, 1, comparer: null!);
         action.Should().ThrowExactly<ArgumentNullException>();

@@ -16,7 +16,7 @@ public sealed class QueryableExtensionsTests
     ];
 
     [Fact]
-    public void where_if_should_apply_filter_when_condition_is_true_with_real_query()
+    public void should_apply_filter_when_where_if_condition_is_true_with_real_query()
     {
         // given
         var query = _queryableTestEntities.AsQueryable();
@@ -31,7 +31,7 @@ public sealed class QueryableExtensionsTests
     }
 
     [Fact]
-    public void where_if_should_select_only_specific_fields_when_condition_is_true()
+    public void should_select_only_specific_fields_when_where_if_condition_is_true()
     {
         // given
         var query = _queryableTestEntities.AsQueryable();
@@ -46,7 +46,7 @@ public sealed class QueryableExtensionsTests
     }
 
     [Fact]
-    public void where_if_should_not_apply_filter_but_return_sorted_results()
+    public void should_not_apply_filter_but_return_sorted_results_when_where_if()
     {
         // given
         var query = _queryableTestEntities.AsQueryable();

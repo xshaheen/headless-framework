@@ -19,13 +19,13 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_EmptySequence()
+    public void read_empty_sequence()
     {
         _defaultStream.Read(new byte[1], 0, 1).Should().Be(0);
     }
 
     [Fact]
-    public void Length()
+    public void length()
     {
         _defaultStream.Length.Should().Be(0);
         _defaultStream.Dispose();
@@ -34,7 +34,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void SetLength()
+    public void set_length()
     {
         var act = () => _defaultStream.SetLength(0);
         act.Should().Throw<NotSupportedException>();
@@ -43,7 +43,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void CanSeek()
+    public void can_seek()
     {
         _defaultStream.CanSeek.Should().BeTrue();
         _defaultStream.Dispose();
@@ -51,7 +51,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void CanRead()
+    public void can_read()
     {
         _defaultStream.CanRead.Should().BeTrue();
         _defaultStream.Dispose();
@@ -59,7 +59,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void CanWrite()
+    public void can_write()
     {
         _defaultStream.CanWrite.Should().BeFalse();
         _defaultStream.Dispose();
@@ -67,7 +67,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void CanTimeout()
+    public void can_timeout()
     {
         _defaultStream.CanTimeout.Should().BeFalse();
         _defaultStream.Dispose();
@@ -75,7 +75,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Position()
+    public void position()
     {
         _defaultStream.Position.Should().Be(0);
         var act = () => _defaultStream.Position = 1;
@@ -115,7 +115,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Flush()
+    public void flush()
     {
         var act = () => _defaultStream.Flush();
         act.Should().Throw<NotSupportedException>();
@@ -124,7 +124,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task FlushAsync()
+    public async Task flush_async()
     {
         var act = () => _defaultStream.FlushAsync(AbortToken);
         await act.Should().ThrowAsync<NotSupportedException>();
@@ -133,7 +133,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Write()
+    public void write()
     {
         var act = () => _defaultStream.Write(new byte[1], 0, 1);
         act.Should().Throw<NotSupportedException>();
@@ -142,7 +142,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task WriteAsync()
+    public async Task write_async()
     {
         var act = () => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken);
         await act.Should().ThrowAsync<NotSupportedException>();
@@ -151,7 +151,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void WriteByte()
+    public void write_byte()
     {
         var act = () => _defaultStream.WriteByte(1);
         act.Should().Throw<NotSupportedException>();
@@ -160,7 +160,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_EmptyStream()
+    public void seek_empty_stream()
     {
         var stream = _DefaultSequence.ToStream();
         stream.Seek(0, SeekOrigin.Begin).Should().Be(0);
@@ -169,7 +169,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek()
+    public void seek()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Seek(0, SeekOrigin.Begin).Should().Be(0);
@@ -229,7 +229,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_BeforeBegin_ThrowsIOException()
+    public void seek_before_begin_throws_io_exception()
     {
         var stream = _MultiBlockSequence.ToStream();
 
@@ -248,7 +248,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void ReadByte()
+    public void read_byte()
     {
         var stream = _MultiBlockSequence.ToStream();
 
@@ -262,7 +262,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Read()
+    public void read()
     {
         var stream = _MultiBlockSequence.ToStream();
         var buffer = new byte[_MultiBlockSequence.Length + 2];
@@ -283,14 +283,14 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void ReadAsync_ReturnsSynchronously()
+    public void read_async_returns_synchronously()
     {
         var stream = _SimpleSequence.ToStream();
         stream.ReadAsync(new byte[1], 0, 1, AbortToken).IsCompleted.Should().BeTrue();
     }
 
     [Fact]
-    public async Task ReadAsync_ReusesTaskResult()
+    public async Task read_async_reuses_task_result()
     {
         var stream = _MultiBlockSequence.ToStream();
         var task1 = stream.ReadAsync(new byte[1], 0, 1, AbortToken);
@@ -305,7 +305,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_Works()
+    public async Task read_async_works()
     {
         var stream = _MultiBlockSequence.ToStream();
         var buffer = new byte[_MultiBlockSequence.Length + 2];
@@ -325,7 +325,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task CopyToAsync()
+    public async Task copy_to_async()
     {
         var stream = _MultiBlockSequence.ToStream();
         var ms = new MemoryStream();
@@ -334,7 +334,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task CopyToAsync_AfterPartialRead_CopiesOnlyRemainder()
+    public async Task copy_to_async_after_partial_read_copies_only_remainder()
     {
         var stream = _MultiBlockSequence.ToStream();
         var head = new byte[3];
@@ -350,7 +350,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void IsDisposed()
+    public void is_disposed()
     {
         var stream = (ReadOnlySequenceStream)_defaultStream;
         stream.IsDisposed.Should().BeFalse();
@@ -359,7 +359,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_AfterDispose_Throws()
+    public void read_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
@@ -368,7 +368,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void ReadSpan_AfterDispose_Throws()
+    public void read_span_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
@@ -377,7 +377,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void ReadByte_AfterDispose_Throws()
+    public void read_byte_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
@@ -386,7 +386,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_AfterDispose_Throws()
+    public async Task read_async_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         await stream.DisposeAsync();
@@ -395,7 +395,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsyncMemory_AfterDispose_Throws()
+    public async Task read_async_memory_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         await stream.DisposeAsync();
@@ -404,7 +404,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void PositionGet_AfterDispose_Throws()
+    public void position_get_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
@@ -413,7 +413,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public void PositionSet_AfterDispose_Throws()
+    public void position_set_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         stream.Dispose();
@@ -422,7 +422,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     }
 
     [Fact]
-    public async Task CopyToAsync_AfterDispose_Throws()
+    public async Task copy_to_async_after_dispose_throws()
     {
         var stream = _MultiBlockSequence.ToStream();
         await stream.DisposeAsync();

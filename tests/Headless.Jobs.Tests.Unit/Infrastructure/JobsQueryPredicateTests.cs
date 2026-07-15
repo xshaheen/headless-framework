@@ -45,7 +45,7 @@ public sealed class JobsQueryPredicateTests
         };
 
     [Fact]
-    public void WhereOwnedBy_selects_non_terminal_rows_owned_by_the_dead_incarnation()
+    public void where_owned_by_selects_non_terminal_rows_owned_by_the_dead_incarnation()
     {
         var idle = _TimeJob(JobStatus.Idle, _Owner, lockedUntil: DateTime.UtcNow);
         var queued = _TimeJob(JobStatus.Queued, _Owner, lockedUntil: DateTime.UtcNow);
@@ -57,7 +57,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereOwnedBy_drops_the_loose_unowned_idle_arm()
+    public void where_owned_by_drops_the_loose_unowned_idle_arm()
     {
         // The core behavior change from WhereCanAcquire: an unowned, never-locked idle row is NOT reclaimed.
         var unowned = _TimeJob(JobStatus.Idle, ownerId: null, lockedUntil: null);
@@ -68,7 +68,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereOwnedBy_does_not_touch_a_fast_restart_incarnation()
+    public void where_owned_by_does_not_touch_a_fast_restart_incarnation()
     {
         // Reclaiming node-a@5 must never select node-a@6's freshly-stamped rows (R4 / R-2).
         var fastRestart = _TimeJob(JobStatus.Queued, ownerId: "node-a@6", lockedUntil: DateTime.UtcNow);
@@ -84,7 +84,7 @@ public sealed class JobsQueryPredicateTests
     [InlineData(JobStatus.Failed)]
     [InlineData(JobStatus.Cancelled)]
     [InlineData(JobStatus.Skipped)]
-    public void WhereOwnedBy_preserves_the_terminal_state_guard(JobStatus terminalStatus)
+    public void where_owned_by_preserves_the_terminal_state_guard(JobStatus terminalStatus)
     {
         var terminalOwned = _TimeJob(terminalStatus, _Owner, lockedUntil: DateTime.UtcNow);
 
@@ -94,7 +94,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereOwnedBy_for_occurrences_matches_the_same_strict_predicate()
+    public void where_owned_by_for_occurrences_matches_the_same_strict_predicate()
     {
         var owned = _Occurrence(JobStatus.InProgress, _Owner, lockedUntil: DateTime.UtcNow);
         var unowned = _Occurrence(JobStatus.Idle, ownerId: null, lockedUntil: null);
@@ -114,7 +114,7 @@ public sealed class JobsQueryPredicateTests
     private static readonly DateTime _Now = new(2026, 06, 16, 12, 00, 00, DateTimeKind.Utc);
 
     [Fact]
-    public void WhereCanAcquire_selects_a_row_whose_lease_has_expired()
+    public void where_can_acquire_selects_a_row_whose_lease_has_expired()
     {
         // Expired lease (LockedUntil in the past) owned by another node → re-claimable by the self-heal arm.
         var expired = _TimeJob(JobStatus.Idle, ownerId: "node-b@2", lockedUntil: _Now.AddMinutes(-1));
@@ -125,7 +125,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_does_not_select_a_future_lease_owned_by_a_different_owner()
+    public void where_can_acquire_does_not_select_a_future_lease_owned_by_a_different_owner()
     {
         // Live lease (LockedUntil in the future) held by another node → NOT claimable (duplicate-suppression floor).
         var liveOther = _TimeJob(JobStatus.Queued, ownerId: "node-b@2", lockedUntil: _Now.AddMinutes(5));
@@ -136,7 +136,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_selects_a_never_leased_row()
+    public void where_can_acquire_selects_a_never_leased_row()
     {
         // Unowned, never leased (LockedUntil == null) → claimable (unowned arm intact).
         var neverLeased = _TimeJob(JobStatus.Idle, ownerId: null, lockedUntil: null);
@@ -147,7 +147,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_selects_a_future_lease_owned_by_me()
+    public void where_can_acquire_selects_a_future_lease_owned_by_me()
     {
         // Live lease held by ME → re-claimable (self-owned crash-recovery arm intact, regardless of deadline).
         var liveMine = _TimeJob(JobStatus.Queued, ownerId: _Owner, lockedUntil: _Now.AddMinutes(5));
@@ -158,7 +158,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_flips_selection_as_the_client_clock_advances_past_the_lease()
+    public void where_can_acquire_flips_selection_as_the_client_clock_advances_past_the_lease()
     {
         // Proves the comparison is against the supplied (client) clock: the same row is excluded while the lease is
         // live and selected once `now` advances past LockedUntil.
@@ -173,7 +173,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_for_occurrences_applies_the_same_lease_expiry_arm()
+    public void where_can_acquire_for_occurrences_applies_the_same_lease_expiry_arm()
     {
         var expired = _Occurrence(JobStatus.Idle, ownerId: "node-b@2", lockedUntil: _Now.AddMinutes(-1));
         var liveOther = _Occurrence(JobStatus.Queued, ownerId: "node-b@2", lockedUntil: _Now.AddMinutes(5));
@@ -189,7 +189,7 @@ public sealed class JobsQueryPredicateTests
     #region WhereCanAcquire OnNodeDeath gate (#315)
 
     [Fact]
-    public void WhereCanAcquire_re_claims_an_expired_lease_only_when_policy_is_Retry()
+    public void where_can_acquire_re_claims_an_expired_lease_only_when_policy_is_retry()
     {
         var retry = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
         var markFailed = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
@@ -202,7 +202,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_gate_does_not_block_the_unowned_arm_for_non_Retry_policies()
+    public void where_can_acquire_gate_does_not_block_the_unowned_arm_for_non_retry_policies()
     {
         // A never-leased Skip/MarkFailed row is still freely claimable — the gate narrows only the lease-expiry arm.
         var skipUnowned = _TimeJob(JobStatus.Idle, ownerId: null, lockedUntil: null, NodeDeathPolicy.Skip);
@@ -214,7 +214,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_gate_does_not_block_the_self_owned_arm_for_non_Retry_policies()
+    public void where_can_acquire_gate_does_not_block_the_self_owned_arm_for_non_retry_policies()
     {
         // A future-leased Skip row owned by ME is still re-claimable (crash recovery) regardless of policy.
         var skipMine = _TimeJob(JobStatus.Queued, _Owner, _Now.AddMinutes(5), NodeDeathPolicy.Skip);
@@ -225,7 +225,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Fact]
-    public void WhereCanAcquire_gate_applies_to_occurrences_too()
+    public void where_can_acquire_gate_applies_to_occurrences_too()
     {
         var retry = _Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
         var skip = _Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Skip);

@@ -13,7 +13,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
 
     [Fact]
-    public async Task lock_storage_should_prune_expired_entries_and_keep_monotonic_fencing()
+    public async Task should_prune_expired_entries_and_keep_monotonic_fencing_when_lock_storage()
     {
         var storage = new InMemoryDistributedLockStorage(_timeProvider);
         var key = Faker.Random.AlphaNumeric(10);
@@ -31,7 +31,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_expire_readers_and_waiting_marker_deterministically()
+    public async Task should_expire_readers_and_waiting_marker_deterministically_when_reader_writer_storage()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -73,7 +73,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_extend_without_shortening_and_reject_expired_leases()
+    public async Task should_extend_without_shortening_and_reject_expired_leases_when_reader_writer_storage()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -105,7 +105,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_refuse_read_extend_when_writer_is_waiting()
+    public async Task should_refuse_read_extend_when_reader_writer_storage_writer_is_waiting()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -133,7 +133,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_not_shorten_infinite_write_lease()
+    public async Task should_not_shorten_infinite_write_lease_when_reader_writer_storage()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -160,7 +160,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task lock_storage_should_keep_fencing_monotonic_under_concurrent_acquire_release()
+    public async Task should_keep_fencing_monotonic_under_concurrent_acquire_release_when_lock_storage()
     {
         // Guards the window where grant and fence-increment were two unsynchronized ConcurrentDictionary
         // ops: a preempted caller could return Acquired=true with a token above the live holder. With the
@@ -208,7 +208,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_clear_stale_marker_when_write_claim_succeeds()
+    public async Task should_clear_stale_marker_when_reader_writer_storage_write_claim_succeeds()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -255,7 +255,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_keep_reader_lease_finite_when_extended_with_null_ttl()
+    public async Task should_keep_reader_lease_finite_when_reader_writer_storage_extended_with_null_ttl()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -279,7 +279,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public async Task reader_writer_storage_should_keep_writer_lease_infinite_when_extended_with_null_ttl()
+    public async Task should_keep_writer_lease_infinite_when_reader_writer_storage_extended_with_null_ttl()
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -311,7 +311,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Theory]
     [InlineData("lock:with:colon")]
     [InlineData("a:b")]
-    public async Task reader_writer_storage_should_reject_lock_id_containing_colon(string leaseId)
+    public async Task should_reject_lock_id_containing_colon_when_reader_writer_storage(string leaseId)
     {
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -348,7 +348,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     }
 
     [Fact]
-    public void setup_should_register_all_three_providers()
+    public void should_register_all_three_providers_when_setup()
     {
         var services = new ServiceCollection();
         services.AddLogging();

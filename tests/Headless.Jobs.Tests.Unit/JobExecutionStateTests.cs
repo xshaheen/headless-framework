@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class JobExecutionStateTests
 {
     [Fact]
-    public void SetProperty_Tracks_Updated_Properties()
+    public void set_property_tracks_updated_properties()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -36,7 +36,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void ResetUpdateProps_Clears_Tracked_Properties()
+    public void reset_update_props_clears_tracked_properties()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -50,7 +50,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void ResetUpdateProps_Does_Not_Reset_Property_Values()
+    public void reset_update_props_does_not_reset_property_values()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -64,7 +64,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void PropertiesToUpdate_Defaults_To_Empty_Set_And_Tracks_Updates()
+    public void properties_to_update_defaults_to_empty_set_and_tracks_updates()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -78,7 +78,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void SetProperty_Allows_Multiple_Updates_To_Same_Property()
+    public void set_property_allows_multiple_updates_to_same_property()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -92,7 +92,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void SetProperty_Throws_For_NonProperty_Expression()
+    public void set_property_throws_for_non_property_expression()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -102,7 +102,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void TimeJobChildren_Defaults_To_Empty_List_And_Can_Add()
+    public void time_job_children_defaults_to_empty_list_and_can_add()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
 
@@ -123,7 +123,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void CachedDelegate_And_Priority_Can_Be_Assigned()
+    public void cached_delegate_and_priority_can_be_assigned()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
         JobFunctionDelegate handler = (_, _, _) => Task.CompletedTask;
@@ -136,7 +136,7 @@ public sealed class JobExecutionStateTests
     }
 
     [Fact]
-    public void SetProperty_Supports_Array_And_String_Properties()
+    public void set_property_supports_array_and_string_properties()
     {
         var context = new JobExecutionState() { FunctionName = "Test" };
         var intervals = new[] { 1, 5, 10 };

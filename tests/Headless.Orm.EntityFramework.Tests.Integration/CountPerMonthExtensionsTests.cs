@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class CountPerMonthExtensionsTests : TestBase
 {
     [Fact]
-    public async Task date_only_count_per_month_should_group_counts_in_database()
+    public async Task should_group_counts_in_database_when_date_only_count_per_month()
     {
         // given
         await using var fixture = await MonthCountFixture.CreateAsync(AbortToken);

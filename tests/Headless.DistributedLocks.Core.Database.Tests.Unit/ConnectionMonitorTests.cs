@@ -188,7 +188,7 @@ public sealed class ConnectionMonitorTests : TestBase
     }
 
     [Fact]
-    public async Task keepalive_probe_should_not_cancel_token_on_non_terminal_command_failure()
+    public async Task should_not_cancel_token_on_non_terminal_command_failure_when_keepalive_probe()
     {
         // given
         var (connection, fake) = _CreateConnection();

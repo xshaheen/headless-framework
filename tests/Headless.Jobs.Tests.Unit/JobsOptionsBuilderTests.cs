@@ -34,7 +34,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void ConfigureRetries_exposes_direct_Polly_options()
+    public void configure_retries_exposes_direct_polly_options()
     {
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
             new JobsExecutionContext(),
@@ -53,7 +53,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void ConfigureRequestJsonOptions_Initializes_And_Invokes_Config()
+    public void configure_request_json_options_initializes_and_invokes_config()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -80,7 +80,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void UseGZipCompression_Sets_Flag()
+    public void use_g_zip_compression_sets_flag()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -100,7 +100,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void IgnoreSeedDefinedCronJobs_Disables_Seeding_Flag()
+    public void ignore_seed_defined_cron_jobs_disables_seeding_flag()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -120,7 +120,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void SetExceptionHandler_Sets_Handler_Type()
+    public void set_exception_handler_sets_handler_type()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -141,7 +141,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void UseJobsSeeder_Time_Sets_TimeSeederAction()
+    public void use_jobs_seeder_time_sets_time_seeder_action()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -161,7 +161,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void UseJobsSeeder_Cron_Sets_CronSeederAction()
+    public void use_jobs_seeder_cron_sets_cron_seeder_action()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -186,7 +186,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void ConfigureScheduler_Invokes_Delegate()
+    public void configure_scheduler_invokes_delegate()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -204,7 +204,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void Default_NodeId_Is_MachineName()
+    public void default_node_id_is_machine_name()
     {
         // In-memory single-process identity only; the durable path stamps with Coordination's node@incarnation.
         var schedulerOptions = new SchedulerOptionsBuilder();
@@ -213,7 +213,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void Default_LeaseDuration_Is_5_Minutes()
+    public void default_lease_duration_is_5_minutes()
     {
         var schedulerOptions = new SchedulerOptionsBuilder();
 
@@ -221,7 +221,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void Default_PostCommitDrainTimeout_Is_30_Seconds()
+    public void default_post_commit_drain_timeout_is_30_seconds()
     {
         var schedulerOptions = new SchedulerOptionsBuilder();
 
@@ -232,7 +232,7 @@ public sealed class JobsOptionsBuilderTests
     [InlineData(-1)]
     [InlineData(0)]
     [InlineData(301)]
-    public void AddHeadlessJobs_Rejects_PostCommitDrainTimeout_Outside_Valid_Range(int timeoutSeconds)
+    public void add_headless_jobs_rejects_post_commit_drain_timeout_outside_valid_range(int timeoutSeconds)
     {
         var services = new ServiceCollection();
 
@@ -247,7 +247,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void AddHeadlessJobs_Accepts_Maximum_PostCommitDrainTimeout()
+    public void add_headless_jobs_accepts_maximum_post_commit_drain_timeout()
     {
         var services = new ServiceCollection();
 
@@ -260,7 +260,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void Explicit_NodeId_Is_Preserved_Verbatim()
+    public void explicit_node_id_is_preserved_verbatim()
     {
         var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };
 
@@ -268,7 +268,7 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void DisableBackgroundServices_Sets_Flag_To_False()
+    public void disable_background_services_sets_flag_to_false()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();

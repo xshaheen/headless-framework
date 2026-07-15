@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class IsZeroTests
 {
     [Fact]
-    public void is_zero_should_return_value_when_zero()
+    public void should_return_value_when_is_zero_zero()
     {
         Argument.IsZero(0).Should().Be(0);
         Argument.IsZero(0d).Should().Be(0d);
@@ -16,7 +16,7 @@ public sealed class IsZeroTests
     }
 
     [Fact]
-    public void is_zero_should_throw_when_not_zero()
+    public void should_throw_when_is_zero_not_zero()
     {
         const int value = 5;
         var action = () => Argument.IsZero(value);
@@ -28,14 +28,14 @@ public sealed class IsZeroTests
     }
 
     [Fact]
-    public void is_zero_should_throw_for_nonzero_timespan()
+    public void should_throw_for_nonzero_timespan_when_is_zero()
     {
         var action = () => Argument.IsZero(TimeSpan.FromSeconds(1));
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void is_zero_nullable_should_pass_through_null()
+    public void should_pass_through_null_when_is_zero_nullable()
     {
         Argument.IsZero((int?)null).Should().BeNull();
         Argument.IsZero(null).Should().BeNull();
@@ -46,14 +46,14 @@ public sealed class IsZeroTests
     }
 
     [Fact]
-    public void is_not_zero_should_return_value_when_not_zero()
+    public void should_return_value_when_is_not_zero_not_zero()
     {
         Argument.IsNotZero(5).Should().Be(5);
         Argument.IsNotZero(TimeSpan.FromSeconds(1)).Should().Be(TimeSpan.FromSeconds(1));
     }
 
     [Fact]
-    public void is_not_zero_should_throw_when_zero()
+    public void should_throw_when_is_not_zero_zero()
     {
         const int value = 0;
         var action = () => Argument.IsNotZero(value);
@@ -68,7 +68,7 @@ public sealed class IsZeroTests
     }
 
     [Fact]
-    public void is_not_zero_nullable_should_pass_through_null()
+    public void should_pass_through_null_when_is_not_zero_nullable()
     {
         Argument.IsNotZero((int?)null).Should().BeNull();
         Argument.IsNotZero(null).Should().BeNull();

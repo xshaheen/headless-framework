@@ -17,7 +17,7 @@ public sealed class IsNegativeTests
     };
 
     [Fact]
-    public void is_negative_should_return_same_value_when_positive()
+    public void should_return_same_value_when_is_negative_positive()
     {
         Argument.IsNegative(_validValues.IntValue).Should().Be(_validValues.IntValue);
         Argument.IsNegative(_validValues.DecimalValue).Should().Be(_validValues.DecimalValue);
@@ -50,7 +50,7 @@ public sealed class IsNegativeTests
 
     [Theory]
     [MemberData(nameof(Data))]
-    public void is_negative_should_throw_argument_out_of_range_exception_when_negative(NumericKind kind)
+    public void should_throw_argument_out_of_range_exception_when_is_negative_negative(NumericKind kind)
     {
         Action act = kind switch
         {
@@ -78,7 +78,7 @@ public sealed class IsNegativeTests
 
     [Theory]
     [MemberData(nameof(PositiveDataWithCustomMessage))]
-    public void is_negative_should_throw_argument_out_of_range_exception_when_negative_with_custom_message(
+    public void should_throw_argument_out_of_range_exception_when_is_negative_negative_with_custom_message(
         NumericKind kind
     )
     {
@@ -125,7 +125,7 @@ public sealed class IsNegativeTests
     }
 
     [Fact]
-    public void is_not_of_type_should_throw_argument_exception_when_argument_is_of_type()
+    public void should_throw_argument_exception_when_is_not_of_type_argument_is_of_type()
     {
         // given
         object argument = "test";

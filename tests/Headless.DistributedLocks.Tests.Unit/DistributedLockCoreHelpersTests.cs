@@ -15,7 +15,7 @@ public sealed class DistributedLockCoreHelpersTests
     [InlineData(3, 400)]
     [InlineData(4, 800)]
     [InlineData(5, 1600)]
-    public void backoff_should_grow_exponentially_within_jitter_band(int attempt, double expectedBaseMs)
+    public void should_grow_exponentially_within_jitter_band_when_backoff(int attempt, double expectedBaseMs)
     {
         // when
         var delay = DistributedLockCoreHelpers.GetBackoffDelay(attempt);
@@ -30,7 +30,7 @@ public sealed class DistributedLockCoreHelpersTests
     [InlineData(7)]
     [InlineData(100)]
     [InlineData(int.MaxValue)]
-    public void backoff_should_cap_at_three_seconds_for_high_attempts(int attempt)
+    public void should_cap_at_three_seconds_for_high_attempts_when_backoff(int attempt)
     {
         // when — the shift is clamped (no overflow for huge attempt counts) and the delay is
         // capped at 3s before jitter is applied.
@@ -61,7 +61,7 @@ public sealed class DistributedLockCoreHelpersTests
 
     [Theory]
     [MemberData(nameof(TransientExceptions))]
-    public void transient_storage_exceptions_should_be_classified_retryable(ExceptionKind exceptionKind)
+    public void should_be_classified_retryable_when_transient_storage_exceptions(ExceptionKind exceptionKind)
     {
         var exception = _CreateException(exceptionKind);
 
@@ -70,7 +70,7 @@ public sealed class DistributedLockCoreHelpersTests
 
     [Theory]
     [MemberData(nameof(NonTransientExceptions))]
-    public void programmer_errors_and_cancellation_should_not_be_classified_retryable(ExceptionKind exceptionKind)
+    public void should_not_be_classified_retryable_when_programmer_errors_and_cancellation(ExceptionKind exceptionKind)
     {
         var exception = _CreateException(exceptionKind);
 
@@ -98,7 +98,7 @@ public sealed class DistributedLockCoreHelpersTests
     #region NormalizeTimeUntilExpires
 
     [Fact]
-    public void normalize_should_fall_back_to_default_when_null()
+    public void should_fall_back_to_default_when_normalize_null()
     {
         // given
         var defaultTtl = TimeSpan.FromMinutes(20);
@@ -111,7 +111,7 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     [Fact]
-    public void normalize_should_translate_infinite_to_null()
+    public void should_translate_infinite_to_null_when_normalize()
     {
         // when
         var result = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
@@ -124,7 +124,7 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     [Fact]
-    public void normalize_should_pass_finite_positive_value_through()
+    public void should_pass_finite_positive_value_through_when_normalize()
     {
         // given
         var ttl = TimeSpan.FromSeconds(30);
@@ -139,7 +139,7 @@ public sealed class DistributedLockCoreHelpersTests
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]
-    public void normalize_should_reject_zero_or_negative_values(int seconds)
+    public void should_reject_zero_or_negative_values_when_normalize(int seconds)
     {
         // when
         var act = () =>
@@ -153,7 +153,7 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     [Fact]
-    public void normalize_should_reject_values_above_int_max_milliseconds()
+    public void should_reject_values_above_int_max_milliseconds_when_normalize()
     {
         // given — lease TTLs travel to storage as int milliseconds (Redis PX); a larger value
         // would silently overflow on cast, so it must be rejected at validation time.
@@ -173,7 +173,7 @@ public sealed class DistributedLockCoreHelpersTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void require_finite_should_return_finite_duration_unchanged(bool monitorLease)
+    public void should_return_finite_duration_unchanged_when_require_finite(bool monitorLease)
     {
         // given
         var ttl = TimeSpan.FromSeconds(15);
@@ -186,7 +186,7 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     [Fact]
-    public void require_finite_should_throw_when_monitoring_an_infinite_lease()
+    public void should_throw_when_require_finite_monitoring_an_infinite_lease()
     {
         // when — a monitored lease must have a finite duration for the renewal loop to schedule against
         var act = () => DistributedLockCoreHelpers.RequireFiniteLeaseDuration(null, monitorLease: true);
@@ -196,7 +196,7 @@ public sealed class DistributedLockCoreHelpersTests
     }
 
     [Fact]
-    public void require_finite_should_allow_infinite_lease_without_monitoring()
+    public void should_allow_infinite_lease_without_monitoring_when_require_finite()
     {
         // when
         var result = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(null, monitorLease: false);
@@ -210,7 +210,7 @@ public sealed class DistributedLockCoreHelpersTests
     #region GetWriterWaitingId
 
     [Fact]
-    public void writer_waiting_id_should_append_the_shared_suffix()
+    public void should_append_the_shared_suffix_when_writer_waiting_id()
     {
         // when
         var markerId = DistributedLockCoreHelpers.GetWriterWaitingId("lease-1");

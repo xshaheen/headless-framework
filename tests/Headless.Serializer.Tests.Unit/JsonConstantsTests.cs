@@ -31,14 +31,14 @@ public sealed class JsonConstantsTests
     }
 
     [Fact]
-    public void web_options_deserializer_should_populate_list_without_setter()
+    public void should_populate_list_without_setter_when_web_options_deserializer()
     {
         var model2 = JsonSerializer.Deserialize<TestModel2>(_Json, _options);
         model2.Should().BeEquivalentTo(_model2);
     }
 
     [Fact]
-    public void shared_presets_should_be_read_only()
+    public void should_be_read_only_when_shared_presets()
     {
         JsonConstants.DefaultWebJsonOptions.IsReadOnly.Should().BeTrue();
         JsonConstants.DefaultInternalJsonOptions.IsReadOnly.Should().BeTrue();
@@ -46,7 +46,7 @@ public sealed class JsonConstantsTests
     }
 
     [Fact]
-    public void mutating_a_shared_preset_should_throw()
+    public void should_throw_when_mutating_a_shared_preset()
     {
         var mutate = () => JsonConstants.DefaultWebJsonOptions.WriteIndented = true;
 
@@ -54,7 +54,7 @@ public sealed class JsonConstantsTests
     }
 
     [Fact]
-    public void create_factories_should_return_mutable_instances()
+    public void should_return_mutable_instances_when_create_factories()
     {
         JsonConstants.CreateWebJsonOptions().IsReadOnly.Should().BeFalse();
         JsonConstants.CreateInternalJsonOptions().IsReadOnly.Should().BeFalse();

@@ -5,7 +5,7 @@ namespace Tests.Collections;
 public sealed class QueueExtensionsTests
 {
     [Fact]
-    public void enqueue_range_enumerable_should_append_collection_in_order()
+    public void should_append_collection_in_order_when_enqueue_range_enumerable()
     {
         // given - an ICollection<T> source takes the EnsureCapacity pre-sizing path
         var queue = new Queue<int>([1, 2]);
@@ -19,7 +19,7 @@ public sealed class QueueExtensionsTests
     }
 
     [Fact]
-    public void enqueue_range_enumerable_should_append_lazy_sequence_in_order()
+    public void should_append_lazy_sequence_in_order_when_enqueue_range_enumerable()
     {
         // given - a lazy sequence has no ICollection<T> count to pre-size from
         var queue = new Queue<int>();
@@ -32,7 +32,7 @@ public sealed class QueueExtensionsTests
     }
 
     [Fact]
-    public void enqueue_range_span_should_append_in_order()
+    public void should_append_in_order_when_enqueue_range_span()
     {
         // given
         var queue = new Queue<int>();
@@ -45,7 +45,7 @@ public sealed class QueueExtensionsTests
     }
 
     [Fact]
-    public void enqueue_range_list_should_append_in_order()
+    public void should_append_in_order_when_enqueue_range_list()
     {
         // given
         var queue = new Queue<int>();
@@ -58,7 +58,7 @@ public sealed class QueueExtensionsTests
     }
 
     [Fact]
-    public void to_queue_should_create_queue_in_order()
+    public void should_create_queue_in_order_when_to_queue()
     {
         // when
         var queue = Enumerable.Range(1, 3).ToQueue();

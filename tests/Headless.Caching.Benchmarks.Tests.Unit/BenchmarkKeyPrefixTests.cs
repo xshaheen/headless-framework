@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class BenchmarkKeyPrefixTests
 {
     [Fact]
-    public void Create_SanitizesSegmentsAndAddsTrailingSeparator()
+    public void create_sanitizes_segments_and_adds_trailing_separator()
     {
         var prefix = BenchmarkKeyPrefix.Create("Fusion Cache", "Hot Path", "Run01");
 
@@ -15,7 +15,7 @@ public sealed class BenchmarkKeyPrefixTests
     }
 
     [Fact]
-    public void Create_WithBlankProvider_Throws()
+    public void create_with_blank_provider_throws()
     {
         Action act = () => BenchmarkKeyPrefix.Create("", "scenario", "run");
 

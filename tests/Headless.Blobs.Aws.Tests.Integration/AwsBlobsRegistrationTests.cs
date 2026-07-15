@@ -90,7 +90,7 @@ public sealed class AwsBlobsRegistrationTests
     }
 
     [Fact]
-    public async Task default_store_casts_to_IPresignedUrlBlobStorage()
+    public async Task default_store_casts_to_i_presigned_url_blob_storage()
     {
         // given
         var services = _BuildBaseServices();
@@ -108,7 +108,7 @@ public sealed class AwsBlobsRegistrationTests
     }
 
     [Fact]
-    public async Task named_store_resolves_as_keyed_IPresignedUrlBlobStorage()
+    public async Task named_store_resolves_as_keyed_i_presigned_url_blob_storage()
     {
         // given
         var services = _BuildBaseServices();

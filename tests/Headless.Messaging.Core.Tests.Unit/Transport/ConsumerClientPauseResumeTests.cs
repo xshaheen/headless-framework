@@ -39,7 +39,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task pause_async_should_complete_without_throwing()
+    public async Task should_complete_without_throwing_when_pause_async()
     {
         // given
         await using IConsumerClient client = new MinimalConsumerClient();
@@ -52,7 +52,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task resume_async_should_complete_without_throwing()
+    public async Task should_complete_without_throwing_when_resume_async()
     {
         // given
         await using IConsumerClient client = new MinimalConsumerClient();

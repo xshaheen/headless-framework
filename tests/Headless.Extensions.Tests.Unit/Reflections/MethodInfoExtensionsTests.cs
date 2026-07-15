@@ -5,7 +5,7 @@ namespace Tests.Reflections;
 public sealed class MethodInfoExtensionsTests
 {
     [Fact]
-    public void is_async_should_return_true_for_async_methods()
+    public void should_return_true_for_async_methods_when_is_async()
     {
         _ReadMethodInfo(nameof(TestClass.TaskMethod)).IsAsync().Should().BeTrue();
         _ReadMethodInfo(nameof(TestClass.ValueTaskMethod)).IsAsync().Should().BeTrue();
@@ -17,7 +17,7 @@ public sealed class MethodInfoExtensionsTests
     }
 
     [Fact]
-    public void is_async_should_return_false_for_non_async_methods()
+    public void should_return_false_for_non_async_methods_when_is_async()
     {
         _ReadMethodInfo(nameof(TestClass.NonAsyncMethod)).IsAsync().Should().BeFalse();
     }

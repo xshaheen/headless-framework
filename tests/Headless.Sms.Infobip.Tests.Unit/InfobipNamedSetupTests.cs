@@ -66,7 +66,7 @@ public sealed class InfobipNamedSetupTests
     }
 
     [Fact]
-    public void named_instance_should_not_bleed_into_default_and_vice_versa()
+    public void should_not_bleed_into_default_and_vice_versa_when_named_instance()
     {
         // given
         var services = _Services();
@@ -91,7 +91,7 @@ public sealed class InfobipNamedSetupTests
     }
 
     [Fact]
-    public void named_instance_should_forward_keyed_bulk_sender_to_same_instance()
+    public void should_forward_keyed_bulk_sender_to_same_instance_when_named_instance()
     {
         // given
         var services = _Services();

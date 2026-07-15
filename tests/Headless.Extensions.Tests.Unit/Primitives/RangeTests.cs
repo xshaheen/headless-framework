@@ -10,7 +10,7 @@ public sealed class RangeTests
     #region Creation
 
     [Fact]
-    public void ctor_should_create_date_range_when_provide_inorder_from_and_to()
+    public void should_create_date_range_when_ctor_provide_inorder_from_and_to()
     {
         // given
         var from = new DateOnly(2021, 1, 1);
@@ -25,7 +25,7 @@ public sealed class RangeTests
     }
 
     [Fact]
-    public void ctor_should_throw_exception_when_provide_inorder_from_and_to()
+    public void should_throw_exception_when_ctor_provide_inorder_from_and_to()
     {
         // given
         const int from = 31;
@@ -53,7 +53,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(ValueInclusiveHasData))]
-    public void value_inclusive_has_should_return_true_when_value_is_in_range(
+    public void should_return_true_when_value_inclusive_has_value_is_in_range(
         Range<int> range,
         int value,
         bool expected
@@ -82,7 +82,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RangeInclusiveHasData))]
-    public void range_inclusive_has_should_handle_unbounded_bounds(
+    public void should_handle_unbounded_bounds_when_range_inclusive_has(
         Range<string> range,
         Range<string> other,
         bool expected
@@ -110,7 +110,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(ValueExclusiveHasData))]
-    public void value_exclusive_has_should_return_true_when_value_is_in_range(
+    public void should_return_true_when_value_exclusive_has_value_is_in_range(
         Range<int> range,
         int value,
         bool expected
@@ -138,7 +138,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(ValueFromInclusiveToExclusiveHasData))]
-    public void value_from_inclusive_to_exclusive_has_should_include_lower_and_exclude_upper_bound(
+    public void should_include_lower_and_exclude_upper_bound_when_value_from_inclusive_to_exclusive_has(
         Range<int> range,
         int value,
         bool expected
@@ -162,7 +162,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(ValueFromExclusiveToInclusiveHasData))]
-    public void value_from_exclusive_to_inclusive_has_should_exclude_lower_and_include_upper_bound(
+    public void should_exclude_lower_and_include_upper_bound_when_value_from_exclusive_to_inclusive_has(
         Range<int> range,
         int value,
         bool expected
@@ -176,7 +176,7 @@ public sealed class RangeTests
     }
 
     [Fact]
-    public void value_from_exclusive_to_inclusive_has_should_return_false_for_null_even_when_unbounded_below()
+    public void should_return_false_for_null_even_when_value_from_exclusive_to_inclusive_has_unbounded_below()
     {
         // given - (-inf, "z"]: InclusiveHas treats a null value as contained, but the (From, To] variant
         // explicitly rejects null values — pin the asymmetry so it only changes deliberately.
@@ -204,7 +204,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RangeExclusiveHasData))]
-    public void range_exclusive_has_should_require_strict_containment_on_both_sides(
+    public void should_require_strict_containment_on_both_sides_when_range_exclusive_has(
         Range<string> range,
         Range<string> other,
         bool expected
@@ -227,7 +227,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RangeInRangeLowerInclusiveData))]
-    public void range_in_range_lower_inclusive_should_allow_shared_lower_and_reject_shared_upper_bound(
+    public void should_allow_shared_lower_and_reject_shared_upper_bound_when_range_in_range_lower_inclusive(
         Range<string> range,
         Range<string> other,
         bool expected
@@ -250,7 +250,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RangeFromExclusiveToInclusiveHasData))]
-    public void range_from_exclusive_to_inclusive_has_should_allow_shared_upper_and_reject_shared_lower_bound(
+    public void should_allow_shared_upper_and_reject_shared_lower_bound_when_range_from_exclusive_to_inclusive_has(
         Range<string> range,
         Range<string> other,
         bool expected
@@ -290,7 +290,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(IsOverlapData))]
-    public void is_overlap_should_return_true_when_ranges_overlap(Range<int> range, Range<int> other, bool expected)
+    public void should_return_true_when_is_overlap_ranges_overlap(Range<int> range, Range<int> other, bool expected)
     {
         // when
         var result = range.IsOverlap(other);
@@ -301,7 +301,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(IsOverlapUnboundedData))]
-    public void is_overlap_should_handle_unbounded_bounds(Range<string> range, Range<string> other, bool expected)
+    public void should_handle_unbounded_bounds_when_is_overlap(Range<string> range, Range<string> other, bool expected)
     {
         // when
         var result = range.IsOverlap(other);
@@ -345,7 +345,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RemoveOverlapData))]
-    public void remove_overlap_should_return_ranges_without_overlap(
+    public void should_return_ranges_without_overlap_when_remove_overlap(
         Range<int> range,
         Range<int> other,
         Range<int>[] remaining
@@ -360,7 +360,7 @@ public sealed class RangeTests
 
     [Theory]
     [MemberData(nameof(RemoveUnboundedOverlapData))]
-    public void remove_overlap_should_preserve_unbounded_remainders(
+    public void should_preserve_unbounded_remainders_when_remove_overlap(
         Range<string> range,
         Range<string> other,
         Range<string>[] remaining
@@ -382,7 +382,7 @@ public sealed class RangeTests
     #region CompareTo
 
     [Fact]
-    public void compare_to_should_sort_unbounded_lower_bound_before_any_value()
+    public void should_sort_unbounded_lower_bound_before_any_value_when_compare_to()
     {
         // given - (-inf, "5"] vs ["3", "5"]; an unbounded lower bound must sort first.
         // Range<T> bounds are T? with T : IComparable<T> and no struct/class constraint, so a null bound is only
@@ -396,7 +396,7 @@ public sealed class RangeTests
     }
 
     [Fact]
-    public void compare_to_should_sort_unbounded_upper_bound_after_any_value()
+    public void should_sort_unbounded_upper_bound_after_any_value_when_compare_to()
     {
         // given - ["3", +inf) vs ["3", "5"]; an unbounded upper bound must sort last
         var unboundedAbove = new Range<string>("3", null);
@@ -408,7 +408,7 @@ public sealed class RangeTests
     }
 
     [Fact]
-    public void compare_to_should_be_consistent_with_equals_for_unbounded_ranges()
+    public void should_be_consistent_with_equals_for_unbounded_ranges_when_compare_to()
     {
         // given - the bug: (-inf, "5"] used to compare EQUAL to ["3", "5"] while Equals reported them different
         var unboundedBelow = new Range<string>(null, "5");
@@ -425,7 +425,7 @@ public sealed class RangeTests
     }
 
     [Fact]
-    public void sort_should_order_unbounded_bounds_consistently()
+    public void should_order_unbounded_bounds_consistently_when_sort()
     {
         // given
         var ranges = new List<Range<string>> { new("3", "5"), new(null, "5"), new("3", null), new("1", "5") };

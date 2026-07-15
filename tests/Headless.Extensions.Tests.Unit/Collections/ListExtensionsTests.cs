@@ -5,7 +5,7 @@ namespace Tests.Collections;
 public sealed class ListExtensionsTests
 {
     [Fact]
-    public void InsertRange_tests()
+    public void insert_range_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
         list.InsertRange(1, [7, 8, 9]);
@@ -19,7 +19,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void InsertAfter_tests()
+    public void insert_after_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -42,7 +42,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void InsertAfter_with_predicate_tests()
+    public void insert_after_with_predicate_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -65,7 +65,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void InsertAfter_with_predicate__should_insert_to_first_if_not_found()
+    public void should_insert_to_first_if_not_found_when_insert_after_with_predicate()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -79,7 +79,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void InsertBefore_tests()
+    public void insert_before_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -102,7 +102,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void InsertBefore_with_predicate_tests()
+    public void insert_before_with_predicate_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -125,7 +125,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceWhile_with_value_tests()
+    public void replace_while_with_value_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -137,7 +137,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceWhile_with_factory_tests()
+    public void replace_while_with_factory_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -149,7 +149,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceFirst_with_value_tests()
+    public void replace_first_with_value_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -161,7 +161,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceFirst_with_factory_tests()
+    public void replace_first_with_factory_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -173,7 +173,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceFirst_with_item_tests()
+    public void replace_first_with_item_tests()
     {
         var list = Enumerable.Range(1, 3).ToList();
 
@@ -185,7 +185,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void ReplaceFirst_with_item_should_replace_non_comparable_reference_type()
+    public void should_replace_non_comparable_reference_type_when_replace_first_with_item()
     {
         // given - records are not IComparable; the old Comparer<T>.Default.Compare path threw for them.
         var a = new Box(1);
@@ -200,7 +200,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void GetOrAdd_should_add_when_no_value_type_element_matches()
+    public void should_add_when_get_or_add_no_value_type_element_matches()
     {
         // given - regression: the old FirstOrDefault + "is not null" check treated a value-type default
         // as a hit, so a non-matching selector returned default(int) and never appended a new element.
@@ -215,7 +215,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void GetOrAdd_should_return_existing_value_type_match_without_adding()
+    public void should_return_existing_value_type_match_without_adding_when_get_or_add()
     {
         // given
         var list = new List<int> { 1, 2, 3 };
@@ -229,7 +229,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void MoveItem_should_move_matching_element_to_target_index()
+    public void should_move_matching_element_to_target_index_when_move_item()
     {
         // given
         var list = new List<int> { 1, 2, 3, 4 };
@@ -242,7 +242,7 @@ public sealed class ListExtensionsTests
     }
 
     [Fact]
-    public void MoveItem_should_throw_when_no_element_matches()
+    public void should_throw_when_move_item_no_element_matches()
     {
         // given
         var list = new List<int> { 1, 2, 3 };

@@ -91,7 +91,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_use_exact_subject_for_unsharded_topic()
+    public void should_use_exact_subject_for_unsharded_topic_when_build_stream_subjects()
     {
         NatsConsumerClient
             .BuildStreamSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal))
@@ -100,7 +100,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_add_wildcard_only_for_sharded_message_names()
+    public void should_add_wildcard_only_for_sharded_message_names_when_build_stream_subjects()
     {
         NatsConsumerClient
             .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal) { "orders.created" })
@@ -109,7 +109,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_mix_sharded_and_unsharded_subjects_precisely()
+    public void should_mix_sharded_and_unsharded_subjects_precisely_when_build_stream_subjects()
     {
         NatsConsumerClient
             .BuildStreamSubjects(
@@ -121,7 +121,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_deduplicate_topics()
+    public void should_deduplicate_topics_when_build_stream_subjects()
     {
         NatsConsumerClient
             .BuildStreamSubjects(
@@ -133,7 +133,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_preserve_non_prefix_topics_without_wildcard_when_unsharded()
+    public void should_preserve_non_prefix_topics_without_wildcard_when_build_stream_subjects_unsharded()
     {
         NatsConsumerClient
             .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal))
@@ -142,7 +142,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildConsumerSubjects_should_include_exact_and_sharded_descendant_subjects_for_sharded_message()
+    public void should_include_exact_and_sharded_descendant_subjects_for_sharded_message_when_build_consumer_subjects()
     {
         NatsConsumerClient
             .BuildConsumerSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal) { "orders" })
@@ -151,7 +151,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildConsumerSubjects_should_not_include_wildcard_for_unsharded_message()
+    public void should_not_include_wildcard_for_unsharded_message_when_build_consumer_subjects()
     {
         NatsConsumerClient
             .BuildConsumerSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal))
@@ -160,7 +160,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildDurableName_should_include_group_for_bus_intent()
+    public void should_include_group_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", IntentType.Bus)
@@ -169,7 +169,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildDurableName_should_share_destination_for_queue_intent()
+    public void should_share_destination_for_queue_intent_when_build_durable_name()
     {
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", IntentType.Queue)
@@ -184,7 +184,7 @@ public sealed class NatsConsumerClientTests : TestBase
     // the prior exact-value assertions were flaky by construction since the function always applies jitter.
 
     [Fact]
-    public void NextBackoff_should_double_current_delay_within_jitter_budget()
+    public void should_double_current_delay_within_jitter_budget_when_next_backoff()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1));
         result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(2));
@@ -192,7 +192,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_cap_at_30_seconds_within_jitter_budget()
+    public void should_cap_at_30_seconds_within_jitter_budget_when_next_backoff()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(20));
         result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
@@ -200,7 +200,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_not_exceed_ceiling_even_with_large_input()
+    public void should_not_exceed_ceiling_even_with_large_input_when_next_backoff()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60));
         result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
@@ -208,7 +208,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_never_return_below_the_floor_and_should_still_spread_above_it()
+    public void should_never_return_below_the_floor_and_should_still_spread_above_it_when_next_backoff()
     {
         // The floor is a HARD guarantee: callers pass it to promise a minimum wait (JetStream API errors), so
         // jitter must not undercut it. But the floor path is itself a herd — an API error hits every consumer at
@@ -224,7 +224,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_not_enforce_floor_when_next_is_above()
+    public void should_not_enforce_floor_when_next_backoff_next_is_above()
     {
         var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
         result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(10));
@@ -232,7 +232,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_stay_within_jitter_budget_of_the_ideal_doubling_curve_at_every_rung()
+    public void should_stay_within_jitter_budget_of_the_ideal_doubling_curve_at_every_rung_when_next_backoff()
     {
         // Feed the theoretical (unjittered) doubling curve as input at each rung instead of chaining the
         // previous jittered output — chaining would compound each step's 25% uncertainty into an
@@ -256,7 +256,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_with_floor_should_stay_within_jitter_budget_at_every_rung()
+    public void should_stay_within_jitter_budget_at_every_rung_when_next_backoff_with_floor()
     {
         var floor = TimeSpan.FromSeconds(5);
 
@@ -281,7 +281,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_never_exceed_the_30_second_ceiling_across_many_iterations_and_inputs()
+    public void should_never_exceed_the_30_second_ceiling_across_many_iterations_and_inputs_when_next_backoff()
     {
         TimeSpan[] inputs =
         [
@@ -303,7 +303,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void NextBackoff_should_produce_a_spread_of_values_instead_of_collapsing_to_a_constant_at_the_ceiling()
+    public void should_produce_a_spread_of_values_instead_of_collapsing_to_a_constant_at_the_ceiling_when_next_backoff()
     {
         var results = Enumerable
             .Range(0, 200)
@@ -368,7 +368,7 @@ public sealed class NatsConsumerClientTests : TestBase
     // Pause/Resume tests
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         await using var client = _CreateClient("test-group");
 
@@ -377,33 +377,33 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         await using var client = _CreateClient("test-group");
         await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
-    {
-        await using var client = _CreateClient("test-group");
-
-        await client.PauseAsync(AbortToken);
-        await client.ResumeAsync(AbortToken);
-    }
-
-    [Fact]
-    public async Task ResumeAsync_is_idempotent_after_resume()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         await using var client = _CreateClient("test-group");
 
         await client.PauseAsync(AbortToken);
         await client.ResumeAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task resume_async_is_idempotent_after_resume()
+    {
+        await using var client = _CreateClient("test-group");
+
+        await client.PauseAsync(AbortToken);
+        await client.ResumeAsync(AbortToken);
         await client.ResumeAsync(AbortToken);
     }
 
     [Fact]
-    public async Task PauseAsync_is_noop_after_disposal()
+    public async Task pause_async_is_noop_after_disposal()
     {
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
@@ -412,7 +412,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_after_disposal()
+    public async Task resume_async_is_noop_after_disposal()
     {
         var client = _CreateClient("test-group");
         await client.DisposeAsync();
@@ -423,7 +423,7 @@ public sealed class NatsConsumerClientTests : TestBase
     // CommitAsync / RejectAsync tests
 
     [Fact]
-    public async Task CommitAsync_should_ack_valid_nats_message()
+    public async Task should_ack_valid_nats_message_when_commit_async()
     {
         await using var client = _CreateClient("test-group");
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
@@ -434,7 +434,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_nak_valid_nats_message()
+    public async Task should_nak_valid_nats_message_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
@@ -445,7 +445,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_not_throw_for_null_sender()
+    public async Task should_not_throw_for_null_sender_when_commit_async()
     {
         await using var client = _CreateClient("test-group");
 
@@ -454,7 +454,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_not_throw_for_null_sender()
+    public async Task should_not_throw_for_null_sender_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
 
@@ -463,7 +463,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_not_throw_for_non_nats_sender()
+    public async Task should_not_throw_for_non_nats_sender_when_commit_async()
     {
         await using var client = _CreateClient("test-group");
 
@@ -472,7 +472,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_not_throw_for_non_nats_sender()
+    public async Task should_not_throw_for_non_nats_sender_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
 
@@ -481,7 +481,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_log_on_ack_failure()
+    public async Task should_log_on_ack_failure_when_commit_async()
     {
         await using var client = _CreateClient("test-group");
         LogMessageEventArgs? loggedArgs = null;
@@ -499,7 +499,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_log_on_nak_failure()
+    public async Task should_log_on_nak_failure_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
         LogMessageEventArgs? loggedArgs = null;
@@ -619,7 +619,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_not_fetch_messages_until_resumed()
+    public async Task should_not_fetch_messages_until_resumed_when_listening_async()
     {
         // given
         var nextCallCount = 0;
@@ -667,7 +667,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_should_cancel_inflight_fetch()
+    public async Task should_cancel_inflight_fetch_when_pause_async()
     {
         // given
         var nextStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -724,7 +724,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_exit_and_report_connect_error_when_receive_connection_fails()
+    public async Task should_exit_and_report_connect_error_when_listening_async_receive_connection_fails()
     {
         // given
         var connectionFailure = new NatsConnectionFailedException("connection failed after startup");
@@ -808,7 +808,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_retry_protocol_timeout_without_terminating_listener()
+    public async Task should_retry_protocol_timeout_without_terminating_listener_when_listening_async()
     {
         var timeProvider = new FakeTimeProvider();
         var protocolFailure = new NatsJSProtocolException(408, NatsHeaders.Messages.RequestTimeout, "Request Timeout");
@@ -884,7 +884,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_and_ResumeAsync_should_restart_fetch_with_a_fresh_receive_token()
+    public async Task should_restart_fetch_with_a_fresh_receive_token_when_pause_async_and_resume_async()
     {
         // given
         var startedSignals = new[]
@@ -972,7 +972,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_and_BuildConsumerSubjects_agree_for_duplicate_sharded_names()
+    public void build_stream_subjects_and_build_consumer_subjects_agree_for_duplicate_sharded_names()
     {
         // A sharded message name appearing more than once (e.g. two consumers of the same type) must
         // yield the same {base, base.>} set from both builders: the JetStream stream config and the
@@ -988,7 +988,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task DisposeAsync_drains_in_flight_concurrent_handler_before_completing()
+    public async Task dispose_async_drains_in_flight_concurrent_handler_before_completing()
     {
         // given — one message delivered, then NextAsync blocks until cancellation
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
@@ -1077,7 +1077,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ShutdownAsync_should_cap_in_flight_drain_to_remaining_shared_budget()
+    public async Task should_cap_in_flight_drain_to_remaining_shared_budget_when_shutdown_async()
     {
         var timeProvider = new FakeTimeProvider();
         var stuckHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1108,7 +1108,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_terminate_after_max_consecutive_consume_failures()
+    public async Task should_terminate_after_max_consecutive_consume_failures_when_listening_async()
     {
         // given — every fetch throws an unclassified (non-connection) error, so only the consecutive-failure
         // cap can stop the loop spinning in place on a non-reconnecting connection.
@@ -1183,7 +1183,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_reset_failure_count_and_backoff_after_a_successful_fetch()
+    public async Task should_reset_failure_count_and_backoff_after_a_successful_fetch_when_listening_async()
     {
         // given — fail, succeed, fail: with a reset on the successful heartbeat the streak never reaches the
         // cap of 2, so the listener must keep running instead of terminating.
@@ -1277,7 +1277,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_terminate_after_max_consecutive_consumer_bind_failures()
+    public async Task should_terminate_after_max_consecutive_consumer_bind_failures_when_listening_async()
     {
         var timeProvider = new FakeTimeProvider();
         var options = MsOptions.Options.Create(

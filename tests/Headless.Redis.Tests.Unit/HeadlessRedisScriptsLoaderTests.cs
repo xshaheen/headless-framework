@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 {
     [Fact]
-    public void should_accept_null_timeProvider_and_use_system()
+    public void should_accept_null_time_provider_and_use_system()
     {
         // given
         var multiplexer = Substitute.For<IConnectionMultiplexer>();

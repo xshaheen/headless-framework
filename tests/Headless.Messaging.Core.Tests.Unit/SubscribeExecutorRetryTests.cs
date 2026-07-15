@@ -285,7 +285,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
     {
         // given — a Scoped marker service. The caller (Dispatcher) creates a scope and
         // passes its IServiceProvider; the executor must surface that SAME provider through

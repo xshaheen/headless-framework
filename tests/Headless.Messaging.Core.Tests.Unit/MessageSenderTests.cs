@@ -590,7 +590,7 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
     {
         // given — a Scoped marker service. The Dispatcher creates a per-message scope and
         // passes its IServiceProvider; MessageSender must surface that SAME provider via

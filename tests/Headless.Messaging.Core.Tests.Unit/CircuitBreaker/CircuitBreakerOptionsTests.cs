@@ -25,7 +25,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     }
 
     [Fact]
-    public void default_is_transient_predicate_matches_CircuitBreakerDefaults()
+    public void default_is_transient_predicate_matches_circuit_breaker_defaults()
     {
         var opts = new CircuitBreakerOptions();
 

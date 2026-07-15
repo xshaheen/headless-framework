@@ -25,7 +25,7 @@ public sealed class EmailValidatorTests
     [InlineData("test", true, false)]
     [InlineData(null, false, false)]
     [InlineData(null, true, false)]
-    public void IsValid_ShouldReturnExpectedResult(string? email, bool requireDotInDomainName, bool expected)
+    public void should_return_expected_result_when_is_valid(string? email, bool requireDotInDomainName, bool expected)
     {
         // given, when
         var result = EmailValidator.IsValid(email, requireDotInDomainName);

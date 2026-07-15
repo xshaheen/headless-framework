@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class RequestValidatorsTests : TestBase
 {
     [Fact]
-    public void phone_number_request_validator_should_skip_null_values()
+    public void should_skip_null_values_when_phone_number_request_validator()
     {
         PhoneNumberModelValidator validator = new();
 
@@ -22,7 +22,7 @@ public sealed class RequestValidatorsTests : TestBase
     }
 
     [Fact]
-    public void phone_number_request_validator_should_reject_invalid_values()
+    public void should_reject_invalid_values_when_phone_number_request_validator()
     {
         PhoneNumberModelValidator validator = new();
 
@@ -33,7 +33,7 @@ public sealed class RequestValidatorsTests : TestBase
     }
 
     [Fact]
-    public void geo_coordinate_request_validator_should_skip_null_values()
+    public void should_skip_null_values_when_geo_coordinate_request_validator()
     {
         GeoCoordinateModelValidator validator = new();
 
@@ -43,7 +43,7 @@ public sealed class RequestValidatorsTests : TestBase
     }
 
     [Fact]
-    public void geo_coordinate_request_validator_should_reject_out_of_range_values()
+    public void should_reject_out_of_range_values_when_geo_coordinate_request_validator()
     {
         GeoCoordinateModelValidator validator = new();
 
@@ -58,7 +58,7 @@ public sealed class RequestValidatorsTests : TestBase
     }
 
     [Fact]
-    public void page_metadata_request_validator_should_skip_null_values()
+    public void should_skip_null_values_when_page_metadata_request_validator()
     {
         PageMetadataModelValidator validator = new();
 
@@ -68,7 +68,7 @@ public sealed class RequestValidatorsTests : TestBase
     }
 
     [Fact]
-    public void page_metadata_request_validator_should_reject_values_over_limits()
+    public void should_reject_values_over_limits_when_page_metadata_request_validator()
     {
         PageMetadataModelValidator validator = new();
 

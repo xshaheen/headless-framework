@@ -73,7 +73,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_with_lock_disabled_runs_body_once_and_never_queries_lock()
+    public async Task seed_with_lock_disabled_runs_body_once_and_never_queries_lock()
     {
         var manager = Substitute.For<IInternalJobManager>();
         var spyLock = Substitute.For<IDistributedLock>();
@@ -88,7 +88,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_with_free_lock_runs_body_once_and_releases_lease()
+    public async Task seed_with_free_lock_runs_body_once_and_releases_lease()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
         var lockProvider = _CreateLock(storage);
@@ -105,7 +105,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_releases_lease_when_body_throws()
+    public async Task seed_releases_lease_when_body_throws()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
         var lockProvider = _CreateLock(storage);
@@ -126,7 +126,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_skips_when_another_node_holds_the_lock()
+    public async Task seed_skips_when_another_node_holds_the_lock()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
 
@@ -152,7 +152,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_skips_when_acquire_faults()
+    public async Task seed_skips_when_acquire_faults()
     {
         var faultingLock = Substitute.For<IDistributedLock>();
         faultingLock
@@ -170,7 +170,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_propagates_cancellation_when_caller_token_is_cancelled()
+    public async Task seed_propagates_cancellation_when_caller_token_is_cancelled()
     {
         // Real pre-cancelled caller token: a host-shutdown / caller cancellation must propagate out of StartAsync.
         using var cts = new CancellationTokenSource();
@@ -192,7 +192,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_skips_when_acquire_throws_oce_but_caller_token_not_cancelled()
+    public async Task seed_skips_when_acquire_throws_oce_but_caller_token_not_cancelled()
     {
         // A provider that surfaces its own internal timeout as an OperationCanceledException while the caller token is
         // NOT cancelled must be treated as an acquire fault (skip), not propagated as a host-startup crash.
@@ -213,7 +213,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Seed_skips_when_lock_factory_throws_at_resolution()
+    public async Task seed_skips_when_lock_factory_throws_at_resolution()
     {
         // A consumer factory that throws when DI resolves the keyed lock (e.g. a required service is missing) must be
         // treated as an acquire fault — the seed skips — not crash host startup. The guard resolves the keyed lock
@@ -250,7 +250,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     ) => new(manager, options);
 
     [Fact]
-    public async Task Reclaim_processes_every_owner_in_the_batch()
+    public async Task reclaim_processes_every_owner_in_the_batch()
     {
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder();
@@ -269,7 +269,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task Reclaim_propagates_when_release_throws_so_the_bridge_retries()
+    public async Task reclaim_propagates_when_release_throws_so_the_bridge_retries()
     {
         // The reclaimer must NOT swallow a failure. The shared DeadOwnerRecoveryBridge marks each owner reclaimed
         // *before* calling us and only un-marks it (→ retries on the next reconcile tick) when ReclaimAsync throws. A

@@ -312,7 +312,7 @@ public sealed class CommitScopeFactoryTests : TestBase
     }
 
     [Fact]
-    public void begin_new_should_open_independent_root_when_ambient_scope_active()
+    public void should_open_independent_root_when_begin_new_ambient_scope_active()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
@@ -334,7 +334,7 @@ public sealed class CommitScopeFactoryTests : TestBase
     }
 
     [Fact]
-    public void signal_source_attach_should_preserve_nested_physical_transaction_capabilities()
+    public void should_preserve_nested_physical_transaction_capabilities_when_signal_source_attach()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
@@ -365,7 +365,7 @@ public sealed class CommitScopeFactoryTests : TestBase
     }
 
     [Fact]
-    public void pop_handle_should_throw_when_outer_scope_disposed_before_inner()
+    public void should_throw_when_pop_handle_outer_scope_disposed_before_inner()
     {
         var stack = new CommitScopeStack();
 

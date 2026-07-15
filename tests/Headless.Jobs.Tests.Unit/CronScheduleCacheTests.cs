@@ -7,7 +7,7 @@ public sealed class CronScheduleCacheTests
     private readonly CronScheduleCache _cache = new(TimeZoneInfo.Utc);
 
     [Fact]
-    public void GetNextOccurrenceOrDefault_Returns_Null_For_Invalid_Expression()
+    public void get_next_occurrence_or_default_returns_null_for_invalid_expression()
     {
         var next = _cache.GetNextOccurrenceOrDefault("invalid cron", DateTime.UtcNow);
 
@@ -15,7 +15,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void GetNextOccurrenceOrDefault_Normalizes_Whitespace_And_Caches()
+    public void get_next_occurrence_or_default_normalizes_whitespace_and_caches()
     {
         var now = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -34,7 +34,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void GetNextOccurrenceOrDefault_shifts_an_invalid_spring_occurrence_forward_by_the_dst_gap()
+    public void get_next_occurrence_or_default_shifts_an_invalid_spring_occurrence_forward_by_the_dst_gap()
     {
         var cache = new CronScheduleCache(_CreateTestTimeZone());
         var beforeGap = new DateTime(2026, 3, 28, 23, 0, 0, DateTimeKind.Utc);
@@ -45,7 +45,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void GetNextOccurrenceOrDefault_uses_the_later_utc_instant_for_an_ambiguous_fall_occurrence()
+    public void get_next_occurrence_or_default_uses_the_later_utc_instant_for_an_ambiguous_fall_occurrence()
     {
         var cache = new CronScheduleCache(_CreateTestTimeZone());
         var beforeOverlap = new DateTime(2026, 10, 24, 22, 0, 0, DateTimeKind.Utc);
@@ -56,7 +56,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void GetNextOccurrenceOrDefault_does_not_skip_the_later_fall_occurrence_after_restart()
+    public void get_next_occurrence_or_default_does_not_skip_the_later_fall_occurrence_after_restart()
     {
         var cache = new CronScheduleCache(_CreateTestTimeZone());
         var betweenOverlapInstants = new DateTime(2026, 10, 24, 23, 45, 0, DateTimeKind.Utc);

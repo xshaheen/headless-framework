@@ -12,7 +12,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
     private readonly WordDocumentMediaFileTextProvider _sut = new();
 
     [Fact]
-    public async Task get_text_async_should_extract_text_from_word_file()
+    public async Task should_extract_text_from_word_file_when_get_text_async()
     {
         // given
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
@@ -27,7 +27,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_empty_string_when_document_has_no_paragraphs()
+    public async Task should_return_empty_string_when_get_text_async_document_has_no_paragraphs()
     {
         // given
         await using var stream = _CreateEmptyWordDocument();
@@ -40,7 +40,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_paragraph_text_when_document_has_single_paragraph()
+    public async Task should_return_paragraph_text_when_get_text_async_document_has_single_paragraph()
     {
         // given
         const string expectedText = "Test paragraph";
@@ -57,7 +57,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_all_paragraphs_when_document_has_multiple_paragraphs()
+    public async Task should_return_all_paragraphs_when_get_text_async_document_has_multiple_paragraphs()
     {
         // given
         var paragraphs = new[] { "First paragraph", "Second paragraph", "Third paragraph" };

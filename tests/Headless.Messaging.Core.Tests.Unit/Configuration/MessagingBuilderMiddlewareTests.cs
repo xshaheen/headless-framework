@@ -169,7 +169,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_same_registry_for_middleware_chained_after_AddHeadlessMessaging()
+    public async Task should_use_same_registry_for_middleware_chained_after_add_headless_messaging()
     {
         // given
         var recorder = new MiddlewareOrderRecorder();

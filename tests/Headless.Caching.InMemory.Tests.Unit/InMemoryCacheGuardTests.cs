@@ -36,7 +36,7 @@ public sealed class InMemoryCacheGuardTests : TestBase
     }
 
     [Fact]
-    public async Task get_or_add_should_throw_without_invoking_factory_when_token_already_cancelled()
+    public async Task should_throw_without_invoking_factory_when_get_or_add_token_already_cancelled()
     {
         // given
         using var cache = _CreateCache();
@@ -96,7 +96,7 @@ public sealed class InMemoryCacheGuardTests : TestBase
     #region Argument Validation
 
     [Fact]
-    public async Task upsert_should_reject_negative_expiration()
+    public async Task should_reject_negative_expiration_when_upsert()
     {
         // given - zero has dedicated evict semantics; negative must be rejected outright
         using var cache = _CreateCache();
@@ -110,7 +110,7 @@ public sealed class InMemoryCacheGuardTests : TestBase
     }
 
     [Fact]
-    public async Task try_insert_should_reject_negative_expiration()
+    public async Task should_reject_negative_expiration_when_try_insert()
     {
         // given
         using var cache = _CreateCache();

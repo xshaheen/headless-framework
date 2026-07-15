@@ -495,7 +495,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_noop_when_consumer_tag_is_null()
+    public async Task pause_async_is_noop_when_consumer_tag_is_null()
     {
         // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -508,7 +508,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 
@@ -519,7 +519,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -535,7 +535,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_idempotent_after_resume()
+    public async Task resume_async_is_idempotent_after_resume()
     {
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -555,7 +555,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_noop_after_disposal()
+    public async Task pause_async_is_noop_after_disposal()
     {
         // given
         var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -569,7 +569,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_after_disposal()
+    public async Task resume_async_is_noop_after_disposal()
     {
         // given
         var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -586,7 +586,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_wait_for_resume_when_group_is_paused_before_startup()
+    public async Task should_wait_for_resume_when_listening_async_group_is_paused_before_startup()
     {
         // given
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);

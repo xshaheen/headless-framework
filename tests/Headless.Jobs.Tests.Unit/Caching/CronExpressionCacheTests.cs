@@ -17,7 +17,7 @@ namespace Tests.Caching;
 public sealed class CronExpressionCacheTests : TestBase
 {
     [Fact]
-    public async Task GetAllCronJobExpressions_without_cache_reads_database()
+    public async Task get_all_cron_job_expressions_without_cache_reads_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("daily", "0 0 * * *"));
@@ -29,7 +29,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_skips_database_factory()
+    public async Task get_all_cron_job_expressions_cache_hit_skips_database_factory()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache
@@ -49,7 +49,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_miss_loads_database_once()
+    public async Task get_all_cron_job_expressions_cache_miss_loads_database_once()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 */2 * * *"));
@@ -64,7 +64,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_read_failure_falls_back_to_database()
+    public async Task get_all_cron_job_expressions_cache_read_failure_falls_back_to_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 12 * * *"));
@@ -78,7 +78,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_write_failure_returns_database_result()
+    public async Task get_all_cron_job_expressions_cache_write_failure_returns_database_result()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 6 * * *"));
@@ -92,7 +92,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_with_no_value_returns_empty_without_database()
+    public async Task get_all_cron_job_expressions_cache_hit_with_no_value_returns_empty_without_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 9 * * *"));
@@ -108,7 +108,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_with_null_value_returns_empty_without_database()
+    public async Task get_all_cron_job_expressions_cache_hit_with_null_value_returns_empty_without_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 10 * * *"));
@@ -123,7 +123,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_factory_failure_propagates_without_fallback()
+    public async Task get_all_cron_job_expressions_factory_failure_propagates_without_fallback()
     {
         var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
         // The factory (DB load) itself throwing is a real load failure, not a cache-layer failure: factoryFailed
@@ -158,7 +158,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_foreign_token_cache_cancellation_falls_back_to_database()
+    public async Task get_all_cron_job_expressions_foreign_token_cache_cancellation_falls_back_to_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 3 * * *"));
@@ -178,7 +178,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_caller_cancellation_propagates()
+    public async Task get_all_cron_job_expressions_caller_cancellation_propagates()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache
@@ -197,7 +197,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task Cron_job_writes_invalidate_registered_cache()
+    public async Task cron_job_writes_invalidate_registered_cache()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cronJob = _Cron("db", "0 6 * * *");
@@ -214,7 +214,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task Cron_job_write_cache_invalidation_failure_is_best_effort()
+    public async Task cron_job_write_cache_invalidation_failure_is_best_effort()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache { RemoveException = new InvalidOperationException("cache remove failed") };

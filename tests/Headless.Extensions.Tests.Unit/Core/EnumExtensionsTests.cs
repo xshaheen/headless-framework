@@ -62,7 +62,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDisplayName_should_return_display_name_when_DisplayAttribute_exists()
+    public void should_return_display_name_when_get_display_name_display_attribute_exists()
     {
         // given
         const TestEnum value = TestEnum.ValueWithAttributes;
@@ -75,7 +75,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDisplayName_should_return_enum_name_when_DisplayAttribute_not_exists()
+    public void should_return_enum_name_when_get_display_name_display_attribute_not_exists()
     {
         // given
         const TestEnum value = TestEnum.ValueWithoutAttributes;
@@ -88,7 +88,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDisplayName_should_return_empty_string_when_enum_is_null()
+    public void should_return_empty_string_when_get_display_name_enum_is_null()
     {
         // given
         TestEnum? value = null;
@@ -101,7 +101,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDescription_should_return_description_when_DescriptionAttribute_exists()
+    public void should_return_description_when_get_description_description_attribute_exists()
     {
         // given
         const TestEnum value = TestEnum.ValueWithAttributes;
@@ -114,7 +114,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDescription_should_return_null_when_DescriptionAttribute_not_exists()
+    public void should_return_null_when_get_description_description_attribute_not_exists()
     {
         // given
         const TestEnum value = TestEnum.ValueWithoutAttributes;
@@ -127,7 +127,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDescription_should_return_empty_string_when_enum_is_null()
+    public void should_return_empty_string_when_get_description_enum_is_null()
     {
         // given
         TestEnum? value = null;
@@ -140,7 +140,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetLocale_should_return_all_locale_values_for_enum_member()
+    public void should_return_all_locale_values_for_enum_member_when_get_locale()
     {
         // given
         const PaymentType value = PaymentType.Cash;
@@ -169,7 +169,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetLocale_should_return_empty_when_no_locale_attributes()
+    public void should_return_empty_when_get_locale_no_locale_attributes()
     {
         // given
         const PaymentType value = PaymentType.Unknown;
@@ -185,7 +185,7 @@ public sealed class EnumExtensionsTests
     [InlineData(SignedIntBackedEnum.MinusOne, "Minus One")]
     [InlineData(SignedIntBackedEnum.Zero, "Zero")]
     [InlineData(SignedIntBackedEnum.IntMin, "Int Min")]
-    public void GetAllLocales_should_distinguish_negative_values_for_signed_int_backed_enums(
+    public void should_distinguish_negative_values_for_signed_int_backed_enums_when_get_all_locales(
         SignedIntBackedEnum value,
         string expectedName
     )
@@ -202,7 +202,10 @@ public sealed class EnumExtensionsTests
     [InlineData(LongBackedEnum.FarPast, "Far Past")]
     [InlineData(LongBackedEnum.Zero, "Zero")]
     [InlineData(LongBackedEnum.FarFuture, "Far Future")]
-    public void GetAllLocales_should_not_overflow_for_long_backed_enums(LongBackedEnum value, string expectedName)
+    public void should_not_overflow_for_long_backed_enums_when_get_all_locales(
+        LongBackedEnum value,
+        string expectedName
+    )
     {
         // when
         var locales = value.GetAllLocales().Locales;
@@ -214,7 +217,10 @@ public sealed class EnumExtensionsTests
     [Theory]
     [InlineData(ULongBackedEnum.Zero, "Zero")]
     [InlineData(ULongBackedEnum.Max, "Max")]
-    public void GetAllLocales_should_not_overflow_for_ulong_backed_enums(ULongBackedEnum value, string expectedName)
+    public void should_not_overflow_for_ulong_backed_enums_when_get_all_locales(
+        ULongBackedEnum value,
+        string expectedName
+    )
     {
         // when
         var locales = value.GetAllLocales().Locales;
@@ -224,7 +230,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetAllLocales_should_distinguish_min_and_max_values_for_long_backed_enums()
+    public void should_distinguish_min_and_max_values_for_long_backed_enums_when_get_all_locales()
     {
         // given
         const LongBackedEnum minValue = LongBackedEnum.FarPast;
@@ -241,7 +247,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDisplayName_should_fall_back_to_number_for_undefined_enum_value()
+    public void should_fall_back_to_number_for_undefined_enum_value_when_get_display_name()
     {
         // given - an undefined cast has no declared member; GetMember(...)[0] previously threw IndexOutOfRange
         const PaymentType value = (PaymentType)999;
@@ -254,7 +260,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetDescription_should_return_null_for_undefined_enum_value()
+    public void should_return_null_for_undefined_enum_value_when_get_description()
     {
         // given
         const PaymentType value = (PaymentType)999;
@@ -264,7 +270,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetFirstAttribute_should_return_null_for_undefined_enum_value()
+    public void should_return_null_for_undefined_enum_value_when_get_first_attribute()
     {
         // given
         const PaymentType value = (PaymentType)999;
@@ -274,7 +280,7 @@ public sealed class EnumExtensionsTests
     }
 
     [Fact]
-    public void GetAllLocales_should_be_empty_for_undefined_enum_value()
+    public void should_be_empty_for_undefined_enum_value_when_get_all_locales()
     {
         // given
         const PaymentType value = (PaymentType)999;

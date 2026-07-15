@@ -13,7 +13,7 @@ namespace Tests.Sqlite;
 public sealed class SqliteConnectionFactoryTests : TestBase
 {
     [Fact]
-    public void should_implement_ISqlConnectionFactory()
+    public void should_implement_i_sql_connection_factory()
     {
         // given
         const string connectionString = "Data Source=:memory:";

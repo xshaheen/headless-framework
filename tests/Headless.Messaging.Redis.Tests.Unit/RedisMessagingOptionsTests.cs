@@ -140,7 +140,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void consume_error_context_should_contain_exception_and_entry()
+    public void should_contain_exception_and_entry_when_consume_error_context()
     {
         // given
         var exception = new InvalidOperationException("Test error");
@@ -155,7 +155,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void consume_error_context_should_allow_null_entry()
+    public void should_allow_null_entry_when_consume_error_context()
     {
         // given
         var exception = new InvalidOperationException("Test error");
@@ -171,7 +171,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     // Validator tests
 
     [Fact]
-    public void validator_should_pass_for_valid_options()
+    public void should_pass_for_valid_options_when_validator()
     {
         var options = new RedisMessagingOptions { StreamEntriesCount = 5, ConnectionPoolSize = 5 };
         var validator = new RedisMessagingOptionsValidator();
@@ -182,7 +182,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_zero_stream_entries_count()
+    public void should_fail_for_zero_stream_entries_count_when_validator()
     {
         var options = new RedisMessagingOptions { StreamEntriesCount = 0 };
         var validator = new RedisMessagingOptionsValidator();
@@ -194,7 +194,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_zero_connection_pool_size()
+    public void should_fail_for_zero_connection_pool_size_when_validator()
     {
         var options = new RedisMessagingOptions { ConnectionPoolSize = 0 };
         var validator = new RedisMessagingOptionsValidator();
@@ -206,7 +206,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_should_fail_for_negative_stream_entries_count()
+    public void should_fail_for_negative_stream_entries_count_when_validator()
     {
         var options = new RedisMessagingOptions { StreamEntriesCount = -1 };
         var validator = new RedisMessagingOptionsValidator();

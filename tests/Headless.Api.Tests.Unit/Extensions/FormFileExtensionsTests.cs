@@ -8,7 +8,7 @@ namespace Tests.Extensions;
 public sealed class FormFileExtensionsTests : TestBase
 {
     [Fact]
-    public async Task save_many_should_bound_parallel_file_streams()
+    public async Task should_bound_parallel_file_streams_when_save_many()
     {
         // given
         var directory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

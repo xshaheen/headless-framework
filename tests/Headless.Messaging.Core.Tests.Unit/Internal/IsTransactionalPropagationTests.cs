@@ -29,7 +29,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
     private sealed record TestMessage(string Value);
 
     [Fact]
-    public async Task should_set_IsTransactional_false_for_direct_publisher()
+    public async Task should_set_is_transactional_false_for_direct_publisher()
     {
         // given
         var observed = new TransactionalCapture();
@@ -60,7 +60,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
     }
 
     [Fact]
-    public async Task should_set_IsTransactional_true_when_coordinator_has_relational_transaction()
+    public async Task should_set_is_transactional_true_when_coordinator_has_relational_transaction()
     {
         // given — an ambient commit coordinator exposes a relational transaction: the publish is buffered
         // into the outbox and waits for the coordinator's commit. Post-success middleware should see
@@ -96,7 +96,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
     }
 
     [Fact]
-    public async Task should_set_IsTransactional_false_when_no_ambient_coordinator()
+    public async Task should_set_is_transactional_false_when_no_ambient_coordinator()
     {
         // given — no ambient coordinator: publishes go straight to the dispatcher, so there is no
         // commit-driven rollback semantic.

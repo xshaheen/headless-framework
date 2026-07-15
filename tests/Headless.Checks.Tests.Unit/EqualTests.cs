@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class EqualTests
 {
     [Fact]
-    public void is_reference_equal_to_should_not_throw_when_instances_are_equal()
+    public void should_not_throw_when_is_reference_equal_to_instances_are_equal()
     {
         // given
         var obj1 = new InputsTestArgument();
@@ -20,7 +20,7 @@ public sealed class EqualTests
     }
 
     [Fact]
-    public void is_reference_equal_to_should_throw_when_instances_are_not_equal()
+    public void should_throw_when_is_reference_equal_to_instances_are_not_equal()
     {
         // given
         var obj1 = new InputsTestArgument();
@@ -43,7 +43,7 @@ public sealed class EqualTests
     }
 
     [Fact]
-    public void is_reference_not_equal_to_should_not_throw_when_instances_are_not_equal()
+    public void should_not_throw_when_is_reference_not_equal_to_instances_are_not_equal()
     {
         // given
         var obj1 = new InputsTestArgument();
@@ -54,7 +54,7 @@ public sealed class EqualTests
     }
 
     [Fact]
-    public void is_reference_not_equal_to_should_throw_when_instances_are_equal()
+    public void should_throw_when_is_reference_not_equal_to_instances_are_equal()
     {
         // given
         var obj1 = new InputsTestArgument();

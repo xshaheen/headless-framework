@@ -16,31 +16,31 @@ public sealed class MailkitSmtpOptionsValidatorTests
     private readonly MailkitSmtpOptionsValidator _validator = new();
 
     [Fact]
-    public void valid_options_should_pass()
+    public void should_pass_when_valid_options()
     {
         _validator.Validate(_Valid()).IsValid.Should().BeTrue();
     }
 
     [Fact]
-    public void empty_server_should_fail()
+    public void should_fail_when_empty_server()
     {
         _validator.Validate(new MailkitSmtpOptions { Server = "" }).IsValid.Should().BeFalse();
     }
 
     [Fact]
-    public void zero_pool_size_should_be_allowed()
+    public void should_be_allowed_when_zero_pool_size()
     {
         _validator.Validate(_Valid(maxPoolSize: 0)).IsValid.Should().BeTrue();
     }
 
     [Fact]
-    public void negative_pool_size_should_fail()
+    public void should_fail_when_negative_pool_size()
     {
         _validator.Validate(_Valid(maxPoolSize: -1)).IsValid.Should().BeFalse();
     }
 
     [Fact]
-    public void timeout_beyond_int_milliseconds_should_fail()
+    public void should_fail_when_timeout_beyond_int_milliseconds()
     {
         _validator.Validate(_Valid(timeout: TimeSpan.FromDays(30))).IsValid.Should().BeFalse();
     }
@@ -58,7 +58,7 @@ public sealed class MailkitSmtpOptionsValidatorTests
 public sealed class SmtpClientPooledObjectPolicyTests
 {
     [Fact]
-    public void create_should_apply_the_configured_timeout()
+    public void should_apply_the_configured_timeout_when_create()
     {
         var policy = _Policy(TimeSpan.FromSeconds(5));
 
@@ -68,7 +68,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
     }
 
     [Fact]
-    public void return_should_discard_a_disconnected_client()
+    public void should_discard_a_disconnected_client_when_return()
     {
         var policy = _Policy(TimeSpan.FromSeconds(5));
         using var client = new SmtpClient();
@@ -89,7 +89,7 @@ public sealed class SmtpClientPooledObjectPolicyTests
 public sealed class MailkitEmailSenderTests : TestBase
 {
     [Fact]
-    public async Task missing_body_should_throw_before_touching_the_pool()
+    public async Task should_throw_before_touching_the_pool_when_missing_body()
     {
         var pool = Substitute.For<ObjectPool<SmtpClient>>();
         var options = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
@@ -109,7 +109,7 @@ public sealed class MailkitEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task connect_transport_fault_should_return_failed()
+    public async Task should_return_failed_when_connect_transport_fault()
     {
         // A connect-level fault (IOException) must be surfaced as a failed response, not thrown.
         using var client = new FakeSmtpClient(_ => Task.FromException(new IOException("connection reset")));
@@ -122,7 +122,7 @@ public sealed class MailkitEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task connect_timeout_cancellation_should_return_failed()
+    public async Task should_return_failed_when_connect_timeout_cancellation()
     {
         // A timeout-CTS-induced cancellation (the caller's token is NOT cancelled) is a delivery failure,
         // not a caller cancellation, so it is returned rather than thrown.
@@ -136,7 +136,7 @@ public sealed class MailkitEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task caller_cancellation_should_propagate()
+    public async Task should_propagate_when_caller_cancellation()
     {
         // Only the caller's own cancellation propagates as OperationCanceledException.
         using var cts = new CancellationTokenSource();

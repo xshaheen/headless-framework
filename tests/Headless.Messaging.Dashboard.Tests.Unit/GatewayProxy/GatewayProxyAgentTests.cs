@@ -12,7 +12,7 @@ namespace Tests.GatewayProxy;
 public sealed class GatewayProxyAgentTests : TestBase
 {
     [Fact]
-    public async Task Invoke_should_return_false_when_no_node_cookie()
+    public async Task should_return_false_when_invoke_no_node_cookie()
     {
         // given
         var context = _CreateHttpContext();
@@ -28,7 +28,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
-    public async Task Invoke_should_return_false_when_node_cookie_value_is_null()
+    public async Task should_return_false_when_invoke_node_cookie_value_is_null()
     {
         // given
         var context = _CreateHttpContext();
@@ -44,7 +44,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
-    public async Task Invoke_should_forward_request_to_discovered_node()
+    public async Task should_forward_request_to_discovered_node_when_invoke()
     {
         // given
         var context = _CreateHttpContext();
@@ -78,7 +78,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
-    public async Task Invoke_should_delete_cookie_when_node_not_found()
+    public async Task should_delete_cookie_when_invoke_node_not_found()
     {
         // given
         var context = _CreateHttpContext();
@@ -100,7 +100,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
-    public async Task Invoke_should_return_false_when_same_node_as_current()
+    public async Task should_return_false_when_invoke_same_node_as_current()
     {
         // given
         var context = _CreateHttpContext();
@@ -119,7 +119,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
-    public async Task Invoke_should_handle_node_failures_gracefully()
+    public async Task should_handle_node_failures_gracefully_when_invoke()
     {
         // given
         var context = _CreateHttpContext();
@@ -160,14 +160,14 @@ public sealed class GatewayProxyAgentTests : TestBase
     //       so that K8s mode (no ConsulDiscoveryOptions registered) can be exercised and tested.
 
     [Fact]
-    public void CookieNodeName_should_be_defined()
+    public void should_be_defined_when_cookie_node_name()
     {
         // then
         GatewayProxyAgent.CookieNodeName.Should().Be("messaging.node");
     }
 
     [Fact]
-    public void CookieNodeNsName_should_be_defined()
+    public void should_be_defined_when_cookie_node_ns_name()
     {
         // then
         GatewayProxyAgent.CookieNodeNsName.Should().Be("messaging.node.ns");

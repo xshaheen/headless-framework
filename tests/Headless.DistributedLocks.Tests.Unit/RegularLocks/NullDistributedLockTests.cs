@@ -41,7 +41,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task try_acquire_should_never_return_null()
+    public async Task should_never_return_null_when_try_acquire()
     {
         // given
         var provider = _CreateProvider();
@@ -55,7 +55,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task provider_renew_should_always_report_success()
+    public async Task should_always_report_success_when_provider_renew()
     {
         // given
         var provider = _CreateProvider();
@@ -72,7 +72,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task lease_renew_should_succeed_and_increment_renewal_count()
+    public async Task should_succeed_and_increment_renewal_count_when_lease_renew()
     {
         // given
         var provider = _CreateProvider();
@@ -110,7 +110,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task release_should_be_a_no_op_that_completes()
+    public async Task should_be_a_no_op_that_completes_when_release()
     {
         // given
         var provider = _CreateProvider();

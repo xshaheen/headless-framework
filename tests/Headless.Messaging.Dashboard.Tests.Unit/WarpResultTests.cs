@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class WarpResultTests : TestBase
 {
     [Fact]
-    public void ChildCount_should_return_values_count()
+    public void should_return_values_count_when_child_count()
     {
         // given
         var result = new WarpResult
@@ -42,7 +42,7 @@ public sealed class WarpResultTests : TestBase
     }
 
     [Fact]
-    public void ChildCount_should_return_zero_for_empty_values()
+    public void should_return_zero_for_empty_values_when_child_count()
     {
         // given
         var result = new WarpResult { Group = "empty-group", Values = [] };
@@ -52,7 +52,7 @@ public sealed class WarpResultTests : TestBase
     }
 
     [Fact]
-    public void should_set_and_get_Group()
+    public void should_set_and_get_group()
     {
         // given
         var result = new WarpResult { Group = "test-group", Values = [] };
@@ -62,7 +62,7 @@ public sealed class WarpResultTests : TestBase
     }
 
     [Fact]
-    public void SubInfo_should_set_and_get_properties()
+    public void should_set_and_get_properties_when_sub_info()
     {
         // given
         var subInfo = new WarpResult.SubInfo

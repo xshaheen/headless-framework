@@ -23,7 +23,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task save_changes_without_emitters_should_not_publish_messages()
+    public async Task should_not_publish_messages_when_save_changes_without_emitters()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -45,7 +45,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Add
 
     [Fact]
-    public async Task save_changes_add_should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages()
+    public async Task should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages_when_save_changes_add()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -81,7 +81,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task add_should_stamp_guid_id_at_track_time_so_many_empty_keyed_entities_can_be_added_before_save()
+    public async Task should_stamp_guid_id_at_track_time_so_many_empty_keyed_entities_can_be_added_before_save_when_add()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -110,7 +110,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task add_should_not_stamp_long_id_at_track_time()
+    public async Task should_not_stamp_long_id_at_track_time_when_add()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -140,7 +140,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Update
 
     [Fact]
-    public async Task save_changes_update_should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message()
+    public async Task should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message_when_save_changes_update()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -173,7 +173,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Delete
 
     [Fact]
-    public async Task save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
+    public async Task should_set_delete_audit_and_emit_deleted_message_when_save_changes_soft_delete()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -204,7 +204,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Suspend
 
     [Fact]
-    public async Task save_changes_suspend_should_set_suspend_audit()
+    public async Task should_set_suspend_audit_when_save_changes_suspend()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -228,7 +228,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Publish messages
 
     [Fact]
-    public async Task distributed_and_local_messages_should_publish_within_existing_transaction()
+    public async Task should_publish_within_existing_transaction_when_distributed_and_local_messages()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -254,7 +254,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // ExecuteTransactionAsync
 
     [Fact]
-    public async Task execute_transaction_async_should_commit_when_operation_succeeds()
+    public async Task should_commit_when_execute_transaction_async_operation_succeeds()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
@@ -272,7 +272,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task execute_transaction_async_should_rollback_when_operation_throws()
+    public async Task should_rollback_when_execute_transaction_async_operation_throws()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
@@ -295,7 +295,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Global filters
 
     [Fact]
-    public async Task global_filters_should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled()
+    public async Task should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled_when_global_filters()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();

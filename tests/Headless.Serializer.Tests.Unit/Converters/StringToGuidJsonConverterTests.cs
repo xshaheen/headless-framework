@@ -14,7 +14,7 @@ public sealed class StringToGuidJsonConverterTests
     [InlineData("{d85b1407-351d-4694-9392-03acc5870eb1}", "B")]
     [InlineData("(d85b1407-351d-4694-9392-03acc5870eb1)", "P")]
     [InlineData("{0xD85B1407,0x351D,0x4694,{0x93,0x92,0x03,0xAC,0xC5,0x87,0x0E,0xB1}}", "X")]
-    public void string_to_guid_converter_should_return_valid_guid_given_valid_guid_in_different_formats(
+    public void should_return_valid_guid_given_valid_guid_in_different_formats_when_string_to_guid_converter(
         string guidString,
         string format
     )
@@ -37,7 +37,7 @@ public sealed class StringToGuidJsonConverterTests
     [InlineData("{d85b1407-351d-4694-9392-03acc5870eb1}", "B")]
     [InlineData("(d85b1407-351d-4694-9392-03acc5870eb1)", "P")]
     [InlineData("{0xD85B1407,0x351D,0x4694,{0x93,0x92,0x03,0xAC,0xC5,0x87,0x0E,0xB1}}", "X")]
-    public void string_to_guid_converter_should_serialize_the_guid_formats_successfully(
+    public void should_serialize_the_guid_formats_successfully_when_string_to_guid_converter(
         string guidString,
         string format
     )
@@ -57,7 +57,7 @@ public sealed class StringToGuidJsonConverterTests
     [InlineData("")]
     [InlineData("123412")]
     [InlineData(null)]
-    public void string_to_guid_converter_should_throw_when_given_invalid_guids(string? invalidGuid)
+    public void should_throw_when_string_to_guid_converter_given_invalid_guids(string? invalidGuid)
     {
         // given
         var json = invalidGuid == null ? "null" : $"\"{invalidGuid}\"";
@@ -70,7 +70,7 @@ public sealed class StringToGuidJsonConverterTests
     }
 
     [Fact]
-    public void string_to_guid_converter_should_write_in_normal_guid_format()
+    public void should_write_in_normal_guid_format_when_string_to_guid_converter()
     {
         // given
         var guid = Guid.NewGuid();
@@ -84,7 +84,7 @@ public sealed class StringToGuidJsonConverterTests
     }
 
     [Fact]
-    public void string_to_guid_converter_should_throw_exception_when_reading_null_json_string()
+    public void should_throw_exception_when_string_to_guid_converter_reading_null_json_string()
     {
         // given
         const string json = "null";
@@ -97,7 +97,7 @@ public sealed class StringToGuidJsonConverterTests
     }
 
     [Fact]
-    public void string_to_guid_converter_should_write_empty_guild_normally()
+    public void should_write_empty_guild_normally_when_string_to_guid_converter()
     {
         // given
         var guid = Guid.Empty;

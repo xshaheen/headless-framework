@@ -19,7 +19,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void is_at_start_position_should_throw_for_stream_not_at_start_position()
+    public void should_throw_for_stream_not_at_start_position_when_is_at_start_position()
     {
         // given
         using var stream = new MemoryStream();
@@ -39,7 +39,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void can_read_should_throw_when_stream_cannot_be_read()
+    public void should_throw_when_can_read_stream_cannot_be_read()
     {
         // given
         using var stream = new NonReadableStream();
@@ -52,7 +52,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void can_write_should_throw_when_stream_cannot_be_written()
+    public void should_throw_when_can_write_stream_cannot_be_written()
     {
         // given
         using var stream = new MemoryStream([], writable: false);
@@ -65,7 +65,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void can_seek_should_throw_when_stream_cannot_seek()
+    public void should_throw_when_can_seek_stream_cannot_seek()
     {
         // given
         using var stream = new NonSeekableStream();
@@ -83,7 +83,7 @@ public sealed class IoTests
     // FileExists tests
 
     [Fact]
-    public void file_exists_should_return_path_when_file_exists()
+    public void should_return_path_when_file_exists_file_exists()
     {
         // given - use a file that always exists
         var path = typeof(IoTests).Assembly.Location;
@@ -96,7 +96,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void file_exists_should_throw_when_file_does_not_exist()
+    public void should_throw_when_file_exists_file_does_not_exist()
     {
         // given
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "nonexistent.txt");
@@ -112,7 +112,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void file_exists_should_throw_for_null_path()
+    public void should_throw_for_null_path_when_file_exists()
     {
         // given
         const string? path = null;
@@ -125,7 +125,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void file_exists_should_throw_for_empty_path()
+    public void should_throw_for_empty_path_when_file_exists()
     {
         // given
         const string path = "";
@@ -138,7 +138,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void file_exists_should_use_custom_message()
+    public void should_use_custom_message_when_file_exists()
     {
         // given
         const string path = "/nonexistent/file.txt";
@@ -154,7 +154,7 @@ public sealed class IoTests
     // DirectoryExists tests
 
     [Fact]
-    public void directory_exists_should_return_path_when_directory_exists()
+    public void should_return_path_when_directory_exists_directory_exists()
     {
         // given - use temp directory that always exists
         var path = Path.GetTempPath();
@@ -167,7 +167,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void directory_exists_should_throw_when_directory_does_not_exist()
+    public void should_throw_when_directory_exists_directory_does_not_exist()
     {
         // given
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "nonexistent");
@@ -183,7 +183,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void directory_exists_should_throw_for_null_path()
+    public void should_throw_for_null_path_when_directory_exists()
     {
         // given
         const string? path = null;
@@ -196,7 +196,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void directory_exists_should_throw_for_empty_path()
+    public void should_throw_for_empty_path_when_directory_exists()
     {
         // given
         const string path = "";
@@ -209,7 +209,7 @@ public sealed class IoTests
     }
 
     [Fact]
-    public void directory_exists_should_use_custom_message()
+    public void should_use_custom_message_when_directory_exists()
     {
         // given
         const string path = "/nonexistent/directory";

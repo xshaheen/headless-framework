@@ -15,7 +15,7 @@ public sealed class TypeListTests
     private readonly TypeList<IShape> _shapeTypeList = [];
 
     [Fact]
-    public void add_should_add_shape_to_list()
+    public void should_add_shape_to_list_when_add()
     {
         // when
         _shapeTypeList.Add<Rectangle>();
@@ -26,7 +26,7 @@ public sealed class TypeListTests
     }
 
     [Fact]
-    public void tryAdd_should_prevent_duplicate_shapes()
+    public void should_prevent_duplicate_shapes_when_try_add()
     {
         // when
         var firstAdd = _shapeTypeList.TryAdd<Rectangle>();
@@ -39,7 +39,7 @@ public sealed class TypeListTests
     }
 
     [Fact]
-    public void add_should_throw_exception_for_invalid_type()
+    public void should_throw_exception_for_invalid_type_when_add()
     {
         // when
         var act = () => _shapeTypeList.Add(typeof(string));
@@ -49,7 +49,7 @@ public sealed class TypeListTests
     }
 
     [Fact]
-    public void contains_should_return_true_for_registered_shape()
+    public void should_return_true_for_registered_shape_when_contains()
     {
         // given
         _shapeTypeList.Add<Circle>();
@@ -62,7 +62,7 @@ public sealed class TypeListTests
     }
 
     [Fact]
-    public void remove_should_remove_shape_from_list()
+    public void should_remove_shape_from_list_when_remove()
     {
         // given
         _shapeTypeList.Add<Rectangle>();

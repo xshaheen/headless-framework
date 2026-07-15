@@ -426,7 +426,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
-    public async Task should_return_null_when_TryAcquireAsync_acquireTimeout_Zero_and_lock_already_held()
+    public async Task should_return_null_when_try_acquire_async_acquire_timeout_zero_and_lock_already_held()
     {
         // given — hold the lock with the first acquire
         var firstLock = await _realLockProvider.TryAcquireAsync(

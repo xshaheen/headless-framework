@@ -929,7 +929,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task acquire_all_should_report_canonical_resource_on_failure(bool tryOnce)
+    public async Task should_report_canonical_resource_on_failure_when_acquire_all(bool tryOnce)
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         provider

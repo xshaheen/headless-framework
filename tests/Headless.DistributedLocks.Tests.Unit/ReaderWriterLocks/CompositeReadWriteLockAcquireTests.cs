@@ -612,7 +612,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task acquire_all_should_report_canonical_resource_on_failure(bool tryOnce)
+    public async Task should_report_canonical_resource_on_failure_when_acquire_all(bool tryOnce)
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         provider
@@ -739,7 +739,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     }
 
     [Fact]
-    public async Task read_sugar_should_produce_the_same_canonical_order_as_the_equivalent_mixed_set()
+    public async Task should_produce_the_same_canonical_order_as_the_equivalent_mixed_set_when_read_sugar()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var calls = _RecordSuccessfulAcquires(provider);
@@ -760,7 +760,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     }
 
     [Fact]
-    public async Task write_sugar_should_acquire_every_distinct_resource_in_ordinal_order()
+    public async Task should_acquire_every_distinct_resource_in_ordinal_order_when_write_sugar()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var calls = _RecordSuccessfulAcquires(provider);

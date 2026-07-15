@@ -7,7 +7,7 @@ namespace Tests.Abstractions;
 public sealed class TenantWriteGuardBypassTests
 {
     [Fact]
-    public void begin_bypass_should_activate_then_deactivate_on_dispose()
+    public void should_activate_then_deactivate_on_dispose_when_begin_bypass()
     {
         // given
         var sut = new TenantWriteGuardBypass();
@@ -27,7 +27,7 @@ public sealed class TenantWriteGuardBypassTests
     }
 
     [Fact]
-    public void nested_bypass_should_stay_active_until_the_outer_scope_is_disposed()
+    public void should_stay_active_until_the_outer_scope_is_disposed_when_nested_bypass()
     {
         // given
         var sut = new TenantWriteGuardBypass();
@@ -51,7 +51,7 @@ public sealed class TenantWriteGuardBypassTests
     }
 
     [Fact]
-    public void double_dispose_should_be_safe_and_not_corrupt_state()
+    public void should_be_safe_and_not_corrupt_state_when_double_dispose()
     {
         // given
         var sut = new TenantWriteGuardBypass();
@@ -74,7 +74,7 @@ public sealed class TenantWriteGuardBypassTests
     }
 
     [Fact]
-    public async Task concurrent_nested_begin_and_dispose_should_stay_consistent()
+    public async Task should_stay_consistent_when_concurrent_nested_begin_and_dispose()
     {
         // given — a parent ref keeps the shared (AsyncLocal-flowed) state alive while children race
         var sut = new TenantWriteGuardBypass();
@@ -110,7 +110,7 @@ public sealed class TenantWriteGuardBypassTests
     }
 
     [Fact]
-    public void begin_after_a_full_release_should_return_a_fresh_active_bypass()
+    public void should_return_a_fresh_active_bypass_when_begin_after_a_full_release()
     {
         // given — a scope that has been fully released (state latched terminal)
         var sut = new TenantWriteGuardBypass();

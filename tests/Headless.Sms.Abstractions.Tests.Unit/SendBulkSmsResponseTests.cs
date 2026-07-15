@@ -78,7 +78,7 @@ public sealed class SendBulkSmsResponseTests
     }
 
     [Fact]
-    public void from_aggregate_should_reject_an_empty_destination_set()
+    public void should_reject_an_empty_destination_set_when_from_aggregate()
     {
         var act = () => SendBulkSmsResponse.FromAggregate([], SendSingleSmsResponse.Succeeded());
 
