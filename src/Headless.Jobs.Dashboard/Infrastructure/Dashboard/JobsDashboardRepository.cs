@@ -18,6 +18,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     IJobsNotificationHubSender notificationHubSender,
     DashboardOptionsBuilder dashboardOptions,
     IJobsDispatcher dispatcher,
+    JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     IServiceProvider serviceProvider
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
@@ -30,6 +31,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     );
     private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
+    private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
@@ -467,7 +469,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             };
 
             // Populate cached delegate and priority so the dispatcher can execute the job
-            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (_functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -661,7 +663,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes);
 
-        if (!JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(functionName, out var functionTypeContext))
+        if (!_functionRegistry.RequestTypes.TryGetValue(functionName, out var functionTypeContext))
         {
             return (jsonRequest, 2);
         }
@@ -681,9 +683,9 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public IEnumerable<(string, (string, string, JobPriority))> GetJobFunctions()
     {
-        foreach (var jobFunction in JobFunctionProvider.JobFunctions.Select(x => new { x.Key, x.Value.Priority }))
+        foreach (var jobFunction in _functionRegistry.Functions.Select(x => new { x.Key, x.Value.Priority }))
         {
-            if (JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
+            if (_functionRegistry.RequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
             {
                 JsonExampleGenerator.TryGenerateExampleJson(functionTypeContext.Item2, out var exampleJson);
                 yield return (jobFunction.Key, (functionTypeContext.Item1, exampleJson, jobFunction.Priority));

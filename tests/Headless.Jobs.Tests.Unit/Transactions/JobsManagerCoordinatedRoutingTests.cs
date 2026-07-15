@@ -691,6 +691,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             new FakeCurrentCommitCoordinator(coordinator),
             new CronScheduleCache(TimeZoneInfo.Utc),
             new SchedulerOptionsBuilder { PostCommitDrainTimeout = postCommitDrainTimeout ?? TimeSpan.FromSeconds(30) },
+            JobFunctionProvider.CreateHostRegistry(configuration: null),
             logger
         );
 

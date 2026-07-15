@@ -26,6 +26,8 @@ namespace Tests;
 /// </summary>
 public sealed class JobsDistributedLockGuardTests : TestBase
 {
+    private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);
+
     private static readonly DistributedLockAcquireOptions _HoldOptions = new()
     {
         AcquireTimeout = TimeSpan.Zero,
@@ -66,6 +68,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         // JobFunctionProvider static state. A rename breaks the build, not at runtime.
         var hostedService = new JobsInitializationHostedService(
             sp,
+            _EmptyRegistry,
             NullLogger<JobsInitializationHostedService>.Instance
         );
 
@@ -229,6 +232,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
         var hostedService = new JobsInitializationHostedService(
             sp,
+            _EmptyRegistry,
             NullLogger<JobsInitializationHostedService>.Instance
         );
 

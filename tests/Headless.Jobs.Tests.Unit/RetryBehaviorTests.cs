@@ -16,6 +16,8 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class RetryBehaviorTests : TestBase
 {
+    private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);
+
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
 
@@ -307,7 +309,8 @@ public sealed class RetryBehaviorTests : TestBase
                 [],
                 retries: 1,
                 retryOptions: options,
-                configureServices: static services => services.AddScoped<RetryScopeMarker>()
+                configureServices: static services => services.AddScoped<RetryScopeMarker>(),
+                functionRegistry: JobFunctionProvider.CreateHostRegistry(configuration: null)
             );
             context.CachedDelegate = (_, _, functionContext) =>
             {
@@ -476,6 +479,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
@@ -577,6 +581,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -645,6 +650,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -694,6 +700,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -748,6 +755,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -821,6 +829,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -874,6 +883,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMilliseconds(250),
@@ -935,6 +945,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -999,7 +1010,8 @@ public sealed class RetryBehaviorTests : TestBase
         JobsRetryOptions? retryOptions = null,
         Func<Exception>? exceptionFactory = null,
         Action<IServiceCollection>? configureServices = null,
-        SchedulerOptionsBuilder? schedulerOptions = null
+        SchedulerOptionsBuilder? schedulerOptions = null,
+        JobFunctionRegistry? functionRegistry = null
     )
     {
         var services = new ServiceCollection();
@@ -1026,6 +1038,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            functionRegistry ?? _EmptyRegistry,
             schedulerOptions ?? new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
             retryOptions

@@ -72,6 +72,35 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
+    public async Task should_resolve_descriptors_from_the_injected_host_registry()
+    {
+        var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
+        var persistedId = Guid.NewGuid();
+        timeManager
+            .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
+            .Returns(call =>
+            {
+                var entity = call.Arg<TimeJobEntity>();
+                entity.Id = persistedId;
+                return entity;
+            });
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [new KeyValuePair<string, JobFunctionDescriptor>(_TypedDescriptor.FunctionName, _TypedDescriptor)]
+        );
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(timeManager, cronManager, registry);
+
+        var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
+
+        id.Should().Be(persistedId);
+        await timeManager
+            .Received(1)
+            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Function == _TypedDescriptor.FunctionName), AbortToken);
+    }
+
+    [Fact]
     public async Task should_schedule_requestless_delayed_job_without_payload()
     {
         var (scheduler, timeManager, _) = _CreateScheduler();

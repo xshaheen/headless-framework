@@ -33,21 +33,24 @@ internal sealed class JobsExecutionContext
         return t < 0 ? null : new DateTime(t, DateTimeKind.Utc);
     }
 
-    public void SetFunctions(ReadOnlySpan<JobExecutionState> functions)
+    public void SetFunctions(ReadOnlySpan<JobExecutionState> functions, JobFunctionRegistry functionRegistry)
     {
         var copy = new JobExecutionState[functions.Length];
         functions.CopyTo(copy.AsSpan());
 
-        _CacheFunctionReferences(copy.AsSpan());
+        _CacheFunctionReferences(copy.AsSpan(), functionRegistry);
         Volatile.Write(ref _functions, copy);
     }
 
-    private static void _CacheFunctionReferences(Span<JobExecutionState> functions)
+    private static void _CacheFunctionReferences(
+        Span<JobExecutionState> functions,
+        JobFunctionRegistry functionRegistry
+    )
     {
         for (var i = 0; i < functions.Length; i++)
         {
             ref var context = ref functions[i];
-            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -57,7 +60,7 @@ internal sealed class JobsExecutionContext
             if (context.TimeJobChildren is { Count: > 0 })
             {
                 var childrenSpan = CollectionsMarshal.AsSpan(context.TimeJobChildren);
-                _CacheFunctionReferences(childrenSpan);
+                _CacheFunctionReferences(childrenSpan, functionRegistry);
             }
         }
     }

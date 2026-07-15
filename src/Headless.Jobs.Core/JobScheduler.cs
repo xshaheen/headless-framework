@@ -18,8 +18,17 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByRequestType;
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
 
-    public JobScheduler(ITimeJobManager<TTimeJob> timeJobManager, ICronJobManager<TCronJob> cronJobManager)
-        : this(timeJobManager, cronJobManager, _FindByRequestType, _FindByName) { }
+    public JobScheduler(
+        ITimeJobManager<TTimeJob> timeJobManager,
+        ICronJobManager<TCronJob> cronJobManager,
+        JobFunctionRegistry functionRegistry
+    )
+        : this(
+            timeJobManager,
+            cronJobManager,
+            functionRegistry.DescriptorsByRequestType.GetValueOrDefault,
+            functionRegistry.Descriptors.GetValueOrDefault
+        ) { }
 
     internal JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
@@ -162,10 +171,4 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var registered = _descriptorByName(descriptor.FunctionName);
         return registered == descriptor ? registered : throw new JobFunctionNotFoundException(descriptor.FunctionName);
     }
-
-    private static JobFunctionDescriptor? _FindByRequestType(Type requestType) =>
-        JobFunctionProvider.JobFunctionDescriptorsByRequestType.GetValueOrDefault(requestType);
-
-    private static JobFunctionDescriptor? _FindByName(string functionName) =>
-        JobFunctionProvider.JobFunctionDescriptors.GetValueOrDefault(functionName);
 }
