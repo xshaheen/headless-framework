@@ -1171,7 +1171,7 @@ Provides Azure Service Bus topic and queue transports.
 - Session-aware processing.
 - Producer hatch: `UseAzureServiceBus(asb => asb.PartitionKey(message => ...))`.
 - Consumer startup honors host cancellation through client, topology, and processor setup.
-- Shared publish connection: bus and queue publishing share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders; senders are drained before the client on shutdown.
+- Shared connection: bus and queue publishing and consumer processors share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders and a shared administration client; senders are drained before the client on shutdown, and consumers stop their processors without touching the shared client.
 
 ### Design Notes
 
@@ -1205,7 +1205,7 @@ Azure.Messaging.ServiceBus, `Headless.Messaging.Core`.
 
 ### Side Effects
 
-Registers a shared publish client pool (one `ServiceBusClient` per namespace, shared by the bus and queue transports), transports, consumer client factory, and producer descriptor services. Consumer clients maintain their own receive-side connection.
+Registers a shared client pool (one `ServiceBusClient` per namespace, shared by the bus and queue transports and every consumer client, plus a shared administration client), transports, consumer client factory, and producer descriptor services.
 
 ## Headless.Messaging.InMemory
 

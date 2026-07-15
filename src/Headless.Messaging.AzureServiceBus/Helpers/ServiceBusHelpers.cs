@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
@@ -18,6 +19,18 @@ internal static class ServiceBusHelpers
         return options.TokenCredential is null
             ? new ServiceBusClient(options.ConnectionString)
             : new ServiceBusClient(options.Namespace, options.TokenCredential);
+    }
+
+    /// <summary>
+    /// Creates a <see cref="ServiceBusAdministrationClient"/> from the configured authentication
+    /// mode, mirroring the credential selection of <see cref="CreateClient"/>.
+    /// </summary>
+    /// <param name="options">The messaging options carrying the authentication configuration.</param>
+    public static ServiceBusAdministrationClient CreateAdministrationClient(AzureServiceBusMessagingOptions options)
+    {
+        return options.TokenCredential is null
+            ? new ServiceBusAdministrationClient(options.ConnectionString)
+            : new ServiceBusAdministrationClient(options.Namespace, options.TokenCredential);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -342,6 +343,65 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         await disposeTask;
         await warmupSender.Received(1).DisposeAsync();
         await client.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_share_one_client_between_get_client_and_senders()
+    {
+        // given
+        var creations = 0;
+        var client = _CreateClientSubstitute();
+        await using var pool = _CreatePool(client, () => Interlocked.Increment(ref creations));
+
+        // when: receive-side (GetClient) and publish-side (GetSender) both use the pool
+        var direct = pool.GetClient();
+        _ = pool.GetSender("orders");
+
+        // then: one client serves both paths
+        direct.Should().BeSameAs(client);
+        creations.Should().Be(1);
+        client.Received(1).CreateSender("orders");
+    }
+
+    [Fact]
+    public async Task should_share_single_administration_client()
+    {
+        // given
+        var adminCreations = 0;
+        var adminClient = Substitute.For<ServiceBusAdministrationClient>();
+        await using var pool = new AzureServiceBusClientPool(
+            NullLogger<AzureServiceBusClientPool>.Instance,
+            _Options,
+            _ => _CreateClientSubstitute(),
+            _ =>
+            {
+                Interlocked.Increment(ref adminCreations);
+                return adminClient;
+            }
+        );
+
+        // when
+        var first = pool.GetAdministrationClient();
+        var second = pool.GetAdministrationClient();
+
+        // then
+        first.Should().BeSameAs(adminClient);
+        second.Should().BeSameAs(adminClient);
+        adminCreations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_throw_from_get_client_and_administration_client_after_dispose()
+    {
+        // given
+        var pool = _CreatePool(_CreateClientSubstitute(), () => 0);
+        await pool.DisposeAsync();
+
+        // when / then
+        var getClient = () => pool.GetClient();
+        var getAdmin = () => pool.GetAdministrationClient();
+        getClient.Should().Throw<ObjectDisposedException>();
+        getAdmin.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]

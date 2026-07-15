@@ -5,6 +5,7 @@ using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Exceptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -24,7 +25,8 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
                     ConnectionString = "Endpoint=sb://localhost/;SharedAccessKeyName=name;SharedAccessKey=key",
                 }
             ),
-            new ServiceCollection().BuildServiceProvider()
+            new ServiceCollection().BuildServiceProvider(),
+            Substitute.For<IAzureServiceBusClientPool>()
         );
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -51,7 +53,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
+        var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            Substitute.For<IAzureServiceBusClientPool>()
+        );
 
         // when
         var act = async () => await factory.CreateAsync("test-group", 5);
@@ -76,7 +83,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
+        var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            Substitute.For<IAzureServiceBusClientPool>()
+        );
 
         // when
         var act = async () => await factory.CreateAsync("test-group", 5);
@@ -96,7 +108,10 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
             new AzureServiceBusMessagingOptions { ConnectionString = "InvalidConnectionString" }
         );
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
+
+        // Real pool: the invalid connection string must fail through the actual client creation path.
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
         var groupName = new string('a', 80);
 
         // when
