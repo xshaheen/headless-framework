@@ -158,8 +158,7 @@ public sealed class JobFunctionProviderTests : IDisposable
         const string assemblyName = "Headless.Jobs.GeneratedDiscoveryFixture.dll";
         const string functionName = "tests.discovery.generated";
         const string requestTypeName = "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryRequest";
-        const string middlewareTypeName =
-            "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryScheduleMiddleware";
+        const string middlewareTypeName = "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryScheduleMiddleware";
         Assembly? discoveredAssembly = null;
         AssemblyLoadContext
             .Default.Assemblies.Should()
