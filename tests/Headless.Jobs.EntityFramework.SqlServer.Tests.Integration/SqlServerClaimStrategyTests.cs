@@ -352,6 +352,17 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
         await fixture.ResetDatabaseAsync(ct);
         using var host = fixture.BuildHost("rollback-sql-a");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"CREATE TRIGGER [jobs].[fail_descendant_claim] ON {fixture.QualifiedTimeJobsTable} AFTER UPDATE AS "
+                + "IF EXISTS (SELECT 1 FROM inserted WHERE [Function] = 'fail-child' AND [OwnerId] IS NOT NULL) "
+                + "THROW 51000, 'forced descendant failure', 1;";
+            await command.ExecuteNonQueryAsync(ct);
+        }
+
         await host.StartAsync(ct);
 
         try
@@ -371,17 +382,6 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
                 Children = [child],
             };
             await persistence.AddTimeJobsAsync([root], ct);
-            await using (var connection = fixture.CreateConnection())
-            {
-                await connection.OpenAsync(ct);
-                await using var command = connection.CreateCommand();
-                command.CommandText =
-                    $"CREATE TRIGGER [jobs].[fail_descendant_claim] ON {fixture.QualifiedTimeJobsTable} AFTER UPDATE AS "
-                    + "IF EXISTS (SELECT 1 FROM inserted WHERE [Function] = 'fail-child' AND [OwnerId] IS NOT NULL) "
-                    + "THROW 51000, 'forced descendant failure', 1;";
-                await command.ExecuteNonQueryAsync(ct);
-            }
-
             var claim = async () => await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
             await claim.Should().ThrowAsync<SqlException>();
 
