@@ -10,11 +10,20 @@ public abstract class CacheConformanceTestsBase : TestBase
 {
     protected abstract ICache CreateCache(string keyPrefix);
 
-    protected virtual ValueTask ResetAsync() => ValueTask.CompletedTask;
+    protected virtual ValueTask ResetAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
-    protected virtual ValueTask AdvancePastExpirationAsync(TimeSpan expiration) => ValueTask.CompletedTask;
+    protected virtual ValueTask AdvancePastExpirationAsync(TimeSpan expiration)
+    {
+        return ValueTask.CompletedTask;
+    }
 
-    protected virtual ValueTask AdvanceAsync(TimeSpan duration) => AdvancePastExpirationAsync(duration);
+    protected virtual ValueTask AdvanceAsync(TimeSpan duration)
+    {
+        return AdvancePastExpirationAsync(duration);
+    }
 
     public virtual async Task should_round_trip_object_and_string_values()
     {
@@ -1213,29 +1222,34 @@ public abstract class CacheConformanceTestsBase : TestBase
 
     // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value
     // (and its validators) is still available to the conditional factory after AdvanceAsync(Duration).
-    private static CacheEntryOptions _CreateConditionalOptions() =>
-        new()
+    private static CacheEntryOptions _CreateConditionalOptions()
+    {
+        return new()
         {
             Duration = TimeSpan.FromMilliseconds(250),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromSeconds(5),
             FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
         };
+    }
 
-    private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null) =>
-        new()
+    private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null)
+    {
+        return new()
         {
             Duration = TimeSpan.FromMilliseconds(100),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMilliseconds(900),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromMilliseconds(200),
         };
+    }
 
     private static CacheEntryOptions _CreateTimeoutOptions(
         bool isFailSafeEnabled = true,
         TimeSpan? factorySoftTimeout = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = TimeSpan.FromMilliseconds(100),
             IsFailSafeEnabled = isFailSafeEnabled,
@@ -1245,6 +1259,7 @@ public abstract class CacheConformanceTestsBase : TestBase
             FactoryHardTimeout = TimeSpan.FromMilliseconds(250),
             BackgroundFactoryCeiling = TimeSpan.FromSeconds(2),
         };
+    }
 
     private async ValueTask _TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
     {
@@ -1278,15 +1293,19 @@ public abstract class CacheConformanceTestsBase : TestBase
         throw new TimeoutException("Condition was not satisfied within the polling window.");
     }
 
-    private static CacheEntryOptions _CreateSlidingOptions(TimeSpan? duration = null, TimeSpan? sliding = null) =>
-        new()
+    private static CacheEntryOptions _CreateSlidingOptions(TimeSpan? duration = null, TimeSpan? sliding = null)
+    {
+        return new()
         {
             Duration = duration ?? TimeSpan.FromMilliseconds(700),
             SlidingExpiration = sliding ?? TimeSpan.FromMilliseconds(200),
         };
+    }
 
-    private static CacheEntryOptions _CreateEagerOptions() =>
-        new() { Duration = TimeSpan.FromMilliseconds(400), EagerRefreshThreshold = 0.5f };
+    private static CacheEntryOptions _CreateEagerOptions()
+    {
+        return new() { Duration = TimeSpan.FromMilliseconds(400), EagerRefreshThreshold = 0.5f };
+    }
 
     #region IBufferCache (zero-intermediate-copy buffer path)
 

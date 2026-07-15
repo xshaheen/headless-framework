@@ -25,7 +25,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     }
 
     [Fact]
-    public void default_is_transient_predicate_matches_CircuitBreakerDefaults()
+    public void default_is_transient_predicate_matches_circuit_breaker_defaults()
     {
         var opts = new CircuitBreakerOptions();
 
@@ -233,7 +233,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
 
 public sealed class RetryProcessorOptionsTests : TestBase
 {
-    private static RetryProcessorOptionsValidator _CreateValidator() => new();
+    private static RetryProcessorOptionsValidator _CreateValidator()
+    {
+        return new();
+    }
 
     [Fact]
     public void defaults_are_correct()

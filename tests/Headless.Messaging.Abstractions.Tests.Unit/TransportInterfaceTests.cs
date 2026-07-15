@@ -8,14 +8,14 @@ namespace Tests;
 public sealed class TransportInterfaceTests : TestBase
 {
     [Fact]
-    public void bus_transport_should_extend_shared_transport_contract()
+    public void should_extend_shared_transport_contract_when_bus_transport()
     {
         // then
         typeof(ITransport).IsAssignableFrom(typeof(IBusTransport)).Should().BeTrue();
     }
 
     [Fact]
-    public void queue_transport_should_extend_shared_transport_contract()
+    public void should_extend_shared_transport_contract_when_queue_transport()
     {
         // then
         typeof(ITransport).IsAssignableFrom(typeof(IQueueTransport)).Should().BeTrue();

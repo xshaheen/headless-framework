@@ -204,7 +204,10 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     #region Not Supported
 
-    public override void SetLength(long value) => _ThrowDisposedOrNotSupported();
+    public override void SetLength(long value)
+    {
+        _ThrowDisposedOrNotSupported();
+    }
 
     public override void Write(byte[] buffer, int offset, int count)
     {
@@ -223,7 +226,10 @@ internal sealed class ReadOnlySequenceStream : Stream
         return Task.CompletedTask;
     }
 
-    public override void Write(ReadOnlySpan<byte> buffer) => _ThrowDisposedOrNotSupported();
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        _ThrowDisposedOrNotSupported();
+    }
 
     public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
@@ -232,7 +238,10 @@ internal sealed class ReadOnlySequenceStream : Stream
         return ValueTask.CompletedTask;
     }
 
-    public override void Flush() => _ThrowDisposedOrNotSupported();
+    public override void Flush()
+    {
+        _ThrowDisposedOrNotSupported();
+    }
 
     public override Task FlushAsync(CancellationToken cancellationToken)
     {

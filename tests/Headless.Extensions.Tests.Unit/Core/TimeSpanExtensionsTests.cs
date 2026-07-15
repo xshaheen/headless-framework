@@ -7,7 +7,7 @@ namespace Tests.Core;
 public sealed class TimeSpanExtensionsTests : TestBase
 {
     [Fact]
-    public void clamp_should_return_value_when_within_range()
+    public void should_return_value_when_clamp_within_range()
     {
         // given
         var value = TimeSpan.FromMinutes(5);
@@ -22,7 +22,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void clamp_should_return_min_when_value_is_below()
+    public void should_return_min_when_clamp_value_is_below()
     {
         // given
         var value = TimeSpan.FromSeconds(30);
@@ -37,7 +37,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void clamp_should_return_max_when_value_is_above()
+    public void should_return_max_when_clamp_value_is_above()
     {
         // given
         var value = TimeSpan.FromMinutes(15);
@@ -52,7 +52,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void min_should_return_smaller_timespan()
+    public void should_return_smaller_timespan_when_min()
     {
         // given
         var source = TimeSpan.FromMinutes(10);
@@ -66,7 +66,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void min_should_return_source_when_smaller()
+    public void should_return_source_when_min_smaller()
     {
         // given
         var source = TimeSpan.FromMinutes(3);
@@ -80,7 +80,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void max_should_return_larger_timespan()
+    public void should_return_larger_timespan_when_max()
     {
         // given
         var source = TimeSpan.FromMinutes(3);
@@ -94,7 +94,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void max_should_return_source_when_larger()
+    public void should_return_source_when_max_larger()
     {
         // given
         var source = TimeSpan.FromMinutes(10);
@@ -108,7 +108,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void to_cancellation_token_source_should_return_cancelled_when_zero()
+    public void should_return_cancelled_when_to_cancellation_token_source_zero()
     {
         // given
         var timeout = TimeSpan.Zero;
@@ -121,7 +121,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void to_cancellation_token_source_should_return_non_cancelled_when_positive()
+    public void should_return_non_cancelled_when_to_cancellation_token_source_positive()
     {
         // given
         var timeout = TimeSpan.FromMinutes(5);
@@ -134,7 +134,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void to_cancellation_token_source_should_return_non_cancelled_when_negative()
+    public void should_return_non_cancelled_when_to_cancellation_token_source_negative()
     {
         // given
         var timeout = TimeSpan.FromMinutes(-5);
@@ -147,7 +147,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void to_cancellation_token_source_with_token_should_return_cancelled_when_zero()
+    public void should_return_cancelled_when_to_cancellation_token_source_with_token_zero()
     {
         // given
         var timeout = TimeSpan.Zero;
@@ -161,7 +161,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void to_cancellation_token_source_with_token_should_link_to_provided_token()
+    public void should_link_to_provided_token_when_to_cancellation_token_source_with_token()
     {
         // given
         var timeout = TimeSpan.FromMinutes(5);
@@ -176,7 +176,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void nullable_to_cancellation_token_source_should_return_non_cancelled_when_null()
+    public void should_return_non_cancelled_when_nullable_to_cancellation_token_source_null()
     {
         // given
         TimeSpan? timeout = null;
@@ -189,7 +189,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void nullable_to_cancellation_token_source_should_use_value_when_provided()
+    public void should_use_value_when_nullable_to_cancellation_token_source_provided()
     {
         // given
         TimeSpan? timeout = TimeSpan.Zero;
@@ -202,7 +202,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void nullable_to_cancellation_token_source_with_default_should_use_default_when_null()
+    public void should_use_default_when_nullable_to_cancellation_token_source_with_default_null()
     {
         // given
         TimeSpan? timeout = null;
@@ -216,7 +216,7 @@ public sealed class TimeSpanExtensionsTests : TestBase
     }
 
     [Fact]
-    public void nullable_to_cancellation_token_source_with_default_should_use_value_when_provided()
+    public void should_use_value_when_nullable_to_cancellation_token_source_with_default_provided()
     {
         // given
         TimeSpan? timeout = TimeSpan.FromMinutes(5);

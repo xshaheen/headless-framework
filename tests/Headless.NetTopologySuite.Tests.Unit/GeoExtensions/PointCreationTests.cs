@@ -11,7 +11,7 @@ public sealed class PointCreationTests
     private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
-    public void CreatePoint_should_create_point_with_coordinates()
+    public void should_create_point_with_coordinates_when_create_point()
     {
         var point = Factory.CreatePoint(30.0, 31.0);
 
@@ -20,7 +20,7 @@ public sealed class PointCreationTests
     }
 
     [Fact]
-    public void CreatePoint_should_preserve_factory_srid()
+    public void should_preserve_factory_srid_when_create_point()
     {
         var point = Factory.CreatePoint(30.0, 31.0);
 
@@ -28,7 +28,7 @@ public sealed class PointCreationTests
     }
 
     [Fact]
-    public void ToCoordinates_should_convert_points_to_coordinate_array()
+    public void should_convert_points_to_coordinate_array_when_to_coordinates()
     {
         var point1 = Factory.CreatePoint(10.0, 20.0);
         var point2 = Factory.CreatePoint(30.0, 40.0);
@@ -44,7 +44,7 @@ public sealed class PointCreationTests
     }
 
     [Fact]
-    public void ToCoordinates_should_return_empty_for_empty_enumerable()
+    public void should_return_empty_for_empty_enumerable_when_to_coordinates()
     {
         var points = Array.Empty<Point>();
 

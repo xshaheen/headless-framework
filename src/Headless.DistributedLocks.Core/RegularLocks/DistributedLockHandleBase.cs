@@ -188,7 +188,10 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     /// refusal) overrides this to return <see cref="LeaseMonitor.LeaseState.Lost"/> and skip the
     /// probe entirely.
     /// </summary>
-    protected virtual LeaseMonitor.LeaseState? ClassifyRenewFailure() => null;
+    protected virtual LeaseMonitor.LeaseState? ClassifyRenewFailure()
+    {
+        return null;
+    }
 
     /// <summary>Increments the observable renewal counter. Called by derived handles after a manual renew.</summary>
     protected void IncrementRenewalCount()

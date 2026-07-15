@@ -13,7 +13,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     };
 
     [Fact]
-    public void single_or_collection_converter_should_deserialize_single_item_to_list()
+    public void should_deserialize_single_item_to_list_when_single_or_collection_converter()
     {
         // given
         const string json = "{\"Id\": 1, \"Name\": \"Item 1\"}";
@@ -29,7 +29,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_deserialize_array_to_list()
+    public void should_deserialize_array_to_list_when_single_or_collection_converter()
     {
         // given
         const string json = "[{\"Id\": 1, \"Name\": \"Item 1\"}, {\"Id\": 2, \"Name\": \"Item 2\"}]";
@@ -47,7 +47,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_return_null_for_null_json()
+    public void should_return_null_for_null_json_when_single_or_collection_converter()
     {
         // given
         const string json = "null";
@@ -60,7 +60,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_throw_exception_for_invalid_json()
+    public void should_throw_exception_for_invalid_json_when_single_or_collection_converter()
     {
         // given
         const string json = "[{\"Id\": 1, \"Name\": \"Item 1\"}, {\"Id\": 2}";
@@ -73,7 +73,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_deserialize_to_hashset()
+    public void should_deserialize_to_hashset_when_single_or_collection_converter()
     {
         // given
         const string json = "[{\"Id\": 1, \"Name\": \"Item 1\"}, {\"Id\": 2, \"Name\": \"Item 2\"}]";
@@ -89,7 +89,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_deserialize_single_item_as_list_in_array()
+    public void should_deserialize_single_item_as_list_in_array_when_single_or_collection_converter()
     {
         // given
         const string json = "[{\"Id\": 1, \"Name\": \"Item 1\"}]";
@@ -105,7 +105,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     }
 
     [Fact]
-    public void single_or_collection_converter_should_handle_unexpected_string_value()
+    public void should_handle_unexpected_string_value_when_single_or_collection_converter()
     {
         // given
         const string json = "\"Invalid String\"";

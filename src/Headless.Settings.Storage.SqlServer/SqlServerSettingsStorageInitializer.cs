@@ -36,8 +36,10 @@ internal sealed class SqlServerSettingsStorageInitializer(
     /// <param name="options">Storage options that supply the schema name.</param>
     /// <param name="tableName">Unqualified table name.</param>
     /// <returns>A bracket-quoted, schema-qualified table reference safe for interpolation into SQL.</returns>
-    internal static string Qualified(SettingsStorageOptions options, string tableName) =>
-        $"[{options.Schema}].[{tableName}]";
+    internal static string Qualified(SettingsStorageOptions options, string tableName)
+    {
+        return $"[{options.Schema}].[{tableName}]";
+    }
 
     /// <summary>
     /// Builds the idempotent SQL Server DDL script that creates the schema, tables, indexes, and TVP types.

@@ -99,8 +99,10 @@ internal abstract class DatabaseConnection : IAsyncDisposable
         ConnectionMonitor.SetKeepaliveCadence(cadence);
     }
 
-    internal IDatabaseConnectionMonitoringHandle GetConnectionMonitoringHandle() =>
-        ConnectionMonitor.GetMonitoringHandle();
+    internal IDatabaseConnectionMonitoringHandle GetConnectionMonitoringHandle()
+    {
+        return ConnectionMonitor.GetMonitoringHandle();
+    }
 
     /// <summary>
     /// Creates a <see cref="DatabaseCommand"/> bound to this connection (and the current transaction, if any).
@@ -169,13 +171,19 @@ internal abstract class DatabaseConnection : IAsyncDisposable
     /// connections.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection.</exception>
-    public ValueTask CloseAsync() => _DisposeOrCloseAsync(isDispose: false);
+    public ValueTask CloseAsync()
+    {
+        return _DisposeOrCloseAsync(isDispose: false);
+    }
 
     /// <summary>
     /// Disposes the connection monitor and the underlying connection (if internally owned), and disposes
     /// any active transaction.
     /// </summary>
-    public ValueTask DisposeAsync() => _DisposeOrCloseAsync(isDispose: true);
+    public ValueTask DisposeAsync()
+    {
+        return _DisposeOrCloseAsync(isDispose: true);
+    }
 
     private async ValueTask _DisposeOrCloseAsync(bool isDispose)
     {

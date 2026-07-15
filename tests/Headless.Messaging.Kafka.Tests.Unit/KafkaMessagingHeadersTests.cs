@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class KafkaMessagingHeadersTests : TestBase
 {
     [Fact]
-    public void KafkaKey_should_have_expected_value()
+    public void should_have_expected_value_when_kafka_key()
     {
         // given, when, then
         KafkaMessagingHeaders.KafkaKey.Should().Be("headless-kafka-key");

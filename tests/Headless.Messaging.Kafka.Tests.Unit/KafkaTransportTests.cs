@@ -409,7 +409,7 @@ public sealed class KafkaTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_when_status_is_PossiblyPersisted()
+    public async Task should_fail_when_status_is_possibly_persisted()
     {
         // given
         await using var transport = new KafkaTransport(_logger, _pool);
@@ -441,7 +441,7 @@ public sealed class KafkaTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_when_status_is_NotPersisted()
+    public async Task should_fail_when_status_is_not_persisted()
     {
         // given
         await using var transport = new KafkaTransport(_logger, _pool);
@@ -503,7 +503,7 @@ public sealed class KafkaTransportTests : TestBase
     }
 
     [Fact]
-    public async Task DisposeAsync_should_complete_without_error()
+    public async Task should_complete_without_error_when_dispose_async()
     {
         // given
         var transport = new KafkaTransport(_logger, _pool);

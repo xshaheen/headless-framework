@@ -20,7 +20,7 @@ public sealed class MonitoringEndpointTests : TestBase
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
 
     [Fact]
-    public async Task Stats_should_return_aggregate_counts()
+    public async Task should_return_aggregate_counts_when_stats()
     {
         // given
         var stats = new StatisticsView
@@ -50,7 +50,7 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task Nodes_should_return_empty_when_no_discovery_provider()
+    public async Task should_return_empty_when_nodes_no_discovery_provider()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -69,7 +69,7 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task Nodes_should_return_nodes_from_discovery_provider()
+    public async Task should_return_nodes_from_discovery_provider_when_nodes()
     {
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
@@ -110,7 +110,7 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ListNamespaces_should_return_namespaces_from_provider()
+    public async Task should_return_namespaces_from_provider_when_list_namespaces()
     {
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
@@ -133,7 +133,7 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ListNamespaces_should_return_404_when_discovery_returns_null()
+    public async Task should_return_404_when_list_namespaces_discovery_returns_null()
     {
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
@@ -152,7 +152,7 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task ListServices_should_return_empty_when_no_discovery_provider()
+    public async Task should_return_empty_when_list_services_no_discovery_provider()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);

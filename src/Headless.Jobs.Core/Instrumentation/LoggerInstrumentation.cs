@@ -14,5 +14,8 @@ internal sealed class LoggerInstrumentation(ILogger<LoggerInstrumentation> logge
     : JobsBaseLoggerInstrumentation(logger, ownerIdentity),
         IJobsInstrumentation
 {
-    public override Activity? StartJobActivity(string activityName, JobExecutionState context) => null;
+    public override Activity? StartJobActivity(string activityName, JobExecutionState context)
+    {
+        return null;
+    }
 }

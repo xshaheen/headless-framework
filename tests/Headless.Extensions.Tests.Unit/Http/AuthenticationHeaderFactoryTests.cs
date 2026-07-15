@@ -7,7 +7,7 @@ namespace Tests.Http;
 public sealed class AuthenticationHeaderFactoryTests
 {
     [Fact]
-    public void CreateBasic_should_return_basic_header_with_encoded_credentials()
+    public void should_return_basic_header_with_encoded_credentials_when_create_basic()
     {
         // given
         const string userName = "user";
@@ -24,7 +24,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_encode_empty_password()
+    public void should_encode_empty_password_when_create_basic()
     {
         // given
         const string userName = "user";
@@ -39,7 +39,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_encode_password_with_colon()
+    public void should_encode_password_with_colon_when_create_basic()
     {
         // given
         const string userName = "user";
@@ -54,7 +54,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_throw_for_null_username()
+    public void should_throw_for_null_username_when_create_basic()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic(null!, "pass");
@@ -64,7 +64,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_throw_for_empty_username()
+    public void should_throw_for_empty_username_when_create_basic()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic("", "pass");
@@ -74,7 +74,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_throw_for_whitespace_username()
+    public void should_throw_for_whitespace_username_when_create_basic()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic("   ", "pass");
@@ -84,7 +84,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_throw_for_null_password()
+    public void should_throw_for_null_password_when_create_basic()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic("user", null!);
@@ -94,7 +94,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_string_overload_should_return_basic_header()
+    public void should_return_basic_header_when_create_basic_string_overload()
     {
         // given
         const string value = "user:pass";
@@ -109,7 +109,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_string_overload_should_throw_for_null()
+    public void should_throw_for_null_when_create_basic_string_overload()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic((string)null!);
@@ -119,7 +119,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_string_overload_should_throw_for_empty()
+    public void should_throw_for_empty_when_create_basic_string_overload()
     {
         // when
         var act = () => AuthenticationHeaderFactory.CreateBasic("");
@@ -129,7 +129,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_bytes_overload_should_return_basic_header()
+    public void should_return_basic_header_when_create_basic_bytes_overload()
     {
         // given
         var value = "user:pass"u8;
@@ -144,7 +144,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_bytes_overload_should_handle_empty_span()
+    public void should_handle_empty_span_when_create_basic_bytes_overload()
     {
         // given
         ReadOnlySpan<byte> value = [];
@@ -158,7 +158,7 @@ public sealed class AuthenticationHeaderFactoryTests
     }
 
     [Fact]
-    public void CreateBasic_should_handle_unicode_characters()
+    public void should_handle_unicode_characters_when_create_basic()
     {
         // given
         const string userName = "用户";

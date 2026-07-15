@@ -156,7 +156,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     }
 
     [Fact]
-    public async Task should_wrap_initialization_failure_in_InvalidOperationException()
+    public async Task should_wrap_initialization_failure_in_invalid_operation_exception()
     {
         var services = new ServiceCollection();
         services.AddLogging();

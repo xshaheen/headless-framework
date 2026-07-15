@@ -110,7 +110,10 @@ public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtensi
     /// <c>AddHeadlessDbContextServices()</c>.
     /// </summary>
     /// <param name="services">The EF Core internal service collection.</param>
-    public void ApplyServices(IServiceCollection services) => services.AddHeadlessDbContextServices();
+    public void ApplyServices(IServiceCollection services)
+    {
+        services.AddHeadlessDbContextServices();
+    }
 
     /// <summary>Performs no validation; all Headless prerequisites are validated at startup by DI.</summary>
     /// <param name="options">The current EF Core options.</param>
@@ -127,7 +130,10 @@ public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtensi
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) { }
 
-        public override int GetServiceProviderHashCode() => 0;
+        public override int GetServiceProviderHashCode()
+        {
+            return 0;
+        }
 
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
         {

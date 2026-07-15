@@ -27,8 +27,10 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
 
     public OptionsMonitorWrapper<SshBlobStorageOptions> OptionsMonitor { get; private set; } = null!;
 
-    public string GetConnectionString() =>
-        $"sftp://headless:password@{_sftpContainer.Hostname}:{_sftpContainer.GetMappedPublicPort(22)}";
+    public string GetConnectionString()
+    {
+        return $"sftp://headless:password@{_sftpContainer.Hostname}:{_sftpContainer.GetMappedPublicPort(22)}";
+    }
 
     /// <summary>This runs before all the test run and Called just after the constructor</summary>
     public async ValueTask InitializeAsync()

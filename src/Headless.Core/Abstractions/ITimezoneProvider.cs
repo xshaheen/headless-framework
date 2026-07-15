@@ -85,10 +85,16 @@ public sealed class TzConvertTimezoneProvider : ITimezoneProvider
     );
 
     /// <inheritdoc/>
-    public IReadOnlyList<TimezoneOption> GetWindowsTimezones() => _WindowsTimezones.Value;
+    public IReadOnlyList<TimezoneOption> GetWindowsTimezones()
+    {
+        return _WindowsTimezones.Value;
+    }
 
     /// <inheritdoc/>
-    public IReadOnlyList<TimezoneOption> GetIanaTimezones() => _IanaTimezones.Value;
+    public IReadOnlyList<TimezoneOption> GetIanaTimezones()
+    {
+        return _IanaTimezones.Value;
+    }
 
     private static ReadOnlyCollection<TimezoneOption> _BuildTimezones(IEnumerable<string> timeZoneIds)
     {

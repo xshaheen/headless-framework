@@ -13,7 +13,7 @@ public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixtur
     private IDatabase Db => Multiplexer.GetDatabase();
 
     [Fact]
-    public async Task FlushAllAsync_should_remove_all_keys()
+    public async Task should_remove_all_keys_when_flush_all_async()
     {
         // given - ensure clean state
         await Multiplexer.FlushAllAsync();
@@ -31,7 +31,7 @@ public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixtur
     }
 
     [Fact]
-    public async Task FlushAllAsync_should_handle_empty_database()
+    public async Task should_handle_empty_database_when_flush_all_async()
     {
         // given - ensure clean state
         await Multiplexer.FlushAllAsync();
@@ -42,7 +42,7 @@ public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixtur
     }
 
     [Fact]
-    public async Task CountAllKeysAsync_should_return_total_key_count()
+    public async Task should_return_total_key_count_when_count_all_keys_async()
     {
         // given - ensure clean state
         await Multiplexer.FlushAllAsync();
@@ -61,7 +61,7 @@ public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixtur
     }
 
     [Fact]
-    public async Task CountAllKeysAsync_should_return_zero_for_empty_database()
+    public async Task should_return_zero_for_empty_database_when_count_all_keys_async()
     {
         // given - ensure clean state
         await Multiplexer.FlushAllAsync();

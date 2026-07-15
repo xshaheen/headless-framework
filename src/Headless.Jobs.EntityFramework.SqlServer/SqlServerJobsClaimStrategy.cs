@@ -712,13 +712,17 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return new SqlCommand { Connection = connection, Transaction = (SqlTransaction)transaction.GetDbTransaction() };
     }
 
-    private static SqlParameter _DateTimeParameter(string name, DateTime value) =>
-        new(name, SqlDbType.DateTime2) { Value = value };
+    private static SqlParameter _DateTimeParameter(string name, DateTime value)
+    {
+        return new(name, SqlDbType.DateTime2) { Value = value };
+    }
 
-    private static string _LeaseDeadlineSql(string start) =>
-        "DATEADD(nanosecond, @leaseNanoseconds, "
-        + "DATEADD(second, @leaseWholeSeconds, "
-        + $"DATEADD(day, @leaseDays, {start})))";
+    private static string _LeaseDeadlineSql(string start)
+    {
+        return "DATEADD(nanosecond, @leaseNanoseconds, "
+            + "DATEADD(second, @leaseWholeSeconds, "
+            + $"DATEADD(day, @leaseDays, {start})))";
+    }
 
     private static void _AddLeaseDurationParameters(SqlCommand command, TimeSpan leaseDuration)
     {
@@ -732,8 +736,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("leaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds });
     }
 
-    private static string _ParameterName(string prefix, int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    private static string _ParameterName(string prefix, int index)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    }
 
     private async Task<string> _GetReadPastHintsAsync(CancellationToken cancellationToken)
     {

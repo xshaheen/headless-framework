@@ -90,8 +90,9 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
         string group,
         string handlerId,
         string? subscriptionId = null
-    ) =>
-        new(() => ValueTask.CompletedTask)
+    )
+    {
+        return new(() => ValueTask.CompletedTask)
         {
             MessageName = messageName,
             Group = group,
@@ -99,6 +100,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
             SubscriptionId = subscriptionId,
             IsAttached = false,
         };
+    }
 
     internal static RuntimeSubscriptionHandle Attached(
         string subscriptionId,
@@ -106,8 +108,9 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
         string group,
         string handlerId,
         Func<ValueTask> unsubscribe
-    ) =>
-        new(unsubscribe)
+    )
+    {
+        return new(unsubscribe)
         {
             MessageName = messageName,
             Group = group,
@@ -115,6 +118,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
             SubscriptionId = subscriptionId,
             IsAttached = true,
         };
+    }
 
     /// <summary>
     /// Gets the runtime subscription id when the handler is attached.

@@ -15,12 +15,18 @@ public static class PredicateBuilder
     /// <summary>Returns a seed predicate that always evaluates to <see langword="true"/>, suitable as the identity for AND composition.</summary>
     /// <typeparam name="T">The type of the parameter in the predicate.</typeparam>
     /// <returns>A predicate that always returns <see langword="true"/>.</returns>
-    public static Expression<Func<T, bool>> True<T>() => _ => true;
+    public static Expression<Func<T, bool>> True<T>()
+    {
+        return _ => true;
+    }
 
     /// <summary>Returns a seed predicate that always evaluates to <see langword="false"/>, suitable as the identity for OR composition.</summary>
     /// <typeparam name="T">The type of the parameter in the predicate.</typeparam>
     /// <returns>A predicate that always returns <see langword="false"/>.</returns>
-    public static Expression<Func<T, bool>> False<T>() => _ => false;
+    public static Expression<Func<T, bool>> False<T>()
+    {
+        return _ => false;
+    }
 
     /// <summary>Combines a sequence of predicates with logical OR; an empty sequence yields <see cref="False{T}"/>.</summary>
     /// <typeparam name="T">The type of the parameter in the predicates.</typeparam>

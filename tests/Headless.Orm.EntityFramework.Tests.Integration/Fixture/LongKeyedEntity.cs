@@ -10,5 +10,8 @@ public sealed class LongKeyedEntity : IEntity<long>
 
     public required string Name { get; init; }
 
-    public IReadOnlyList<object> GetKeys() => [Id];
+    public IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }

@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class SetupTests
 {
     [Fact]
-    public async Task should_register_distinct_bus_and_queue_transports_through_AddHeadlessMessaging()
+    public async Task should_register_distinct_bus_and_queue_transports_through_add_headless_messaging()
     {
         var services = new ServiceCollection();
         services.AddLogging();

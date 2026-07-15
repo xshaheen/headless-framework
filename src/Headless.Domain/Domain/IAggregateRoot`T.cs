@@ -21,14 +21,26 @@ public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
     public required TId Id { get; init; }
 
     /// <inheritdoc/>
-    public override IReadOnlyList<object> GetKeys() => [Id];
+    public override IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 
     /// <inheritdoc/>
-    protected override bool EqualityComponentsEqual(Entity other) => Id.Equals(((AggregateRoot<TId>)other).Id);
+    protected override bool EqualityComponentsEqual(Entity other)
+    {
+        return Id.Equals(((AggregateRoot<TId>)other).Id);
+    }
 
     /// <inheritdoc/>
-    protected override void BuildHashCode(ref HashCode hash) => hash.Add(Id);
+    protected override void BuildHashCode(ref HashCode hash)
+    {
+        hash.Add(Id);
+    }
 
     /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Id = &lt;id&gt;</c>.</summary>
-    public override string ToString() => $"[ENTITY: {GetType().Name}] Id = {Id}";
+    public override string ToString()
+    {
+        return $"[ENTITY: {GetType().Name}] Id = {Id}";
+    }
 }

@@ -58,9 +58,15 @@ public sealed class JobsNotificationHubSenderTests : TestBase
         public ConcurrentQueue<LogEntry> Entries { get; } = new();
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -76,8 +82,10 @@ public sealed class JobsNotificationHubSenderTests : TestBase
             _firstEntry.TrySetResult(entry);
         }
 
-        public async Task<LogEntry> WaitForFirstEntryAsync(CancellationToken cancellationToken) =>
-            await _firstEntry.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        public async Task<LogEntry> WaitForFirstEntryAsync(CancellationToken cancellationToken)
+        {
+            return await _firstEntry.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        }
 
         private sealed class NullScope : IDisposable
         {

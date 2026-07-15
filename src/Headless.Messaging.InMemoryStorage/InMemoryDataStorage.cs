@@ -82,8 +82,9 @@ internal sealed partial class InMemoryDataStorage(
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangePublishStateAsync(
+    )
+    {
+        return _ChangePublishStateAsync(
             message,
             state,
             nextRetryAt,
@@ -92,6 +93,7 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts: null,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
@@ -101,8 +103,9 @@ internal sealed partial class InMemoryDataStorage(
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangePublishStateAsync(
+    )
+    {
+        return _ChangePublishStateAsync(
             message,
             state,
             nextRetryAt,
@@ -111,12 +114,22 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ReservePublishAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _ReserveAttemptAsync(PublishedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
+    )
+    {
+        return _ReserveAttemptAsync(
+            PublishedMessages,
+            message,
+            originalInlineAttempts,
+            timeProvider,
+            cancellationToken
+        );
+    }
 
     private ValueTask<bool> _ChangePublishStateAsync(
         MediumMessage message,
@@ -189,8 +202,9 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAsync(
+    )
+    {
+        return _LeaseAsync(
             PublishedMessages,
             message,
             leaseDuration,
@@ -198,14 +212,16 @@ internal sealed partial class InMemoryDataStorage(
             nodeMembership.GetOwnerTag(),
             cancellationToken
         );
+    }
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
         TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAndReserveAttemptAsync(
+    )
+    {
+        return _LeaseAndReserveAttemptAsync(
             PublishedMessages,
             message,
             leaseDuration,
@@ -214,6 +230,7 @@ internal sealed partial class InMemoryDataStorage(
             nodeMembership.GetOwnerTag(),
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -222,8 +239,9 @@ internal sealed partial class InMemoryDataStorage(
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangeReceiveStateAsync(
+    )
+    {
+        return _ChangeReceiveStateAsync(
             message,
             state,
             nextRetryAt,
@@ -232,6 +250,7 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts: null,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
@@ -241,8 +260,9 @@ internal sealed partial class InMemoryDataStorage(
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangeReceiveStateAsync(
+    )
+    {
+        return _ChangeReceiveStateAsync(
             message,
             state,
             nextRetryAt,
@@ -251,12 +271,16 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ReserveReceiveAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _ReserveAttemptAsync(ReceivedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
+    )
+    {
+        return _ReserveAttemptAsync(ReceivedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
+    }
 
     private ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
@@ -328,8 +352,9 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAsync(
+    )
+    {
+        return _LeaseAsync(
             ReceivedMessages,
             message,
             leaseDuration,
@@ -337,14 +362,16 @@ internal sealed partial class InMemoryDataStorage(
             nodeMembership.GetOwnerTag(),
             cancellationToken
         );
+    }
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
         TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAndReserveAttemptAsync(
+    )
+    {
+        return _LeaseAndReserveAttemptAsync(
             ReceivedMessages,
             message,
             leaseDuration,
@@ -353,6 +380,7 @@ internal sealed partial class InMemoryDataStorage(
             nodeMembership.GetOwnerTag(),
             cancellationToken
         );
+    }
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -405,8 +433,9 @@ internal sealed partial class InMemoryDataStorage(
         Message content,
         object? dbTransaction = null,
         CancellationToken cancellationToken = default
-    ) =>
-        StoreMessageAsync(
+    )
+    {
+        return StoreMessageAsync(
             name,
             new MediumMessage
             {
@@ -418,6 +447,7 @@ internal sealed partial class InMemoryDataStorage(
             dbTransaction,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
@@ -664,8 +694,9 @@ internal sealed partial class InMemoryDataStorage(
         DateTimeOffset added,
         DateTimeOffset initialNextRetryAt,
         Guid? storageId = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             StorageId = storageId ?? guidGenerator.Create(),
             Origin = message.Origin,
@@ -679,14 +710,16 @@ internal sealed partial class InMemoryDataStorage(
             Retries = 0,
             InlineAttempts = 0,
         };
+    }
 
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
         Message message,
         CancellationToken cancellationToken = default
-    ) =>
-        StoreReceivedMessageAsync(
+    )
+    {
+        return StoreReceivedMessageAsync(
             name,
             group,
             new MediumMessage
@@ -698,6 +731,7 @@ internal sealed partial class InMemoryDataStorage(
             },
             cancellationToken
         );
+    }
 
     private MediumMessage _InsertNewReceivedRow(
         string name,
@@ -880,8 +914,9 @@ internal sealed partial class InMemoryDataStorage(
         return claimed;
     }
 
-    private static MediumMessage _ToSnapshot(MemoryMessage m) =>
-        new()
+    private static MediumMessage _ToSnapshot(MemoryMessage m)
+    {
+        return new()
         {
             StorageId = m.StorageId,
             // Clone the Origin's Headers dictionary so caller mutations (e.g., AddOrUpdateException
@@ -902,6 +937,7 @@ internal sealed partial class InMemoryDataStorage(
             ExceptionInfo = m.ExceptionInfo,
             IntentType = m.IntentType,
         };
+    }
 
     private static ValueTask<bool> _LeaseAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,

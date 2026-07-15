@@ -27,7 +27,7 @@ public sealed partial class SnappyCompressorTests
     }
 
     [Fact]
-    public void compress_should_compress_and_return_valid_memory()
+    public void should_compress_and_return_valid_memory_when_compress()
     {
         // given
         var testObject = new SnappyCompressorEntityTest(1, "Headless", _timeProvider.GetUtcNow());
@@ -41,7 +41,7 @@ public sealed partial class SnappyCompressorTests
     }
 
     [Fact]
-    public void decompress_should_return_original_object_from_compressed_data()
+    public void should_return_original_object_from_compressed_data_when_decompress()
     {
         // given
         var testObject = new SnappyCompressorEntityTest(1, "Headless", _timeProvider.GetUtcNow());

@@ -5,7 +5,7 @@ namespace Tests.Core;
 public sealed class RandomExtensionsTests
 {
     [Fact]
-    public void next_decimal_with_default_full_range_should_not_overflow()
+    public void should_not_overflow_when_next_decimal_with_default_full_range()
     {
         // given - default bounds span the entire decimal domain; the previous (max - min) form overflowed
         var random = new Random(12345);
@@ -18,7 +18,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_decimal_should_stay_within_the_requested_bounds()
+    public void should_stay_within_the_requested_bounds_when_next_decimal()
     {
         // given
         var random = new Random(12345);
@@ -31,7 +31,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_uint64_with_wide_range_should_stay_within_bounds()
+    public void should_stay_within_bounds_when_next_uint64_with_wide_range()
     {
         // given - a range whose (max - min) multiplied by a large sample overflowed the old ulong multiply
         var random = new Random(12345);
@@ -46,7 +46,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_uint64_with_equal_bounds_should_return_min()
+    public void should_return_min_when_next_uint64_with_equal_bounds()
     {
         // given
         var random = new Random(12345);
@@ -56,7 +56,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_int64_with_full_range_should_not_overflow()
+    public void should_not_overflow_when_next_int64_with_full_range()
     {
         // given - the previous (max - min) form overflowed for the full long span
         var random = new Random(12345);
@@ -69,7 +69,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_int64_should_stay_within_the_requested_bounds()
+    public void should_stay_within_the_requested_bounds_when_next_int64()
     {
         // given
         var random = new Random(12345);
@@ -82,7 +82,7 @@ public sealed class RandomExtensionsTests
     }
 
     [Fact]
-    public void next_int64_with_equal_bounds_should_return_min()
+    public void should_return_min_when_next_int64_with_equal_bounds()
     {
         // given
         var random = new Random(12345);

@@ -14,7 +14,7 @@ namespace Tests;
 public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
 {
     [Fact]
-    public async Task named_redis_cache_should_be_isolated_by_prefix_and_honor_default_entry_options()
+    public async Task should_be_isolated_by_prefix_and_honor_default_entry_options_when_named_redis_cache()
     {
         // given - a default Redis cache plus a named instance with its own prefix and entry defaults
         var builder = Host.CreateApplicationBuilder();
@@ -79,7 +79,7 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task named_redis_cache_should_use_configured_serializer_regardless_of_call_order(
+    public async Task should_use_configured_serializer_regardless_of_call_order_when_named_redis_cache(
         bool configureSerializerBeforeProvider
     )
     {
@@ -153,7 +153,7 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task named_redis_cache_should_resolve_serializer_from_generic_overload()
+    public async Task should_resolve_serializer_from_generic_overload_when_named_redis_cache()
     {
         // given - the generic WithSerializer<TSerializer>() overload (ActivatorUtilities-resolved)
         var instanceName = $"gen-{Faker.Random.AlphaNumeric(8)}";
@@ -210,7 +210,10 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             return (T?)(object?)int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public T? Deserialize<T>(in ReadOnlySequence<byte> data) => Deserialize<T>(data.ToArray());
+        public T? Deserialize<T>(in ReadOnlySequence<byte> data)
+        {
+            return Deserialize<T>(data.ToArray());
+        }
 
         public void Serialize<T>(T value, IBufferWriter<byte> output)
         {
@@ -243,6 +246,9 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             return int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public object Deserialize(in ReadOnlySequence<byte> data, Type type) => Deserialize(data.ToArray(), type);
+        public object Deserialize(in ReadOnlySequence<byte> data, Type type)
+        {
+            return Deserialize(data.ToArray(), type);
+        }
     }
 }

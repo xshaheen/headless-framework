@@ -624,8 +624,14 @@ internal sealed class DistributedSemaphoreProvider(
 
         public AsyncAutoResetEvent Target { get; } = new();
 
-        public void Increment() => RefCount++;
+        public void Increment()
+        {
+            RefCount++;
+        }
 
-        public int Decrement() => --RefCount;
+        public int Decrement()
+        {
+            return --RefCount;
+        }
     }
 }

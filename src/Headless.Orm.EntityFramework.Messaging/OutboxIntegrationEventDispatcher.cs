@@ -51,8 +51,10 @@ internal sealed class OutboxIntegrationEventDispatcher(
 
     // Single contained sync-over-async: IOutboxBus only exposes an async publish, and the EF sync save path
     // calls this. No synchronization context is present on the EF save path, so blocking here cannot deadlock.
-    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) =>
+    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
+    {
         DispatchAsync(integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
+    }
 
     // Fail loud rather than dispatch non-atomically. The save pipeline enlists commit coordination only when it
     // owns the transaction (the new-transaction path); when the caller opened the transaction itself, no

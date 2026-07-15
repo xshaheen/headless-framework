@@ -62,7 +62,7 @@ public sealed class MoneyTests
     #region Equality
 
     [Fact]
-    public void equals_should_return_true_for_same_amount_and_code()
+    public void should_return_true_for_same_amount_and_code_when_equals()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -75,7 +75,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_amounts()
+    public void should_return_false_for_different_amounts_when_equals()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -88,7 +88,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_codes()
+    public void should_return_false_for_different_codes_when_equals()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -99,7 +99,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_null()
+    public void should_return_false_for_null_when_equals()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -109,7 +109,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_null_left()
+    public void should_handle_null_left_when_equality_operator()
     {
         // given
         Money? left = null;
@@ -123,7 +123,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_null_right()
+    public void should_handle_null_right_when_equality_operator()
     {
         // given
         var left = new Money(100m, "USD");
@@ -137,7 +137,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_both_null()
+    public void should_handle_both_null_when_equality_operator()
     {
         // given
         Money? left = null;
@@ -151,7 +151,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void get_hash_code_should_be_equal_for_equal_currencies()
+    public void should_be_equal_for_equal_currencies_when_get_hash_code()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -166,7 +166,7 @@ public sealed class MoneyTests
     #region Comparison
 
     [Fact]
-    public void compare_to_should_return_zero_for_equal_amounts()
+    public void should_return_zero_for_equal_amounts_when_compare_to()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -177,7 +177,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_should_return_positive_for_greater_amount()
+    public void should_return_positive_for_greater_amount_when_compare_to()
     {
         // given
         var currency1 = new Money(200m, "USD");
@@ -188,7 +188,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_should_return_negative_for_lesser_amount()
+    public void should_return_negative_for_lesser_amount_when_compare_to()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -199,7 +199,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_should_return_positive_for_null()
+    public void should_return_positive_for_null_when_compare_to()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -209,7 +209,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_should_order_by_code_then_amount_across_currencies()
+    public void should_order_by_code_then_amount_across_currencies_when_compare_to()
     {
         // given - EUR sorts before USD ordinally, regardless of amount
         var eur = new Money(1000m, "EUR");
@@ -221,7 +221,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_should_order_by_amount_within_same_code()
+    public void should_order_by_amount_within_same_code_when_compare_to()
     {
         // given
         var small = new Money(100m, "USD");
@@ -232,7 +232,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void sort_should_not_throw_for_mixed_currency_codes()
+    public void should_not_throw_for_mixed_currency_codes_when_sort()
     {
         // given - the old behavior threw from List.Sort on a code mismatch
         var list = new List<Money> { new(5m, "USD"), new(10m, "EUR"), new(1m, "USD"), new(2m, "EUR") };
@@ -246,7 +246,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_decimal_should_compare_amounts()
+    public void should_compare_amounts_when_compare_to_decimal()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -258,7 +258,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_object_should_handle_decimal()
+    public void should_handle_decimal_when_compare_to_object()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -268,7 +268,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void compare_to_object_should_throw_for_invalid_type()
+    public void should_throw_for_invalid_type_when_compare_to_object()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -285,7 +285,7 @@ public sealed class MoneyTests
     #region Comparison Operators
 
     [Fact]
-    public void greater_than_operator_should_compare_currencies()
+    public void should_compare_currencies_when_greater_than_operator()
     {
         // given
         var currency1 = new Money(200m, "USD");
@@ -299,7 +299,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void less_than_operator_should_compare_currencies()
+    public void should_compare_currencies_when_less_than_operator()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -313,7 +313,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void greater_than_or_equal_operator_should_compare_currencies()
+    public void should_compare_currencies_when_greater_than_or_equal_operator()
     {
         // given
         var currency1 = new Money(200m, "USD");
@@ -328,7 +328,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void less_than_or_equal_operator_should_compare_currencies()
+    public void should_compare_currencies_when_less_than_or_equal_operator()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -343,7 +343,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void decimal_comparison_operators_should_work()
+    public void should_work_when_decimal_comparison_operators()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -366,7 +366,7 @@ public sealed class MoneyTests
     #region Math Operators
 
     [Fact]
-    public void addition_operator_should_add_amounts()
+    public void should_add_amounts_when_addition_operator()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -381,7 +381,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void addition_should_throw_for_different_currencies()
+    public void should_throw_for_different_currencies_when_addition()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -395,7 +395,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void add_method_should_add_amounts()
+    public void should_add_amounts_when_add_method()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -409,7 +409,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void subtraction_operator_should_subtract_amounts()
+    public void should_subtract_amounts_when_subtraction_operator()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -424,7 +424,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void subtraction_should_throw_for_different_currencies()
+    public void should_throw_for_different_currencies_when_subtraction()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -438,7 +438,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void subtract_method_should_subtract_amounts()
+    public void should_subtract_amounts_when_subtract_method()
     {
         // given
         var currency1 = new Money(100m, "USD");
@@ -452,7 +452,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void multiplication_operator_should_scale_amount_by_decimal()
+    public void should_scale_amount_by_decimal_when_multiplication_operator()
     {
         // given
         var currency = new Money(10m, "USD");
@@ -466,7 +466,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void multiply_method_should_scale_amount_and_round_to_even()
+    public void should_scale_amount_and_round_to_even_when_multiply_method()
     {
         // given - 10.005 * 1 sits at the cent midpoint and rounds to even (10.00)
         var currency = new Money(10.005m, "USD");
@@ -480,7 +480,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void multiply_method_should_honor_explicit_rounding_mode()
+    public void should_honor_explicit_rounding_mode_when_multiply_method()
     {
         // given
         var currency = new Money(10.005m, "USD");
@@ -493,7 +493,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void division_operator_should_scale_amount_by_decimal()
+    public void should_scale_amount_by_decimal_when_division_operator()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -507,7 +507,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void division_should_round_sub_cents_to_the_currency_scale()
+    public void should_round_sub_cents_to_the_currency_scale_when_division()
     {
         // given - 10 / 3 = 3.3333... rounds to two decimals
         var currency = new Money(10m, "USD");
@@ -521,7 +521,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void divide_method_should_honor_explicit_rounding_mode()
+    public void should_honor_explicit_rounding_mode_when_divide_method()
     {
         // given - 2 / 3 = 0.6666...
         var currency = new Money(2m, "USD");
@@ -534,7 +534,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void division_by_zero_should_throw()
+    public void should_throw_when_division_by_zero()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -551,7 +551,7 @@ public sealed class MoneyTests
     #region Parsing
 
     [Fact]
-    public void try_parse_should_parse_amount_and_currency_code()
+    public void should_parse_amount_and_currency_code_when_try_parse()
     {
         // when
         var success = Money.TryParse("100USD", CultureInfo.InvariantCulture, out var result);
@@ -564,7 +564,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_parse_decimal_amount()
+    public void should_parse_decimal_amount_when_try_parse()
     {
         // when
         var success = Money.TryParse("100.5USD", CultureInfo.InvariantCulture, out var result);
@@ -576,7 +576,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_parse_negative_amount()
+    public void should_parse_negative_amount_when_try_parse()
     {
         // when
         var success = Money.TryParse("-100USD", CultureInfo.InvariantCulture, out var result);
@@ -588,7 +588,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_round_trip_to_string_output()
+    public void should_round_trip_to_string_output_when_try_parse()
     {
         // given
         var original = new Money(1234.56m, "EUR");
@@ -602,7 +602,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_scan_code_from_the_end_and_keep_exponent_in_amount()
+    public void should_scan_code_from_the_end_and_keep_exponent_in_amount_when_try_parse()
     {
         // when - the trailing letter run "USD" is the code; the "1E5" prefix parses as the amount (100000)
         var success = Money.TryParse("1E5USD", CultureInfo.InvariantCulture, out var result);
@@ -614,7 +614,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_return_false_for_malformed_amount()
+    public void should_return_false_for_malformed_amount_when_try_parse()
     {
         // when - "10.5.5" is not a valid decimal prefix
         var success = Money.TryParse("10.5.5USD", CultureInfo.InvariantCulture, out var result);
@@ -625,7 +625,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_return_false_when_currency_code_is_missing()
+    public void should_return_false_when_try_parse_currency_code_is_missing()
     {
         // when
         var success = Money.TryParse("100", CultureInfo.InvariantCulture, out var result);
@@ -636,7 +636,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_should_return_false_when_amount_is_missing()
+    public void should_return_false_when_try_parse_amount_is_missing()
     {
         // when
         var success = Money.TryParse("USD", CultureInfo.InvariantCulture, out var result);
@@ -647,7 +647,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void parse_should_return_currency_for_valid_input()
+    public void should_return_currency_for_valid_input_when_parse()
     {
         // when
         var result = Money.Parse("100USD", CultureInfo.InvariantCulture);
@@ -658,7 +658,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void parse_should_throw_for_input_without_a_currency_code()
+    public void should_throw_for_input_without_a_currency_code_when_parse()
     {
         // when
         var action = () => Money.Parse("100", CultureInfo.InvariantCulture);
@@ -668,7 +668,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_parse_string_overload_should_delegate_to_span()
+    public void should_delegate_to_span_when_try_parse_string_overload()
     {
         // when
         var success = Money.TryParse("100USD", CultureInfo.InvariantCulture, out var result);
@@ -683,7 +683,7 @@ public sealed class MoneyTests
     #region Formatting
 
     [Fact]
-    public void to_string_should_format_amount_and_code()
+    public void should_format_amount_and_code_when_to_string()
     {
         // given
         var currency = new Money(100.5m, "USD");
@@ -696,7 +696,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void to_string_with_format_provider_should_use_provider()
+    public void should_use_provider_when_to_string_with_format_provider()
     {
         // given
         var currency = new Money(1000.5m, "USD");
@@ -710,7 +710,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_format_span_should_write_to_destination()
+    public void should_write_to_destination_when_try_format_span()
     {
         // given
         var currency = new Money(100m, "USD");
@@ -726,7 +726,7 @@ public sealed class MoneyTests
     }
 
     [Fact]
-    public void try_format_utf8_span_should_write_to_destination()
+    public void should_write_to_destination_when_try_format_utf8_span()
     {
         // given
         var currency = new Money(100m, "USD");

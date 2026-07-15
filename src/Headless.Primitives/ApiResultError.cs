@@ -30,7 +30,10 @@ public abstract record ResultError
     /// <param name="code">The machine-readable error code.</param>
     /// <param name="message">The human-readable error message.</param>
     /// <returns>A <see cref="ResultError"/> carrying the supplied code and message.</returns>
-    public static ResultError Custom(string code, string message) => new SimpleError(code, message);
+    public static ResultError Custom(string code, string message)
+    {
+        return new SimpleError(code, message);
+    }
 
     private sealed record SimpleError(string Code, string Message) : ResultError
     {

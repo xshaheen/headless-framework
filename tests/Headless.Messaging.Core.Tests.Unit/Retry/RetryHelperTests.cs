@@ -16,7 +16,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── ResolveNextState: terminal decisions clear NextRetryAt ───────────────────────────────
 
     [Fact]
-    public void resolve_next_state_should_null_out_next_retry_at_for_stop()
+    public void should_null_out_next_retry_at_for_stop_when_resolve_next_state()
     {
         var policy = _Policy(maxRetryAttempts: 2);
         var provider = new FixedTimeProvider(new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero));
@@ -29,7 +29,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void resolve_next_state_should_null_out_next_retry_at_for_exhausted()
+    public void should_null_out_next_retry_at_for_exhausted_when_resolve_next_state()
     {
         var policy = _Policy(maxRetryAttempts: 2);
         var provider = new FixedTimeProvider(new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero));
@@ -42,7 +42,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void resolve_next_state_should_use_strategy_delay_exactly_for_persisted_transition()
+    public void should_use_strategy_delay_exactly_for_persisted_transition_when_resolve_next_state()
     {
         // inline budget consumed (inlineRetries >= MaxRetryAttempts) — Continue routes through
         // persistence; NextRetryAt MUST equal now+delay (no padding) because the retry processor
@@ -61,7 +61,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void resolve_next_state_inline_in_flight_should_pad_resume_by_initial_dispatch_grace()
+    public void should_pad_resume_by_initial_dispatch_grace_when_resolve_next_state_inline_in_flight()
     {
         // Inline budget still has slots; status stays Scheduled and NextRetryAt is padded past
         // the inline-retry resume point by InitialDispatchGrace so the polling cycle does not race
@@ -80,7 +80,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void resolve_next_state_should_force_persisted_path_when_delay_exceeds_dispatch_timeout()
+    public void should_force_persisted_path_when_resolve_next_state_delay_exceeds_dispatch_timeout()
     {
         // #1 — when Polly computes Delay >= DispatchTimeout, the inline burst must end without
         // sleeping (the lease is sized to DispatchTimeout). ResolveNextState MUST force
@@ -109,7 +109,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void resolve_next_state_inline_in_flight_should_preserve_existing_later_schedule()
+    public void should_preserve_existing_later_schedule_when_resolve_next_state_inline_in_flight()
     {
         // When currentNextRetryAt is later than (now + delay + grace), keep it — InitialDispatchGrace
         // from initial store must not be lowered by a smaller inline delay.
@@ -136,7 +136,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── DetectCrashRecoveredReservation: shared publish/consume crash-recovery sentinel ──────
 
     [Fact]
-    public void detect_crash_recovered_reservation_should_return_null_while_inline_budget_remains()
+    public void should_return_null_while_inline_budget_remains_when_detect_crash_recovered_reservation()
     {
         var policy = _Policy(maxRetryAttempts: 2);
 
@@ -146,7 +146,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void detect_crash_recovered_reservation_should_flag_reserved_final_attempt()
+    public void should_flag_reserved_final_attempt_when_detect_crash_recovered_reservation()
     {
         // InlineAttempts == MaxRetryAttempts + 1 means the process died after reserving the final
         // inline attempt — recovery must not grant a fresh attempt; it must route the row to its
@@ -164,7 +164,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── IsCancellation accepts any OCE under a cancelled outer token ─────────────────────────
 
     [Fact]
-    public void is_cancellation_should_return_true_for_linked_token_oce_when_outer_cancelled()
+    public void should_return_true_for_linked_token_oce_when_is_cancellation_outer_cancelled()
     {
         // A linked CTS produced via CreateLinkedTokenSource carries the LINKED token on its OCE,
         // not the outer token. A strict identity check would mis-classify this case as
@@ -181,7 +181,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void is_cancellation_should_return_true_for_matching_token()
+    public void should_return_true_for_matching_token_when_is_cancellation()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -191,7 +191,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void is_cancellation_should_return_false_when_token_not_cancelled()
+    public void should_return_false_when_is_cancellation_token_not_cancelled()
     {
         using var cts = new CancellationTokenSource();
         var oce = new OperationCanceledException(cts.Token);
@@ -202,7 +202,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── InvokeOnExhaustedAsync: timeout + exception absorption + CTS-on-timeout ──────────────
 
     [Fact]
-    public async Task invoke_on_exhausted_should_swallow_callback_throw_and_log()
+    public async Task should_swallow_callback_throw_and_log_when_invoke_on_exhausted()
     {
         var failed = _FailedInfo();
         var logger = Substitute.For<ILogger>();
@@ -222,7 +222,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public async Task invoke_on_exhausted_should_cancel_callback_token_on_host_shutdown()
+    public async Task should_cancel_callback_token_on_host_shutdown_when_invoke_on_exhausted()
     {
         // Host-shutdown OCE branch: when WaitAsync observes the supplied (host) cancellation
         // token, the callback's linked CTS must be cancelled so a cooperative callback unwinds
@@ -267,7 +267,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public async Task invoke_on_exhausted_should_cancel_callback_token_on_timeout()
+    public async Task should_cancel_callback_token_on_timeout_when_invoke_on_exhausted()
     {
         var failed = _FailedInfo();
         var observedCancellation = new TaskCompletionSource<bool>();
@@ -296,7 +296,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── orphan-callback CTS disposal race — must complete with OCE, not ObjectDisposedException ─
 
     [Fact]
-    public async Task invoke_on_exhausted_orphan_callback_should_observe_oce_not_object_disposed()
+    public async Task should_observe_oce_not_object_disposed_when_invoke_on_exhausted_orphan_callback()
     {
         // After timeout, the callback Task is orphaned but still holds callbackCts.Token. The
         // helper must NOT dispose the CTS while the orphan is still running — otherwise the
@@ -343,7 +343,7 @@ public sealed class RetryHelperTests : TestBase
     // ─── shutdown OCE filter widening — accept linked callbackCts.Token, not just host token ──
 
     [Fact]
-    public async Task invoke_on_exhausted_should_treat_inner_token_oce_as_shutdown_when_host_token_cancelled()
+    public async Task should_treat_inner_token_oce_as_shutdown_when_invoke_on_exhausted_host_token_cancelled()
     {
         // A cooperative callback awaiting Task.Delay(_, ct) (where ct is the linked callbackCts.Token)
         // throws an OCE bound to callbackCts.Token — not to the outer host token. Token-identity
@@ -411,8 +411,9 @@ public sealed class RetryHelperTests : TestBase
         return policy;
     }
 
-    private static FailedInfo _FailedInfo() =>
-        new()
+    private static FailedInfo _FailedInfo()
+    {
+        return new()
         {
             Message = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             MessageType = MessageType.Subscribe,
@@ -422,13 +423,23 @@ public sealed class RetryHelperTests : TestBase
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
+    }
 
-    private static Guid _Guid(byte last) => _Guid(0, last);
+    private static Guid _Guid(byte last)
+    {
+        return _Guid(0, last);
+    }
 
-    private static Guid _Guid(byte penultimate, byte last) => new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
+    private static Guid _Guid(byte penultimate, byte last)
+    {
+        return new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        public override DateTimeOffset GetUtcNow()
+        {
+            return now;
+        }
     }
 }

@@ -45,7 +45,7 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
     }
 
     [Fact]
-    public void should_register_provider_via_IConfiguration_overload()
+    public void should_register_provider_via_i_configuration_overload()
     {
         // given
         var configuration = new ConfigurationBuilder()

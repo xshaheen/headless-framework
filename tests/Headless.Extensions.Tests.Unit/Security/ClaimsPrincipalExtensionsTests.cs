@@ -8,7 +8,7 @@ namespace Tests.Security;
 public sealed class ClaimsPrincipalExtensionsTests
 {
     [Fact]
-    public void get_roles_should_match_role_claim_type_case_insensitively()
+    public void should_match_role_claim_type_case_insensitively_when_get_roles()
     {
         // given a principal whose role claims use differently-cased claim types
         var identity = new ClaimsIdentity([
@@ -26,7 +26,7 @@ public sealed class ClaimsPrincipalExtensionsTests
     }
 
     [Fact]
-    public void get_roles_should_preserve_value_case_sensitivity()
+    public void should_preserve_value_case_sensitivity_when_get_roles()
     {
         // given two role values differing only by case
         var identity = new ClaimsIdentity([
@@ -44,7 +44,7 @@ public sealed class ClaimsPrincipalExtensionsTests
     }
 
     [Fact]
-    public void get_roles_should_return_empty_for_null_principal()
+    public void should_return_empty_for_null_principal_when_get_roles()
     {
         // given
         ClaimsPrincipal? principal = null;

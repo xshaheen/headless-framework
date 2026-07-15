@@ -98,13 +98,17 @@ public static class DbContextOptionsBuilderExtensions
                 ?? fallback;
         }
 
-        private static SequentialGuidType _GetKey(string? providerName) =>
-            string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
+        private static SequentialGuidType _GetKey(string? providerName)
+        {
+            return string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
                 ? SequentialGuidType.SqlServer
                 : SequentialGuidType.Version7;
+        }
 
-        private static IGuidGenerator _GetFallback(SequentialGuidType key) =>
-            key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;
+        private static IGuidGenerator _GetFallback(SequentialGuidType key)
+        {
+            return key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;
+        }
     }
 
     #endregion

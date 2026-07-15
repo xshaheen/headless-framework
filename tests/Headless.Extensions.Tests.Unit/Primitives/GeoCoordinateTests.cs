@@ -121,7 +121,7 @@ public sealed class GeoCoordinateTests
     #region Equality
 
     [Fact]
-    public void equals_should_return_true_for_same_coordinates()
+    public void should_return_true_for_same_coordinates_when_equals()
     {
         // given
         var coord1 = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -134,7 +134,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_latitude()
+    public void should_return_false_for_different_latitude_when_equals()
     {
         // given
         var coord1 = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -147,7 +147,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_longitude()
+    public void should_return_false_for_different_longitude_when_equals()
     {
         // given
         var coord1 = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -158,7 +158,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_null()
+    public void should_return_false_for_null_when_equals()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -168,7 +168,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equals_should_return_true_for_same_reference()
+    public void should_return_true_for_same_reference_when_equals()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -178,7 +178,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equals_object_should_return_false_for_different_type()
+    public void should_return_false_for_different_type_when_equals_object()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -189,7 +189,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_null_left()
+    public void should_handle_null_left_when_equality_operator()
     {
         // given
         GeoCoordinate? left = null;
@@ -203,7 +203,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_null_right()
+    public void should_handle_null_right_when_equality_operator()
     {
         // given
         var left = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -217,7 +217,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void equality_operator_should_handle_both_null()
+    public void should_handle_both_null_when_equality_operator()
     {
         // given
         GeoCoordinate? left = null;
@@ -231,7 +231,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void get_hash_code_should_be_equal_for_equal_coordinates()
+    public void should_be_equal_for_equal_coordinates_when_get_hash_code()
     {
         // given
         var coord1 = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -242,7 +242,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void get_hash_code_should_differ_for_different_coordinates()
+    public void should_differ_for_different_coordinates_when_get_hash_code()
     {
         // given
         var coord1 = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -257,7 +257,7 @@ public sealed class GeoCoordinateTests
     #region Formatting
 
     [Fact]
-    public void to_string_should_format_coordinates()
+    public void should_format_coordinates_when_to_string()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
@@ -270,7 +270,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void to_string_should_format_zero_coordinates()
+    public void should_format_zero_coordinates_when_to_string()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 0, Longitude = 0 };
@@ -283,7 +283,7 @@ public sealed class GeoCoordinateTests
     }
 
     [Fact]
-    public void to_string_should_use_invariant_culture()
+    public void should_use_invariant_culture_when_to_string()
     {
         // given
         var coord = new GeoCoordinate { Latitude = 1.5, Longitude = 2.5 };

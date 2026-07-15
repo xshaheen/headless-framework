@@ -21,7 +21,7 @@ namespace Tests.Setup;
 public sealed class SetupApiTests
 {
     [Fact]
-    public void add_headless_api_should_register_current_tenant_by_default()
+    public void should_register_current_tenant_by_default_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -40,7 +40,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_replace_null_current_tenant_fallback()
+    public void should_replace_null_current_tenant_fallback_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -57,7 +57,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_preserve_custom_current_tenant()
+    public void should_preserve_custom_current_tenant_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -75,7 +75,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public async Task add_headless_api_should_register_service_defaults()
+    public async Task should_register_service_defaults_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -103,7 +103,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_allow_configuration_sections()
+    public void should_allow_configuration_sections_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -127,7 +127,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_allow_configuration_callbacks()
+    public void should_allow_configuration_callbacks_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -159,7 +159,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_use_default_hash_configuration_when_hash_callback_is_omitted()
+    public void should_use_default_hash_configuration_when_add_headless_api_hash_callback_is_omitted()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -183,7 +183,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public async Task add_headless_should_register_convention_defaults()
+    public async Task should_register_convention_defaults_when_add_headless()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -220,7 +220,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_should_register_antiforgery_when_explicitly_enabled()
+    public void should_register_antiforgery_when_add_headless_explicitly_enabled()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -241,7 +241,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_api_should_allow_service_provider_callbacks()
+    public void should_allow_service_provider_callbacks_when_add_headless_api()
     {
         // given
         var builder = WebApplication.CreateBuilder();
@@ -283,7 +283,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_multi_tenancy_should_replace_null_current_tenant_and_store_custom_claim_type()
+    public void should_replace_null_current_tenant_and_store_custom_claim_type_when_add_headless_multi_tenancy()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -302,7 +302,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void add_headless_multi_tenancy_should_preserve_custom_current_tenant()
+    public void should_preserve_custom_current_tenant_when_add_headless_multi_tenancy()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -321,7 +321,7 @@ public sealed class SetupApiTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void add_headless_multi_tenancy_should_fall_back_to_default_claim_type_when_blank(string blankClaimType)
+    public void should_fall_back_to_default_claim_type_when_add_headless_multi_tenancy_blank(string blankClaimType)
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -337,7 +337,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void configure_global_settings_should_apply_only_once()
+    public void should_apply_only_once_when_configure_global_settings()
     {
         // Reset guard so we start from a clean slate.
         SetupApi.ResetForTesting();
@@ -362,7 +362,7 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void reset_for_testing_should_allow_configure_global_settings_to_reapply()
+    public void should_allow_configure_global_settings_to_reapply_when_reset_for_testing()
     {
         // Ensure guard is set (call once or it may already be set from test isolation).
         SetupApi.ConfigureGlobalSettings();
@@ -390,7 +390,10 @@ public sealed class SetupApiTests
 
         public string Name => "Custom";
 
-        public IDisposable Change(string? id, string? name = null) => new ApiCurrentTenantScope();
+        public IDisposable Change(string? id, string? name = null)
+        {
+            return new ApiCurrentTenantScope();
+        }
     }
 
     private sealed class ApiCurrentTenantScope : IDisposable

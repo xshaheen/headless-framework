@@ -37,18 +37,29 @@ internal sealed class FakeDbCommand(FakeDbConnection connection) : DbCommand
         return await connection.OnExecuteNonQueryAsync(this, cancellationToken).ConfigureAwait(false);
     }
 
-    public override int ExecuteNonQuery() => throw new NotSupportedException("Async-only fake.");
+    public override int ExecuteNonQuery()
+    {
+        throw new NotSupportedException("Async-only fake.");
+    }
 
-    public override object ExecuteScalar() => throw new NotSupportedException("Async-only fake.");
+    public override object ExecuteScalar()
+    {
+        throw new NotSupportedException("Async-only fake.");
+    }
 
     public override void Prepare() { }
 
     public override void Cancel() { }
 
-    protected override DbParameter CreateDbParameter() => new FakeDbParameter();
+    protected override DbParameter CreateDbParameter()
+    {
+        return new FakeDbParameter();
+    }
 
-    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+    {
         throw new NotSupportedException("Async-only fake.");
+    }
 
     private sealed class FakeParameterCollection : DbParameterCollection
     {
@@ -73,37 +84,77 @@ internal sealed class FakeDbCommand(FakeDbConnection connection) : DbCommand
             }
         }
 
-        public override void Clear() => _items.Clear();
+        public override void Clear()
+        {
+            _items.Clear();
+        }
 
-        public override bool Contains(object value) => _items.Contains(value);
+        public override bool Contains(object value)
+        {
+            return _items.Contains(value);
+        }
 
-        public override bool Contains(string value) => false;
+        public override bool Contains(string value)
+        {
+            return false;
+        }
 
-        public override void CopyTo(Array array, int index) =>
+        public override void CopyTo(Array array, int index)
+        {
             ((System.Collections.ICollection)_items).CopyTo(array, index);
+        }
 
-        public override System.Collections.IEnumerator GetEnumerator() => _items.GetEnumerator();
+        public override System.Collections.IEnumerator GetEnumerator()
+        {
+            return _items.GetEnumerator();
+        }
 
-        public override int IndexOf(object value) => _items.IndexOf(value);
+        public override int IndexOf(object value)
+        {
+            return _items.IndexOf(value);
+        }
 
-        public override int IndexOf(string parameterName) => -1;
+        public override int IndexOf(string parameterName)
+        {
+            return -1;
+        }
 
-        public override void Insert(int index, object value) => _items.Insert(index, value);
+        public override void Insert(int index, object value)
+        {
+            _items.Insert(index, value);
+        }
 
-        public override void Remove(object value) => _items.Remove(value);
+        public override void Remove(object value)
+        {
+            _items.Remove(value);
+        }
 
-        public override void RemoveAt(int index) => _items.RemoveAt(index);
+        public override void RemoveAt(int index)
+        {
+            _items.RemoveAt(index);
+        }
 
         public override void RemoveAt(string parameterName) { }
 
-        protected override DbParameter GetParameter(int index) => (DbParameter)_items[index];
+        protected override DbParameter GetParameter(int index)
+        {
+            return (DbParameter)_items[index];
+        }
 
-        protected override DbParameter GetParameter(string parameterName) => throw new NotSupportedException();
-
-        protected override void SetParameter(int index, DbParameter value) => _items[index] = value;
-
-        protected override void SetParameter(string parameterName, DbParameter value) =>
+        protected override DbParameter GetParameter(string parameterName)
+        {
             throw new NotSupportedException();
+        }
+
+        protected override void SetParameter(int index, DbParameter value)
+        {
+            _items[index] = value;
+        }
+
+        protected override void SetParameter(string parameterName, DbParameter value)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class FakeDbParameter : DbParameter

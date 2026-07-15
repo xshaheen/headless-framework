@@ -15,93 +15,142 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
     private readonly RedisMembershipFixture _fixture = fixture;
 
     [Fact]
-    public override Task should_register_and_appear_in_live_set() => base.should_register_and_appear_in_live_set();
+    public override Task should_register_and_appear_in_live_set()
+    {
+        return base.should_register_and_appear_in_live_set();
+    }
 
     [Fact]
-    public override Task should_keep_node_alive_after_heartbeat() => base.should_keep_node_alive_after_heartbeat();
+    public override Task should_keep_node_alive_after_heartbeat()
+    {
+        return base.should_keep_node_alive_after_heartbeat();
+    }
 
     [Fact]
-    public override Task should_return_dead_snapshot_before_retention_prune() =>
-        base.should_return_dead_snapshot_before_retention_prune();
+    public override Task should_return_dead_snapshot_before_retention_prune()
+    {
+        return base.should_return_dead_snapshot_before_retention_prune();
+    }
 
     [Fact]
-    public override Task should_remove_from_live_set_on_graceful_leave() =>
-        base.should_remove_from_live_set_on_graceful_leave();
+    public override Task should_remove_from_live_set_on_graceful_leave()
+    {
+        return base.should_remove_from_live_set_on_graceful_leave();
+    }
 
     [Fact]
-    public override Task should_allocate_unique_increasing_incarnations_for_same_node_id() =>
-        base.should_allocate_unique_increasing_incarnations_for_same_node_id();
+    public override Task should_allocate_unique_increasing_incarnations_for_same_node_id()
+    {
+        return base.should_allocate_unique_increasing_incarnations_for_same_node_id();
+    }
 
     [Fact]
-    public override Task should_filter_operational_reads_to_current_generation() =>
-        base.should_filter_operational_reads_to_current_generation();
+    public override Task should_filter_operational_reads_to_current_generation()
+    {
+        return base.should_filter_operational_reads_to_current_generation();
+    }
 
     [Fact]
-    public override Task should_reject_stale_and_impossible_heartbeats_with_generation_guard() =>
-        base.should_reject_stale_and_impossible_heartbeats_with_generation_guard();
+    public override Task should_reject_stale_and_impossible_heartbeats_with_generation_guard()
+    {
+        return base.should_reject_stale_and_impossible_heartbeats_with_generation_guard();
+    }
 
     [Fact]
-    public override Task should_reject_heartbeat_for_dead_current_incarnation() =>
-        base.should_reject_heartbeat_for_dead_current_incarnation();
+    public override Task should_reject_heartbeat_for_dead_current_incarnation()
+    {
+        return base.should_reject_heartbeat_for_dead_current_incarnation();
+    }
 
     [Fact]
-    public override Task should_reject_heartbeat_after_graceful_leave() =>
-        base.should_reject_heartbeat_after_graceful_leave();
+    public override Task should_reject_heartbeat_after_graceful_leave()
+    {
+        return base.should_reject_heartbeat_after_graceful_leave();
+    }
 
     [Fact]
-    public override Task should_reject_heartbeat_after_current_incarnation_is_pruned() =>
-        base.should_reject_heartbeat_after_current_incarnation_is_pruned();
+    public override Task should_reject_heartbeat_after_current_incarnation_is_pruned()
+    {
+        return base.should_reject_heartbeat_after_current_incarnation_is_pruned();
+    }
 
     [Fact]
-    public override Task should_reject_stale_heartbeat_after_retained_state_is_pruned() =>
-        base.should_reject_stale_heartbeat_after_retained_state_is_pruned();
+    public override Task should_reject_stale_heartbeat_after_retained_state_is_pruned()
+    {
+        return base.should_reject_stale_heartbeat_after_retained_state_is_pruned();
+    }
 
     [Fact]
-    public override Task should_isolate_generation_and_reads_by_cluster() =>
-        base.should_isolate_generation_and_reads_by_cluster();
+    public override Task should_isolate_generation_and_reads_by_cluster()
+    {
+        return base.should_isolate_generation_and_reads_by_cluster();
+    }
 
     [Fact]
-    public override Task should_publish_local_lost_event_when_incarnation_is_superseded() =>
-        base.should_publish_local_lost_event_when_incarnation_is_superseded();
+    public override Task should_publish_local_lost_event_when_incarnation_is_superseded()
+    {
+        return base.should_publish_local_lost_event_when_incarnation_is_superseded();
+    }
 
     [Fact]
-    public override Task should_return_ordered_live_nodes() => base.should_return_ordered_live_nodes();
+    public override Task should_return_ordered_live_nodes()
+    {
+        return base.should_return_ordered_live_nodes();
+    }
 
     [Fact]
-    public override Task should_fail_stop_when_local_incarnation_is_superseded() =>
-        base.should_fail_stop_when_local_incarnation_is_superseded();
+    public override Task should_fail_stop_when_local_incarnation_is_superseded()
+    {
+        return base.should_fail_stop_when_local_incarnation_is_superseded();
+    }
 
     [Fact]
-    public override Task should_stop_application_when_self_heartbeat_is_rejected() =>
-        base.should_stop_application_when_self_heartbeat_is_rejected();
+    public override Task should_stop_application_when_self_heartbeat_is_rejected()
+    {
+        return base.should_stop_application_when_self_heartbeat_is_rejected();
+    }
 
     [Fact]
-    public override Task should_not_evict_current_incarnation_when_prior_incarnation_leaves() =>
-        base.should_not_evict_current_incarnation_when_prior_incarnation_leaves();
+    public override Task should_not_evict_current_incarnation_when_prior_incarnation_leaves()
+    {
+        return base.should_not_evict_current_incarnation_when_prior_incarnation_leaves();
+    }
 
     [Fact]
-    public override Task should_read_targeted_node_liveness_across_states() =>
-        base.should_read_targeted_node_liveness_across_states();
+    public override Task should_read_targeted_node_liveness_across_states()
+    {
+        return base.should_read_targeted_node_liveness_across_states();
+    }
 
     [Fact]
-    public override Task should_read_dead_targeted_state_after_graceful_leave() =>
-        base.should_read_dead_targeted_state_after_graceful_leave();
+    public override Task should_read_dead_targeted_state_after_graceful_leave()
+    {
+        return base.should_read_dead_targeted_state_after_graceful_leave();
+    }
 
     [Fact]
-    public override Task should_read_null_targeted_state_for_superseded_incarnation() =>
-        base.should_read_null_targeted_state_for_superseded_incarnation();
+    public override Task should_read_null_targeted_state_for_superseded_incarnation()
+    {
+        return base.should_read_null_targeted_state_for_superseded_incarnation();
+    }
 
     [Fact]
-    public override Task should_read_null_without_pruning_for_retention_expired_node() =>
-        base.should_read_null_without_pruning_for_retention_expired_node();
+    public override Task should_read_null_without_pruning_for_retention_expired_node()
+    {
+        return base.should_read_null_without_pruning_for_retention_expired_node();
+    }
 
     [Fact]
-    public override Task should_agree_between_targeted_read_and_snapshot() =>
-        base.should_agree_between_targeted_read_and_snapshot();
+    public override Task should_agree_between_targeted_read_and_snapshot()
+    {
+        return base.should_agree_between_targeted_read_and_snapshot();
+    }
 
     [Fact]
-    public override Task should_derive_is_alive_from_targeted_read() =>
-        base.should_derive_is_alive_from_targeted_read();
+    public override Task should_derive_is_alive_from_targeted_read()
+    {
+        return base.should_derive_is_alive_from_targeted_read();
+    }
 
     /// <summary>
     /// Documents the intentional cross-provider divergence (plan KTD-16): at the provider-default

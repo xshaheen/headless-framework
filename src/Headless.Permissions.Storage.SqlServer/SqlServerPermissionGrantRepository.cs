@@ -199,9 +199,15 @@ internal sealed class SqlServerPermissionGrantRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private SqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+    private SqlParameter _TenantParam()
+    {
+        return _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+    }
 
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
     private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
     {
@@ -254,5 +260,8 @@ internal sealed class SqlServerPermissionGrantRepository(
         ];
     }
 
-    private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
+    private static SqlParameter _Param(string name, object? value)
+    {
+        return new($"@{name}", value ?? DBNull.Value);
+    }
 }

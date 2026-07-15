@@ -11,7 +11,7 @@ namespace Tests.Setup;
 public sealed class SecuritySetupTests
 {
     [Fact]
-    public void add_string_encryption_service_should_be_idempotent()
+    public void should_be_idempotent_when_add_string_encryption_service()
     {
         // given
         var services = new ServiceCollection();
@@ -39,7 +39,7 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void add_string_hash_service_should_be_idempotent()
+    public void should_be_idempotent_when_add_string_hash_service()
     {
         // given
         var services = new ServiceCollection();

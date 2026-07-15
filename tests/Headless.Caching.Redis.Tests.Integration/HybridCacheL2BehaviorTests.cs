@@ -166,7 +166,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         freshReadOnB.Value.Should().Be("v2", "node B must read the updated value from L2 after L1 invalidation");
     }
 
-    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync()
+    {
+        await fixture.ConnectionMultiplexer.FlushAllAsync();
+    }
 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
@@ -189,7 +192,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     {
         private readonly List<HybridCache> _subscribers = [];
 
-        public void Attach(HybridCache cache) => _subscribers.Add(cache);
+        public void Attach(HybridCache cache)
+        {
+            _subscribers.Add(cache);
+        }
 
         public async Task PublishAsync<T>(
             T? message,
@@ -228,6 +234,9 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             T? message,
             PublishOptions? options = null,
             CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
+        )
+        {
+            return Task.CompletedTask;
+        }
     }
 }

@@ -289,7 +289,10 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         return connection;
     }
 
-    private string _CreateResourceName() => "postgres-transaction-lock-tests:" + Faker.Random.Guid();
+    private string _CreateResourceName()
+    {
+        return "postgres-transaction-lock-tests:" + Faker.Random.Guid();
+    }
 
     private static async Task<string> _CurrentSettingAsync(
         NpgsqlConnection connection,
@@ -389,13 +392,19 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     {
         public override bool ShouldPrepareCommands => false;
 
-        public override bool IsCommandCancellationException(Exception exception) => false;
+        public override bool IsCommandCancellationException(Exception exception)
+        {
+            return false;
+        }
 
         public override Task SleepAsync(
             TimeSpan sleepTime,
             Func<DatabaseCommand, CancellationToken, ValueTask<int>> executor,
             CancellationToken cancellationToken
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
     }
 #pragma warning restore CA2000
 
@@ -418,10 +427,15 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
         public override void Open() { }
 
-        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        {
             throw new NotSupportedException();
+        }
 
-        protected override DbCommand CreateDbCommand() => new ThrowingSavePointDbCommand(this);
+        protected override DbCommand CreateDbCommand()
+        {
+            return new ThrowingSavePointDbCommand(this);
+        }
     }
 
     private sealed class ThrowingSavePointDbCommand(DbConnection connection) : DbCommand
@@ -447,27 +461,44 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
         public override void Cancel() { }
 
-        public override int ExecuteNonQuery() => throw _CreateSavePointException();
+        public override int ExecuteNonQuery()
+        {
+            throw _CreateSavePointException();
+        }
 
-        public override object ExecuteScalar() => 0L;
+        public override object ExecuteScalar()
+        {
+            return 0L;
+        }
 
-        public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken) =>
-            CommandText?.StartsWith("SAVEPOINT ", StringComparison.Ordinal) == true
+        public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+        {
+            return CommandText?.StartsWith("SAVEPOINT ", StringComparison.Ordinal) == true
                 ? Task.FromException<int>(_CreateSavePointException())
                 : Task.FromResult(0);
+        }
 
-        public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<object?>(0L);
+        public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<object?>(0L);
+        }
 
         public override void Prepare() { }
 
-        protected override DbParameter CreateDbParameter() => new FakeDbParameter();
+        protected override DbParameter CreateDbParameter()
+        {
+            return new FakeDbParameter();
+        }
 
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
             throw new NotSupportedException();
+        }
 
-        private static PostgresException _CreateSavePointException() =>
-            new("current transaction is aborted", "ERROR", "ERROR", PostgresErrorCodes.InFailedSqlTransaction);
+        private static PostgresException _CreateSavePointException()
+        {
+            return new("current transaction is aborted", "ERROR", "ERROR", PostgresErrorCodes.InFailedSqlTransaction);
+        }
     }
 
     private sealed class FakeDbParameter : DbParameter
@@ -516,29 +547,59 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             }
         }
 
-        public override void Clear() => _parameters.Clear();
+        public override void Clear()
+        {
+            _parameters.Clear();
+        }
 
-        public override bool Contains(object value) => _parameters.Contains((DbParameter)value);
+        public override bool Contains(object value)
+        {
+            return _parameters.Contains((DbParameter)value);
+        }
 
-        public override bool Contains(string value) =>
-            _parameters.Exists(parameter => string.Equals(parameter.ParameterName, value, StringComparison.Ordinal));
+        public override bool Contains(string value)
+        {
+            return _parameters.Exists(parameter =>
+                string.Equals(parameter.ParameterName, value, StringComparison.Ordinal)
+            );
+        }
 
-        public override void CopyTo(Array array, int index) => ((ICollection)_parameters).CopyTo(array, index);
+        public override void CopyTo(Array array, int index)
+        {
+            ((ICollection)_parameters).CopyTo(array, index);
+        }
 
-        public override IEnumerator GetEnumerator() => _parameters.GetEnumerator();
+        public override IEnumerator GetEnumerator()
+        {
+            return _parameters.GetEnumerator();
+        }
 
-        public override int IndexOf(object value) => _parameters.IndexOf((DbParameter)value);
+        public override int IndexOf(object value)
+        {
+            return _parameters.IndexOf((DbParameter)value);
+        }
 
-        public override int IndexOf(string parameterName) =>
-            _parameters.FindIndex(parameter =>
+        public override int IndexOf(string parameterName)
+        {
+            return _parameters.FindIndex(parameter =>
                 string.Equals(parameter.ParameterName, parameterName, StringComparison.Ordinal)
             );
+        }
 
-        public override void Insert(int index, object value) => _parameters.Insert(index, (DbParameter)value);
+        public override void Insert(int index, object value)
+        {
+            _parameters.Insert(index, (DbParameter)value);
+        }
 
-        public override void Remove(object value) => _parameters.Remove((DbParameter)value);
+        public override void Remove(object value)
+        {
+            _parameters.Remove((DbParameter)value);
+        }
 
-        public override void RemoveAt(int index) => _parameters.RemoveAt(index);
+        public override void RemoveAt(int index)
+        {
+            _parameters.RemoveAt(index);
+        }
 
         public override void RemoveAt(string parameterName)
         {
@@ -550,11 +611,20 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             }
         }
 
-        protected override DbParameter GetParameter(int index) => _parameters[index];
+        protected override DbParameter GetParameter(int index)
+        {
+            return _parameters[index];
+        }
 
-        protected override DbParameter GetParameter(string parameterName) => _parameters[IndexOf(parameterName)];
+        protected override DbParameter GetParameter(string parameterName)
+        {
+            return _parameters[IndexOf(parameterName)];
+        }
 
-        protected override void SetParameter(int index, DbParameter value) => _parameters[index] = value;
+        protected override void SetParameter(int index, DbParameter value)
+        {
+            _parameters[index] = value;
+        }
 
         protected override void SetParameter(string parameterName, DbParameter value)
         {

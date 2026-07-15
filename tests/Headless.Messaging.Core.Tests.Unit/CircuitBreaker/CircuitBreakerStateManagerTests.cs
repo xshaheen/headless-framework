@@ -418,7 +418,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task repeated_non_transient_close_should_not_reset_escalation()
+    public async Task should_not_reset_escalation_when_repeated_non_transient_close()
     {
         // given — 3 successful cycles normally resets escalation, but non-transient
         // failure closes are NOT recovery signals and must not count toward that threshold.
@@ -555,7 +555,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void IsOpen_returns_false_for_unregistered_group()
+    public void is_open_returns_false_for_unregistered_group()
     {
         using var sut = _Create();
         sut.IsOpen("never-registered").Should().BeFalse();
@@ -587,7 +587,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task ReportSuccessAsync_is_noop_for_unregistered_group()
+    public async Task report_success_async_is_noop_for_unregistered_group()
     {
         await using var sut = _Create();
         var act = async () => await sut.ReportSuccessAsync("never-registered");
@@ -595,7 +595,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task ReportFailure_while_open_increments_counter_but_does_not_re_trigger_open()
+    public async Task report_failure_while_open_increments_counter_but_does_not_re_trigger_open()
     {
         // given — trip circuit to Open
         await using var sut = _Create(failureThreshold: 2);
@@ -651,7 +651,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task concurrent_TryAcquireHalfOpenProbe_allows_exactly_one_winner()
+    public async Task concurrent_try_acquire_half_open_probe_allows_exactly_one_winner()
     {
         // given — trip circuit then wait for HalfOpen
         const int parallelTasks = 50;
@@ -717,7 +717,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task Dispose_while_open_cancels_timer_and_prevents_resume_callback()
+    public async Task dispose_while_open_cancels_timer_and_prevents_resume_callback()
     {
         // given — trip circuit to Open with a short timer
         var resumeCalled = false;
@@ -744,7 +744,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void Dispose_is_idempotent()
+    public void dispose_is_idempotent()
     {
         // given
         using var sut = _Create();
@@ -762,7 +762,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public async Task Dispose_concurrent_with_timer_callback_is_safe()
+    public async Task dispose_concurrent_with_timer_callback_is_safe()
     {
         for (var i = 0; i < 200; i++)
         {
@@ -1106,7 +1106,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void IsOpen_validates_null_group_name()
+    public void is_open_validates_null_group_name()
     {
         using var sut = _Create();
         var act = () => sut.IsOpen(null!);
@@ -1114,7 +1114,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void IsOpen_validates_group_name_length()
+    public void is_open_validates_group_name_length()
     {
         using var sut = _Create();
         var act = () => sut.IsOpen(new string('x', 257));
@@ -1122,7 +1122,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void GetState_validates_null_group_name()
+    public void get_state_validates_null_group_name()
     {
         using var sut = _Create();
         var act = () => sut.GetState(null!);
@@ -1130,7 +1130,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void GetState_validates_group_name_length()
+    public void get_state_validates_group_name_length()
     {
         using var sut = _Create();
         var act = () => sut.GetState(new string('x', 257));
@@ -1138,7 +1138,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void GetSnapshot_validates_null_group_name()
+    public void get_snapshot_validates_null_group_name()
     {
         using var sut = _Create();
         var act = () => sut.GetSnapshot(null!);
@@ -1146,7 +1146,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void GetSnapshot_validates_group_name_length()
+    public void get_snapshot_validates_group_name_length()
     {
         using var sut = _Create();
         var act = () => sut.GetSnapshot(new string('x', 257));
@@ -1367,7 +1367,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void KnownGroups_returns_empty_set_before_registration()
+    public void known_groups_returns_empty_set_before_registration()
     {
         // given
         using var sut = _Create();
@@ -1378,7 +1378,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
-    public void KnownGroups_returns_registered_groups_after_registration()
+    public void known_groups_returns_registered_groups_after_registration()
     {
         // given
         using var sut = _Create();

@@ -459,24 +459,31 @@ public static partial class LeaseSqlAnalysis
         "END",
     ];
 
-    public static bool TouchesLeaseColumn(string sql) => LeaseColumn.IsMatch(sql);
+    public static bool TouchesLeaseColumn(string sql)
+    {
+        return LeaseColumn.IsMatch(sql);
+    }
 
     /// <summary>Assignments of a lease deadline: <c>LockedUntil = &lt;expression&gt;</c>, excluding the release to NULL.</summary>
-    public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement) =>
-        _Clauses(statement)
+    public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement)
             .Where(clause =>
                 string.Equals(clause.Operator, "=", StringComparison.Ordinal)
                 && !string.Equals(clause.Fragment.Trim(), "NULL", StringComparison.OrdinalIgnoreCase)
             )
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
+    }
 
     /// <summary>Ownership comparisons: <c>LockedUntil &lt;= &lt;clock&gt;</c> and friends. <c>IS NULL</c> tests carry no clock and are skipped.</summary>
-    public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement) =>
-        _Clauses(statement)
+    public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement)
             .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
+    }
 
     private static LeaseSqlFragment _Describe(string fragment, CapturedSqlStatement statement)
     {

@@ -20,7 +20,10 @@ public sealed class SqlServerAuditLogOptions
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Default: 30 seconds.</summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    internal SqlConnection CreateConnection() => new(ConnectionString);
+    internal SqlConnection CreateConnection()
+    {
+        return new(ConnectionString);
+    }
 }
 
 internal sealed class SqlServerAuditLogOptionsValidator : AbstractValidator<SqlServerAuditLogOptions>

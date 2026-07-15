@@ -7,13 +7,13 @@ namespace Tests.Constants;
 public sealed class HttpHeaderNamesTests
 {
     [Fact]
-    public void idempotency_key_should_have_expected_value()
+    public void should_have_expected_value_when_idempotency_key()
     {
         HttpHeaderNames.IdempotencyKey.Should().Be("Idempotency-Key");
     }
 
     [Fact]
-    public void idempotent_replayed_should_have_expected_value()
+    public void should_have_expected_value_when_idempotent_replayed()
     {
         HttpHeaderNames.IdempotentReplayed.Should().Be("Idempotent-Replayed");
     }

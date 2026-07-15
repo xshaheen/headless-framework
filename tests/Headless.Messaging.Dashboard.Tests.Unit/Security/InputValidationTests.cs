@@ -11,7 +11,7 @@ namespace Tests.Security;
 public sealed class InputValidationTests : TestBase
 {
     [Fact]
-    public void message_id_should_validate_format()
+    public void should_validate_format_when_message_id()
     {
         // Message IDs are expected to be longs
         // The route constraint {id:long} handles basic validation
@@ -34,7 +34,7 @@ public sealed class InputValidationTests : TestBase
     [InlineData("Failed")]
     [InlineData("Scheduled")]
     [InlineData("Processing")]
-    public void status_parameter_should_accept_valid_values(string status)
+    public void should_accept_valid_values_when_status_parameter(string status)
     {
         // Document valid status values
         status.Should().NotBeNullOrEmpty();
@@ -61,7 +61,7 @@ public sealed class InputValidationTests : TestBase
     }
 
     [Fact]
-    public void content_search_should_sanitize_sql_injection_attempts()
+    public void should_sanitize_sql_injection_attempts_when_content_search()
     {
         // The 'content' query parameter is used for searching message content
         // It should be sanitized to prevent SQL injection
@@ -76,7 +76,7 @@ public sealed class InputValidationTests : TestBase
     }
 
     [Fact]
-    public void name_search_should_sanitize_input()
+    public void should_sanitize_input_when_name_search()
     {
         // The 'name' query parameter is used for filtering
         // It should be sanitized to prevent injection attacks

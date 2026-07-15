@@ -42,8 +42,10 @@ public sealed class FeaturesInitializationBackgroundService(
 
     /// <inheritdoc/>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled before initialization completes.</exception>
-    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
-        _tcs.Task.WaitAsync(cancellationToken);
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+    {
+        return _tcs.Task.WaitAsync(cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)

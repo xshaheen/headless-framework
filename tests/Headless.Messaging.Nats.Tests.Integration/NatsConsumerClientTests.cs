@@ -113,7 +113,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task FetchMessageNamesAsync_should_create_stream_when_enabled()
+    public async Task should_create_stream_when_fetch_message_names_async_enabled()
     {
         // given
         var streamName = $"autocreate-{Guid.NewGuid():N}"[..25];
@@ -136,7 +136,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task FetchMessageNamesAsync_should_apply_StreamOptions_callback()
+    public async Task should_apply_stream_options_callback_when_fetch_message_names_async()
     {
         // given
         var streamName = $"stropts-{Guid.NewGuid():N}"[..22];
@@ -218,7 +218,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task Factory_should_throw_BrokerConnectionException_for_bad_server()
+    public async Task should_throw_broker_connection_exception_for_bad_server_when_factory()
     {
         // given
         var badOptions = Options.Create(

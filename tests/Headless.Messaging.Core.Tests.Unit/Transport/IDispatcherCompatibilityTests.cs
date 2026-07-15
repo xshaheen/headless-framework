@@ -9,7 +9,7 @@ namespace Tests.Transport;
 public sealed class IDispatcherCompatibilityTests : TestBase
 {
     [Fact]
-    public async Task DisposeAsync_with_timeout_should_delegate_to_legacy_dispose_implementation()
+    public async Task should_delegate_to_legacy_dispose_implementation_when_dispose_async_with_timeout()
     {
         // given
         await using var dispatcher = new LegacyDispatcher();
@@ -25,7 +25,10 @@ public sealed class IDispatcherCompatibilityTests : TestBase
     {
         public bool IsDisposed { get; private set; }
 
-        public ValueTask StartAsync(CancellationToken stoppingToken) => ValueTask.CompletedTask;
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {
@@ -33,20 +36,28 @@ public sealed class IDispatcherCompatibilityTests : TestBase
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask EnqueueToExecute(
             MediumMessage message,
             ConsumerExecutorDescriptor? descriptor = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public Task EnqueueToScheduler(
             MediumMessage message,
             DateTimeOffset publishTime,
             object? transaction = null,
             CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
+        )
+        {
+            return Task.CompletedTask;
+        }
     }
 }

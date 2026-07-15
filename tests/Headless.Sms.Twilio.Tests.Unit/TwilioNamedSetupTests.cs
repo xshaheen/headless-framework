@@ -66,7 +66,7 @@ public sealed class TwilioNamedSetupTests
     }
 
     [Fact]
-    public void named_twilio_should_resolve_via_factory_and_keyed_di_with_default_unaffected()
+    public void should_resolve_via_factory_and_keyed_di_with_default_unaffected_when_named_twilio()
     {
         // given
         var services = _Services();
@@ -91,7 +91,7 @@ public sealed class TwilioNamedSetupTests
     }
 
     [Fact]
-    public void named_twilio_sender_should_not_expose_bulk_capability()
+    public void should_not_expose_bulk_capability_when_named_twilio_sender()
     {
         // given - Twilio sends one recipient per API call; the capability probe must be false.
         var services = _Services();

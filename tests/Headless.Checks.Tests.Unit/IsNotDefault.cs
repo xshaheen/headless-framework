@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class IsNotDefault
 {
     [Fact]
-    public void is_default_should_not_throw_if_argument_is_default()
+    public void should_not_throw_if_argument_is_default_when_is_default()
     {
         // given
         const int defaultValue = 0;
@@ -17,7 +17,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_default_should_throw_if_argument_is_not_default()
+    public void should_throw_if_argument_is_not_default_when_is_default()
     {
         // given
         const int argument = 05;
@@ -39,7 +39,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_should_return_argument_if_not_default()
+    public void should_return_argument_if_not_default_when_is_not_default()
     {
         // given
         const int nonDefaultValue = 10;
@@ -49,7 +49,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_should_throw_if_argument_is_default()
+    public void should_throw_if_argument_is_default_when_is_not_default()
     {
         // given
         const int argument = 0;
@@ -74,7 +74,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_should_return_nullable_argument_if_not_default()
+    public void should_return_nullable_argument_if_not_default_when_is_not_default()
     {
         // given
         int? nonDefaultValue = 15;
@@ -84,7 +84,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_nullable_should_return_null_when_argument_is_null()
+    public void should_return_null_when_is_not_default_nullable_argument_is_null()
     {
         // given - the nullable overload accepts null and returns it as-is
         int? argument = null;
@@ -94,7 +94,7 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_nullable_should_throw_when_value_is_default()
+    public void should_throw_when_is_not_default_nullable_value_is_default()
     {
         // given
         int? argument = 0;

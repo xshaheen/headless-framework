@@ -3,7 +3,7 @@ namespace Tests.Exceptions;
 public sealed partial class ExceptionExtensionsTests
 {
     [Fact]
-    public void ExpandMessage_should_return_expanded_message()
+    public void should_return_expanded_message_when_expand_message()
     {
         // given
         var innerException = _ThrowAndGet(new InvalidOperationException("Inner exception"));
@@ -22,7 +22,7 @@ public sealed partial class ExceptionExtensionsTests
     }
 
     [Fact]
-    public void ExpandMessage_should_expand_aggregate_exception_inners()
+    public void should_expand_aggregate_exception_inners_when_expand_message()
     {
         // given
         var innerException = _ThrowAndGet(new InvalidOperationException("Exception1 inner"));

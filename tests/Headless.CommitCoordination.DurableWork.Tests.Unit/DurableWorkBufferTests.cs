@@ -106,7 +106,10 @@ public sealed class DurableWorkBufferTests
             return null;
         }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

@@ -23,7 +23,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_generic_should_return_argument_when_valid()
+    public void should_return_argument_when_is_in_enum_generic_valid()
     {
         // given
         const SampleEnum validEnumValue = SampleEnum.Value2;
@@ -33,7 +33,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_generic_should_throw()
+    public void should_throw_when_is_in_enum_generic()
     {
         // given
         const SampleEnum argument = (SampleEnum)99;
@@ -54,7 +54,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_int_should_return_argument_when_valid()
+    public void should_return_argument_when_is_in_enum_int_valid()
     {
         // given
         const int validEnumValue = (int)SampleEnum.Value1;
@@ -64,7 +64,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_int_should_throw_when_invalid()
+    public void should_throw_when_is_in_enum_int_invalid()
     {
         // given
         const int argument = 99;
@@ -86,7 +86,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_flags_should_accept_composite_of_defined_flags()
+    public void should_accept_composite_of_defined_flags_when_is_in_enum_flags()
     {
         // given - Read | Write (3) is a valid combination but not itself a named member
         const Permissions composite = Permissions.Read | Permissions.Write;
@@ -99,7 +99,7 @@ public sealed class IsInEnumTests
     }
 
     [Fact]
-    public void is_in_enum_flags_should_throw_when_value_has_undefined_bits()
+    public void should_throw_when_is_in_enum_flags_value_has_undefined_bits()
     {
         // given - bit 8 is not a defined flag
         const Permissions argument = (Permissions)8;

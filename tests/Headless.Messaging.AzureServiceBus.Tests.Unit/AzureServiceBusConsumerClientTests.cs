@@ -115,7 +115,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void CheckValidQueueName_should_allow_names_longer_than_subscription_rule_limit()
+    public void should_allow_names_longer_than_subscription_rule_limit_when_check_valid_queue_name()
     {
         var queueName = new string('a', 80);
 
@@ -125,7 +125,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void CheckValidQueueName_should_reject_reserved_uri_characters()
+    public void should_reject_reserved_uri_characters_when_check_valid_queue_name()
     {
         var act = () => AzureServiceBusConsumerClient.CheckValidQueueName("orders#created");
 
@@ -171,7 +171,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_noop_when_processor_is_null()
+    public async Task pause_async_is_noop_when_processor_is_null()
     {
         // given — no ConnectAsync called, processor is null
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -183,7 +183,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -196,7 +196,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -208,7 +208,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -221,7 +221,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_idempotent_after_resume()
+    public async Task resume_async_is_idempotent_after_resume()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -235,7 +235,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_noop_after_disposal()
+    public async Task pause_async_is_noop_after_disposal()
     {
         // given
         var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -246,7 +246,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_after_disposal()
+    public async Task resume_async_is_noop_after_disposal()
     {
         // given
         var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -257,7 +257,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_and_ResumeAsync_should_toggle_the_startup_gate_before_processing_starts()
+    public async Task should_toggle_the_startup_gate_before_processing_starts_when_pause_async_and_resume_async()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
@@ -292,7 +292,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_should_not_mark_processing_as_started_before_listening_runs()
+    public async Task should_not_mark_processing_as_started_before_listening_runs_when_resume_async()
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);

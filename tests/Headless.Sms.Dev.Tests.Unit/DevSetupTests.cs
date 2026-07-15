@@ -9,7 +9,7 @@ namespace Tests;
 public sealed class DevSetupTests
 {
     [Fact]
-    public void default_use_dev_should_resolve_unkeyed_sender_with_same_instance_bulk_forward()
+    public void should_resolve_unkeyed_sender_with_same_instance_bulk_forward_when_default_use_dev()
     {
         // given
         var services = new ServiceCollection();
@@ -26,7 +26,7 @@ public sealed class DevSetupTests
     }
 
     [Fact]
-    public void default_use_noop_should_resolve_unkeyed_sender_with_same_instance_bulk_forward()
+    public void should_resolve_unkeyed_sender_with_same_instance_bulk_forward_when_default_use_noop()
     {
         // given
         var services = new ServiceCollection();
@@ -42,7 +42,7 @@ public sealed class DevSetupTests
     }
 
     [Fact]
-    public void named_dev_instance_should_resolve_via_factory_and_keyed_di_distinct_from_default()
+    public void should_resolve_via_factory_and_keyed_di_distinct_from_default_when_named_dev_instance()
     {
         // given
         var services = new ServiceCollection();
@@ -65,7 +65,7 @@ public sealed class DevSetupTests
     }
 
     [Fact]
-    public void named_dev_instance_should_forward_keyed_bulk_sender_to_same_instance()
+    public void should_forward_keyed_bulk_sender_to_same_instance_when_named_dev_instance()
     {
         // given
         var services = new ServiceCollection();
@@ -86,7 +86,7 @@ public sealed class DevSetupTests
     }
 
     [Fact]
-    public void named_noop_instance_should_forward_keyed_bulk_sender_to_same_instance()
+    public void should_forward_keyed_bulk_sender_to_same_instance_when_named_noop_instance()
     {
         // given
         var services = new ServiceCollection();
@@ -107,7 +107,7 @@ public sealed class DevSetupTests
     }
 
     [Fact]
-    public void two_named_dev_instances_should_stay_isolated()
+    public void should_stay_isolated_when_two_named_dev_instances()
     {
         // given
         var services = new ServiceCollection();

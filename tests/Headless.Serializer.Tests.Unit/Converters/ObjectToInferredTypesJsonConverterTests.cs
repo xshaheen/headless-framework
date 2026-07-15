@@ -13,7 +13,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     };
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_true_bool_successfully()
+    public void should_convert_valid_true_bool_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "true";
@@ -26,7 +26,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_false_bool_successfully()
+    public void should_convert_valid_false_bool_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "false";
@@ -39,7 +39,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_numerical_value_successfully()
+    public void should_convert_valid_numerical_value_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "42";
@@ -52,7 +52,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_double_value_successfully()
+    public void should_convert_valid_double_value_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "42.5";
@@ -65,7 +65,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_datetime_successfully()
+    public void should_convert_valid_datetime_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "\"2024-01-01T12:00:00\"";
@@ -85,7 +85,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_string_value_successfully()
+    public void should_convert_valid_string_value_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "\"hello world\"";
@@ -98,7 +98,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_convert_valid_object_type_successfully()
+    public void should_convert_valid_object_type_successfully_when_object_to_types_converter()
     {
         // given
         const string json = "{\"property\": \"value\"}";
@@ -112,7 +112,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_throw_when_trying_to_convert_invalid_json()
+    public void should_throw_when_object_to_types_converter_trying_to_convert_invalid_json()
     {
         // given
         const string json = "{ this is invalid JSON ";
@@ -125,7 +125,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_write_null_when_reading_null_object()
+    public void should_write_null_when_object_to_types_converter_reading_null_object()
     {
         // given
         object? value = null;
@@ -138,7 +138,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_write_valid_object_types_successfully()
+    public void should_write_valid_object_types_successfully_when_object_to_types_converter()
     {
         // given
         var value = new { Name = "Test", Age = 30 };

@@ -65,6 +65,8 @@ internal sealed class MicrosoftDistributedCacheBenchmarkClient(
         return ValueTask.CompletedTask;
     }
 
-    private static DistributedCacheEntryOptions _CreateOptions(TimeSpan expiration) =>
-        new() { AbsoluteExpirationRelativeToNow = expiration };
+    private static DistributedCacheEntryOptions _CreateOptions(TimeSpan expiration)
+    {
+        return new() { AbsoluteExpirationRelativeToNow = expiration };
+    }
 }

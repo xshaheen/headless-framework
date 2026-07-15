@@ -13,19 +13,19 @@ public sealed class OnNodeDeathInputApiTests
     private sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
-    public void TimeJob_entity_defaults_OnNodeDeath_to_Retry()
+    public void time_job_entity_defaults_on_node_death_to_retry()
     {
         new FakeTimeJob().OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 
     [Fact]
-    public void CronJob_entity_defaults_OnNodeDeath_to_Retry()
+    public void cron_job_entity_defaults_on_node_death_to_retry()
     {
         new FakeCronJob().OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 
     [Fact]
-    public void OnNodeDeath_is_publicly_settable_on_a_time_job()
+    public void on_node_death_is_publicly_settable_on_a_time_job()
     {
         var job = new FakeTimeJob { OnNodeDeath = NodeDeathPolicy.MarkFailed };
 
@@ -33,7 +33,7 @@ public sealed class OnNodeDeathInputApiTests
     }
 
     [Fact]
-    public void Builder_SetOnNodeDeath_flows_to_parent_child_and_grandchild()
+    public void builder_set_on_node_death_flows_to_parent_child_and_grandchild()
     {
         FakeTimeJob job = FluentChainJobBuilder<FakeTimeJob>
             .BeginWith(p => p.SetFunction("parent").SetOnNodeDeath(NodeDeathPolicy.MarkFailed))
@@ -47,7 +47,7 @@ public sealed class OnNodeDeathInputApiTests
     }
 
     [Fact]
-    public void Builder_defaults_OnNodeDeath_to_Retry_when_not_set()
+    public void builder_defaults_on_node_death_to_retry_when_not_set()
     {
         FakeTimeJob job = FluentChainJobBuilder<FakeTimeJob>.BeginWith(p => p.SetFunction("parent"));
 

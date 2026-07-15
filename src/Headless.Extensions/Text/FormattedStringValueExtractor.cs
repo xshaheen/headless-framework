@@ -162,7 +162,10 @@ public sealed class FormattedStringExtractionResult
     /// <summary>List of matched dynamic values.</summary>
     public IReadOnlyList<NameValue> Matches => _matches;
 
-    internal void AddMatch(NameValue match) => _matches.Add(match);
+    internal void AddMatch(NameValue match)
+    {
+        _matches.Add(match);
+    }
 }
 
 #endregion

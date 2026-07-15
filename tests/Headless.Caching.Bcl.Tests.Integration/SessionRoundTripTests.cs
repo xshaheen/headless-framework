@@ -15,7 +15,7 @@ namespace Tests;
 public sealed class SessionRoundTripTests(BclRedisFixture fixture) : TestBase
 {
     [Fact]
-    public async Task aspnet_core_session_should_round_trip_through_headless_distributed_cache()
+    public async Task should_round_trip_through_headless_distributed_cache_when_aspnet_core_session()
     {
         var cacheName = $"session-{Faker.Random.AlphaNumeric(8)}";
         var keyPrefix = $"{cacheName}:";
@@ -37,7 +37,7 @@ public sealed class SessionRoundTripTests(BclRedisFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task aspnet_core_session_should_extend_idle_lifetime_on_read()
+    public async Task should_extend_idle_lifetime_on_read_when_aspnet_core_session()
     {
         var cacheName = $"session-{Faker.Random.AlphaNumeric(8)}";
         var keyPrefix = $"{cacheName}:";

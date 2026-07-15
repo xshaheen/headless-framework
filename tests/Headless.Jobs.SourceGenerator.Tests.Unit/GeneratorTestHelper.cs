@@ -26,7 +26,10 @@ internal static class GeneratorTestHelper
         ]
     );
 
-    public static GeneratorDriver Run(string source) => Run(source, out _);
+    public static GeneratorDriver Run(string source)
+    {
+        return Run(source, out _);
+    }
 
     public static GeneratorDriver Run(string source, out ImmutableArray<Diagnostic> compilationDiagnostics)
     {

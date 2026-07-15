@@ -7,8 +7,10 @@ namespace Headless.Testing.AspNetCore;
 
 internal static class DatabaseResetOperation
 {
-    public static CancellationToken ResolveCancellationToken(CancellationToken cancellationToken) =>
-        cancellationToken.CanBeCanceled ? cancellationToken : TestContext.Current.CancellationToken;
+    public static CancellationToken ResolveCancellationToken(CancellationToken cancellationToken)
+    {
+        return cancellationToken.CanBeCanceled ? cancellationToken : TestContext.Current.CancellationToken;
+    }
 
     public static async Task<T> RunAsync<T>(
         DbConnection connection,

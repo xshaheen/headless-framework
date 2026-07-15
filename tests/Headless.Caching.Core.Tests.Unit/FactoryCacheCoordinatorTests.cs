@@ -3175,13 +3175,19 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             string key,
             CancellationToken cancellationToken,
             FactoryCacheReadOptions readOptions = default
-        ) => inner.TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+        )
+        {
+            return inner.TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+        }
 
         public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
             IReadOnlyList<string> keys,
             CancellationToken cancellationToken,
             FactoryCacheReadOptions readOptions = default
-        ) => inner.TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+        )
+        {
+            return inner.TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+        }
 
         public ValueTask<bool> SetEntryAsync<T>(
             string key,
@@ -3217,15 +3223,23 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             DateTime physicalExpiresAt,
             DateTime now,
             CancellationToken cancellationToken
-        ) => inner.TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+        )
+        {
+            return inner.TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+        }
     }
 
     // Models an actor that bypasses the coordinator (e.g. a direct RemoveAsync on the provider) while a factory
     // is in flight. Kept here (not on the fake) because only these interleaving tests need it.
-    private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key) => store.RemoveEntry(key);
+    private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key)
+    {
+        store.RemoveEntry(key);
+    }
 
-    private FactoryCacheCoordinator _CreateCoordinator() =>
-        _CreateCoordinator(NullLogger<FactoryCacheCoordinator>.Instance);
+    private FactoryCacheCoordinator _CreateCoordinator()
+    {
+        return _CreateCoordinator(NullLogger<FactoryCacheCoordinator>.Instance);
+    }
 
     // Tracks every coordinator so it is disposed in teardown, regardless of how the test consumes it
     // (inline fluent calls cannot take a `using`). Coordinator.Dispose is idempotent, so tests that
@@ -3271,8 +3285,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? slidingExpiration = null,
         float? eagerRefreshThreshold = null,
         bool useDistributedFactoryLock = false
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = duration ?? TimeSpan.FromSeconds(5),
             SlidingExpiration = slidingExpiration,
@@ -3286,7 +3301,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
             UseDistributedFactoryLock = useDistributedFactoryLock,
         };
+    }
 
-    private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value) =>
-        _ => ValueTask.FromResult<string?>(value);
+    private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value)
+    {
+        return _ => ValueTask.FromResult<string?>(value);
+    }
 }

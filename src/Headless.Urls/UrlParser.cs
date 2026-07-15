@@ -10,7 +10,10 @@ internal static class UrlParser
     /// Parses a URL query to a QueryParamCollection.
     /// </summary>
     /// <param name="query">The URL query to parse.</param>
-    internal static QueryParamCollection ParseQueryParams(string? query) => new(query);
+    internal static QueryParamCollection ParseQueryParams(string? query)
+    {
+        return new(query);
+    }
 
     /// <summary>
     /// Splits the given path into segments, encoding illegal characters, "?", and "#".

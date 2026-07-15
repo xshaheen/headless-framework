@@ -273,9 +273,15 @@ public sealed class DefaultSqlCurrentConnectionTests : TestBase
 
         public override void Open() { }
 
-        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => null!;
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        {
+            return null!;
+        }
 
-        protected override DbCommand CreateDbCommand() => null!;
+        protected override DbCommand CreateDbCommand()
+        {
+            return null!;
+        }
 
         protected override void Dispose(bool disposing)
         {

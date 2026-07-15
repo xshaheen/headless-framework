@@ -39,7 +39,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task pause_async_should_complete_without_throwing()
+    public async Task should_complete_without_throwing_when_pause_async()
     {
         // given
         await using IConsumerClient client = new MinimalConsumerClient();
@@ -52,7 +52,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task resume_async_should_complete_without_throwing()
+    public async Task should_complete_without_throwing_when_resume_async()
     {
         // given
         await using IConsumerClient client = new MinimalConsumerClient();
@@ -141,22 +141,39 @@ public sealed class ConsumerClientPauseResumeTests
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

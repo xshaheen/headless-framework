@@ -175,8 +175,9 @@ public sealed class IdempotencyOptions
     /// <see cref="ReplayHeaderAllowlist"/> without affecting the application-level options.
     /// </summary>
     [Pure]
-    internal IdempotencyOptions Clone() =>
-        new()
+    internal IdempotencyOptions Clone()
+    {
+        return new()
         {
             IdempotencyKeyExpiration = IdempotencyKeyExpiration,
             HeaderName = HeaderName,
@@ -195,6 +196,7 @@ public sealed class IdempotencyOptions
             KeyDeriver = KeyDeriver,
             RequestFingerprint = RequestFingerprint,
         };
+    }
 }
 
 internal sealed class IdempotencyOptionsValidator : AbstractValidator<IdempotencyOptions>

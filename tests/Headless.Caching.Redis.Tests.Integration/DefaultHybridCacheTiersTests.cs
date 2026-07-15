@@ -16,7 +16,7 @@ namespace Tests;
 public sealed class DefaultHybridCacheTiersTests(RedisCacheFixture fixture) : TestBase
 {
     [Fact]
-    public async Task default_hybrid_should_compose_memory_tier_and_redis_tier()
+    public async Task should_compose_memory_tier_and_redis_tier_when_default_hybrid()
     {
         // given
         var builder = Host.CreateApplicationBuilder();

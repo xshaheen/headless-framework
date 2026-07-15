@@ -17,7 +17,7 @@ public sealed class IsNegativeOrZeroTests
     };
 
     [Fact]
-    public void is_negative_or_zero_should_return_same_value_when_positive()
+    public void should_return_same_value_when_is_negative_or_zero_positive()
     {
         Argument.IsNegativeOrZero(_validValues.IntValue).Should().Be(_validValues.IntValue);
         Argument.IsNegativeOrZero(_validValues.DecimalValue).Should().Be(_validValues.DecimalValue);
@@ -50,7 +50,7 @@ public sealed class IsNegativeOrZeroTests
 
     [Theory]
     [MemberData(nameof(PositiveData))]
-    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive(NumericKind kind)
+    public void should_throw_argument_out_of_range_exception_when_is_negative_or_zero_positive(NumericKind kind)
     {
         Action action = kind switch
         {
@@ -79,7 +79,7 @@ public sealed class IsNegativeOrZeroTests
 
     [Theory]
     [MemberData(nameof(PositiveDataWithCustomMessage))]
-    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive_with_custom_message(
+    public void should_throw_argument_out_of_range_exception_when_is_negative_or_zero_positive_with_custom_message(
         NumericKind kind
     )
     {

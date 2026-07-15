@@ -287,6 +287,9 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
 
     private sealed class RestoreAction(Action action) : IDisposable
     {
-        public void Dispose() => action();
+        public void Dispose()
+        {
+            action();
+        }
     }
 }

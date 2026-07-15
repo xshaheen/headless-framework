@@ -515,12 +515,14 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         );
     }
 
-    private static CacheEntryOptions _FailSafeOptions() =>
-        new()
+    private static CacheEntryOptions _FailSafeOptions()
+    {
+        return new()
         {
             Duration = TimeSpan.FromMinutes(1),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromHours(1),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
         };
+    }
 }

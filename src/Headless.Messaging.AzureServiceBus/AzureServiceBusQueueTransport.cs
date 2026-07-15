@@ -43,7 +43,10 @@ internal sealed class AzureServiceBusQueueTransport(
     }
 
     // The shared client/sender pool owns connection lifetime and is disposed by the container.
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }
 
 internal static partial class AzureServiceBusQueueTransportLog

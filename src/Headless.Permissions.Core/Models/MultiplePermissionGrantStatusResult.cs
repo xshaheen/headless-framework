@@ -72,5 +72,8 @@ public sealed class MultiplePermissionGrantStatusResult
     }
 
     /// <summary>Adds a single name-to-result entry. Internal population path used by grant providers.</summary>
-    internal void Add(string name, PermissionGrantResult result) => _statuses.Add(name, result);
+    internal void Add(string name, PermissionGrantResult result)
+    {
+        _statuses.Add(name, result);
+    }
 }

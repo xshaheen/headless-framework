@@ -37,7 +37,7 @@ public sealed class EmailToMimeMessageConverterTests : TestBase
     }
 
     [Fact]
-    public void display_name_should_fall_back_to_address()
+    public void should_fall_back_to_address_when_display_name()
     {
         var address = new EmailRequestAddress("user@example.com");
 

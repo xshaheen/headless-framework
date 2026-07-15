@@ -39,7 +39,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Slice_InputValidation()
+    public void slice_input_validation()
     {
         var actNull = () => StreamExtensions.ReadSlice(null!, 1);
         actNull.Should().Throw<ArgumentNullException>();
@@ -69,7 +69,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void CanSeek()
+    public void can_seek()
     {
         _stream.CanSeek.Should().BeTrue();
         _stream.Dispose();
@@ -77,7 +77,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void CanSeek_NonSeekableStream()
+    public void can_seek_non_seekable_stream()
     {
         using var gzipStream = new GZipStream(Stream.Null, CompressionMode.Decompress);
         using var stream = gzipStream.ReadSlice(10);
@@ -89,7 +89,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Length()
+    public void length()
     {
         _stream.Length.Should().Be(_DefaultNestedLength);
         _stream.Dispose();
@@ -98,7 +98,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Length_NonSeekableStream()
+    public void length_non_seekable_stream()
     {
         using var gzipStream = new GZipStream(Stream.Null, CompressionMode.Decompress);
         using var stream = gzipStream.ReadSlice(10);
@@ -110,7 +110,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Position()
+    public void position()
     {
         var buffer = new byte[_DefaultNestedLength];
 
@@ -132,7 +132,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Position_NonSeekableStream()
+    public void position_non_seekable_stream()
     {
         using var nonSeekableWrapper = new NonSeekableStream(_underlyingStream);
         using var stream = nonSeekableWrapper.ReadSlice(10);
@@ -146,7 +146,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void IsDisposed()
+    public void is_disposed()
     {
         ((IHasIsDisposed)_stream).IsDisposed.Should().BeFalse();
         _stream.Dispose();
@@ -154,7 +154,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Dispose_DoesNotDisposeUnderlyingStream()
+    public void dispose_does_not_dispose_underlying_stream()
     {
         _stream.Dispose();
         _underlyingStream.CanSeek.Should().BeTrue();
@@ -164,7 +164,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void SetLength()
+    public void set_length()
     {
         var act = () => _stream.SetLength(0);
         act.Should().Throw<NotSupportedException>();
@@ -173,7 +173,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_Current()
+    public void seek_current()
     {
         _stream.Position.Should().Be(0);
         _stream.Seek(0, SeekOrigin.Current).Should().Be(0);
@@ -210,7 +210,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Sook_WithNonStartPositionInUnderlyingStream()
+    public void sook_with_non_start_position_in_underlying_stream()
     {
         _underlyingStream.Position = 1;
         _stream = _underlyingStream.ReadSlice(5);
@@ -221,7 +221,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_Begin()
+    public void seek_begin()
     {
         _stream.Position.Should().Be(0);
         var actBeforeStart = () => _stream.Seek(-1, SeekOrigin.Begin);
@@ -246,7 +246,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Seek_End()
+    public void seek_end()
     {
         _stream.Position.Should().Be(0);
         _stream.Seek(-1, SeekOrigin.End).Should().Be(9);
@@ -268,7 +268,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Flush()
+    public void flush()
     {
         var act = () => _stream.Flush();
         act.Should().Throw<NotSupportedException>();
@@ -277,7 +277,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task FlushAsync()
+    public async Task flush_async()
     {
         var act = () => _stream.FlushAsync(AbortToken);
         await act.Should().ThrowAsync<NotSupportedException>();
@@ -286,7 +286,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void CanRead()
+    public void can_read()
     {
         _stream.CanRead.Should().BeTrue();
         _stream.Dispose();
@@ -294,7 +294,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void CanWrite()
+    public void can_write()
     {
         _stream.CanWrite.Should().BeFalse();
         _stream.Dispose();
@@ -302,7 +302,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task WriteAsync_Throws()
+    public async Task write_async_throws()
     {
         var act = () => _stream.WriteAsync(new byte[1], 0, 1, AbortToken).WithCancellation(TimeoutToken);
         await act.Should().ThrowAsync<NotSupportedException>();
@@ -313,7 +313,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Write_Throws()
+    public void write_throws()
     {
         var act = () => _stream.Write(new byte[1], 0, 1);
         act.Should().Throw<NotSupportedException>();
@@ -322,13 +322,13 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_Empty_ReturnsZero()
+    public async Task read_async_empty_returns_zero()
     {
         (await _stream.ReadAsync([], 0, 0, CancellationToken.None).WithCancellation(TimeoutToken)).Should().Be(0);
     }
 
     [Fact]
-    public async Task Read_BeyondEndOfStream_ReturnsZero()
+    public async Task read_beyond_end_of_stream_returns_zero()
     {
         // Seek beyond the end of the stream
         _stream.Seek(1, SeekOrigin.End);
@@ -339,7 +339,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_NoMoreThanGiven()
+    public async Task read_async_no_more_than_given()
     {
         var buffer = new byte[_underlyingStream.Length];
 
@@ -359,7 +359,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_NoMoreThanGiven()
+    public void read_no_more_than_given()
     {
         var buffer = new byte[_underlyingStream.Length];
         var bytesRead = _stream.Read(buffer, 0, buffer.Length);
@@ -370,7 +370,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_Span_NoMoreThanGiven()
+    public void read_span_no_more_than_given()
     {
         var buffer = new byte[_underlyingStream.Length];
 
@@ -383,7 +383,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_Span_BeyondEndOfStream_ReturnsZero()
+    public void read_span_beyond_end_of_stream_returns_zero()
     {
         // Seek beyond the end of the stream
         _stream.Seek(1, SeekOrigin.End);
@@ -394,13 +394,13 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_Empty_ReturnsZero()
+    public void read_empty_returns_zero()
     {
         _stream.Read([], 0, 0).Should().Be(0);
     }
 
     [Fact]
-    public async Task ReadAsync_WhenLengthIsInitially0()
+    public async Task read_async_when_length_is_initially0()
     {
         _stream = _underlyingStream.ReadSlice(0);
 
@@ -408,20 +408,20 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_WhenLengthIsInitially0()
+    public void read_when_length_is_initially0()
     {
         _stream = _underlyingStream.ReadSlice(0);
         _stream.Read(new byte[1], 0, 1).Should().Be(0);
     }
 
     [Fact]
-    public void CreationDoesNotReadFromUnderlyingStream()
+    public void creation_does_not_read_from_underlying_stream()
     {
         _underlyingStream.Position.Should().Be(0);
     }
 
     [Fact]
-    public void Read_UnderlyingStreamReturnsFewerBytesThanRequested()
+    public void read_underlying_stream_returns_fewer_bytes_than_requested()
     {
         var buffer = new byte[20];
         const int firstBlockLength = _DefaultNestedLength / 2;
@@ -432,7 +432,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_UnderlyingStreamReturnsFewerBytesThanRequested()
+    public async Task read_async_underlying_stream_returns_fewer_bytes_than_requested()
     {
         var buffer = new byte[20];
         const int firstBlockLength = _DefaultNestedLength / 2;
@@ -443,7 +443,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_ValidatesArguments()
+    public void read_validates_arguments()
     {
         var buffer = new byte[20];
 
@@ -458,7 +458,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_ValidatesArguments()
+    public async Task read_async_validates_arguments()
     {
         var buffer = new byte[20];
 
@@ -473,7 +473,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public void Read_ThrowsIfDisposed()
+    public void read_throws_if_disposed()
     {
         _stream.Dispose();
 
@@ -482,7 +482,7 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
-    public async Task ReadAsync_ThrowsIfDisposed()
+    public async Task read_async_throws_if_disposed()
     {
         await _stream.DisposeAsync();
 

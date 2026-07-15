@@ -10,7 +10,7 @@ public sealed class FixTests
     private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
-    public void Fix_should_return_valid_geometry_unchanged()
+    public void should_return_valid_geometry_unchanged_when_fix()
     {
         // given - valid square polygon
         var coords = new Coordinate[] { new(0, 0), new(1, 0), new(1, 1), new(0, 1), new(0, 0) };
@@ -24,7 +24,7 @@ public sealed class FixTests
     }
 
     [Fact]
-    public void Fix_should_return_empty_geometry_unchanged()
+    public void should_return_empty_geometry_unchanged_when_fix()
     {
         // given
         var empty = Factory.CreatePolygon();
@@ -37,7 +37,7 @@ public sealed class FixTests
     }
 
     [Fact]
-    public void Fix_should_fix_self_intersecting_polygon_with_buffer()
+    public void should_fix_self_intersecting_polygon_with_buffer_when_fix()
     {
         // given - figure-8 self-intersecting polygon
         var polygon = _CreateSelfIntersecting();
@@ -52,7 +52,7 @@ public sealed class FixTests
     }
 
     [Fact]
-    public void Fix_should_use_GeometryFixer_when_buffer_fails()
+    public void should_use_geometry_fixer_when_fix_buffer_fails()
     {
         // given - create a polygon with a spike (degenerate geometry that Buffer(0) may not fix)
         // This polygon has collinear points and a spike that makes it invalid

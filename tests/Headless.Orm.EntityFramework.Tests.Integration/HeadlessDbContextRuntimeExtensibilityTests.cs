@@ -19,7 +19,7 @@ namespace Tests;
 public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 {
     [Fact]
-    public async Task headless_db_context_runtime_initialize_should_be_idempotent()
+    public async Task should_be_idempotent_when_headless_db_context_runtime_initialize()
     {
         // given — a DbContext-backed runtime that has already been initialized through the DbContext
         // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
@@ -48,7 +48,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public void add_headless_db_context_services_should_replace_null_current_tenant_fallback()
+    public void should_replace_null_current_tenant_fallback_when_add_headless_db_context_services()
     {
         // given
         var services = new ServiceCollection();
@@ -63,7 +63,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public void add_headless_db_context_services_should_preserve_custom_current_tenant()
+    public void should_preserve_custom_current_tenant_when_add_headless_db_context_services()
     {
         // given
         var customTenant = new RuntimeCustomCurrentTenant();
@@ -79,7 +79,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_run_custom_entry_processors_by_order()
+    public async Task should_run_custom_entry_processors_by_order_when_save_changes()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync();
@@ -100,7 +100,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_expose_current_tenant_on_entry_processor_context()
+    public async Task should_expose_current_tenant_on_entry_processor_context_when_save_changes()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(
@@ -124,7 +124,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_use_default_processors_when_entity_does_not_emit_messages()
+    public async Task should_use_default_processors_when_save_changes_entity_does_not_emit_messages()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync();
@@ -147,7 +147,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_throw_when_messages_are_emitted_without_dispatcher()
+    public async Task should_throw_when_save_changes_messages_are_emitted_without_dispatcher()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync();
@@ -167,7 +167,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_throw_when_integration_events_emitted_without_outbox_dispatcher()
+    public async Task should_throw_when_save_changes_integration_events_emitted_without_outbox_dispatcher()
     {
         // given — ILocalEventBus is registered (so the AggregateRoot lifecycle domain events drained
         // by the first save are satisfied), but no IHeadlessOutboxDispatcher. The second save queues an
@@ -194,7 +194,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_name_add_domain_events_when_domain_event_emitted_without_local_event_bus()
+    public async Task should_name_add_domain_events_when_save_changes_domain_event_emitted_without_local_event_bus()
     {
         // given — the default pipeline emits lifecycle domain events for the tracked AggregateRoot, but
         // no ILocalEventBus is registered. The guard message must point the consumer at the actionable
@@ -216,7 +216,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_name_add_integration_event_outbox_when_integration_event_emitted_without_outbox_dispatcher()
+    public async Task should_name_add_integration_event_outbox_when_save_changes_integration_event_emitted_without_outbox_dispatcher()
     {
         // given — ILocalEventBus is registered so the first save's lifecycle domain events drain, but no
         // IHeadlessOutboxDispatcher. Queuing an integration event on the tracked entity must fail with a
@@ -243,7 +243,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_not_throw_when_aggregate_root_emits_no_events_and_no_buses_registered()
+    public async Task should_not_throw_when_save_changes_aggregate_root_emits_no_events_and_no_buses_registered()
     {
         // given — an AggregateRoot is tracked and saved, but the lifecycle local-event processor is
         // removed so it emits zero domain events and (untouched) zero integration events. With neither
@@ -269,7 +269,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_use_registered_message_dispatcher_when_messages_are_emitted()
+    public async Task should_use_registered_message_dispatcher_when_save_changes_messages_are_emitted()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
@@ -292,7 +292,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_publish_messages_queued_on_unchanged_tracked_emitters()
+    public async Task should_publish_messages_queued_on_unchanged_tracked_emitters_when_save_changes()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
@@ -321,7 +321,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_publish_messages_queued_by_custom_entry_processors()
+    public async Task should_publish_messages_queued_by_custom_entry_processors_when_save_changes()
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(
@@ -346,7 +346,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_should_publish_domain_events_at_most_once_when_execution_strategy_retries()
+    public async Task should_publish_domain_events_at_most_once_when_save_changes_execution_strategy_retries()
     {
         // given — SQLite has no built-in retrying strategy, so we wire a one-shot retrying execution strategy
         // (ReplaceService<IExecutionStrategyFactory>) plus a SaveChanges interceptor that throws a marker
@@ -471,9 +471,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
         public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent => LocalEmitters.Add(domainEvent);
+            where T : class, IDomainEvent
+        {
+            LocalEmitters.Add(domainEvent);
+        }
 
-        public void Publish(IDomainEvent domainEvent) => LocalEmitters.Add(domainEvent);
+        public void Publish(IDomainEvent domainEvent)
+        {
+            LocalEmitters.Add(domainEvent);
+        }
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
@@ -520,9 +526,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public int PublishCount => _publishCount;
 
         public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent => Interlocked.Increment(ref _publishCount);
+            where T : class, IDomainEvent
+        {
+            Interlocked.Increment(ref _publishCount);
+        }
 
-        public void Publish(IDomainEvent domainEvent) => Interlocked.Increment(ref _publishCount);
+        public void Publish(IDomainEvent domainEvent)
+        {
+            Interlocked.Increment(ref _publishCount);
+        }
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
@@ -580,13 +592,19 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     private sealed class OneShotRetryExecutionStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
     {
-        protected override bool ShouldRetryOn(Exception exception) => exception is TransientMarkerException;
+        protected override bool ShouldRetryOn(Exception exception)
+        {
+            return exception is TransientMarkerException;
+        }
     }
 
     private sealed class OneShotRetryExecutionStrategyFactory(ExecutionStrategyDependencies dependencies)
         : IExecutionStrategyFactory
     {
-        public IExecutionStrategy Create() => new OneShotRetryExecutionStrategy(dependencies);
+        public IExecutionStrategy Create()
+        {
+            return new OneShotRetryExecutionStrategy(dependencies);
+        }
     }
 
     private sealed record RuntimeLocalMessage(string UniqueId) : IDomainEvent;
@@ -615,7 +633,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public string Name => "Custom";
 
-        public IDisposable Change(string? id, string? name = null) => new RuntimeCurrentTenantScope();
+        public IDisposable Change(string? id, string? name = null)
+        {
+            return new RuntimeCurrentTenantScope();
+        }
     }
 
     private sealed class RuntimeCurrentTenantScope : IDisposable
@@ -639,7 +660,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public required string Name { get; init; }
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     private sealed class RuntimeEntity : AggregateRoot, IEntity<Guid>
@@ -649,10 +673,19 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public required string Name { get; init; }
 
         // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
-        public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+        public void EmitDomainEvent(IDomainEvent domainEvent)
+        {
+            AddDomainEvent(domainEvent);
+        }
 
-        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+        {
+            AddIntegrationEvent(integrationEvent);
+        }
 
-        public override IReadOnlyList<object> GetKeys() => [Id];
+        public override IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 }

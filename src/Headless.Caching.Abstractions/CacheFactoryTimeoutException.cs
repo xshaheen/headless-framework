@@ -18,6 +18,8 @@ public sealed class CacheFactoryTimeoutException(string key, TimeSpan limit)
     /// <summary>The configured hard timeout limit the factory exceeded.</summary>
     public TimeSpan Limit { get; } = limit;
 
-    private static string _BuildMessage(string key, TimeSpan limit) =>
-        string.Create(CultureInfo.InvariantCulture, $"Cache factory timed out for key '{key}' after {limit:g}.");
+    private static string _BuildMessage(string key, TimeSpan limit)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Cache factory timed out for key '{key}' after {limit:g}.");
+    }
 }

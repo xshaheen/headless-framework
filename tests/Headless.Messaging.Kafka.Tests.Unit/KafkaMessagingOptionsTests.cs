@@ -152,7 +152,7 @@ public sealed class KafkaMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void DefaultRetriableErrorCodes_should_return_expected_codes()
+    public void should_return_expected_codes_when_default_retriable_error_codes()
     {
         // given, when
         var codes = KafkaMessagingOptions.DefaultRetriableErrorCodes;

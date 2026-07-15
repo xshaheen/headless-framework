@@ -47,7 +47,10 @@ public abstract class BlobStorageTestsBase : TestBase
     /// via <c>GetKeyedService&lt;IBlobContainerManager&gt;</c>). Returns <see langword="null"/> when the backend has no
     /// lifecycle capability. The capability is resolved, never cast from <see cref="IBlobStorage"/>.
     /// </summary>
-    protected virtual IBlobContainerManager? GetContainerManager() => null;
+    protected virtual IBlobContainerManager? GetContainerManager()
+    {
+        return null;
+    }
 
     /// <summary>
     /// The value the leaf expects <see cref="IBlobStorage.RequiresContainerProvisioning"/> to report for its backend.
@@ -57,7 +60,10 @@ public abstract class BlobStorageTestsBase : TestBase
     protected virtual bool ExpectedRequiresContainerProvisioning => true;
 
     /// <summary>Builds a <see cref="BlobLocation"/> in <see cref="ContainerName"/> from the given path segments.</summary>
-    private BlobLocation _Loc(params string[] segments) => new(ContainerName, segments);
+    private BlobLocation _Loc(params string[] segments)
+    {
+        return new(ContainerName, segments);
+    }
 
     #region List / Round-trip
 

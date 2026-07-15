@@ -19,15 +19,30 @@ internal sealed class PermissionsEntityValidationStartupGate<TContext>(IDbContex
         _EnsureEntity(context, typeof(PermissionGroupDefinitionRecord), nameof(PermissionGroupDefinitionRecord));
     }
 
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     private static void _EnsureEntity(DbContext context, Type entityType, string entityName)
     {

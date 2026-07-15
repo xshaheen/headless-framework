@@ -41,7 +41,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task replay_should_return_same_body_proving_handler_ran_exactly_once()
+    public async Task should_return_same_body_proving_handler_ran_exactly_once_when_replay()
     {
         // The handler embeds a fresh GUID per invocation in the response body.
         // Replay returns the cached bytes, so identical bodies across two retries
@@ -78,7 +78,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task original_record_should_remain_replayable_after_mismatch_attempt()
+    public async Task should_remain_replayable_after_mismatch_attempt_when_original_record()
     {
         await using var app = await IdempotencyTestApp.CreateAsync();
         using var client = IdempotencyTestApp.CreateClient(app);
@@ -179,7 +179,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE9: header allowlist filters Set-Cookie / traceparent ───────────────
 
     [Fact]
-    public async Task replay_response_should_drop_set_cookie_and_traceparent_by_default()
+    public async Task should_drop_set_cookie_and_traceparent_by_default_when_replay_response()
     {
         await using var app = await IdempotencyTestApp.CreateAsync();
         using var client = IdempotencyTestApp.CreateClient(app);
@@ -214,7 +214,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE7: tenant isolation ────────────────────────────────────────────────
 
     [Fact]
-    public async Task different_tenants_with_same_key_should_not_collide()
+    public async Task should_not_collide_when_different_tenants_with_same_key()
     {
         const string tenantHeader = "X-Test-Tenant";
         await using var app = await IdempotencyTestApp.CreateAsync(tenantHeaderName: tenantHeader);
@@ -249,7 +249,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE12: per-endpoint metadata ──────────────────────────────────────────
 
     [Fact]
-    public async Task per_endpoint_with_idempotency_metadata_should_apply_overrides()
+    public async Task should_apply_overrides_when_per_endpoint_with_idempotency_metadata()
     {
         await using var app = await IdempotencyTestApp.CreateAsync(mapAdditionalEndpoints: a =>
         {
@@ -275,7 +275,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE3: concurrent in-flight with Reject strategy ───────────────────────
 
     [Fact]
-    public async Task concurrent_requests_with_reject_strategy_should_invoke_handler_once_and_409_the_loser()
+    public async Task should_invoke_handler_once_and_409_the_loser_when_concurrent_requests_with_reject_strategy()
     {
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(handlerGate: gate);
@@ -311,7 +311,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE4: concurrent in-flight with WaitAndReplay strategy ────────────────
 
     [Fact]
-    public async Task concurrent_requests_with_wait_and_replay_should_block_loser_until_winner_completes_then_replay()
+    public async Task should_block_loser_until_winner_completes_then_replay_when_concurrent_requests_with_wait_and_replay()
     {
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(
@@ -454,7 +454,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task wait_and_replay_should_409_with_in_flight_timeout_when_winner_does_not_finish_before_acquire_timeout()
+    public async Task should_409_with_in_flight_timeout_when_wait_and_replay_winner_does_not_finish_before_acquire_timeout()
     {
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(
@@ -486,7 +486,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── AE8: null-tenant + anonymous user → pass-through (no shared bucket) ──
 
     [Fact]
-    public async Task anonymous_requests_with_no_tenant_and_no_user_identity_should_pass_through_without_replay()
+    public async Task should_pass_through_without_replay_when_anonymous_requests_with_no_tenant_and_no_user_identity()
     {
         await using var app = await IdempotencyTestApp.CreateAsync();
         var userState = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
@@ -514,7 +514,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── RequireUserIdentity: anon-within-tenant cross-replay prevention ──────
 
     [Fact]
-    public async Task tenant_only_anonymous_requests_should_pass_through_when_RequireUserIdentity_is_true()
+    public async Task should_pass_through_when_tenant_only_anonymous_requests_require_user_identity_is_true()
     {
         // Default RequireUserIdentity=true: a tenant-resolved but user-anonymous request must
         // NOT use the default cache key (which would compose idem:{tenant}::POST:/path:{key}
@@ -546,7 +546,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task tenant_only_anonymous_requests_should_replay_when_RequireUserIdentity_is_false()
+    public async Task should_replay_when_tenant_only_anonymous_requests_require_user_identity_is_false()
     {
         // Operators with webhook/OAuth-callback flows opt in: tenant-anon requests participate in
         // idempotency. Two retries sharing tenant + key + body replay byte-equivalently.
@@ -580,7 +580,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── Cache outage: OnCacheError = FailOpen (default) vs Throw ─────────────
 
     [Fact]
-    public async Task should_pass_through_to_handler_when_cache_throws_and_OnCacheError_is_FailOpen()
+    public async Task should_pass_through_to_handler_when_cache_throws_and_on_cache_error_is_fail_open()
     {
         // Default OnCacheError.FailOpen: a hard cache outage (Redis down, ElastiCache failover)
         // must not produce a 5xx storm on every idempotent endpoint. The middleware logs a
@@ -608,7 +608,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_cache_exception_when_OnCacheError_is_Throw()
+    public async Task should_propagate_cache_exception_when_on_cache_error_is_throw()
     {
         // Opt-in strict mode: cache exceptions surface as 5xx so operators see the outage
         // directly instead of silently losing the idempotency guarantee.
@@ -636,7 +636,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── Default cache key includes query string ──────────────────────────────
 
     [Fact]
-    public async Task different_query_strings_with_same_key_and_body_should_not_cross_replay()
+    public async Task should_not_cross_replay_when_different_query_strings_with_same_key_and_body()
     {
         // Real-world endpoints branch on query parameters (?action=void vs ?action=capture,
         // ?dry_run=true vs ?dry_run=false). The default cache key omitted the query string, so
@@ -669,7 +669,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── Winner lock lease decoupled from InFlightLockTimeout ─────────────────
 
     [Fact]
-    public async Task winner_lock_lease_should_use_WinnerLockLease_option_not_InFlightLockTimeout_plus_5s()
+    public async Task should_use_winner_lock_lease_option_not_in_flight_lock_timeout_plus_5s_when_winner_lock_lease()
     {
         // Regression: prior to this commit, the winner's lock lease was `InFlightLockTimeout + 5s`
         // (35s with defaults). Handlers running longer than that lost mutual exclusion when the
@@ -720,7 +720,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     // ── Lock-provider outage: same OnCacheError semantics as cache exceptions ──
 
     [Fact]
-    public async Task should_pass_through_to_handler_when_lock_provider_throws_on_winner_path_and_OnCacheError_is_FailOpen()
+    public async Task should_pass_through_to_handler_when_lock_provider_throws_on_winner_path_and_on_cache_error_is_fail_open()
     {
         // Winner-path TryAcquireAsync throws. Because the fix acquires the lock BEFORE inserting
         // the sentinel marker, no orphan record is left behind — FailOpen just bypasses
@@ -755,7 +755,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_409_in_flight_timeout_when_lock_provider_throws_on_loser_path_and_OnCacheError_is_FailOpen()
+    public async Task should_return_409_in_flight_timeout_when_lock_provider_throws_on_loser_path_and_on_cache_error_is_fail_open()
     {
         // Loser-path TryAcquireAsync throws. We cannot wait for the winner and cannot call
         // next() (would re-invoke the handler). Return a recoverable 409 so the client retries.

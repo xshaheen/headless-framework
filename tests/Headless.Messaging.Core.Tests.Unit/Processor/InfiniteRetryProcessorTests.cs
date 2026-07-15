@@ -139,7 +139,10 @@ public sealed class InfiniteRetryProcessorTests : TestBase
             return actions[call - 1](context);
         }
 
-        public override string ToString() => nameof(SequenceProcessor);
+        public override string ToString()
+        {
+            return nameof(SequenceProcessor);
+        }
     }
 
     private sealed class ControlledTimeProvider : TimeProvider
@@ -201,7 +204,10 @@ public sealed class InfiniteRetryProcessorTests : TestBase
     {
         private bool _disposed;
 
-        public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+        public bool Change(TimeSpan dueTime, TimeSpan period)
+        {
+            return true;
+        }
 
         public void Dispose()
         {

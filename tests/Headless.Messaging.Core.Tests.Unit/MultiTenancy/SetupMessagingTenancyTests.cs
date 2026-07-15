@@ -166,7 +166,7 @@ public sealed class SetupMessagingTenancyTests : TestBase
     }
 
     [Fact]
-    public async Task should_emit_no_propagation_diagnostic_when_consumer_supplied_ICurrentTenant_is_registered()
+    public async Task should_emit_no_propagation_diagnostic_when_consumer_supplied_i_current_tenant_is_registered()
     {
         // given — a consumer-supplied (non-CurrentTenant, non-NullCurrentTenant) ICurrentTenant
         // is registered before tenancy root configures messaging propagation. The validator should

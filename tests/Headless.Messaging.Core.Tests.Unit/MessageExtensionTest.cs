@@ -6,7 +6,7 @@ namespace Tests;
 public sealed class MessageExtensionTest
 {
     [Fact]
-    public void GetIdTest()
+    public void get_id_test()
     {
         var msgId = Guid.NewGuid().ToString();
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
@@ -17,7 +17,7 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void GetNameTest()
+    public void get_name_test()
     {
         var msgName = Guid.NewGuid().ToString();
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = msgName };
@@ -28,7 +28,7 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void GetCallbackNameTest()
+    public void get_callback_name_test()
     {
         var callbackName = Guid.NewGuid().ToString();
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.CallbackName] = callbackName };
@@ -39,7 +39,7 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void GetGroupTest()
+    public void get_group_test()
     {
         var group = Guid.NewGuid().ToString();
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Group] = group };
@@ -50,7 +50,7 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void GetCorrelationSequenceTest()
+    public void get_correlation_sequence_test()
     {
         const int seq = 1;
 
@@ -65,7 +65,7 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void HasExceptionTest()
+    public void has_exception_test()
     {
         const string exception = "exception message";
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Exception] = exception };

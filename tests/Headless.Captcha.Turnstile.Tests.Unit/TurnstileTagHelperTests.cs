@@ -85,7 +85,10 @@ public sealed class TurnstileTagHelperTests
         output.Attributes["data-language"].Value.Should().Be("en-US");
     }
 
-    private static string _Src(TagHelperOutput output) => output.Attributes["src"].Value?.ToString() ?? "";
+    private static string _Src(TagHelperOutput output)
+    {
+        return output.Attributes["src"].Value?.ToString() ?? "";
+    }
 
     private static IOptionsSnapshot<TurnstileOptions> _Options(TurnstileOptions options)
     {

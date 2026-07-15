@@ -120,5 +120,8 @@ internal sealed class ScannedConsumerBuilder(Type consumerType) : IScannedConsum
         return this;
     }
 
-    public MessageConsumerRegistration Build() => _registration.Build();
+    public MessageConsumerRegistration Build()
+    {
+        return _registration.Build();
+    }
 }

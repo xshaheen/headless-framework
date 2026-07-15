@@ -113,7 +113,10 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         );
     }
 
-    Task<IChannel> IConnectionChannelPool.Rent() => ((IConnectionChannelPool)this).Rent(CancellationToken.None);
+    Task<IChannel> IConnectionChannelPool.Rent()
+    {
+        return ((IConnectionChannelPool)this).Rent(CancellationToken.None);
+    }
 
     // Acquires a pool slot from _poolSemaphore on the way in; the matching release happens in
     // IConnectionChannelPool.Return. The private _CreateChannelAsync helper below deliberately does NOT
@@ -277,8 +280,13 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         return model;
     }
 
-    internal static CreateChannelOptions BuildChannelOptions(bool publishConfirms) =>
-        new(publisherConfirmationsEnabled: publishConfirms, publisherConfirmationTrackingEnabled: publishConfirms);
+    internal static CreateChannelOptions BuildChannelOptions(bool publishConfirms)
+    {
+        return new(
+            publisherConfirmationsEnabled: publishConfirms,
+            publisherConfirmationTrackingEnabled: publishConfirms
+        );
+    }
 
     public bool Return(IChannel channel)
     {

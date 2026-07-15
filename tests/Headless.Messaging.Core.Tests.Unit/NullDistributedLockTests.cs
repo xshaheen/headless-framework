@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class NullDistributedLockTests : TestBase
 {
     [Fact]
-    public async Task should_return_non_null_handle_when_TryAcquireAsync_called()
+    public async Task should_return_non_null_handle_when_try_acquire_async_called()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -23,7 +23,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_succeed_when_RenewAsync_called_on_handle()
+    public async Task should_succeed_when_renew_async_called_on_handle()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -56,7 +56,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_increment_renewal_count_when_RenewAsync_token_is_already_cancelled()
+    public async Task should_not_increment_renewal_count_when_renew_async_token_is_already_cancelled()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -76,7 +76,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_be_safe_to_DisposeAsync_multiple_times()
+    public async Task should_be_safe_to_dispose_async_multiple_times()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -95,7 +95,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_OperationCanceledException_when_TryAcquireAsync_token_is_already_cancelled()
+    public async Task should_throw_operation_canceled_exception_when_try_acquire_async_token_is_already_cancelled()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -151,7 +151,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_OperationCanceledException_when_provider_RenewAsync_token_is_already_cancelled()
+    public async Task should_throw_operation_canceled_exception_when_provider_renew_async_token_is_already_cancelled()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -166,7 +166,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_OperationCanceledException_when_provider_ReleaseAsync_token_is_already_cancelled()
+    public async Task should_throw_operation_canceled_exception_when_provider_release_async_token_is_already_cancelled()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -181,7 +181,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_empty_list_when_ListActiveLocksAsync_called()
+    public async Task should_return_empty_list_when_list_active_locks_async_called()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);
@@ -196,7 +196,7 @@ public sealed class NullDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_zero_when_GetActiveLocksCountAsync_called()
+    public async Task should_return_zero_when_get_active_locks_count_async_called()
     {
         // given
         var sut = new NullDistributedLock(TimeProvider.System);

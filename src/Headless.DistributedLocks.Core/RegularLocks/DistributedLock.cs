@@ -913,9 +913,15 @@ public sealed class DistributedLock(
         public AsyncAutoResetEvent Target { get; } = new();
 
         // No Interlocked needed - all access protected by _resetEventLock
-        public void Increment() => RefCount++;
+        public void Increment()
+        {
+            RefCount++;
+        }
 
-        public int Decrement() => --RefCount;
+        public int Decrement()
+        {
+            return --RefCount;
+        }
     }
 
     #endregion

@@ -9,7 +9,7 @@ public sealed class MimeTypeProviderTests
     private readonly MimeTypeProvider _mimeTypeProvider = new();
 
     [Fact]
-    public void get_mime_type_should_return_correct_mime_type_for_known_file_extension()
+    public void should_return_correct_mime_type_for_known_file_extension_when_get_mime_type()
     {
         // given
         const string fileName = "example.txt";
@@ -22,7 +22,7 @@ public sealed class MimeTypeProviderTests
     }
 
     [Fact]
-    public void get_mime_type_should_return_octet_stream_for_unknown_file_extension()
+    public void should_return_octet_stream_for_unknown_file_extension_when_get_mime_type()
     {
         // given
         const string fileName = "unknownfile.unknown";
@@ -43,7 +43,7 @@ public sealed class MimeTypeProviderTests
     [InlineData("image.tiff", "image/tiff")]
     [InlineData("image.tif", "image/tiff")]
     [InlineData("image.svg", "image/svg+xml")]
-    public void try_get_mime_type_should_return_true_and_correct_mime_type_for_known_image_extensions(
+    public void should_return_true_and_correct_mime_type_for_known_image_extensions_when_try_get_mime_type(
         string fileName,
         string expectedMimeType
     )
@@ -57,7 +57,7 @@ public sealed class MimeTypeProviderTests
     }
 
     [Fact]
-    public void try_get_mime_type_should_return_false_and_null_for_unknown_file_extension()
+    public void should_return_false_and_null_for_unknown_file_extension_when_try_get_mime_type()
     {
         // given
         const string fileName = "unknownfile.unknown";

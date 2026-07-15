@@ -18,7 +18,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     /// Verifies that the constructor does not eagerly connect to Redis.
     /// </summary>
     [Fact]
-    public void constructor_should_not_block_when_initializing_pool()
+    public void should_not_block_when_constructor_initializing_pool()
     {
         // given
         var options = Options.Create(

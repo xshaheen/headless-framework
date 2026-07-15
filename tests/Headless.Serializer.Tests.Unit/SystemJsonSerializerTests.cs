@@ -10,7 +10,7 @@ public sealed class SystemJsonSerializerTests
     private readonly SystemJsonSerializer _serializer = new();
 
     [Fact]
-    public void serialize_type_should_write_to_stream()
+    public void should_write_to_stream_when_serialize_type()
     {
         // given
         var obj = new TestClass { Name = "Test", Age = 30 };
@@ -28,7 +28,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void serialize_object_should_write_to_stream()
+    public void should_write_to_stream_when_serialize_object()
     {
         // given
         object obj = new TestClass { Name = "Test", Age = 30 };
@@ -46,7 +46,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void deserialize_stream_should_return_valid_object()
+    public void should_return_valid_object_when_deserialize_stream()
     {
         // given
         const string json = "{\"name\":\"Test\",\"age\":30}";
@@ -127,7 +127,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void serialize_null_object_should_handle_gracefully()
+    public void should_handle_gracefully_when_serialize_null_object()
     {
         // given
         object? obj = null;
@@ -145,7 +145,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void deserialize_invalid_Json_should_throw_json_exception()
+    public void should_throw_json_exception_when_deserialize_invalid_json()
     {
         // given
         const string invalidJson = "{\"Name\":\"Test\",\"Age\":}";
@@ -162,7 +162,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void create_web_json_options_should_include_default_converters()
+    public void should_include_default_converters_when_create_web_json_options()
     {
         // when
         var options = JsonConstants.CreateWebJsonOptions();

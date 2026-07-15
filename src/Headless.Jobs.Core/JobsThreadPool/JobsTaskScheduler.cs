@@ -79,7 +79,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         Func<CancellationToken, Task> work,
         JobPriority priority,
         CancellationToken cancellationToken = default
-    ) => QueueAsync(work, priority, cancellationToken, cancellationToken);
+    )
+    {
+        return QueueAsync(work, priority, cancellationToken, cancellationToken);
+    }
 
     internal async Task QueueAsync(
         Func<CancellationToken, Task> work,
@@ -469,12 +472,18 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// <summary>
     /// Freezes the scheduler - prevents new tasks from being queued.
     /// </summary>
-    public void Freeze() => _isFrozen = true;
+    public void Freeze()
+    {
+        _isFrozen = true;
+    }
 
     /// <summary>
     /// Resumes the scheduler - allows new tasks to be queued again.
     /// </summary>
-    public void Resume() => _isFrozen = false;
+    public void Resume()
+    {
+        _isFrozen = false;
+    }
 
     /// <summary>
     /// Gets whether the scheduler is currently frozen.
@@ -591,13 +600,15 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _shutdownCts?.Dispose();
     }
 
-    private int _GetQueuedPriorityCount(JobPriority priority) =>
-        priority switch
+    private int _GetQueuedPriorityCount(JobPriority priority)
+    {
+        return priority switch
         {
             JobPriority.High => _queuedHighPriority,
             JobPriority.Low => _queuedLowPriority,
             _ => _queuedNormalPriority,
         };
+    }
 
     private void _IncrementQueuedPriority(JobPriority priority)
     {
@@ -666,12 +677,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             return true;
         }
 
-        private ConcurrentQueue<WorkItem> _GetQueue(JobPriority priority) =>
-            priority switch
+        private ConcurrentQueue<WorkItem> _GetQueue(JobPriority priority)
+        {
+            return priority switch
             {
                 JobPriority.High => _high,
                 JobPriority.Low => _low,
                 _ => _normal,
             };
+        }
     }
 }

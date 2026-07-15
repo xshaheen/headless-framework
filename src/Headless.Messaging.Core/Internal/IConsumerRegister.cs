@@ -509,8 +509,10 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private static string _CreateHandleName(ConsumerGroupKey groupKey) =>
-        CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
+    private static string _CreateHandleName(ConsumerGroupKey groupKey)
+    {
+        return CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
+    }
 
     private async Task _AwaitConsumerReadyThenListenAsync(
         IConsumerClient innerClient,

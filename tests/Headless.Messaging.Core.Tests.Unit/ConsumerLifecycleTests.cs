@@ -11,7 +11,7 @@ public sealed class ConsumerLifecycleTests
     private readonly Faker _faker = new();
 
     [Fact]
-    public async Task should_call_OnStartingAsync_before_each_message_processing()
+    public async Task should_call_on_starting_async_before_each_message_processing()
     {
         // given
         var services = new ServiceCollection();
@@ -47,7 +47,7 @@ public sealed class ConsumerLifecycleTests
     }
 
     [Fact]
-    public async Task should_call_OnStoppingAsync_after_each_message_processing()
+    public async Task should_call_on_stopping_async_after_each_message_processing()
     {
         // given
         var services = new ServiceCollection();
@@ -132,7 +132,7 @@ public sealed class ConsumerLifecycleTests
     }
 
     [Fact]
-    public async Task should_call_OnStoppingAsync_even_when_consume_throws()
+    public async Task should_call_on_stopping_async_even_when_consume_throws()
     {
         // given
         var services = new ServiceCollection();
@@ -168,7 +168,7 @@ public sealed class ConsumerLifecycleTests
     }
 
     [Fact]
-    public async Task should_not_call_lifecycle_hooks_for_consumers_without_IConsumerLifecycle()
+    public async Task should_not_call_lifecycle_hooks_for_consumers_without_i_consumer_lifecycle()
     {
         // given
         var services = new ServiceCollection();
@@ -195,7 +195,7 @@ public sealed class ConsumerLifecycleTests
     }
 
     [Fact]
-    public async Task should_suppress_exceptions_from_OnStoppingAsync()
+    public async Task should_suppress_exceptions_from_on_stopping_async()
     {
         // given
         var services = new ServiceCollection();
@@ -228,7 +228,7 @@ public sealed class ConsumerLifecycleTests
     }
 
     [Fact]
-    public async Task should_allow_OnStartingAsync_to_throw_and_propagate_exception()
+    public async Task should_allow_on_starting_async_to_throw_and_propagate_exception()
     {
         // given
         var services = new ServiceCollection();

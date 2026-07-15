@@ -200,14 +200,16 @@ internal sealed class OutboxMessageWriter(
     // the inner publish never re-reads the AsyncLocal Current after an await.
     private readonly record struct CoordinatedPublishContext(ICommitCoordinator Coordinator, DbTransaction Transaction);
 
-    private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest) =>
-        new()
+    private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)
+    {
+        return new()
         {
             StorageId = Guid.Empty,
             Origin = publishRequest.Message,
             Content = string.Empty,
             IntentType = publishRequest.IntentType,
         };
+    }
 
     #region Tracing
 
@@ -288,7 +290,10 @@ internal sealed class OutboxMessageWriter(
         }
     }
 
-    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    private long _NowUnixTimeMilliseconds()
+    {
+        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    }
 
     #endregion
 }

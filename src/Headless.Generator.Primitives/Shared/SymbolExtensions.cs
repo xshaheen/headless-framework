@@ -15,7 +15,10 @@ public static class SymbolExtensions
     /// <param name="symbol">The symbol to check.</param>
     /// <returns>True if the symbol has public accessibility; otherwise, false.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsPublic(this ISymbol symbol) => symbol.DeclaredAccessibility == Accessibility.Public;
+    public static bool IsPublic(this ISymbol symbol)
+    {
+        return symbol.DeclaredAccessibility == Accessibility.Public;
+    }
 
     /// <summary>Gets members of a specific type for a given ITypeSymbol.</summary>
     /// <typeparam name="TMember">The type of members to retrieve.</typeparam>

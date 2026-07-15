@@ -11,19 +11,24 @@ public sealed class FcmPushNotificationServiceTests : TestBase
 {
     private readonly IFcmMessageSender _sender = Substitute.For<IFcmMessageSender>();
 
-    private FcmPushNotificationService _CreateService() => new(_sender);
+    private FcmPushNotificationService _CreateService()
+    {
+        return new(_sender);
+    }
 
     private static PushNotificationRequest _Request(
         string title = "title",
         string body = "body",
         IReadOnlyDictionary<string, string>? data = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Title = title,
             Body = body,
             Data = data,
         };
+    }
 
     [Fact]
     public async Task should_return_sender_outcome_for_single_send()

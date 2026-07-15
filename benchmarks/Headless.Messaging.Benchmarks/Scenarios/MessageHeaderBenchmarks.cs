@@ -32,5 +32,8 @@ public class MessageHeaderBenchmarks
     }
 
     [Benchmark]
-    public MessageHeader Construct() => new(_headers);
+    public MessageHeader Construct()
+    {
+        return new(_headers);
+    }
 }

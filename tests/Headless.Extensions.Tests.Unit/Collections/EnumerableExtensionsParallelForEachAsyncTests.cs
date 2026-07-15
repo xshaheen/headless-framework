@@ -9,7 +9,7 @@ namespace Tests.Collections;
 public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
 {
     [Fact]
-    public async Task parallel_for_each_async_should_process_every_item()
+    public async Task should_process_every_item_when_parallel_for_each_async()
     {
         // given
         var source = Enumerable.Range(1, 50).ToList();
@@ -30,7 +30,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_for_each_async_should_not_exceed_degree_of_parallelism()
+    public async Task should_not_exceed_degree_of_parallelism_when_parallel_for_each_async()
     {
         // given
         const int degreeOfParallelism = 2;
@@ -59,7 +59,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_for_each_async_should_accept_minus_one_as_unlimited_parallelism()
+    public async Task should_accept_minus_one_as_unlimited_parallelism_when_parallel_for_each_async()
     {
         // given - the documented sentinel for "unlimited"
         var source = Enumerable.Range(1, 10).ToList();
@@ -83,7 +83,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     [Theory]
     [InlineData(0)]
     [InlineData(-2)]
-    public async Task parallel_for_each_async_should_reject_invalid_degree_of_parallelism(int degreeOfParallelism)
+    public async Task should_reject_invalid_degree_of_parallelism_when_parallel_for_each_async(int degreeOfParallelism)
     {
         // given
         var source = new[] { 1 };
@@ -96,7 +96,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_for_each_async_should_throw_without_processing_when_token_already_cancelled()
+    public async Task should_throw_without_processing_when_parallel_for_each_async_token_already_cancelled()
     {
         // given
         var source = Enumerable.Range(1, 5).ToList();
@@ -121,7 +121,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_for_each_async_should_throw_when_source_is_null()
+    public async Task should_throw_when_parallel_for_each_async_source_is_null()
     {
         // given
         IEnumerable<int> source = null!;
@@ -134,7 +134,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_for_each_async_should_throw_when_action_is_null()
+    public async Task should_throw_when_parallel_for_each_async_action_is_null()
     {
         // given
         var source = new[] { 1 };

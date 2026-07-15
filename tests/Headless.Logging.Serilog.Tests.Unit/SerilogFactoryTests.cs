@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class SerilogFactoryTests
 {
     [Fact]
-    public void SerilogOptions_should_use_documented_defaults()
+    public void should_use_documented_defaults_when_serilog_options()
     {
         var options = new SerilogOptions();
 
@@ -24,7 +24,7 @@ public sealed class SerilogFactoryTests
     }
 
     [Fact]
-    public void ConfigureBootstrapLoggerConfiguration_should_return_same_configuration_instance()
+    public void should_return_same_configuration_instance_when_configure_bootstrap_logger_configuration()
     {
         var loggerConfiguration = new LoggerConfiguration();
         var options = new SerilogOptions { LogDirectory = _CreateTempLogDirectory() };
@@ -37,7 +37,7 @@ public sealed class SerilogFactoryTests
     }
 
     [Fact]
-    public void ConfigureReloadableLoggerConfiguration_should_return_same_configuration_instance()
+    public void should_return_same_configuration_instance_when_configure_reloadable_logger_configuration()
     {
         var loggerConfiguration = new LoggerConfiguration();
         var configuration = new ConfigurationBuilder().Build();
@@ -57,6 +57,8 @@ public sealed class SerilogFactoryTests
         logger.Should().NotBeNull();
     }
 
-    private static string _CreateTempLogDirectory() =>
-        Path.Combine(Path.GetTempPath(), "headless-serilog-tests", Guid.NewGuid().ToString("N"));
+    private static string _CreateTempLogDirectory()
+    {
+        return Path.Combine(Path.GetTempPath(), "headless-serilog-tests", Guid.NewGuid().ToString("N"));
+    }
 }

@@ -11,16 +11,25 @@ namespace Tests.Helpers;
 /// </summary>
 public sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
 {
-    public ILogger CreateLogger(string categoryName) => new CapturingLogger(log);
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new CapturingLogger(log);
+    }
 
     public void Dispose() { }
 
     private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull
+        {
+            return null;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

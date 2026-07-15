@@ -88,7 +88,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     #region ResultError Mapping Tests
 
     [Fact]
-    public void should_map_NotFoundError_to_404()
+    public void should_map_not_found_error_to_404()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -104,7 +104,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ValidationError_to_422()
+    public void should_map_validation_error_to_422()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -120,7 +120,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ForbiddenError_to_403()
+    public void should_map_forbidden_error_to_403()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -136,7 +136,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_pass_g_forbidden_error_code_to_creator_for_ForbiddenError()
+    public void should_pass_g_forbidden_error_code_to_creator_for_forbidden_error()
     {
         // given — verify the g: prefix is used (framework snake_case convention)
         var creator = _CreateProblemDetailsCreator();
@@ -150,7 +150,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_UnauthorizedError_to_401()
+    public void should_map_unauthorized_error_to_401()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -166,7 +166,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_AggregateError_to_409()
+    public void should_map_aggregate_error_to_409()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -185,7 +185,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ConflictError_to_409()
+    public void should_map_conflict_error_to_409()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -221,7 +221,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     #region Edge Cases
 
     [Fact]
-    public void should_invoke_entity_not_found_factory_for_NotFoundError()
+    public void should_invoke_entity_not_found_factory_for_not_found_error()
     {
         // given
         var creator = _CreateProblemDetailsCreator();

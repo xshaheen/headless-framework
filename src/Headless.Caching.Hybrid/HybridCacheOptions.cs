@@ -188,6 +188,8 @@ internal sealed class HybridCacheOptionsValidator : AbstractValidator<HybridCach
             .WithMessage("DistributedCacheCircuitBreakerDuration must be zero or positive");
     }
 
-    private static bool _IsValidTimeout(TimeSpan timeout) =>
-        timeout == Timeout.InfiniteTimeSpan || timeout > TimeSpan.Zero;
+    private static bool _IsValidTimeout(TimeSpan timeout)
+    {
+        return timeout == Timeout.InfiniteTimeSpan || timeout > TimeSpan.Zero;
+    }
 }

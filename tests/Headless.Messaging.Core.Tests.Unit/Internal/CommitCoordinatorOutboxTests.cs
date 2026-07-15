@@ -162,7 +162,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task flush_should_swallow_timeout_when_dispatcher_exceeds_flush_timeout()
+    public async Task should_swallow_timeout_when_flush_dispatcher_exceeds_flush_timeout()
     {
         // A broker that never completes must not hold the post-commit drain (and its DI scope + DB connection)
         // open forever: the independent flush timeout cancels the dispatch, the OCE is swallowed, and the drain
@@ -198,7 +198,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task flush_should_keep_dispatching_and_rethrow_a_single_message_broker_fault()
+    public async Task should_keep_dispatching_and_rethrow_a_single_message_broker_fault_when_flush()
     {
         var coordinator = new CommitCoordinator();
         var dispatched = new List<Guid>();
@@ -241,7 +241,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task flush_should_aggregate_multiple_message_broker_faults()
+    public async Task should_aggregate_multiple_message_broker_faults_when_flush()
     {
         var coordinator = new CommitCoordinator();
         var dispatched = new List<Guid>();
@@ -286,7 +286,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task flush_should_parse_offsetless_delayed_sent_time_as_utc()
+    public async Task should_parse_offsetless_delayed_sent_time_as_utc_when_flush()
     {
         var coordinator = new CommitCoordinator();
         var expectedPublishTime = new DateTimeOffset(2026, 7, 6, 9, 30, 0, TimeSpan.Zero);
@@ -323,8 +323,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         capturedPublishTimes[0].Offset.Should().Be(TimeSpan.Zero);
     }
 
-    private static MediumMessage _BuildMessage() =>
-        new()
+    private static MediumMessage _BuildMessage()
+    {
+        return new()
         {
             StorageId = Guid.NewGuid(),
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
@@ -332,6 +333,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             IntentType = IntentType.Bus,
             Added = DateTimeOffset.UtcNow,
         };
+    }
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()
     {
@@ -351,7 +353,10 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
     private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>
@@ -359,9 +364,15 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         public List<string> Warnings { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull
+        {
+            return null;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

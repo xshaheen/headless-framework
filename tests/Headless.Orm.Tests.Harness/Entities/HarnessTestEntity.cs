@@ -60,18 +60,39 @@ public sealed class HarnessTestEntity
     public string? ConcurrencyStamp { get; private init; }
 
     // Domain helpers to toggle flags so EF tracks modifications
-    public void MarkDeleted() => IsDeleted = true;
+    public void MarkDeleted()
+    {
+        IsDeleted = true;
+    }
 
-    public void MarkRestored() => IsDeleted = false;
+    public void MarkRestored()
+    {
+        IsDeleted = false;
+    }
 
-    public void MarkSuspended() => IsSuspended = true;
+    public void MarkSuspended()
+    {
+        IsSuspended = true;
+    }
 
-    public void MarkUnsuspended() => IsSuspended = false;
+    public void MarkUnsuspended()
+    {
+        IsSuspended = false;
+    }
 
     // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
-    public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+    public void EmitDomainEvent(IDomainEvent domainEvent)
+    {
+        AddDomainEvent(domainEvent);
+    }
 
-    public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
+    public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+    {
+        AddIntegrationEvent(integrationEvent);
+    }
 
-    public override IReadOnlyList<object> GetKeys() => [Id];
+    public override IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }

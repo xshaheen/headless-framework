@@ -90,7 +90,10 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
-    ) => _SetEntryCoreAsync(key, entry, cancellationToken);
+    )
+    {
+        return _SetEntryCoreAsync(key, entry, cancellationToken);
+    }
 
     private async ValueTask<bool> _SetEntryCoreAsync<T>(
         string key,
@@ -118,28 +121,36 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         DateTime physicalExpiresAt,
         DateTime now,
         CancellationToken cancellationToken
-    ) =>
-        ((IFactoryCacheStore)_cache).TryRearmSlidingAsync(
+    )
+    {
+        return ((IFactoryCacheStore)_cache).TryRearmSlidingAsync(
             key,
             slidingExpiration,
             physicalExpiresAt,
             now,
             cancellationToken
         );
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    )
+    {
+        return _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
 
     public async ValueTask<bool> UpsertAsync<T>(
         string key,
@@ -162,7 +173,10 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         T? value,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
-    ) => _cache.UpsertEntryAsync(key, value, options, cancellationToken);
+    )
+    {
+        return _cache.UpsertEntryAsync(key, value, options, cancellationToken);
+    }
 
     public async ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
@@ -184,14 +198,20 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryInsertAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.TryInsertAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
@@ -199,56 +219,80 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+    }
 
     public ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    )
+    {
+        return _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    )
+    {
+        return _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetAddAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetAddAsync(key, value, expiration, cancellationToken);
+    }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
@@ -305,12 +349,18 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => _cache.GetByPrefixAsync<T>(prefix, cancellationToken);
+    )
+    {
+        return _cache.GetByPrefixAsync<T>(prefix, cancellationToken);
+    }
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
-    ) => _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    )
+    {
+        return _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    }
 
     public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
@@ -319,8 +369,10 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         return await _cache.GetAsync<T>(key, cancellationToken);
     }
 
-    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
-        _cache.GetCountAsync(prefix, cancellationToken);
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return _cache.GetCountAsync(prefix, cancellationToken);
+    }
 
     public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
@@ -354,39 +406,58 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         await _cache.RefreshAsync(key, cancellationToken);
     }
 
-    public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.RemoveAsync(key, cancellationToken);
+    public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveAsync(key, cancellationToken);
+    }
 
-    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.ExpireAsync(key, cancellationToken);
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return _cache.ExpireAsync(key, cancellationToken);
+    }
 
-    public ValueTask<bool> RemoveIfEqualAsync<T>(
-        string key,
-        T? expected,
-        CancellationToken cancellationToken = default
-    ) => _cache.RemoveIfEqualAsync(key, expected, cancellationToken);
+    public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveIfEqualAsync(key, expected, cancellationToken);
+    }
 
-    public ValueTask<int> RemoveAllAsync(
-        IEnumerable<string> cacheKeys,
-        CancellationToken cancellationToken = default
-    ) => _cache.RemoveAllAsync(cacheKeys, cancellationToken);
+    public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveAllAsync(cacheKeys, cancellationToken);
+    }
 
-    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
-        _cache.RemoveByPrefixAsync(prefix, cancellationToken);
+    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveByPrefixAsync(prefix, cancellationToken);
+    }
 
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
-        _cache.RemoveByTagAsync(tag, cancellationToken);
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveByTagAsync(tag, cancellationToken);
+    }
 
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => _cache.ClearAsync(cancellationToken);
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return _cache.ClearAsync(cancellationToken);
+    }
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        return _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
+    }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default) => _cache.FlushAsync(cancellationToken);
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        return _cache.FlushAsync(cancellationToken);
+    }
 
-    public void Dispose() => _cache.Dispose();
+    public void Dispose()
+    {
+        _cache.Dispose();
+    }
 }

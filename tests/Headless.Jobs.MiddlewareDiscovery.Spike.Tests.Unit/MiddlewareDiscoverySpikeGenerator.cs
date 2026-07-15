@@ -376,11 +376,13 @@ internal sealed class MiddlewareDiscoverySpikeGenerator : IIncrementalGenerator
 
     private readonly record struct MiddlewareKey(string? TargetFunction, int Priority, string StableIdentity)
     {
-        public override string ToString() =>
-            (TargetFunction is null ? "global" : "target:" + TargetFunction)
-            + "|"
-            + Priority.ToString(CultureInfo.InvariantCulture)
-            + "|"
-            + StableIdentity;
+        public override string ToString()
+        {
+            return (TargetFunction is null ? "global" : "target:" + TargetFunction)
+                + "|"
+                + Priority.ToString(CultureInfo.InvariantCulture)
+                + "|"
+                + StableIdentity;
+        }
     }
 }

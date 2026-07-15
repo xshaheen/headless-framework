@@ -258,8 +258,9 @@ public static class SitemapUrls
 
     // Returns the interned lowercase sitemap token (no allocation), versus ToString().ToLowerInvariant()
     // which allocates a new lowercased string per URL.
-    private static string _ToChangeFreqValue(ChangeFrequency frequency) =>
-        frequency switch
+    private static string _ToChangeFreqValue(ChangeFrequency frequency)
+    {
+        return frequency switch
         {
             ChangeFrequency.Always => "always",
             ChangeFrequency.Hourly => "hourly",
@@ -270,6 +271,7 @@ public static class SitemapUrls
             ChangeFrequency.Never => "never",
             _ => frequency.ToString().ToLowerInvariant(),
         };
+    }
 
     private static async Task _WriteOtherNodesAsync(XmlWriter writer, SitemapUrl sitemapUrl)
     {

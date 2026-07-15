@@ -31,7 +31,10 @@ public static class SetupJobs
     public static IServiceCollection AddHeadlessJobs(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? optionsBuilder = null
-    ) => services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
+    )
+    {
+        return services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
+    }
 
     public static IServiceCollection AddHeadlessJobs<TTimeJob, TCronJob>(
         this IServiceCollection services,

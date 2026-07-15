@@ -136,7 +136,10 @@ public sealed class RetryPolicyOptions
     /// configured); <c>HasMoreInlineAttempts(0)</c> with <c>RetryStrategy.MaxRetryAttempts=3</c> returns
     /// <see langword="true"/> (three inline retries still available).
     /// </remarks>
-    internal bool HasMoreInlineAttempts(int attemptsCompleted) => attemptsCompleted < RetryStrategy.MaxRetryAttempts;
+    internal bool HasMoreInlineAttempts(int attemptsCompleted)
+    {
+        return attemptsCompleted < RetryStrategy.MaxRetryAttempts;
+    }
 
     /// <summary>
     /// Copies all properties of this instance to <paramref name="target"/>.

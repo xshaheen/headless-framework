@@ -65,7 +65,13 @@ public sealed class ConflictException : Exception
         return builder.ToString();
     }
 
-    private static string _BuildErrorMessage(ErrorDescriptor error) => $"Conflict: {error}";
+    private static string _BuildErrorMessage(ErrorDescriptor error)
+    {
+        return $"Conflict: {error}";
+    }
 
-    private static string _BuildErrorMessage(string error) => $"Conflict: {error}";
+    private static string _BuildErrorMessage(string error)
+    {
+        return $"Conflict: {error}";
+    }
 }

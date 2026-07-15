@@ -20,7 +20,7 @@ namespace Tests;
 public sealed class MessagingIntentSplitTests : TestBase
 {
     [Fact]
-    public void intent_type_storage_values_should_be_stable()
+    public void should_be_stable_when_intent_type_storage_values()
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
@@ -31,7 +31,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void for_message_on_bus_should_stamp_bus_intent()
+    public void should_stamp_bus_intent_when_for_message_on_bus()
     {
         var services = new ServiceCollection();
 
@@ -46,7 +46,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void for_message_on_queue_should_stamp_queue_intent()
+    public void should_stamp_queue_intent_when_for_message_on_queue()
     {
         var services = new ServiceCollection();
 
@@ -61,7 +61,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void consumer_registry_should_allow_same_topic_group_across_different_intents()
+    public void should_allow_same_topic_group_across_different_intents_when_consumer_registry()
     {
         var registry = new ConsumerRegistry();
 
@@ -90,7 +90,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bootstrap_should_fail_when_queue_consumer_has_no_queue_transport()
+    public async Task should_fail_when_bootstrap_queue_consumer_has_no_queue_transport()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();
@@ -127,7 +127,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bootstrap_should_fail_when_bus_consumer_has_no_bus_transport()
+    public async Task should_fail_when_bootstrap_bus_consumer_has_no_bus_transport()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();
@@ -167,7 +167,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bootstrap_should_not_require_bus_transport_for_queue_only_consumer()
+    public async Task should_not_require_bus_transport_for_queue_only_consumer_when_bootstrap()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();
@@ -205,7 +205,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void add_headless_messaging_should_register_only_queue_publishers_for_queue_only_transport()
+    public void should_register_only_queue_publishers_for_queue_only_transport_when_add_headless_messaging()
     {
         var services = new ServiceCollection();
 
@@ -218,7 +218,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void add_headless_messaging_should_register_only_bus_publishers_for_bus_only_transport()
+    public void should_register_only_bus_publishers_for_bus_only_transport_when_add_headless_messaging()
     {
         var services = new ServiceCollection();
 
@@ -231,7 +231,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bootstrap_should_fail_when_bus_publisher_is_registered_without_bus_transport()
+    public async Task should_fail_when_bootstrap_bus_publisher_is_registered_without_bus_transport()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -254,7 +254,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bootstrap_should_fail_when_queue_publisher_is_registered_without_queue_transport()
+    public async Task should_fail_when_bootstrap_queue_publisher_is_registered_without_queue_transport()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -277,7 +277,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bus_publish_should_throw_publisher_sent_failed_when_transport_reports_failure()
+    public async Task should_throw_publisher_sent_failed_when_bus_publish_transport_reports_failure()
     {
         // given
         await using var transport = new FailingBusTransport();
@@ -291,7 +291,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task bus_publish_should_request_bus_intent_from_factory_and_trace_prepared_intent()
+    public async Task should_request_bus_intent_from_factory_and_trace_prepared_intent_when_bus_publish()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -324,7 +324,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task queue_enqueue_should_throw_publisher_sent_failed_when_transport_reports_failure()
+    public async Task should_throw_publisher_sent_failed_when_queue_enqueue_transport_reports_failure()
     {
         // given
         await using var transport = new FailingQueueTransport();
@@ -338,7 +338,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task queue_enqueue_should_request_queue_intent_from_factory_and_trace_prepared_intent()
+    public async Task should_request_queue_intent_from_factory_and_trace_prepared_intent_when_queue_enqueue()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -395,17 +395,20 @@ public sealed class MessagingIntentSplitTests : TestBase
 
     private static IMessagePublishRequestFactory _CreatePublishRequestFactory(
         IOptions<MessagingOptions> optionsAccessor
-    ) =>
-        new MessagePublishRequestFactory(
+    )
+    {
+        return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new ConsumerRegistry(),
             new NullCurrentTenant()
         );
+    }
 
-    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType) =>
-        new()
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType)
+    {
+        return new()
         {
             MessageName = messageName,
             PublishAt = DateTimeOffset.UtcNow,
@@ -419,9 +422,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             ),
             IntentType = intentType,
         };
+    }
 
     [Fact]
-    public void descriptor_comparer_should_treat_bus_and_queue_with_same_topic_group_as_distinct()
+    public void should_treat_bus_and_queue_with_same_topic_group_as_distinct_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
@@ -453,7 +457,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void descriptor_comparer_should_treat_same_topic_group_and_intent_as_equal()
+    public void should_treat_same_topic_group_and_intent_as_equal_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
@@ -488,23 +492,36 @@ public sealed class MessagingIntentSplitTests : TestBase
 
     private sealed class TestBusConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class TestQueueConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class NoOpStorageInitializer : IStorageInitializer
     {
-        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
 
-        public string GetPublishedTableName() => "published";
+        public string GetPublishedTableName()
+        {
+            return "published";
+        }
 
-        public string GetReceivedTableName() => "received";
+        public string GetReceivedTableName()
+        {
+            return "received";
+        }
     }
 
     private sealed class QueueOnlyMessagingExtension : IMessagesOptionsExtension
@@ -538,7 +555,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Failed(new Exception("bus boom")));
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FailingQueueTransport : IQueueTransport
@@ -550,7 +570,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Failed(new Exception("queue boom")));
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingBusTransport : IBusTransport
@@ -565,7 +588,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Success);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingQueueTransport : IQueueTransport
@@ -580,7 +606,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Success);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingDiagnosticObserver
@@ -635,7 +664,9 @@ public sealed class MessagingIntentSplitTests : TestBase
             _allListenersSubscription.Dispose();
         }
 
-        private static bool _IsBeforePublish(string eventName, object? _, object? __) =>
-            string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
+        private static bool _IsBeforePublish(string eventName, object? _, object? __)
+        {
+            return string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
+        }
     }
 }

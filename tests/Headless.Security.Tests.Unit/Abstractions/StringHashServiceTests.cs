@@ -8,14 +8,16 @@ namespace Tests.Abstractions;
 
 public sealed class StringHashServiceTests
 {
-    private static StringHashOptions _CreateValidOptions() =>
-        new()
+    private static StringHashOptions _CreateValidOptions()
+    {
+        return new()
         {
             Iterations = 10_000,
             SizeInBytes = 32,
             Algorithm = HashAlgorithmName.SHA256,
             DefaultSalt = "DefaultSalt",
         };
+    }
 
     [Fact]
     public void should_use_default_salt_when_no_salt_is_provided()

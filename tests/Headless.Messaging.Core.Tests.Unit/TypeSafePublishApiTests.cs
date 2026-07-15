@@ -136,7 +136,7 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public void messaging_options_should_not_expose_message_name_mappings()
+    public void should_not_expose_message_name_mappings_when_messaging_options()
     {
         typeof(MessagingOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)

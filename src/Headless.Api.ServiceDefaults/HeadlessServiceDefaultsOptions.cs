@@ -218,5 +218,8 @@ public sealed class HeadlessServiceDefaultsAntiforgeryOptions
 /// </summary>
 internal sealed class StatusCodesRewriterCalledNotifier(HeadlessStartupState state) : IStatusCodesRewriterCalledNotifier
 {
-    public void OnCalled() => state.UseStatusCodesRewriterCalled = true;
+    public void OnCalled()
+    {
+        state.UseStatusCodesRewriterCalled = true;
+    }
 }

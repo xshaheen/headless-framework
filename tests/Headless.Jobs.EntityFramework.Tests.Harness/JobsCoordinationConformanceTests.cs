@@ -824,7 +824,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     // the DB clock rather than this node's TimeProvider (#316 clock-skew). Only GetUtcNow is exercised by the test.
     private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
+        public override DateTimeOffset GetUtcNow()
+        {
+            return DateTimeOffset.UtcNow.Add(offset);
+        }
     }
 
     /// <summary>

@@ -33,7 +33,9 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
     }
 
-    private static IReadOnlyList<(string Name, Func<TusAzureStore, CancellationToken, Task> Act)> _EntryPoints() =>
+    private static IReadOnlyList<(string Name, Func<TusAzureStore, CancellationToken, Task> Act)> _EntryPoints()
+    {
+        return
         [
             ("FileExistAsync", async (store, ct) => _ = await store.FileExistAsync(_InvalidFileId, ct)),
             ("GetUploadLengthAsync", async (store, ct) => _ = await store.GetUploadLengthAsync(_InvalidFileId, ct)),
@@ -73,6 +75,7 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
                 async (store, ct) => _ = await store.CreateFinalFileAsync([_InvalidFileId], metadata: null, ct)
             ),
         ];
+    }
 
     [Fact]
     public async Task should_reject_invalid_file_id()

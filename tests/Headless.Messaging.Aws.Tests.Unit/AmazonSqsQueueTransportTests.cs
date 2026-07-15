@@ -15,8 +15,9 @@ namespace Tests;
 
 public sealed class AmazonSqsQueueTransportTests : TestBase
 {
-    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
-        Options.Create(
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions()
+    {
+        return Options.Create(
             new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
@@ -24,6 +25,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
                 SnsServiceUrl = "http://localhost:4566",
             }
         );
+    }
 
     [Fact]
     public async Task should_return_correct_broker_address()

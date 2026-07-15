@@ -122,12 +122,25 @@ public static class JobsCoordinationFixtureExtensions
         TimeProvider? timeProvider = null,
         TimeSpan? leaseDuration = null,
         bool useNativeClaims = true
-    ) => _BuildHost<JobsDbContext>(fixture, nodeId, "jobs", lostBehavior, timeProvider, leaseDuration, useNativeClaims);
+    )
+    {
+        return _BuildHost<JobsDbContext>(
+            fixture,
+            nodeId,
+            "jobs",
+            lostBehavior,
+            timeProvider,
+            leaseDuration,
+            useNativeClaims
+        );
+    }
 
     /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
     public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
-        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity> =>
-        _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+        where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
+    {
+        return _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+    }
 
     /// <summary>
     /// Builds a host whose <em>real</em> Jobs DbContext carries <paramref name="interceptor" />, so a test can read
@@ -141,8 +154,9 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         IInterceptor interceptor,
         TimeSpan? leaseDuration = null
-    ) =>
-        _BuildHost<JobsDbContext>(
+    )
+    {
+        return _BuildHost<JobsDbContext>(
             fixture,
             nodeId,
             "jobs",
@@ -152,6 +166,7 @@ public static class JobsCoordinationFixtureExtensions
             useNativeClaims: false,
             interceptor
         );
+    }
 
     private static IHost _BuildHost<TDbContext>(
         IJobsCoordinationFixture fixture,
@@ -241,13 +256,15 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         bool includeMessaging = false,
         JobsSideEffectsProbe? sideEffectsProbe = null
-    ) =>
-        _BuildCoordinatedEnqueueHost<JobsDbContext>(
+    )
+    {
+        return _BuildCoordinatedEnqueueHost<JobsDbContext>(
             fixture,
             nodeId,
             includeMessaging: includeMessaging,
             sideEffectsProbe: sideEffectsProbe
         );
+    }
 
     /// <summary>
     /// Builds the coordinated-enqueue host with a custom Jobs context and optional options instrumentation.
@@ -397,25 +414,41 @@ public static class JobsCoordinationFixtureExtensions
     public static Task<int> CountProbeRowsAsync(
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
-    ) => _CountAsync(fixture, "SELECT COUNT(*) FROM jobs_probe;", cancellationToken);
+    )
+    {
+        return _CountAsync(fixture, "SELECT COUNT(*) FROM jobs_probe;", cancellationToken);
+    }
 
     /// <summary>Counts TimeJob rows on an independent connection (observes committed state only).</summary>
     public static Task<int> CountTimeJobsAsync(
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
-    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedTimeJobsTable};", cancellationToken);
+    )
+    {
+        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedTimeJobsTable};", cancellationToken);
+    }
 
     /// <summary>Counts CronJob rows on an independent connection (observes committed state only).</summary>
     public static Task<int> CountCronJobsAsync(
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
-    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
+    )
+    {
+        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
+    }
 
     /// <summary>Counts CronJobOccurrence rows on an independent connection.</summary>
     public static Task<int> CountCronOccurrencesAsync(
         this IJobsCoordinationFixture fixture,
         CancellationToken cancellationToken
-    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable};", cancellationToken);
+    )
+    {
+        return _CountAsync(
+            fixture,
+            $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable};",
+            cancellationToken
+        );
+    }
 
     /// <summary>Counts published outbox rows on an independent connection (observes committed state only).</summary>
     public static Task<int> CountPublishedMessagesAsync(
@@ -763,9 +796,15 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
 
     public Guid[] NotificationIds => [.. _notificationIds];
 
-    Task IJobsHostScheduler.StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    Task IJobsHostScheduler.StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsHostScheduler.StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    Task IJobsHostScheduler.StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     void IJobsHostScheduler.RestartIfNeeded(DateTime? dateTime)
     {
@@ -775,7 +814,10 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
         }
     }
 
-    void IJobsHostScheduler.Restart() => Interlocked.Increment(ref _restartCount);
+    void IJobsHostScheduler.Restart()
+    {
+        Interlocked.Increment(ref _restartCount);
+    }
 
     Task IJobsNotificationHubSender.AddTimeJobNotifyAsync(Guid id)
     {
@@ -783,17 +825,35 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
         return Task.CompletedTask;
     }
 
-    Task IJobsNotificationHubSender.AddCronJobNotifyAsync(object cronJob) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.AddCronJobNotifyAsync(object cronJob)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.UpdateCronJobNotifyAsync(object cronJob) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.UpdateCronJobNotifyAsync(object cronJob)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.RemoveCronJobNotifyAsync(Guid id) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.RemoveCronJobNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.AddTimeJobsBatchNotifyAsync() => Task.CompletedTask;
+    Task IJobsNotificationHubSender.AddTimeJobsBatchNotifyAsync()
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.UpdateTimeJobNotifyAsync(object timeJob) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.UpdateTimeJobNotifyAsync(object timeJob)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.RemoveTimeJobNotifyAsync(Guid id) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.RemoveTimeJobNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
 
     void IJobsNotificationHubSender.UpdateActiveThreads(object activeThreads) { }
 
@@ -803,18 +863,35 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
 
     void IJobsNotificationHubSender.UpdateHostException(object exceptionMessage) { }
 
-    Task IJobsNotificationHubSender.UpdateNodesAsync(object nodes) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.UpdateNodesAsync(object nodes)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.AddCronOccurrenceAsync(Guid groupId, object occurrence) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.AddCronOccurrenceAsync(Guid groupId, object occurrence)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.UpdateCronOccurrenceAsync(Guid groupId, object occurrence) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.UpdateCronOccurrenceAsync(Guid groupId, object occurrence)
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.UpdateTimeJobFromExecutionState<TTimeJobEntity>(JobExecutionState executionState) =>
-        Task.CompletedTask;
+    Task IJobsNotificationHubSender.UpdateTimeJobFromExecutionState<TTimeJobEntity>(JobExecutionState executionState)
+    {
+        return Task.CompletedTask;
+    }
 
     Task IJobsNotificationHubSender.UpdateCronOccurrenceFromExecutionState<TCronJobEntity>(
         JobExecutionState executionState
-    ) => Task.CompletedTask;
+    )
+    {
+        return Task.CompletedTask;
+    }
 
-    Task IJobsNotificationHubSender.CanceledJobNotifyAsync(Guid id) => Task.CompletedTask;
+    Task IJobsNotificationHubSender.CanceledJobNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
 }

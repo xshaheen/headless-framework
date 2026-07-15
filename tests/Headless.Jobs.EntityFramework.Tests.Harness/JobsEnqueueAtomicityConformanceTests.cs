@@ -550,8 +550,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         return host;
     }
 
-    private static TimeJobEntity _TimeJob() =>
-        new()
+    private static TimeJobEntity _TimeJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
@@ -560,9 +561,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             // Far-future so the deferred immediate-dispatch branch never runs — keeps the assertion on row presence.
             ExecutionTime = DateTime.UtcNow.AddHours(1),
         };
+    }
 
-    private static CronJobEntity _CronJob() =>
-        new()
+    private static CronJobEntity _CronJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
@@ -571,6 +574,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             Expression = "0 0 0 * * *",
             Request = [],
         };
+    }
 
     private static void _AssertInvocation(
         IReadOnlyCollection<SavePipelineInvocation> invocations,

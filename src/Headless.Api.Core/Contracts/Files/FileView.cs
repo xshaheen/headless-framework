@@ -34,7 +34,10 @@ public class FileView
     /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
     /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
-    public static FileView? FromFile(File? operand) => operand;
+    public static FileView? FromFile(File? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Implicitly converts a domain <see cref="File"/> to a <see cref="FileView"/>.

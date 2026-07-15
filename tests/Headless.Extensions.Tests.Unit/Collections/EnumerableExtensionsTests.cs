@@ -7,7 +7,7 @@ public sealed class EnumerableExtensionsTests
     // EmptyIfNull tests
 
     [Fact]
-    public void empty_if_null_should_return_empty_when_null()
+    public void should_return_empty_when_empty_if_null_null()
     {
         // given
         IEnumerable<int>? source = null;
@@ -20,7 +20,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void empty_if_null_should_return_source_when_not_null()
+    public void should_return_source_when_empty_if_null_not_null()
     {
         // given
         IEnumerable<int> source = [1, 2, 3];
@@ -35,7 +35,7 @@ public sealed class EnumerableExtensionsTests
     // AsICollection tests
 
     [Fact]
-    public void as_icollection_should_return_same_instance_when_already_collection()
+    public void should_return_same_instance_when_as_icollection_already_collection()
     {
         // given
         ICollection<int> source = [1, 2, 3];
@@ -48,7 +48,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_icollection_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_icollection()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -63,7 +63,7 @@ public sealed class EnumerableExtensionsTests
     // AsList tests
 
     [Fact]
-    public void as_list_should_return_same_instance_when_already_list()
+    public void should_return_same_instance_when_as_list_already_list()
     {
         // given
         var source = new List<int> { 1, 2, 3 };
@@ -76,7 +76,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_list_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_list()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -91,7 +91,7 @@ public sealed class EnumerableExtensionsTests
     // AsIList tests
 
     [Fact]
-    public void as_ilist_should_return_same_instance_when_already_list()
+    public void should_return_same_instance_when_as_ilist_already_list()
     {
         // given
         var source = new List<int> { 1, 2, 3 };
@@ -104,7 +104,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_ilist_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_ilist()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -119,7 +119,7 @@ public sealed class EnumerableExtensionsTests
     // AsArray tests
 
     [Fact]
-    public void as_array_should_return_same_instance_when_already_array()
+    public void should_return_same_instance_when_as_array_already_array()
     {
         // given
         int[] source = [1, 2, 3];
@@ -132,7 +132,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_array_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_array()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -147,7 +147,7 @@ public sealed class EnumerableExtensionsTests
     // AsISet tests
 
     [Fact]
-    public void as_iset_should_return_same_instance_when_already_set()
+    public void should_return_same_instance_when_as_iset_already_set()
     {
         // given
         ISet<int> source = new HashSet<int> { 1, 2, 3 };
@@ -160,7 +160,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_iset_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_iset()
     {
         // given
         IEnumerable<int> source = [1, 2, 2, 3];
@@ -173,7 +173,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_iset_should_use_provided_comparer()
+    public void should_use_provided_comparer_when_as_iset()
     {
         // given
         IEnumerable<string> source = ["a", "A", "b"];
@@ -188,7 +188,7 @@ public sealed class EnumerableExtensionsTests
     // AsHashSet tests
 
     [Fact]
-    public void as_hashset_should_return_same_instance_when_already_hashset()
+    public void should_return_same_instance_when_as_hashset_already_hashset()
     {
         // given
         var source = new HashSet<int> { 1, 2, 3 };
@@ -201,7 +201,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_hashset_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_hashset()
     {
         // given
         IEnumerable<int> source = [1, 2, 2, 3];
@@ -216,7 +216,7 @@ public sealed class EnumerableExtensionsTests
     // AsIReadOnlyCollection tests
 
     [Fact]
-    public void as_ireadonlycollection_should_return_same_instance_when_already_readonly()
+    public void should_return_same_instance_when_as_ireadonlycollection_already_readonly()
     {
         // given
         IReadOnlyCollection<int> source = [1, 2, 3];
@@ -229,7 +229,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_ireadonlycollection_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_ireadonlycollection()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -244,7 +244,7 @@ public sealed class EnumerableExtensionsTests
     // AsIReadOnlyList tests
 
     [Fact]
-    public void as_ireadonlylist_should_return_same_instance_when_already_readonly()
+    public void should_return_same_instance_when_as_ireadonlylist_already_readonly()
     {
         // given
         IReadOnlyList<int> source = [1, 2, 3];
@@ -257,7 +257,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_ireadonlylist_should_materialize_enumerable()
+    public void should_materialize_enumerable_when_as_ireadonlylist()
     {
         // given
         var source = Enumerable.Range(1, 3);
@@ -272,7 +272,7 @@ public sealed class EnumerableExtensionsTests
     // AsDictionary tests
 
     [Fact]
-    public void as_dictionary_should_return_same_instance_when_already_dictionary()
+    public void should_return_same_instance_when_as_dictionary_already_dictionary()
     {
         // given
         var source = new Dictionary<string, int>(StringComparer.Ordinal) { { "a", 1 } };
@@ -285,7 +285,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_dictionary_should_convert_idictionary_to_dictionary()
+    public void should_convert_idictionary_to_dictionary_when_as_dictionary()
     {
         // given
         IDictionary<string, int> source = new SortedDictionary<string, int>(StringComparer.Ordinal)
@@ -306,7 +306,7 @@ public sealed class EnumerableExtensionsTests
     // JoinAsString tests
 
     [Fact]
-    public void join_as_string_should_join_strings_with_separator()
+    public void should_join_strings_with_separator_when_join_as_string()
     {
         // given
         IEnumerable<string> source = ["a", "b", "c"];
@@ -319,7 +319,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void join_as_string_should_join_strings_with_char_separator()
+    public void should_join_strings_with_char_separator_when_join_as_string()
     {
         // given
         IEnumerable<string> source = ["a", "b", "c"];
@@ -332,7 +332,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void join_as_string_should_join_objects_with_separator()
+    public void should_join_objects_with_separator_when_join_as_string()
     {
         // given
         IEnumerable<int> source = [1, 2, 3];
@@ -345,7 +345,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void join_as_string_should_join_objects_with_char_separator()
+    public void should_join_objects_with_char_separator_when_join_as_string()
     {
         // given
         IEnumerable<int> source = [1, 2, 3];
@@ -358,7 +358,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void join_as_string_should_return_empty_for_empty_source()
+    public void should_return_empty_for_empty_source_when_join_as_string()
     {
         // given
         IEnumerable<string> source = [];
@@ -373,7 +373,7 @@ public sealed class EnumerableExtensionsTests
     // WhereIf tests
 
     [Fact]
-    public void where_if_should_filter_when_condition_true()
+    public void should_filter_when_where_if_condition_true()
     {
         // given
         IEnumerable<int> source = [1, 2, 3, 4, 5];
@@ -386,7 +386,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void where_if_should_not_filter_when_condition_false()
+    public void should_not_filter_when_where_if_condition_false()
     {
         // given
         IEnumerable<int> source = [1, 2, 3, 4, 5];
@@ -399,7 +399,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void where_if_with_index_should_filter_when_condition_true()
+    public void should_filter_when_where_if_with_index_condition_true()
     {
         // given
         IEnumerable<int> source = [1, 2, 3, 4, 5];
@@ -412,7 +412,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void where_if_with_index_should_not_filter_when_condition_false()
+    public void should_not_filter_when_where_if_with_index_condition_false()
     {
         // given
         IEnumerable<int> source = [1, 2, 3, 4, 5];
@@ -427,7 +427,7 @@ public sealed class EnumerableExtensionsTests
     // HasDuplicates tests
 
     [Fact]
-    public void has_duplicates_should_return_true_when_duplicates_exist()
+    public void should_return_true_when_has_duplicates_duplicates_exist()
     {
         // given
         var source = new[] { new { Id = 1 }, new { Id = 2 }, new { Id = 1 } };
@@ -440,7 +440,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void has_duplicates_should_return_false_when_no_duplicates()
+    public void should_return_false_when_has_duplicates_no_duplicates()
     {
         // given
         var source = new[] { new { Id = 1 }, new { Id = 2 }, new { Id = 3 } };
@@ -453,7 +453,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void has_duplicates_should_return_false_for_empty_source()
+    public void should_return_false_for_empty_source_when_has_duplicates()
     {
         // given
         var source = Array.Empty<int>();
@@ -468,7 +468,7 @@ public sealed class EnumerableExtensionsTests
     // ToListAsync (Task) tests
 
     [Fact]
-    public async Task to_list_async_from_task_should_materialize_result()
+    public async Task should_materialize_result_when_to_list_async_from_task()
     {
         // given
         var task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
@@ -484,7 +484,7 @@ public sealed class EnumerableExtensionsTests
     // ToArrayAsync (Task) tests
 
     [Fact]
-    public async Task to_array_async_from_task_should_materialize_result()
+    public async Task should_materialize_result_when_to_array_async_from_task()
     {
         // given
         var task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
@@ -500,7 +500,7 @@ public sealed class EnumerableExtensionsTests
     // AsEnumerableOnce tests
 
     [Fact]
-    public void as_enumerable_once_should_allow_single_enumeration()
+    public void should_allow_single_enumeration_when_as_enumerable_once()
     {
         // given
         IEnumerable<int> source = [1, 2, 3];
@@ -514,7 +514,7 @@ public sealed class EnumerableExtensionsTests
     }
 
     [Fact]
-    public void as_enumerable_once_should_throw_on_second_enumeration()
+    public void should_throw_on_second_enumeration_when_as_enumerable_once()
     {
         // given
         IEnumerable<int> source = [1, 2, 3];

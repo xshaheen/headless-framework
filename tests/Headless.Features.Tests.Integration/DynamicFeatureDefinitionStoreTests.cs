@@ -49,6 +49,9 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
     [UsedImplicitly]
     private sealed class FeaturesDefinitionProvider : IFeatureDefinitionProvider
     {
-        public void Define(IFeatureDefinitionContext context) => context.AddGroup(_GroupDefinition);
+        public void Define(IFeatureDefinitionContext context)
+        {
+            context.AddGroup(_GroupDefinition);
+        }
     }
 }

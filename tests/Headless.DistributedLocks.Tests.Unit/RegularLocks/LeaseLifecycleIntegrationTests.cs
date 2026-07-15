@@ -464,8 +464,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle!.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
-    private DistributedLock _CreateProvider(DistributedLockOptions? options = null) =>
-        _CreateProvider(options, Substitute.For<IOutboxBus>());
+    private DistributedLock _CreateProvider(DistributedLockOptions? options = null)
+    {
+        return _CreateProvider(options, Substitute.For<IOutboxBus>());
+    }
 
     private DistributedLock _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
     {

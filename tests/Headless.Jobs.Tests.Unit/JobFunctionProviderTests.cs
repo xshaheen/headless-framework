@@ -119,8 +119,9 @@ public sealed class JobFunctionProviderTests
         build.Should().Throw<InvalidOperationException>().WithMessage("*'duplicate'*");
     }
 
-    private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "") =>
-        new(
+    private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "")
+    {
+        return new(
             name,
             new JobFunctionRegistration
             {
@@ -130,9 +131,12 @@ public sealed class JobFunctionProviderTests
                 MaxConcurrency = 0,
             }
         );
+    }
 
-    private static JobFunctionDescriptor _Descriptor(string name, Type? requestType, string cronExpression = "") =>
-        new(name, requestType, cronExpression, JobPriority.Normal, 0);
+    private static JobFunctionDescriptor _Descriptor(string name, Type? requestType, string cronExpression = "")
+    {
+        return new(name, requestType, cronExpression, JobPriority.Normal, 0);
+    }
 
     private sealed record FirstRequest;
 

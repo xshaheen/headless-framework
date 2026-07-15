@@ -64,7 +64,10 @@ public sealed class MailkitSmtpOptions
     public bool HasCredentials => !string.IsNullOrEmpty(User) && !string.IsNullOrEmpty(Password);
 
     /// <inheritdoc/>
-    public override string ToString() => $"SMTP: {Server}:{Port} (User: {User ?? "anonymous"})";
+    public override string ToString()
+    {
+        return $"SMTP: {Server}:{Port} (User: {User ?? "anonymous"})";
+    }
 }
 
 [UsedImplicitly]

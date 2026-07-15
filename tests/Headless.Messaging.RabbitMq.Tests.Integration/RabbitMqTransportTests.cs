@@ -39,9 +39,11 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
         return new RabbitMqTransport(logger, _connectionChannelPool);
     }
 
-    protected override IQueueTransport GetQueueTransport() =>
-        GetBusTransport() as IQueueTransport
-        ?? throw new InvalidOperationException("RabbitMQ transport must support queue intent.");
+    protected override IQueueTransport GetQueueTransport()
+    {
+        return GetBusTransport() as IQueueTransport
+            ?? throw new InvalidOperationException("RabbitMQ transport must support queue intent.");
+    }
 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
@@ -80,44 +82,82 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     #region Transport Tests
 
     [Fact]
-    public override Task should_send_message_successfully() => base.should_send_message_successfully();
+    public override Task should_send_message_successfully()
+    {
+        return base.should_send_message_successfully();
+    }
 
     [Fact]
-    public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
+    public override Task should_have_valid_broker_address()
+    {
+        return base.should_have_valid_broker_address();
+    }
 
     [Fact]
-    public override Task should_include_headers_in_sent_message() => base.should_include_headers_in_sent_message();
+    public override Task should_include_headers_in_sent_message()
+    {
+        return base.should_include_headers_in_sent_message();
+    }
 
     [Fact]
-    public override Task should_send_batch_of_messages() => base.should_send_batch_of_messages();
+    public override Task should_send_batch_of_messages()
+    {
+        return base.should_send_batch_of_messages();
+    }
 
     [Fact]
-    public override Task should_handle_empty_message_body() => base.should_handle_empty_message_body();
+    public override Task should_handle_empty_message_body()
+    {
+        return base.should_handle_empty_message_body();
+    }
 
     [Fact]
-    public override Task should_handle_large_message_body() => base.should_handle_large_message_body();
+    public override Task should_handle_large_message_body()
+    {
+        return base.should_handle_large_message_body();
+    }
 
     [Fact]
-    public override Task should_dispose_async_without_exception() => base.should_dispose_async_without_exception();
+    public override Task should_dispose_async_without_exception()
+    {
+        return base.should_dispose_async_without_exception();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_sends() => base.should_handle_concurrent_sends();
+    public override Task should_handle_concurrent_sends()
+    {
+        return base.should_handle_concurrent_sends();
+    }
 
     [Fact]
-    public override Task should_include_message_id_in_headers() => base.should_include_message_id_in_headers();
+    public override Task should_include_message_id_in_headers()
+    {
+        return base.should_include_message_id_in_headers();
+    }
 
     [Fact]
-    public override Task should_include_message_name_in_headers() => base.should_include_message_name_in_headers();
+    public override Task should_include_message_name_in_headers()
+    {
+        return base.should_include_message_name_in_headers();
+    }
 
     [Fact]
-    public override Task should_handle_special_characters_in_message_body() =>
-        base.should_handle_special_characters_in_message_body();
+    public override Task should_handle_special_characters_in_message_body()
+    {
+        return base.should_handle_special_characters_in_message_body();
+    }
 
     [Fact]
-    public override Task should_handle_null_header_values() => base.should_handle_null_header_values();
+    public override Task should_handle_null_header_values()
+    {
+        return base.should_handle_null_header_values();
+    }
 
     [Fact]
-    public override Task should_handle_correlation_id_header() => base.should_handle_correlation_id_header();
+    public override Task should_handle_correlation_id_header()
+    {
+        return base.should_handle_correlation_id_header();
+    }
 
     #endregion
 }

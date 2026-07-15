@@ -40,10 +40,12 @@ internal sealed class ProviderConfigBag
         _configs[config.GetType()] = config;
     }
 
-    public IReadOnlyDictionary<Type, object> Build() =>
-        _configs.Count == 0
+    public IReadOnlyDictionary<Type, object> Build()
+    {
+        return _configs.Count == 0
             ? _EmptyConfigs
             : new ReadOnlyDictionary<Type, object>(new Dictionary<Type, object>(_configs));
+    }
 
     public IReadOnlyDictionary<Type, object> BuildOverlay(IReadOnlyDictionary<Type, object> baseConfigs)
     {

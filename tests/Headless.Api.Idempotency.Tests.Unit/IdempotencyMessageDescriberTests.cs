@@ -18,7 +18,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void key_reused_should_return_expected_code()
+    public void should_return_expected_code_when_key_reused()
     {
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
@@ -26,7 +26,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void key_reused_should_return_non_empty_description()
+    public void should_return_non_empty_description_when_key_reused()
     {
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
@@ -34,7 +34,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void in_flight_should_return_expected_code()
+    public void should_return_expected_code_when_in_flight()
     {
         var descriptor = IdempotencyMessageDescriber.InFlight();
 
@@ -42,7 +42,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void in_flight_should_return_non_empty_description()
+    public void should_return_non_empty_description_when_in_flight()
     {
         var descriptor = IdempotencyMessageDescriber.InFlight();
 
@@ -50,7 +50,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void in_flight_timeout_should_return_expected_code()
+    public void should_return_expected_code_when_in_flight_timeout()
     {
         var descriptor = IdempotencyMessageDescriber.InFlightTimeout();
 
@@ -58,7 +58,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void in_flight_timeout_should_return_non_empty_description()
+    public void should_return_non_empty_description_when_in_flight_timeout()
     {
         var descriptor = IdempotencyMessageDescriber.InFlightTimeout();
 
@@ -66,7 +66,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void body_too_large_should_return_expected_code()
+    public void should_return_expected_code_when_body_too_large()
     {
         var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
 
@@ -74,7 +74,7 @@ public sealed class IdempotencyMessageDescriberTests
     }
 
     [Fact]
-    public void body_too_large_should_return_non_empty_description()
+    public void should_return_non_empty_description_when_body_too_large()
     {
         var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
 

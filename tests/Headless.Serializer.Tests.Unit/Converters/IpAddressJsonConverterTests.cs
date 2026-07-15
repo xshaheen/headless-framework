@@ -10,7 +10,7 @@ public sealed class IpAddressJsonConverterTests
     private readonly JsonSerializerOptions _options = new() { Converters = { new IpAddressJsonConverter() } };
 
     [Fact]
-    public void ip_json_converter_should_return_valid_ip_object_when_reading_valid_ip_json()
+    public void should_return_valid_ip_object_when_ip_json_converter_reading_valid_ip_json()
     {
         // given
         const string json = "\"192.168.1.1\"";
@@ -23,7 +23,7 @@ public sealed class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void ip_json_converter_should_return_null_ip_object_when_reading_null_json_string()
+    public void should_return_null_ip_object_when_ip_json_converter_reading_null_json_string()
     {
         // given
         const string json = "null";
@@ -36,7 +36,7 @@ public sealed class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void ip_json_converter_should_write_valid_ip_string_json_when_writing_valid_ip()
+    public void should_write_valid_ip_string_json_when_ip_json_converter_writing_valid_ip()
     {
         // given
         var ip = IPAddress.Parse("192.168.1.1");
@@ -49,7 +49,7 @@ public sealed class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void ip_json_converter_should_write_null_json_string_when_writing_null_ip_object()
+    public void should_write_null_json_string_when_ip_json_converter_writing_null_ip_object()
     {
         // given
         IPAddress? ip = null;
@@ -62,7 +62,7 @@ public sealed class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void ip_json_converter_should_throw_when_reading_invalid_ip_json_string()
+    public void should_throw_when_ip_json_converter_reading_invalid_ip_json_string()
     {
         // given
         const string json = "\"999.999.999.999\"";
@@ -75,7 +75,7 @@ public sealed class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void ip_json_converter_should_throw_when_reading_empty_json_string()
+    public void should_throw_when_ip_json_converter_reading_empty_json_string()
     {
         // given
         const string json = "\"\"";

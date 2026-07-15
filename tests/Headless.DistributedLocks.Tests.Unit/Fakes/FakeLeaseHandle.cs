@@ -18,9 +18,15 @@ internal sealed class FakeLeaseHandle : LeaseMonitor.ILeaseHandle
 
     public int InvocationCount { get; private set; }
 
-    public void Enqueue(LeaseMonitor.LeaseState state) => _results.Enqueue(state);
+    public void Enqueue(LeaseMonitor.LeaseState state)
+    {
+        _results.Enqueue(state);
+    }
 
-    public void Enqueue(Exception exception) => _results.Enqueue(exception);
+    public void Enqueue(Exception exception)
+    {
+        _results.Enqueue(exception);
+    }
 
     public Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
     {

@@ -37,7 +37,10 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
         return result;
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }
 
 internal static partial class InMemoryBusTransportLog

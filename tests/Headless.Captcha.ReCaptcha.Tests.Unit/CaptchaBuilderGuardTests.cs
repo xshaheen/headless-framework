@@ -113,8 +113,9 @@ public sealed class CaptchaBuilderGuardTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*AddHeadlessCaptcha was already called*");
     }
 
-    private static IConfigurationSection _ValidConfig() =>
-        new ConfigurationBuilder()
+    private static IConfigurationSection _ValidConfig()
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -124,4 +125,5 @@ public sealed class CaptchaBuilderGuardTests
             )
             .Build()
             .GetSection("ReCaptcha");
+    }
 }

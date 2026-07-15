@@ -450,9 +450,15 @@ internal sealed class CapturingLogger : ILogger<HybridCacheBestPracticesAdvisor>
     private readonly List<(LogLevel Level, EventId Event)> _entries = [];
 
     public IDisposable? BeginScope<TState>(TState state)
-        where TState : notnull => null;
+        where TState : notnull
+    {
+        return null;
+    }
 
-    public bool IsEnabled(LogLevel logLevel) => true;
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return true;
+    }
 
     public void Log<TState>(
         LogLevel logLevel,
@@ -460,9 +466,15 @@ internal sealed class CapturingLogger : ILogger<HybridCacheBestPracticesAdvisor>
         TState state,
         Exception? exception,
         Func<TState, Exception?, string> formatter
-    ) => _entries.Add((logLevel, eventId));
+    )
+    {
+        _entries.Add((logLevel, eventId));
+    }
 
-    public IEnumerable<EventId> Warnings() => _entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Event);
+    public IEnumerable<EventId> Warnings()
+    {
+        return _entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Event);
+    }
 
     public bool HasWarning(string eventName)
     {

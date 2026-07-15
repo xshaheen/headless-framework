@@ -166,7 +166,9 @@ public sealed class ConsumerRegistryExtensionsTests
 
     private sealed class TestConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

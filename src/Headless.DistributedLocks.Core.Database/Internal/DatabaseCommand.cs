@@ -115,19 +115,20 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// Thrown when <paramref name="cancellationToken"/> fires or when the provider throws a
     /// provider-specific cancellation exception while the token is cancelled.
     /// </exception>
-    public ValueTask<int> ExecuteNonQueryAsync(CancellationToken cancellationToken) =>
-        ExecuteNonQueryAsync(isConnectionMonitoringQuery: false, cancellationToken);
+    public ValueTask<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+    {
+        return ExecuteNonQueryAsync(isConnectionMonitoringQuery: false, cancellationToken);
+    }
 
     /// <summary>Internal API for <see cref="ConnectionMonitor"/>: skips taking the connection lock the monitor already holds.</summary>
-    internal ValueTask<int> ExecuteNonQueryAsync(
-        bool isConnectionMonitoringQuery,
-        CancellationToken cancellationToken
-    ) =>
-        _ExecuteAsync(
+    internal ValueTask<int> ExecuteNonQueryAsync(bool isConnectionMonitoringQuery, CancellationToken cancellationToken)
+    {
+        return _ExecuteAsync(
             static (command, token) => command.ExecuteNonQueryAsync(token),
             isConnectionMonitoringQuery,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Executes the command as a scalar query, acquiring the connection lock to serialise against monitor probes.
@@ -140,12 +141,14 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// Thrown when <paramref name="cancellationToken"/> fires or when the provider throws a
     /// provider-specific cancellation exception while the token is cancelled.
     /// </exception>
-    public ValueTask<object?> ExecuteScalarAsync(CancellationToken cancellationToken) =>
-        _ExecuteAsync(
+    public ValueTask<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+    {
+        return _ExecuteAsync(
             static (command, token) => command.ExecuteScalarAsync(token),
             isConnectionMonitoringQuery: false,
             cancellationToken
         );
+    }
 
     private async ValueTask<TResult> _ExecuteAsync<TResult>(
         Func<DbCommand, CancellationToken, Task<TResult>> executeAsync,

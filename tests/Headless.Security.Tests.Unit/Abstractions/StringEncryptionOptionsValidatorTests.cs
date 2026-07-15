@@ -7,8 +7,10 @@ namespace Tests.Abstractions;
 
 public sealed class StringEncryptionOptionsValidatorTests
 {
-    private static StringEncryptionOptions _CreateValidOptions() =>
-        new() { DefaultPassPhrase = "TestPassPhrase123456", DefaultSalt = "TestSalt"u8.ToArray() };
+    private static StringEncryptionOptions _CreateValidOptions()
+    {
+        return new() { DefaultPassPhrase = "TestPassPhrase123456", DefaultSalt = "TestSalt"u8.ToArray() };
+    }
 
     [Theory]
     [InlineData(128)]

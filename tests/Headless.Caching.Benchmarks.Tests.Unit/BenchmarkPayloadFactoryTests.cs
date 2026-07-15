@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class BenchmarkPayloadFactoryTests
 {
     [Fact]
-    public void Create_WithSameSizeAndSeed_ReturnsDeterministicPayload()
+    public void create_with_same_size_and_seed_returns_deterministic_payload()
     {
         var first = BenchmarkPayloadFactory.Create(128, seed: 42);
         var second = BenchmarkPayloadFactory.Create(128, seed: 42);
@@ -18,7 +18,7 @@ public sealed class BenchmarkPayloadFactoryTests
     }
 
     [Fact]
-    public void Create_WithNonPositiveSize_Throws()
+    public void create_with_non_positive_size_throws()
     {
         Action act = () => BenchmarkPayloadFactory.Create(0, seed: 42);
 

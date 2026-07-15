@@ -12,7 +12,7 @@ namespace Tests.SqlServer;
 public sealed class SqlServerConnectionFactoryTests
 {
     [Fact]
-    public void should_implement_ISqlConnectionFactory()
+    public void should_implement_i_sql_connection_factory()
     {
         // given
         const string connectionString = "Server=localhost;Database=test";

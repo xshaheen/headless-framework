@@ -13,7 +13,10 @@ internal static class MessagingKeys
     /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
-    public static string PublishRetryResource(string version) => $"messaging.publish-retry-{version}";
+    public static string PublishRetryResource(string version)
+    {
+        return $"messaging.publish-retry-{version}";
+    }
 
     /// <summary>
     /// Builds the canonical lock resource name for the received-retry pickup loop.
@@ -21,5 +24,8 @@ internal static class MessagingKeys
     /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
-    public static string ReceiveRetryResource(string version) => $"messaging.receive-retry-{version}";
+    public static string ReceiveRetryResource(string version)
+    {
+        return $"messaging.receive-retry-{version}";
+    }
 }

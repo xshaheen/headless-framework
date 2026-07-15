@@ -12,7 +12,10 @@ namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
-    private static string _CircuitKey(IntentType intentType, string group) => $"{intentType:D}:{group}";
+    private static string _CircuitKey(IntentType intentType, string group)
+    {
+        return $"{intentType:D}:{group}";
+    }
 
     [Fact]
     public void should_use_message_type_name_as_default_topic()

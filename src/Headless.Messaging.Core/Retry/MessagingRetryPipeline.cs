@@ -248,8 +248,13 @@ internal readonly record struct MessagingRetryAttempt(
     bool BypassClassification = false
 )
 {
-    public static MessagingRetryAttempt Completed(OperateResult result) => new(result, CanRetry: false);
+    public static MessagingRetryAttempt Completed(OperateResult result)
+    {
+        return new(result, CanRetry: false);
+    }
 
-    public static MessagingRetryAttempt Retryable(OperateResult result, bool bypassClassification = false) =>
-        new(result, CanRetry: true, bypassClassification);
+    public static MessagingRetryAttempt Retryable(OperateResult result, bool bypassClassification = false)
+    {
+        return new(result, CanRetry: true, bypassClassification);
+    }
 }

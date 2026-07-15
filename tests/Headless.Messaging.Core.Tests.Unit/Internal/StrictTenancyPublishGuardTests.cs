@@ -195,7 +195,9 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         public string? Id { get; } = id;
         public string? Name => null;
 
-        public IDisposable Change(string? id, string? name = null) =>
+        public IDisposable Change(string? id, string? name = null)
+        {
             throw new NotSupportedException("Stub does not support scope changes; use CurrentTenant for that.");
+        }
     }
 }

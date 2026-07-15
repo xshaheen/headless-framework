@@ -113,7 +113,10 @@ public sealed class KafkaMessageConfigBuilder<TMessage>
         return this;
     }
 
-    internal KafkaMessageConfig<TMessage> Build() => new(_partitionSelector);
+    internal KafkaMessageConfig<TMessage> Build()
+    {
+        return new(_partitionSelector);
+    }
 }
 
 /// <summary>Fluent builder for Kafka consumer options applied to a consumer registration.</summary>
@@ -135,7 +138,10 @@ public sealed class KafkaConsumerConfigBuilder
         return this;
     }
 
-    internal KafkaConsumerConfig Build() => new(_isolationLevel);
+    internal KafkaConsumerConfig Build()
+    {
+        return new(_isolationLevel);
+    }
 }
 
 internal sealed record KafkaConsumerConfig(IsolationLevel? IsolationLevel);

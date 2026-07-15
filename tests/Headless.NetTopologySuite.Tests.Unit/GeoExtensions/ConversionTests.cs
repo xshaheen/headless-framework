@@ -23,7 +23,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void ToFeatureCollection_should_create_collection_with_features()
+    public void should_create_collection_with_features_when_to_feature_collection()
     {
         var polygon1 = _CreateSquare();
         var polygon2 = _CreateSquare();
@@ -37,7 +37,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void ToFeatureCollection_should_create_empty_attributes()
+    public void should_create_empty_attributes_when_to_feature_collection()
     {
         var polygon = _CreateSquare();
         var geometries = new List<Geometry> { polygon };
@@ -49,7 +49,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void ToFeatureCollection_should_handle_empty_list()
+    public void should_handle_empty_list_when_to_feature_collection()
     {
         var geometries = new List<Geometry>();
 
@@ -59,7 +59,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void AsMultiPolygon_should_wrap_polygon()
+    public void should_wrap_polygon_when_as_multi_polygon()
     {
         var polygon = _CreateSquare();
 
@@ -71,7 +71,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void AsMultiPolygon_should_return_multipolygon_unchanged()
+    public void should_return_multipolygon_unchanged_when_as_multi_polygon()
     {
         var polygon = _CreateSquare();
         var multi = Factory.CreateMultiPolygon([polygon]);
@@ -82,7 +82,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void AsMultiPolygon_extension_should_use_geometry_factory()
+    public void should_use_geometry_factory_when_as_multi_polygon_extension()
     {
         var polygon = _CreateSquare();
 
@@ -92,7 +92,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_return_polygon()
+    public void should_return_polygon_when_ensure_polygon_or_multi()
     {
         var polygon = _CreateSquare();
 
@@ -102,7 +102,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_return_multipolygon()
+    public void should_return_multipolygon_when_ensure_polygon_or_multi()
     {
         var polygon = _CreateSquare();
         var multi = Factory.CreateMultiPolygon([polygon]);
@@ -113,7 +113,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_extract_single_polygon_from_collection()
+    public void should_extract_single_polygon_from_collection_when_ensure_polygon_or_multi()
     {
         var polygon = _CreateSquare();
         var collection = Factory.CreateGeometryCollection([polygon]);
@@ -124,7 +124,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_create_multipolygon_from_collection()
+    public void should_create_multipolygon_from_collection_when_ensure_polygon_or_multi()
     {
         var polygon1 = _CreateSquare();
         var polygon2 = _CreateSquare();
@@ -138,7 +138,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_extract_polygons_nested_in_sub_collections()
+    public void should_extract_polygons_nested_in_sub_collections_when_ensure_polygon_or_multi()
     {
         // A polygon nested inside an inner GeometryCollection must not be silently dropped.
         var polygon1 = _CreateSquare();
@@ -153,7 +153,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_throw_for_point()
+    public void should_throw_for_point_when_ensure_polygon_or_multi()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -163,7 +163,7 @@ public sealed class ConversionTests
     }
 
     [Fact]
-    public void EnsurePolygonOrMulti_should_throw_for_linestring()
+    public void should_throw_for_linestring_when_ensure_polygon_or_multi()
     {
         var line = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
 

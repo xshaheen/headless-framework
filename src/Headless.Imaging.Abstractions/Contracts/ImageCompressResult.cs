@@ -19,7 +19,10 @@ public sealed class ImageStreamCompressResult : ImageProcessResult<Stream>
 
     /// <summary>Creates an <see cref="ImageProcessState.Unsupported"/> result indicating the stream could not be read.</summary>
     /// <returns>A result with <see cref="ImageProcessState.Unsupported"/> state.</returns>
-    public static ImageStreamCompressResult CannotRead() => NotSupported(CannotReadError);
+    public static ImageStreamCompressResult CannotRead()
+    {
+        return NotSupported(CannotReadError);
+    }
 
     /// <summary>Creates an <see cref="ImageProcessState.Unsupported"/> result with a custom error message.</summary>
     /// <param name="error">A description of why the format is not supported.</param>

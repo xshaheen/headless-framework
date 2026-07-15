@@ -16,7 +16,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_deserialize_valid_collection()
+    public void should_deserialize_valid_collection_when_json_collection_item_converter()
     {
         // given
         const string json = "[\"item1\", \"item2\", \"item3\"]";
@@ -31,7 +31,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_serialize_valid_collection()
+    public void should_serialize_valid_collection_when_json_collection_item_converter()
     {
         // given
         var items = new List<string> { "item1", "item2", "item3" };
@@ -44,7 +44,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_return_null_for_null_json()
+    public void should_return_null_for_null_json_when_json_collection_item_converter()
     {
         // given
         const string json = "null";
@@ -57,7 +57,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_throw_on_invalid_json()
+    public void should_throw_on_invalid_json_when_json_collection_item_converter()
     {
         // given
         const string json = "[\"item1\", \"item2\", \"item3\"";
@@ -70,7 +70,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_serialize_empty_collection()
+    public void should_serialize_empty_collection_when_json_collection_item_converter()
     {
         // given
         var items = new List<string>();
@@ -83,7 +83,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_deserialize_with_custom_object_converter()
+    public void should_deserialize_with_custom_object_converter_when_json_collection_item_converter()
     {
         // given
         const string json = "[{\"Name\":\"John\"}]";
@@ -98,7 +98,7 @@ public sealed class CollectionItemJsonConverterTests
     }
 
     [Fact]
-    public void json_collection_item_converter_should_handle_empty_collection()
+    public void should_handle_empty_collection_when_json_collection_item_converter()
     {
         // given
         const string json = "[]";

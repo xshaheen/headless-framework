@@ -8,7 +8,7 @@ namespace Tests.Core;
 public sealed class SequentialGuidTests
 {
     [Fact]
-    public void next_sequential_at_end_should_return_unique_guids()
+    public void should_return_unique_guids_when_next_sequential_at_end()
     {
         // given
         const int count = 1000;
@@ -25,7 +25,7 @@ public sealed class SequentialGuidTests
     }
 
     [Fact]
-    public void next_sequential_at_end_should_be_sequential()
+    public void should_be_sequential_when_next_sequential_at_end()
     {
         // given - generate multiple GUIDs and verify ordering
         var guids = new List<Guid>();

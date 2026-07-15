@@ -209,7 +209,10 @@ public readonly record struct CacheEntryOptions
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>
-    public static CacheEntryOptions FromTimeSpan(TimeSpan duration) => new() { Duration = duration };
+    public static CacheEntryOptions FromTimeSpan(TimeSpan duration)
+    {
+        return new() { Duration = duration };
+    }
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>

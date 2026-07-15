@@ -12,7 +12,7 @@ public sealed class TimeUnitTests
     [InlineData("1d", 1, 0, 0, 0)]
     [InlineData("500ms", 0, 0, 0, 0, 500)]
     [InlineData("30s", 0, 0, 0, 30)]
-    public void parse_valid_input_should_return_correct_timespan(
+    public void should_return_correct_timespan_when_parse_valid_input(
         string value,
         int expectedDays = 0,
         int expectedHours = 0,
@@ -33,7 +33,7 @@ public sealed class TimeUnitTests
     [Theory]
     [InlineData(null, "Required argument \"value\" was null. (Parameter 'value')")]
     [InlineData("", "Required argument \"value\" was empty. (Parameter 'value')")]
-    public void parse_invalid_input_should_throw_argument_exception(string? value, string expectedMessage)
+    public void should_throw_argument_exception_when_parse_invalid_input(string? value, string expectedMessage)
     {
         // when
         Action action = () => TimeUnit.Parse(value!);
@@ -51,7 +51,7 @@ public sealed class TimeUnitTests
     [InlineData("xnanos", false, 0, 0, 0)]
     [InlineData("", false, 0, 0, 0)]
     [InlineData(null, false, 0, 0, 0)]
-    public void try_parse_should_return_correct_result(
+    public void should_return_correct_result_when_try_parse(
         string? value,
         bool expectedSuccess,
         int expectedDays = 0,
@@ -83,7 +83,7 @@ public sealed class TimeUnitTests
     [InlineData("5m ")]
     [InlineData("  5m")]
     [InlineData(" 5m ")]
-    public void parse_should_trim_surrounding_whitespace_for_minutes(string value)
+    public void should_trim_surrounding_whitespace_for_minutes_when_parse(string value)
     {
         // when
         var result = TimeUnit.Parse(value);
@@ -93,7 +93,7 @@ public sealed class TimeUnitTests
     }
 
     [Fact]
-    public void parse_should_treat_nanoseconds_above_int_range_without_truncation()
+    public void should_treat_nanoseconds_above_int_range_without_truncation_when_parse()
     {
         // given - 3e11 nanos = 3e9 ticks = 300s; the old (int) cast truncated/overflowed this
         const string value = "300000000000nanos";
@@ -119,7 +119,7 @@ public sealed class TimeUnitTests
     }
 
     [Fact]
-    public void parse_should_throw_argument_exception_when_value_exceeds_timespan_range()
+    public void should_throw_argument_exception_when_parse_value_exceeds_timespan_range()
     {
         // when
         var action = () => TimeUnit.Parse("2147483647h");

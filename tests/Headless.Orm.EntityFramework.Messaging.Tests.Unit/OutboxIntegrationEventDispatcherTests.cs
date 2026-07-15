@@ -57,7 +57,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     #region Invoker cache
 
     [Fact]
-    public async Task invoker_should_publish_runtime_typed_event_through_its_concrete_generic_overload()
+    public async Task should_publish_runtime_typed_event_through_its_concrete_generic_overload_when_invoker()
     {
         // given — the event is held as IIntegrationEvent; the invoker must route to PublishAsync<OrderPlaced>,
         // not PublishAsync<IIntegrationEvent>, recovering the concrete type from the runtime instance.
@@ -76,7 +76,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public void invoker_should_be_cached_per_event_type()
+    public void should_be_cached_per_event_type_when_invoker()
     {
         // given
         var cache = new IntegrationEventPublishInvokerCache();
@@ -90,7 +90,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task invoker_should_route_each_concrete_type_to_its_own_generic_overload()
+    public async Task should_route_each_concrete_type_to_its_own_generic_overload_when_invoker()
     {
         // given
         var cache = new IntegrationEventPublishInvokerCache();
@@ -111,7 +111,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     #region Dispatcher
 
     [Fact]
-    public async Task dispatch_async_should_be_noop_for_empty_event_list()
+    public async Task should_be_noop_for_empty_event_list_when_dispatch_async()
     {
         // given — an empty list must short-circuit without publishing anything.
         var bus = new RecordingOutboxBus();
@@ -128,7 +128,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispatch_async_should_publish_all_events_through_outbox_bus()
+    public async Task should_publish_all_events_through_outbox_bus_when_dispatch_async()
     {
         // given — the pipeline opened a coordinated transaction, so the outbox writer enlists on the ambient
         // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
@@ -150,7 +150,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispatch_async_should_propagate_publish_failure()
+    public async Task should_propagate_publish_failure_when_dispatch_async()
     {
         // given
         var bus = new ThrowingOutboxBus();
@@ -169,7 +169,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispatch_async_should_propagate_cancellation_before_publishing()
+    public async Task should_propagate_cancellation_before_publishing_when_dispatch_async()
     {
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
@@ -192,7 +192,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public void dispatch_sync_should_forward_to_dispatch_async_and_publish_all_events()
+    public void should_forward_to_dispatch_async_and_publish_all_events_when_dispatch_sync()
     {
         // given
         var bus = new RecordingOutboxBus();
@@ -212,7 +212,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispatch_async_should_fail_loud_when_no_ambient_coordinator()
+    public async Task should_fail_loud_when_dispatch_async_no_ambient_coordinator()
     {
         // given — integration events emitted while saving inside a caller-managed transaction that was never
         // enlisted in commit coordination: no coordinator is ambient, so dispatching would be non-atomic. The
@@ -242,7 +242,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     #region Setup
 
     [Fact]
-    public void add_integration_event_outbox_should_register_dispatcher_scoped_and_return_builder()
+    public void should_register_dispatcher_scoped_and_return_builder_when_add_integration_event_outbox()
     {
         // given
         var services = new ServiceCollection();
@@ -263,7 +263,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public void add_integration_event_outbox_should_be_idempotent()
+    public void should_be_idempotent_when_add_integration_event_outbox()
     {
         // given
         var services = new ServiceCollection();

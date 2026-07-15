@@ -11,7 +11,7 @@ public sealed class LookupNormalizerTests
     // NormalizeUserName tests
 
     [Fact]
-    public void normalize_username_should_return_uppercase_trimmed_name()
+    public void should_return_uppercase_trimmed_name_when_normalize_username()
     {
         // given
         const string input = "  John Doe  ";
@@ -25,7 +25,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_username_should_return_null_when_input_is_null()
+    public void should_return_null_when_normalize_username_input_is_null()
     {
         // given
         const string? input = null;
@@ -38,7 +38,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_username_should_normalize_unicode_characters()
+    public void should_normalize_unicode_characters_when_normalize_username()
     {
         // given - composed vs decomposed unicode (e.g., é can be single char or e + combining accent)
         const string input = "café";
@@ -52,7 +52,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_username_should_return_null_when_input_is_whitespace_only()
+    public void should_return_null_when_normalize_username_input_is_whitespace_only()
     {
         // given
         const string input = "   ";
@@ -65,7 +65,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_username_should_return_null_for_empty_string()
+    public void should_return_null_for_empty_string_when_normalize_username()
     {
         // given - NullableTrim returns null for empty strings
         const string input = "";
@@ -80,7 +80,7 @@ public sealed class LookupNormalizerTests
     // NormalizeEmail tests
 
     [Fact]
-    public void normalize_email_should_return_uppercase_email()
+    public void should_return_uppercase_email_when_normalize_email()
     {
         // given
         var email = _faker.Internet.Email();
@@ -94,7 +94,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_email_should_return_null_when_email_is_null()
+    public void should_return_null_when_normalize_email_email_is_null()
     {
         // given
         const string? email = null;
@@ -107,7 +107,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_email_should_trim_whitespace()
+    public void should_trim_whitespace_when_normalize_email()
     {
         // given
         const string email = "  Test@Example.Com  ";
@@ -122,7 +122,7 @@ public sealed class LookupNormalizerTests
     // NormalizePhoneNumber tests
 
     [Fact]
-    public void normalize_phone_number_should_remove_spaces_and_trim()
+    public void should_remove_spaces_and_trim_when_normalize_phone_number()
     {
         // given
         const string phoneNumber = " 123 456 789 ";
@@ -136,7 +136,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_return_null_when_input_is_null()
+    public void should_return_null_when_normalize_phone_number_input_is_null()
     {
         // given
         const string? phoneNumber = null;
@@ -149,7 +149,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_convert_arabic_digits_to_invariant()
+    public void should_convert_arabic_digits_to_invariant_when_normalize_phone_number()
     {
         // given - Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) - note: ٠ = 0, trailing 0 removed
         const string phoneNumber = "١٢٣٤٥٦٧٨٩";
@@ -163,7 +163,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_convert_persian_digits_to_invariant()
+    public void should_convert_persian_digits_to_invariant_when_normalize_phone_number()
     {
         // given - Persian digits (۱۲۳۴۵۶۷۸۹) - note: ۰ = 0, trailing 0 removed
         const string phoneNumber = "۱۲۳۴۵۶۷۸۹";
@@ -177,7 +177,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_remove_single_trailing_zero()
+    public void should_remove_single_trailing_zero_when_normalize_phone_number()
     {
         // given - RemovePostfix removes only one trailing "0"
         const string phoneNumber = "1234567890";
@@ -191,7 +191,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_preserve_leading_zeros()
+    public void should_preserve_leading_zeros_when_normalize_phone_number()
     {
         // given - leading zeros preserved, only trailing "0" removed
         const string phoneNumber = "0012345670";
@@ -205,7 +205,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_handle_plus_prefix()
+    public void should_handle_plus_prefix_when_normalize_phone_number()
     {
         // given - plus preserved, spaces removed, trailing 0 removed
         const string phoneNumber = "+1 234 567 80";
@@ -219,7 +219,7 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void normalize_phone_number_should_not_remove_non_trailing_zero()
+    public void should_not_remove_non_trailing_zero_when_normalize_phone_number()
     {
         // given - no trailing 0 to remove
         const string phoneNumber = "123456789";

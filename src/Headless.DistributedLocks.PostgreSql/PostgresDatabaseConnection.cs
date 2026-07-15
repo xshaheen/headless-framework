@@ -83,8 +83,10 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
     // See https://www.npgsql.org/doc/prepare.html
     public override bool ShouldPrepareCommands => true;
 
-    public override bool IsCommandCancellationException(Exception exception) =>
-        exception is PostgresException { SqlState: _QueryCanceledSqlState };
+    public override bool IsCommandCancellationException(Exception exception)
+    {
+        return exception is PostgresException { SqlState: _QueryCanceledSqlState };
+    }
 
     /// <summary>
     /// Implements the monitoring sleep by executing <c>SELECT pg_catalog.pg_sleep(@sleepTimeSeconds)</c>

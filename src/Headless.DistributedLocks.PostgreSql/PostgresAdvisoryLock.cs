@@ -166,8 +166,10 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         }
     }
 
-    public ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, object lockCookie) =>
-        _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, allowHashing), isTry: false);
+    public ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, object lockCookie)
+    {
+        return _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, allowHashing), isTry: false);
+    }
 
     private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgresAdvisoryLockKey key, bool isTry)
     {
@@ -352,10 +354,12 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    private static bool _UseTransactionScopedLock(DatabaseConnection connection) =>
+    private static bool _UseTransactionScopedLock(DatabaseConnection connection)
+    {
         // Transaction-scoped locking applies to internally-owned connections with a transaction and externally-owned
         // connections whose transaction we can see (i.e. came through the transactional API).
-        connection.HasTransaction;
+        return connection.HasTransaction;
+    }
 
     [StructLayout(LayoutKind.Auto)]
     private readonly struct CapturedTimeoutSettings(string statementTimeout, string lockTimeout)
@@ -364,10 +368,12 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
         public int LockTimeout { get; } = _ParsePostgresTimeout(lockTimeout);
 
-        private static int _ParsePostgresTimeout(string timeout) =>
-            PostgresTimeoutRegex.Match(timeout) is { Success: true, Value: var value }
+        private static int _ParsePostgresTimeout(string timeout)
+        {
+            return PostgresTimeoutRegex.Match(timeout) is { Success: true, Value: var value }
                 ? int.Parse(value, CultureInfo.InvariantCulture)
                 : throw new FormatException($"Unexpected timeout setting value '{timeout}'.");
+        }
     }
 
     [GeneratedRegex(@"^\d+(?=(?:ms)?$)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

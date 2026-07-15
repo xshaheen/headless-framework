@@ -25,7 +25,10 @@ public sealed class FirebaseOptions
     public FirebaseRetryOptions Retry { get; set; } = new();
 
     /// <inheritdoc />
-    public override string ToString() => "FirebaseOptions { Json = [REDACTED] }";
+    public override string ToString()
+    {
+        return "FirebaseOptions { Json = [REDACTED] }";
+    }
 }
 
 /// <summary>

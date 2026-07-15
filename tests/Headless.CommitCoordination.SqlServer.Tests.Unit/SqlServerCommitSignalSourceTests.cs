@@ -109,7 +109,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
     }
 
     [Fact]
-    public async Task diagnostic_observer_should_drain_the_scope_correlated_by_client_connection_id_on_commit()
+    public async Task should_drain_the_scope_correlated_by_client_connection_id_on_commit_when_diagnostic_observer()
     {
         var source = new SqlServerCommitSignalSource(
             new CommitScopeFactory(new CommitScopeStack()),
@@ -158,7 +158,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
     }
 
     [Fact]
-    public async Task diagnostic_observer_should_roll_back_the_scope_when_commit_after_event_carries_rollback_operation()
+    public async Task should_roll_back_the_scope_when_diagnostic_observer_commit_after_event_carries_rollback_operation()
     {
         var source = new SqlServerCommitSignalSource(
             new CommitScopeFactory(new CommitScopeStack()),
@@ -218,7 +218,7 @@ public sealed class SqlServerCommitSignalSourceTests : TestBase
     }
 
     [Fact]
-    public void diagnostic_observer_should_ignore_an_event_without_a_sql_connection()
+    public void should_ignore_an_event_without_a_sql_connection_when_diagnostic_observer()
     {
         var source = new SqlServerCommitSignalSource(
             new CommitScopeFactory(new CommitScopeStack()),

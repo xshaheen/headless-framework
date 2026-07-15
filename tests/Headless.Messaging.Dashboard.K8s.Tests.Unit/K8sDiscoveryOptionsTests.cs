@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class K8sDiscoveryOptionsTests : TestBase
 {
     [Fact]
-    public void ShowOnlyExplicitVisibleNodes_should_default_to_true()
+    public void should_default_to_true_when_show_only_explicit_visible_nodes()
     {
         // given & when
         var options = new K8sDiscoveryOptions();
@@ -18,7 +18,7 @@ public sealed class K8sDiscoveryOptionsTests : TestBase
     }
 
     [Fact]
-    public void K8sClientConfig_should_have_default_configuration()
+    public void should_have_default_configuration_when_k8s_client_config()
     {
         // given & when
         var options = new K8sDiscoveryOptions();
@@ -28,7 +28,7 @@ public sealed class K8sDiscoveryOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_setting_ShowOnlyExplicitVisibleNodes_to_false()
+    public void should_allow_setting_show_only_explicit_visible_nodes_to_false()
     {
         // given & when
         var options = new K8sDiscoveryOptions { ShowOnlyExplicitVisibleNodes = false };
@@ -38,7 +38,7 @@ public sealed class K8sDiscoveryOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_custom_K8sClientConfig()
+    public void should_allow_custom_k8s_client_config()
     {
         // given
         var customConfig = new k8s.KubernetesClientConfiguration

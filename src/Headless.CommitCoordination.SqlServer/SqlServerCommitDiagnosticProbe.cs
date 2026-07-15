@@ -119,7 +119,10 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
 
         public void OnCompleted() { }
 
-        public void OnError(Exception error) => _committed.TrySetException(error);
+        public void OnError(Exception error)
+        {
+            _committed.TrySetException(error);
+        }
 
         public void OnNext(DiagnosticListener listener)
         {

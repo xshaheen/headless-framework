@@ -25,7 +25,7 @@ public sealed class UtilityTests
     #region ContainsEmpties
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_empty_geometry()
+    public void should_return_true_for_empty_geometry_when_contains_empties()
     {
         var empty = Factory.CreatePolygon();
 
@@ -35,7 +35,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_linestring()
+    public void should_return_true_for_linestring_when_contains_empties()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
 
@@ -45,7 +45,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_point()
+    public void should_return_true_for_point_when_contains_empties()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -55,7 +55,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_collection_with_empty()
+    public void should_return_true_for_collection_with_empty_when_contains_empties()
     {
         var emptyPolygon = Factory.CreatePolygon();
         var collection = Factory.CreateGeometryCollection([emptyPolygon]);
@@ -66,7 +66,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_collection_with_point()
+    public void should_return_true_for_collection_with_point_when_contains_empties()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var collection = Factory.CreateGeometryCollection([point]);
@@ -77,7 +77,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_true_for_collection_with_linestring()
+    public void should_return_true_for_collection_with_linestring_when_contains_empties()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
         var collection = Factory.CreateGeometryCollection([lineString]);
@@ -88,7 +88,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void ContainsEmpties_should_return_false_for_valid_polygon()
+    public void should_return_false_for_valid_polygon_when_contains_empties()
     {
         var polygon = _CreateSquare();
 
@@ -102,7 +102,7 @@ public sealed class UtilityTests
     #region CreateExpandBy
 
     [Fact]
-    public void CreateExpandBy_should_expand_envelope()
+    public void should_expand_envelope_when_create_expand_by()
     {
         var envelope = new Envelope(0, 10, 0, 10);
 
@@ -115,7 +115,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void CreateExpandBy_should_expand_all_directions()
+    public void should_expand_all_directions_when_create_expand_by()
     {
         var envelope = new Envelope(5, 10, 5, 10);
         const double factor = 2.0;
@@ -133,7 +133,7 @@ public sealed class UtilityTests
     #region Flatten
 
     [Fact]
-    public void Flatten_should_flatten_geometry_collection()
+    public void should_flatten_geometry_collection_when_flatten()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
@@ -148,7 +148,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void Flatten_should_return_single_geometry_as_array()
+    public void should_return_single_geometry_as_array_when_flatten()
     {
         var polygon = _CreateSquare();
 
@@ -163,7 +163,7 @@ public sealed class UtilityTests
     #region GetPolygonsOrEmpty
 
     [Fact]
-    public void GetPolygonsOrEmpty_should_return_polygon()
+    public void should_return_polygon_when_get_polygons_or_empty()
     {
         var polygon = _CreateSquare();
 
@@ -174,7 +174,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void GetPolygonsOrEmpty_should_extract_from_collection()
+    public void should_extract_from_collection_when_get_polygons_or_empty()
     {
         var polygon1 = _CreateSquare();
         var polygon2 = _CreateSquare();
@@ -190,7 +190,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void GetPolygonsOrEmpty_should_return_empty_for_point()
+    public void should_return_empty_for_point_when_get_polygons_or_empty()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -204,7 +204,7 @@ public sealed class UtilityTests
     #region GetSimpleGeometryOrEmpty
 
     [Fact]
-    public void GetSimpleGeometryOrEmpty_should_return_point()
+    public void should_return_point_when_get_simple_geometry_or_empty()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -215,7 +215,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void GetSimpleGeometryOrEmpty_should_return_linestring()
+    public void should_return_linestring_when_get_simple_geometry_or_empty()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
 
@@ -226,7 +226,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void GetSimpleGeometryOrEmpty_should_extract_from_collection()
+    public void should_extract_from_collection_when_get_simple_geometry_or_empty()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
@@ -242,7 +242,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void GetSimpleGeometryOrEmpty_should_return_empty_for_polygon()
+    public void should_return_empty_for_polygon_when_get_simple_geometry_or_empty()
     {
         var polygon = _CreateSquare();
 
@@ -256,7 +256,7 @@ public sealed class UtilityTests
     #region IsPolygonLikeGeometry
 
     [Fact]
-    public void IsPolygonLikeGeometry_should_return_true_for_polygon()
+    public void should_return_true_for_polygon_when_is_polygon_like_geometry()
     {
         var polygon = _CreateSquare();
 
@@ -266,7 +266,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsPolygonLikeGeometry_should_return_true_for_multipolygon()
+    public void should_return_true_for_multipolygon_when_is_polygon_like_geometry()
     {
         var polygon = _CreateSquare();
         var multiPolygon = Factory.CreateMultiPolygon([polygon]);
@@ -277,7 +277,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsPolygonLikeGeometry_should_return_false_for_point()
+    public void should_return_false_for_point_when_is_polygon_like_geometry()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -291,7 +291,7 @@ public sealed class UtilityTests
     #region IsSimpleGeometry
 
     [Fact]
-    public void IsSimpleGeometry_should_return_true_for_point()
+    public void should_return_true_for_point_when_is_simple_geometry()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
@@ -301,7 +301,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsSimpleGeometry_should_return_true_for_multipoint()
+    public void should_return_true_for_multipoint_when_is_simple_geometry()
     {
         var point1 = Factory.CreatePoint(new Coordinate(0, 0));
         var point2 = Factory.CreatePoint(new Coordinate(1, 1));
@@ -313,7 +313,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsSimpleGeometry_should_return_true_for_linestring()
+    public void should_return_true_for_linestring_when_is_simple_geometry()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
 
@@ -323,7 +323,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsSimpleGeometry_should_return_true_for_multilinestring()
+    public void should_return_true_for_multilinestring_when_is_simple_geometry()
     {
         var line1 = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
         var line2 = Factory.CreateLineString([new Coordinate(2, 2), new Coordinate(3, 3)]);
@@ -335,7 +335,7 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void IsSimpleGeometry_should_return_false_for_polygon()
+    public void should_return_false_for_polygon_when_is_simple_geometry()
     {
         var polygon = _CreateSquare();
 

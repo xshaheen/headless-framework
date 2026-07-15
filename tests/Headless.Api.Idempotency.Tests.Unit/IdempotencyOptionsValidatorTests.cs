@@ -255,5 +255,8 @@ public sealed class IdempotencyOptionsValidatorTests
         result.ShouldNotHaveAnyValidationErrors();
     }
 
-    private static IdempotencyOptions _CreateValidOptions() => new();
+    private static IdempotencyOptions _CreateValidOptions()
+    {
+        return new();
+    }
 }

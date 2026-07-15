@@ -525,7 +525,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         private int _reads;
 
-        public override DateTimeOffset GetUtcNow() => Interlocked.Increment(ref _reads) == 1 ? startedAt : committedAt;
+        public override DateTimeOffset GetUtcNow()
+        {
+            return Interlocked.Increment(ref _reads) == 1 ? startedAt : committedAt;
+        }
     }
 
     private sealed record DirectCronClaimCase(
