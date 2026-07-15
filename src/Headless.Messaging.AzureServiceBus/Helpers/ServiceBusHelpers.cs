@@ -5,7 +5,7 @@ using Azure.Messaging.ServiceBus;
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
 /// <summary>Utility helpers for Azure Service Bus connection and address resolution.</summary>
-public static class ServiceBusHelpers
+internal static class ServiceBusHelpers
 {
     /// <summary>
     /// Creates a <see cref="ServiceBusClient"/> from the configured authentication mode: token
@@ -13,7 +13,7 @@ public static class ServiceBusHelpers
     /// set, otherwise the SAS connection string.
     /// </summary>
     /// <param name="options">The messaging options carrying the authentication configuration.</param>
-    internal static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
+    public static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
     {
         return options.TokenCredential is null
             ? new ServiceBusClient(options.ConnectionString)
