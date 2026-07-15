@@ -209,19 +209,19 @@ TCP keepalive remains complementary, not redundant. Keepalive (`PostgresDistribu
 
 ### Observability
 
-The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`). Register them with `AddMeter("Headless.DistributedLocks")` and `AddSource("Headless.DistributedLocks")` in your OpenTelemetry setup.
+The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `DistributedLocksDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(DistributedLocksDiagnostics.SourceName)` / `AddSource(DistributedLocksDiagnostics.SourceName)`; both paths are first-class.
 
 | Instrument | Kind | Unit | Meaning |
 | --- | --- | --- | --- |
-| `headless.lock.failed` | Counter (`int`) | count | Incremented when a mutex / reader-writer acquire fails or times out. Carries a `reason` dimension (see below). |
+| `headless.lock.failed` | Counter (`int`) | count | Incremented when a mutex / reader-writer acquire fails or times out. Carries a `headless.lock.reason` dimension (see below). |
 | `headless.lock.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a lock, recorded once per acquire attempt (success or failure). |
-| `headless.semaphore.failed` | Counter (`int`) | count | Incremented when a semaphore slot acquire fails or times out. Carries a `reason` dimension (see below). |
+| `headless.semaphore.failed` | Counter (`int`) | count | Incremented when a semaphore slot acquire fails or times out. Carries a `headless.semaphore.reason` dimension (see below). |
 | `headless.semaphore.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a semaphore slot, recorded once per acquire attempt (success or failure). |
 
-The `*.failed` counters carry a `reason` dimension so a lock-store stall is distinguishable from routine contention:
+The `*.failed` counters carry a namespaced reason dimension (`headless.lock.reason` on the lock counter, `headless.semaphore.reason` on the semaphore counter — framework-owned attributes are always `headless.*`-namespaced) so a lock-store stall is distinguishable from routine contention:
 
-- `reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error).
-- `reason=stalled` — a non-blocking try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline (lock-store stall), surfaced even when the caller's token never fires. Alert on `rate(headless.lock.failed{reason="stalled"})` to detect lock-store degradation; the same trip also emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning, fields `Resource`/`LeaseId`/`Duration`) as a per-event breadcrumb. The metric counts toward the same total as before — the tag splits the existing counter, it does not add a new instrument.
+- `…reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error).
+- `…reason=stalled` — a non-blocking try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline (lock-store stall), surfaced even when the caller's token never fires. Alert on `rate(headless.lock.failed{headless.lock.reason="stalled"})` to detect lock-store degradation; the same trip also emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning, fields `Resource`/`LeaseId`/`Duration`) as a per-event breadcrumb. The metric counts toward the same total as before — the tag splits the existing counter, it does not add a new instrument.
 
 The two values are exposed as `public const` on `DistributedLockFailureReasons` (`Contended` / `Stalled`) so alert-rule and dashboard code can reference them at compile time instead of hard-coding the strings.
 
