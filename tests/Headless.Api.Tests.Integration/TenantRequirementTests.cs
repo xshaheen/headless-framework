@@ -396,7 +396,10 @@ public sealed class TenantRequirementTests : TestBase
             HttpContext context,
             AuthorizationPolicy policy,
             PolicyAuthorizationResult authorizeResult
-        ) => _default.HandleAsync(next, context, policy, authorizeResult);
+        )
+        {
+            return _default.HandleAsync(next, context, policy, authorizeResult);
+        }
     }
 }
 

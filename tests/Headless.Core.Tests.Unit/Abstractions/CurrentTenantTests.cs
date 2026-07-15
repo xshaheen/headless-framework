@@ -8,7 +8,7 @@ namespace Tests.Abstractions;
 public sealed class CurrentTenantTests
 {
     [Fact]
-    public void is_available_should_be_false_when_no_tenant_is_set()
+    public void should_be_false_when_is_available_no_tenant_is_set()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;
@@ -22,7 +22,7 @@ public sealed class CurrentTenantTests
     }
 
     [Fact]
-    public void is_available_should_be_true_when_tenant_is_set()
+    public void should_be_true_when_is_available_tenant_is_set()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;
@@ -39,7 +39,7 @@ public sealed class CurrentTenantTests
     }
 
     [Fact]
-    public void change_should_set_tenant_id_and_name()
+    public void should_set_tenant_id_and_name_when_change()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;
@@ -55,7 +55,7 @@ public sealed class CurrentTenantTests
     }
 
     [Fact]
-    public void change_should_reset_tenant_to_previous_state_when_disposed()
+    public void should_reset_tenant_to_previous_state_when_change_disposed()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;
@@ -78,7 +78,7 @@ public sealed class CurrentTenantTests
     }
 
     [Fact]
-    public void change_should_allow_null_tenant_id_and_name()
+    public void should_allow_null_tenant_id_and_name_when_change()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;
@@ -94,7 +94,7 @@ public sealed class CurrentTenantTests
     }
 
     [Fact]
-    public void change_should_support_multiple_nested_scopes()
+    public void should_support_multiple_nested_scopes_when_change()
     {
         // given
         var currentTenantAccessor = AsyncLocalCurrentTenantAccessor.Instance;

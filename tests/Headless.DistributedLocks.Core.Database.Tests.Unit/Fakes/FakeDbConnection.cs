@@ -99,8 +99,13 @@ internal sealed class FakeDbConnection : DbConnection
 
     public override void ChangeDatabase(string databaseName) { }
 
-    protected override DbCommand CreateDbCommand() => new FakeDbCommand(this);
+    protected override DbCommand CreateDbCommand()
+    {
+        return new FakeDbCommand(this);
+    }
 
-    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+    {
         throw new NotSupportedException("Transactions are not exercised by these tests.");
+    }
 }

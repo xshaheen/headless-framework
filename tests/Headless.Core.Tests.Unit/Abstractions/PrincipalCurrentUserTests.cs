@@ -10,7 +10,7 @@ namespace Tests.Abstractions;
 public sealed class PrincipalCurrentUserTests
 {
     [Fact]
-    public void is_authenticated_should_be_true_for_an_authenticated_identity()
+    public void should_be_true_for_an_authenticated_identity_when_is_authenticated()
     {
         // given — a non-null authentication type makes ClaimsIdentity.IsAuthenticated true
         var principal = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: "TestAuth"));
@@ -21,7 +21,7 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
-    public void is_authenticated_should_be_false_for_an_unauthenticated_identity()
+    public void should_be_false_for_an_unauthenticated_identity_when_is_authenticated()
     {
         // given — no authentication type => ClaimsIdentity.IsAuthenticated is false
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
@@ -32,7 +32,7 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
-    public void is_authenticated_should_be_false_for_a_null_principal()
+    public void should_be_false_for_a_null_principal_when_is_authenticated()
     {
         // given
         var sut = new PrincipalCurrentUser(null);
@@ -42,7 +42,7 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
-    public void unauthenticated_principal_should_not_expose_user_id_or_roles()
+    public void should_not_expose_user_id_or_roles_when_unauthenticated_principal()
     {
         // given
         UserId userId = "user-123";
@@ -60,7 +60,7 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
-    public void find_claims_should_return_all_matching_claims()
+    public void should_return_all_matching_claims_when_find_claims()
     {
         // given
         var principal = new ClaimsPrincipal(
@@ -80,7 +80,7 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
-    public void find_claims_should_return_empty_for_a_null_principal()
+    public void should_return_empty_for_a_null_principal_when_find_claims()
     {
         // given
         ICurrentUser sut = new PrincipalCurrentUser(null);

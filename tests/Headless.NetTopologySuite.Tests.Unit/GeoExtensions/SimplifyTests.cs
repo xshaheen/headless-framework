@@ -12,7 +12,7 @@ public sealed class SimplifyTests
     private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
-    public void Simplify_geometry_should_reduce_vertex_count()
+    public void should_reduce_vertex_count_when_simplify_geometry()
     {
         // given - polygon with many vertices (scaled to geographic coordinates)
         var complex = _CreateComplexPolygon();
@@ -26,7 +26,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_geometry_should_preserve_topology()
+    public void should_preserve_topology_when_simplify_geometry()
     {
         // given
         var complex = _CreateComplexPolygon();
@@ -39,7 +39,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_geometry_should_fix_invalid_result()
+    public void should_fix_invalid_result_when_simplify_geometry()
     {
         // given - create a polygon that when simplified might become invalid
         // Use larger tolerance to force aggressive simplification
@@ -53,7 +53,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_polygon_should_return_empty_unchanged()
+    public void should_return_empty_unchanged_when_simplify_polygon()
     {
         // given
         var empty = Factory.CreatePolygon();
@@ -66,7 +66,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_polygon_should_maintain_ccw_orientation()
+    public void should_maintain_ccw_orientation_when_simplify_polygon()
     {
         // given - polygon with many vertices
         var complex = _CreateComplexPolygon();
@@ -82,7 +82,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_polygon_should_use_default_tolerance()
+    public void should_use_default_tolerance_when_simplify_polygon()
     {
         // given - polygon with many vertices
         var complex = _CreateComplexPolygon();
@@ -96,7 +96,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_multipolygon_should_simplify_all_polygons()
+    public void should_simplify_all_polygons_when_simplify_multipolygon()
     {
         // given - multipolygon with two complex polygons
         var poly1 = _CreateComplexPolygon();
@@ -116,7 +116,7 @@ public sealed class SimplifyTests
     }
 
     [Fact]
-    public void Simplify_multipolygon_should_return_empty_unchanged()
+    public void should_return_empty_unchanged_when_simplify_multipolygon()
     {
         // given
         var empty = Factory.CreateMultiPolygon([]);

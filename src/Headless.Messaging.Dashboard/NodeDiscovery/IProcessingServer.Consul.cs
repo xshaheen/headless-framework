@@ -11,5 +11,8 @@ internal sealed class ConsulProcessingNodeServer(INodeDiscoveryProvider discover
         await discoveryProvider.RegisterNode(stoppingToken).ConfigureAwait(false);
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }

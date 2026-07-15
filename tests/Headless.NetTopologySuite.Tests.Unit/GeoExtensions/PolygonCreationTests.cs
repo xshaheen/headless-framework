@@ -17,7 +17,7 @@ public sealed class PolygonCreationTests
     private static Coordinate[] CwCoords => [new(0, 0), new(0, 1), new(1, 1), new(1, 0), new(0, 0)];
 
     [Fact]
-    public void CreatePolygon_from_points_should_create_valid_polygon()
+    public void should_create_valid_polygon_when_create_polygon_from_points()
     {
         var points = CcwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
 
@@ -28,7 +28,7 @@ public sealed class PolygonCreationTests
     }
 
     [Fact]
-    public void CreatePolygon_from_points_should_ensure_ccw()
+    public void should_ensure_ccw_when_create_polygon_from_points()
     {
         var points = CwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
 
@@ -38,7 +38,7 @@ public sealed class PolygonCreationTests
     }
 
     [Fact]
-    public void CreatePolygon_from_coordinates_should_create_valid_polygon()
+    public void should_create_valid_polygon_when_create_polygon_from_coordinates()
     {
         var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)CcwCoords);
 
@@ -47,7 +47,7 @@ public sealed class PolygonCreationTests
     }
 
     [Fact]
-    public void CreatePolygon_from_coordinates_should_ensure_ccw()
+    public void should_ensure_ccw_when_create_polygon_from_coordinates()
     {
         var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)CwCoords);
 
@@ -55,7 +55,7 @@ public sealed class PolygonCreationTests
     }
 
     [Fact]
-    public void CreateMultiPolygon_should_create_from_coordinate_arrays()
+    public void should_create_from_coordinate_arrays_when_create_multi_polygon()
     {
         Coordinate[][] coordArrays = [CcwCoords, [new(2, 2), new(3, 2), new(3, 3), new(2, 3), new(2, 2)]];
 
@@ -66,7 +66,7 @@ public sealed class PolygonCreationTests
     }
 
     [Fact]
-    public void CreateMultiPolygon_should_ensure_all_ccw()
+    public void should_ensure_all_ccw_when_create_multi_polygon()
     {
         Coordinate[][] coordArrays =
         [

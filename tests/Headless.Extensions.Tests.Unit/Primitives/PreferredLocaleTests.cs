@@ -19,7 +19,7 @@ public sealed class PreferredLocaleTests
     }
 
     [Fact]
-    public void equality_should_be_case_insensitive_after_normalization()
+    public void should_be_case_insensitive_after_normalization_when_equality()
     {
         // given - the bug: values were stored verbatim and compared case-sensitively
         var a = new PreferredLocale(country: "USA", language: "en");
@@ -32,7 +32,7 @@ public sealed class PreferredLocaleTests
     }
 
     [Fact]
-    public void equality_should_still_distinguish_different_locales()
+    public void should_still_distinguish_different_locales_when_equality()
     {
         // given
         var enUs = new PreferredLocale(country: "USA", language: "en");

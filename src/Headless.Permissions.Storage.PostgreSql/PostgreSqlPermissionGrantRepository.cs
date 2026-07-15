@@ -199,9 +199,15 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private NpgsqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+    private NpgsqlParameter _TenantParam()
+    {
+        return _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+    }
 
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
     private NpgsqlParameter[] _Parameters(PermissionGrantRecord permissionGrant)
     {
@@ -222,5 +228,8 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         ];
     }
 
-    private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
+    private static NpgsqlParameter _Param(string name, object? value)
+    {
+        return new(name, value ?? DBNull.Value);
+    }
 }

@@ -202,11 +202,13 @@ internal sealed class InfobipSmsSender(
 
     // Infobip's PENDING/ACCEPTED/DELIVERED groups mean the message was taken for delivery; everything else is
     // a rejection the caller should treat as a failed send.
-    private static bool _IsAccepted(SmsMessageStatus? status) =>
-        status?.GroupName
+    private static bool _IsAccepted(SmsMessageStatus? status)
+    {
+        return status?.GroupName
             is MessageGeneralStatus.Accepted
                 or MessageGeneralStatus.Pending
                 or MessageGeneralStatus.Delivered;
+    }
 
     private static SendSingleSmsResponse _MapMessageResponse(SmsResponseDetails message)
     {
@@ -228,13 +230,15 @@ internal sealed class InfobipSmsSender(
     // undeliverable, or expired message is reported as InvalidRecipient (the framework's kind for a recipient
     // "rejected by the provider"); any other non-accepted status is Unknown. The raw provider status text is
     // preserved in FailureError for callers that need the specific reason.
-    private static SmsFailureKind _MapMessageFailureKind(SmsMessageStatus? status) =>
-        status?.GroupName switch
+    private static SmsFailureKind _MapMessageFailureKind(SmsMessageStatus? status)
+    {
+        return status?.GroupName switch
         {
             MessageGeneralStatus.Undeliverable or MessageGeneralStatus.Expired or MessageGeneralStatus.Rejected =>
                 SmsFailureKind.InvalidRecipient,
             _ => SmsFailureKind.Unknown,
         };
+    }
 
     private static string _FormatApiError(ApiException exception)
     {

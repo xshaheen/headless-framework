@@ -231,8 +231,14 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     }
 
     /// <summary>Returns <see cref="PostgreSqlSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
     /// <summary>Creates an <see cref="NpgsqlParameter"/> named <paramref name="name"/> with <paramref name="value"/>, substituting <see cref="DBNull.Value"/> for <see langword="null"/>.</summary>
-    private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
+    private static NpgsqlParameter _Param(string name, object? value)
+    {
+        return new(name, value ?? DBNull.Value);
+    }
 }

@@ -222,7 +222,10 @@ internal sealed class NestedStream : Stream, IHasIsDisposed
         _ThrowDisposedOrNotSupported();
     }
 
-    public override void Write(ReadOnlySpan<byte> buffer) => _ThrowDisposedOrNotSupported();
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        _ThrowDisposedOrNotSupported();
+    }
 
     public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {

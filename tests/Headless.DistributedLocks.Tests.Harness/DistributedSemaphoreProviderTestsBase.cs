@@ -16,7 +16,7 @@ namespace Tests;
 /// semantics (canonical order, dedupe, conflicting-capacity rejection, rollback, single-resource passthrough).
 /// </para>
 /// <para>
-/// The provider hook exists because <c>DistributedSemaphoreProvider</c> is <c>internal</c> to
+/// The provider hook exists because <c>DistributedSemaphoreProvider</c> is <see langword="internal"/> to
 /// <c>Headless.DistributedLocks.Core</c> and this harness package is deliberately outside its
 /// <c>InternalsVisibleTo</c> set. Each leaf integration project has internals access and supplies the provider.
 /// </para>
@@ -333,7 +333,7 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
     /// cancellation and any acquire fault they report on the way down. Only reached when the race has already failed,
     /// so there is no outcome left to assert — the point is to leave no caller running.
     /// </summary>
-#pragma warning disable CA1031, RCS1075 // The race has already failed; draining it must not mask that failure with a new one.
+#pragma warning disable CA1031, ERP022, RCS1075 // The race has already failed; draining it must not mask that failure with a new one.
     private static async Task _DrainCancelledRaceAsync(Task race)
     {
         try
@@ -342,5 +342,5 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
         }
         catch (Exception) { }
     }
-#pragma warning restore CA1031, RCS1075
+#pragma warning restore CA1031, ERP022, RCS1075
 }

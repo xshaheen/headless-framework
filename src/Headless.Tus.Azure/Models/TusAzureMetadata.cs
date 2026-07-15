@@ -260,9 +260,15 @@ internal sealed class TusAzureMetadata
 
     #region From/To Converters
 
-    public IDictionary<string, string> ToAzure() => _decodedMetadata;
+    public IDictionary<string, string> ToAzure()
+    {
+        return _decodedMetadata;
+    }
 
-    public static TusAzureMetadata FromAzure(IDictionary<string, string> metadata) => new(metadata);
+    public static TusAzureMetadata FromAzure(IDictionary<string, string> metadata)
+    {
+        return new(metadata);
+    }
 
     /// <summary>
     /// Returns the user-supplied metadata as decoded key/value pairs (UTF-8), with the client's
@@ -285,7 +291,10 @@ internal sealed class TusAzureMetadata
     /// Returns the client's Upload-Metadata header value verbatim, or <see cref="string.Empty"/>
     /// when the client supplied none — the round-trip contract for HEAD responses.
     /// </summary>
-    public string ToTusString() => RawMetadata ?? string.Empty;
+    public string ToTusString()
+    {
+        return RawMetadata ?? string.Empty;
+    }
 
     /// <summary>
     /// Returns the user-supplied metadata as tusdotnet <see cref="Metadata"/> values keyed by the

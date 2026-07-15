@@ -144,7 +144,10 @@ public sealed class TenantPostureManifest
     /// <returns><see langword="true"/> when the seam has a recorded posture; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="seam"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="seam"/> is empty or white space.</exception>
-    public bool IsConfigured(string seam) => GetSeam(seam) is not null;
+    public bool IsConfigured(string seam)
+    {
+        return GetSeam(seam) is not null;
+    }
 
     /// <summary>Returns whether the seam has a runtime marker.</summary>
     /// <param name="seam">The seam name.</param>

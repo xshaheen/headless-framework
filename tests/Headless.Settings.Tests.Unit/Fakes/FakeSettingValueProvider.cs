@@ -15,7 +15,10 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
         SettingDefinition setting,
         string? providerKey = null,
         CancellationToken cancellationToken = default
-    ) => Task.FromResult(_values.GetValueOrDefault((setting.Name, providerKey)));
+    )
+    {
+        return Task.FromResult(_values.GetValueOrDefault((setting.Name, providerKey)));
+    }
 
     public Task SetAsync(
         SettingDefinition setting,
@@ -42,13 +45,20 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
         SettingDefinition[] settings,
         string? providerKey = null,
         CancellationToken cancellationToken = default
-    ) =>
-        Task.FromResult(
+    )
+    {
+        return Task.FromResult(
             settings.Select(d => new SettingValue(d.Name, _values.GetValueOrDefault((d.Name, providerKey)))).ToList()
         );
+    }
 
-    public void SetValue(string settingName, string? value, string? providerKey = null) =>
+    public void SetValue(string settingName, string? value, string? providerKey = null)
+    {
         _values[(settingName, providerKey)] = value;
+    }
 
-    public void Clear() => _values.Clear();
+    public void Clear()
+    {
+        _values.Clear();
+    }
 }

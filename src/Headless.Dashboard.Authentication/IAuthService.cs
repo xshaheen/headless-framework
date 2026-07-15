@@ -62,8 +62,10 @@ public sealed class AuthResult
     /// The authenticated username to record. Defaults to <c>"user"</c> when <see langword="null"/>.
     /// </param>
     /// <returns>An <see cref="AuthResult"/> with <see cref="IsAuthenticated"/> set to <see langword="true"/>.</returns>
-    public static AuthResult Success(string? username = null) =>
-        new() { IsAuthenticated = true, Username = username ?? "user" };
+    public static AuthResult Success(string? username = null)
+    {
+        return new() { IsAuthenticated = true, Username = username ?? "user" };
+    }
 
     /// <summary>
     /// Creates a failed <see cref="AuthResult"/> with an optional error message.
@@ -73,8 +75,10 @@ public sealed class AuthResult
     /// <see langword="null"/>.
     /// </param>
     /// <returns>An <see cref="AuthResult"/> with <see cref="IsAuthenticated"/> set to <see langword="false"/>.</returns>
-    public static AuthResult Failure(string? errorMessage = null) =>
-        new() { IsAuthenticated = false, ErrorMessage = errorMessage ?? "Authentication failed" };
+    public static AuthResult Failure(string? errorMessage = null)
+    {
+        return new() { IsAuthenticated = false, ErrorMessage = errorMessage ?? "Authentication failed" };
+    }
 }
 
 /// <summary>

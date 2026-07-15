@@ -183,7 +183,13 @@ public sealed class BlobLocationResolverTests : TestBase
 /// <summary>Normalizer that distinguishes the two tiers: container strict (upper), blob segments lenient (lower).</summary>
 file sealed class TwoTierNormalizer : IBlobNamingNormalizer
 {
-    public string NormalizeContainerName(string containerName) => containerName.ToUpperInvariant();
+    public string NormalizeContainerName(string containerName)
+    {
+        return containerName.ToUpperInvariant();
+    }
 
-    public string NormalizeBlobName(string blobName) => blobName.ToLowerInvariant();
+    public string NormalizeBlobName(string blobName)
+    {
+        return blobName.ToLowerInvariant();
+    }
 }

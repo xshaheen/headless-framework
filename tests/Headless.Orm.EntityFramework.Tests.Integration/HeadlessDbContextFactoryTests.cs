@@ -152,13 +152,19 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     {
         public bool IsDisposed { get; private set; }
 
-        public void Dispose() => IsDisposed = true;
+        public void Dispose()
+        {
+            IsDisposed = true;
+        }
     }
 }
 
 file sealed class FixedGuidGenerator(Guid value) : IGuidGenerator
 {
-    public Guid Create() => value;
+    public Guid Create()
+    {
+        return value;
+    }
 }
 
 file sealed class KeyedGuidDbContext(HeadlessDbContextServices services, DbContextOptions<KeyedGuidDbContext> options)
@@ -175,7 +181,10 @@ file sealed class KeyedGuidEntity : IEntity<Guid>
 
     public required string Name { get; init; }
 
-    public IReadOnlyList<object> GetKeys() => [Id];
+    public IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }
 
 /// <summary>

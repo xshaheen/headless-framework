@@ -5,7 +5,6 @@ using System.Net.Mime;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.Exceptions;
 using Headless.Primitives;
@@ -364,5 +363,8 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 public sealed class TenancyThrowingController : Microsoft.AspNetCore.Mvc.ControllerBase
 {
     [Microsoft.AspNetCore.Mvc.HttpGet("throw-tenancy")]
-    public Microsoft.AspNetCore.Mvc.IActionResult ThrowTenancy() => throw new MissingTenantContextException();
+    public Microsoft.AspNetCore.Mvc.IActionResult ThrowTenancy()
+    {
+        throw new MissingTenantContextException();
+    }
 }

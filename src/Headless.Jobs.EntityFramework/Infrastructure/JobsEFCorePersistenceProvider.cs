@@ -90,8 +90,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     // The cron-expressions cache is owned by the base provider (it holds the ICache + key); the manager registers
     // this on OnCommit so the coordinated cron path invalidates only after the caller's transaction commits.
-    Task ICoordinatedJobWriter<TTimeJob, TCronJob>.InvalidateCronExpressionsCacheAsync() =>
-        InvalidateCronExpressionsCacheAsync();
+    Task ICoordinatedJobWriter<TTimeJob, TCronJob>.InvalidateCronExpressionsCacheAsync()
+    {
+        return InvalidateCronExpressionsCacheAsync();
+    }
 
     // Builds a short-lived, NON-pooled context bound to the caller's already-open connection + live transaction.
     // The pooled factory cannot be reused: a pooled context owns its own connection and Database.UseTransaction

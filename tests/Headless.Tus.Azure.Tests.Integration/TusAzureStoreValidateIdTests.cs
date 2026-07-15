@@ -33,41 +33,35 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
     }
 
-    public static TheoryData<string, Func<TusAzureStore, CancellationToken, Task>> EntryPoints()
+    private static IReadOnlyList<(string Name, Func<TusAzureStore, CancellationToken, Task> Act)> _EntryPoints()
     {
-        return new TheoryData<string, Func<TusAzureStore, CancellationToken, Task>>
-        {
-            { "FileExistAsync", async (store, ct) => _ = await store.FileExistAsync(_InvalidFileId, ct) },
-            { "GetUploadLengthAsync", async (store, ct) => _ = await store.GetUploadLengthAsync(_InvalidFileId, ct) },
-            { "GetUploadOffsetAsync", async (store, ct) => _ = await store.GetUploadOffsetAsync(_InvalidFileId, ct) },
-            {
-                "GetUploadMetadataAsync",
-                async (store, ct) => _ = await store.GetUploadMetadataAsync(_InvalidFileId, ct)
-            },
-            { "SetUploadLengthAsync", (store, ct) => store.SetUploadLengthAsync(_InvalidFileId, 100, ct) },
-            { "GetFileAsync", async (store, ct) => _ = await store.GetFileAsync(_InvalidFileId, ct) },
-            { "DeleteFileAsync", (store, ct) => store.DeleteFileAsync(_InvalidFileId, ct) },
-            {
-                "SetExpirationAsync",
-                (store, ct) => store.SetExpirationAsync(_InvalidFileId, DateTimeOffset.UtcNow, ct)
-            },
-            { "GetExpirationAsync", async (store, ct) => _ = await store.GetExpirationAsync(_InvalidFileId, ct) },
-            { "GetUploadConcatAsync", async (store, ct) => _ = await store.GetUploadConcatAsync(_InvalidFileId, ct) },
-            {
+        return
+        [
+            ("FileExistAsync", async (store, ct) => _ = await store.FileExistAsync(_InvalidFileId, ct)),
+            ("GetUploadLengthAsync", async (store, ct) => _ = await store.GetUploadLengthAsync(_InvalidFileId, ct)),
+            ("GetUploadOffsetAsync", async (store, ct) => _ = await store.GetUploadOffsetAsync(_InvalidFileId, ct)),
+            ("GetUploadMetadataAsync", async (store, ct) => _ = await store.GetUploadMetadataAsync(_InvalidFileId, ct)),
+            ("SetUploadLengthAsync", (store, ct) => store.SetUploadLengthAsync(_InvalidFileId, 100, ct)),
+            ("GetFileAsync", async (store, ct) => _ = await store.GetFileAsync(_InvalidFileId, ct)),
+            ("DeleteFileAsync", (store, ct) => store.DeleteFileAsync(_InvalidFileId, ct)),
+            ("SetExpirationAsync", (store, ct) => store.SetExpirationAsync(_InvalidFileId, DateTimeOffset.UtcNow, ct)),
+            ("GetExpirationAsync", async (store, ct) => _ = await store.GetExpirationAsync(_InvalidFileId, ct)),
+            ("GetUploadConcatAsync", async (store, ct) => _ = await store.GetUploadConcatAsync(_InvalidFileId, ct)),
+            (
                 "VerifyChecksumAsync",
                 // VerifyChecksumAsync swallows most errors into `false`, but an invalid id must
                 // still throw: reaching it means tusdotnet's earlier requirements were bypassed.
                 async (store, ct) => _ = await store.VerifyChecksumAsync(_InvalidFileId, "sha256", new byte[32], ct)
-            },
-            {
+            ),
+            (
                 "AppendDataAsync(Stream)",
                 async (store, ct) =>
                 {
                     await using var body = new MemoryStream([1, 2, 3]);
                     _ = await store.AppendDataAsync(_InvalidFileId, body, ct);
                 }
-            },
-            {
+            ),
+            (
                 "AppendDataAsync(PipeReader)",
                 async (store, ct) =>
                 {
@@ -75,25 +69,27 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
                     await pipe.Writer.CompleteAsync();
                     _ = await store.AppendDataAsync(_InvalidFileId, pipe.Reader, ct);
                 }
-            },
-            {
+            ),
+            (
                 "CreateFinalFileAsync(partial id)",
                 async (store, ct) => _ = await store.CreateFinalFileAsync([_InvalidFileId], metadata: null, ct)
-            },
-        };
+            ),
+        ];
     }
 
-    [Theory]
-    [MemberData(nameof(EntryPoints))]
-    public async Task should_reject_invalid_file_id(string entryPoint, Func<TusAzureStore, CancellationToken, Task> act)
+    [Fact]
+    public async Task should_reject_invalid_file_id()
     {
-        // when
-        var invoke = () => act(_store, AbortToken);
+        foreach (var (entryPoint, act) in _EntryPoints())
+        {
+            // when
+            var invoke = () => act(_store, AbortToken);
 
-        // then
-        await invoke
-            .Should()
-            .ThrowAsync<TusStoreException>($"{entryPoint} must enforce ITusFileIdProvider.ValidateId")
-            .WithMessage($"*Invalid TUS file id: '{_InvalidFileId}'*");
+            // then
+            await invoke
+                .Should()
+                .ThrowAsync<TusStoreException>($"{entryPoint} must enforce ITusFileIdProvider.ValidateId")
+                .WithMessage($"*Invalid TUS file id: '{_InvalidFileId}'*");
+        }
     }
 }

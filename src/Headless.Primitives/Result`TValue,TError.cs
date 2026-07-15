@@ -97,37 +97,48 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <summary>Gets the success value, or <paramref name="defaultValue"/> when the result is a failure.</summary>
     /// <param name="defaultValue">The value to return when the result is a failure.</param>
     /// <returns>The success value when successful; otherwise <paramref name="defaultValue"/>.</returns>
-    public TValue GetValueOrDefault(TValue defaultValue) => IsSuccess ? _value! : defaultValue;
+    public TValue GetValueOrDefault(TValue defaultValue)
+    {
+        return IsSuccess ? _value! : defaultValue;
+    }
 
     /// <summary>Invokes <paramref name="success"/> with the value or <paramref name="failure"/> with the error, returning its result.</summary>
     /// <typeparam name="TResult">The type produced by both branches.</typeparam>
     /// <param name="success">The function invoked on success, receiving the value.</param>
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
-    public TResult Match<TResult>(Func<TValue, TResult> success, Func<TError, TResult> failure) =>
-        IsFailure ? failure(Error) : success(_value!);
+    public TResult Match<TResult>(Func<TValue, TResult> success, Func<TError, TResult> failure)
+    {
+        return IsFailure ? failure(Error) : success(_value!);
+    }
 
     /// <summary>Invokes <paramref name="success"/> (ignoring the value) or <paramref name="failure"/> with the error, returning its result.</summary>
     /// <typeparam name="TResult">The type produced by both branches.</typeparam>
     /// <param name="success">The function invoked on success.</param>
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
-    public TResult Match<TResult>(Func<TResult> success, Func<TError, TResult> failure) =>
-        IsFailure ? failure(Error) : success();
+    public TResult Match<TResult>(Func<TResult> success, Func<TError, TResult> failure)
+    {
+        return IsFailure ? failure(Error) : success();
+    }
 
     /// <summary>Transforms the success value with <paramref name="mapper"/>, propagating the error unchanged on failure.</summary>
     /// <typeparam name="TOut">The mapped value type.</typeparam>
     /// <param name="mapper">The projection applied to the success value.</param>
     /// <returns>A successful result holding the mapped value, or the original failure.</returns>
-    public Result<TOut, TError> Map<TOut>(Func<TValue, TOut> mapper) =>
-        IsSuccess ? Result<TOut, TError>.Ok(mapper(_value!)) : Result<TOut, TError>.Fail(_error!);
+    public Result<TOut, TError> Map<TOut>(Func<TValue, TOut> mapper)
+    {
+        return IsSuccess ? Result<TOut, TError>.Ok(mapper(_value!)) : Result<TOut, TError>.Fail(_error!);
+    }
 
     /// <summary>Chains another result-producing operation on success, propagating the error unchanged on failure.</summary>
     /// <typeparam name="TOut">The value type produced by <paramref name="binder"/>.</typeparam>
     /// <param name="binder">The function applied to the success value, producing the next result.</param>
     /// <returns>The result produced by <paramref name="binder"/>, or the original failure.</returns>
-    public Result<TOut, TError> Bind<TOut>(Func<TValue, Result<TOut, TError>> binder) =>
-        IsSuccess ? binder(_value!) : Result<TOut, TError>.Fail(_error!);
+    public Result<TOut, TError> Bind<TOut>(Func<TValue, Result<TOut, TError>> binder)
+    {
+        return IsSuccess ? binder(_value!) : Result<TOut, TError>.Fail(_error!);
+    }
 
     /// <summary>Invokes <paramref name="action"/> with the value when successful, then returns this result.</summary>
     /// <param name="action">The action to run on success, receiving the value.</param>
@@ -160,12 +171,18 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <summary>Creates a successful result carrying <paramref name="value"/>.</summary>
     /// <param name="value">The success value.</param>
     /// <returns>A successful <see cref="Result{TValue, TError}"/>.</returns>
-    public static Result<TValue, TError> Ok(TValue value) => new(value);
+    public static Result<TValue, TError> Ok(TValue value)
+    {
+        return new(value);
+    }
 
     /// <summary>Creates a failed result carrying <paramref name="error"/>.</summary>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="Result{TValue, TError}"/>.</returns>
-    public static Result<TValue, TError> Fail(TError error) => new(error);
+    public static Result<TValue, TError> Fail(TError error)
+    {
+        return new(error);
+    }
 
     // Implicit conversions
 
@@ -184,19 +201,27 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <summary>Determines whether this result equals <paramref name="other"/> in success state, value, and error.</summary>
     /// <param name="other">The result to compare with.</param>
     /// <returns><see langword="true"/> if both have the same success state, value, and error; otherwise <see langword="false"/>.</returns>
-    public bool Equals(Result<TValue, TError> other) =>
-        IsSuccess == other.IsSuccess
-        && EqualityComparer<TValue?>.Default.Equals(_value, other._value)
-        && EqualityComparer<TError?>.Default.Equals(_error, other._error);
+    public bool Equals(Result<TValue, TError> other)
+    {
+        return IsSuccess == other.IsSuccess
+            && EqualityComparer<TValue?>.Default.Equals(_value, other._value)
+            && EqualityComparer<TError?>.Default.Equals(_error, other._error);
+    }
 
     /// <summary>Determines whether <paramref name="obj"/> is a <see cref="Result{TValue, TError}"/> equal to this instance.</summary>
     /// <param name="obj">The object to compare with.</param>
     /// <returns><see langword="true"/> if <paramref name="obj"/> is an equal <see cref="Result{TValue, TError}"/>; otherwise <see langword="false"/>.</returns>
-    public override bool Equals(object? obj) => obj is Result<TValue, TError> other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is Result<TValue, TError> other && Equals(other);
+    }
 
     /// <summary>Returns a hash code derived from the success state, value, and error.</summary>
     /// <returns>A hash code for this instance.</returns>
-    public override int GetHashCode() => HashCode.Combine(IsSuccess, _value, _error);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(IsSuccess, _value, _error);
+    }
 
     /// <summary>Determines whether two <see cref="Result{TValue, TError}"/> instances are equal.</summary>
     /// <param name="left">The left operand.</param>

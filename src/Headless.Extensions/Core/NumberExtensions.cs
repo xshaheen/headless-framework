@@ -15,25 +15,40 @@ public static class NumberExtensions
     /// <exception cref="ArgumentException">Thrown when <paramref name="min"/> is greater than <paramref name="max"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
-    public static int Clamp(this int value, int min, int max) => Math.Clamp(value, min, max);
+    public static int Clamp(this int value, int min, int max)
+    {
+        return Math.Clamp(value, min, max);
+    }
 
     /// <inheritdoc cref="Clamp(int,int,int)"/>
     [SystemPure]
     [JetBrainsPure]
-    public static long Clamp(this long value, long min, long max) => Math.Clamp(value, min, max);
+    public static long Clamp(this long value, long min, long max)
+    {
+        return Math.Clamp(value, min, max);
+    }
 
     /// <inheritdoc cref="Clamp(int,int,int)"/>
     [SystemPure]
     [JetBrainsPure]
-    public static float Clamp(this float value, float min, float max) => Math.Clamp(value, min, max);
+    public static float Clamp(this float value, float min, float max)
+    {
+        return Math.Clamp(value, min, max);
+    }
 
     /// <inheritdoc cref="Clamp(int,int,int)"/>
     [SystemPure]
     [JetBrainsPure]
-    public static double Clamp(this double value, double min, double max) => Math.Clamp(value, min, max);
+    public static double Clamp(this double value, double min, double max)
+    {
+        return Math.Clamp(value, min, max);
+    }
 
     /// <inheritdoc cref="Clamp(int,int,int)"/>
     [SystemPure]
     [JetBrainsPure]
-    public static decimal Clamp(this decimal value, decimal min, decimal max) => Math.Clamp(value, min, max);
+    public static decimal Clamp(this decimal value, decimal min, decimal max)
+    {
+        return Math.Clamp(value, min, max);
+    }
 }

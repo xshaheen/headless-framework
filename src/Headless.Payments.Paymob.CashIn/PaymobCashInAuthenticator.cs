@@ -44,7 +44,10 @@ internal sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, ID
 
     public Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync(
         CancellationToken cancellationToken = default
-    ) => _RequestAuthenticationTokenAsync(cancellationToken);
+    )
+    {
+        return _RequestAuthenticationTokenAsync(cancellationToken);
+    }
 
     private async Task<CashInAuthenticationTokenResponse> _RequestAuthenticationTokenAsync(
         CancellationToken cancellationToken

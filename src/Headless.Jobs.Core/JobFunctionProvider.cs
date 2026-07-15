@@ -357,7 +357,10 @@ internal static class JobFunctionRegistryBuilder
         return string.IsNullOrEmpty(mappedCronExpression) ? cronExpression : mappedCronExpression;
     }
 
-    private static string _TypeDisplayName(Type type) => type.FullName ?? type.Name;
+    private static string _TypeDisplayName(Type type)
+    {
+        return type.FullName ?? type.Name;
+    }
 }
 
 internal sealed record JobFunctionRegistry(

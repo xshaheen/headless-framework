@@ -24,7 +24,10 @@ public sealed class ProcessingContext(
 
     private readonly TimeProvider _timeProvider = timeProvider;
 
-    public void Dispose() => _scope?.Dispose();
+    public void Dispose()
+    {
+        _scope?.Dispose();
+    }
 
     public void ThrowIfStopping()
     {

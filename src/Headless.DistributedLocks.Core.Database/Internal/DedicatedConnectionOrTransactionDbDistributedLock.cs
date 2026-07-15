@@ -189,7 +189,10 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
 
         public DatabaseConnection? Connection => Volatile.Read(ref _innerHandle)?.Connection;
 
-        public async Task ReleaseAsync() => await DisposeAsync().ConfigureAwait(false);
+        public async Task ReleaseAsync()
+        {
+            await DisposeAsync().ConfigureAwait(false);
+        }
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;

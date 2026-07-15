@@ -121,11 +121,17 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
     /// <summary>Determines whether <paramref name="obj"/> is a <see cref="PhoneNumber"/> equal to this instance.</summary>
     /// <param name="obj">The object to compare with.</param>
     /// <returns><see langword="true"/> if <paramref name="obj"/> is an equal phone number; otherwise, <see langword="false"/>.</returns>
-    public override bool Equals(object? obj) => Equals(obj as PhoneNumber);
+    public override bool Equals(object? obj)
+    {
+        return Equals(obj as PhoneNumber);
+    }
 
     /// <summary>Returns a hash code derived from the country code and national number.</summary>
     /// <returns>A hash code for the current phone number.</returns>
-    public override int GetHashCode() => HashCode.Combine(CountryCode, Number);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(CountryCode, Number);
+    }
 
     /// <summary>Determines whether two phone numbers are equal.</summary>
     /// <param name="left">The first phone number to compare.</param>
@@ -140,11 +146,17 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
     public static bool operator !=(PhoneNumber? left, PhoneNumber? right) => !Equals(left, right);
 
     /// <summary>Returns the international format of the number, falling back to <c>+{CountryCode} {Number}</c> when it cannot be formatted.</summary>
-    public override string ToString() => _toStringCache ??= GetInternationalFormat() ?? $"+{CountryCode} {Number}";
+    public override string ToString()
+    {
+        return _toStringCache ??= GetInternationalFormat() ?? $"+{CountryCode} {Number}";
+    }
 
     /// <summary>Returns a normalized canonical representation of this phone number derived from its string form.</summary>
     /// <returns>The normalized phone number string.</returns>
-    public string Normalize() => _normalizedCache ??= PhoneNumberNormalizer.NormalizePhoneNumber(ToString());
+    public string Normalize()
+    {
+        return _normalizedCache ??= PhoneNumberNormalizer.NormalizePhoneNumber(ToString());
+    }
 
     /// <summary>
     /// Reduces a national number to its canonical digits-only form, dropping formatting characters such as
@@ -338,7 +350,10 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the source country code is not positive.</exception>
     /// <exception cref="ArgumentException">Thrown when the source national number is empty.</exception>
     [return: NotNullIfNotNull(nameof(number))]
-    public static PhoneNumber? FromPhoneNumber(UtilsPhoneNumber? number) => number;
+    public static PhoneNumber? FromPhoneNumber(UtilsPhoneNumber? number)
+    {
+        return number;
+    }
 
     /// <summary>Implicitly converts a libphonenumber <see cref="UtilsPhoneNumber"/> to a <see cref="PhoneNumber"/>.</summary>
     /// <param name="operand">The libphonenumber phone number to convert; may be <see langword="null"/>.</param>

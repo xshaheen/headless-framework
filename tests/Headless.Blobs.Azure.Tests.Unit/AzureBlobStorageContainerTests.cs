@@ -5,7 +5,6 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests;
 

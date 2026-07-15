@@ -140,7 +140,7 @@ public sealed class CrossProviderSmsMixingTests : TestBase
     }
 
     [Fact]
-    public async Task same_provider_twice_should_send_with_its_own_configuration()
+    public async Task should_send_with_its_own_configuration_when_same_provider_twice()
     {
         // given - AE1: the same provider registered under two names with different endpoints and sender ids;
         // each named HttpClient's transport is stubbed by its exact name, so a send proves the whole chain:

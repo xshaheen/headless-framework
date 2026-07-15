@@ -5,7 +5,7 @@ namespace Tests.Core;
 public sealed class ComparableExtensionsTests
 {
     [Fact]
-    public void InclusiveBetween_tests()
+    public void inclusive_between_tests()
     {
         // Number
         const int number = 5;
@@ -23,7 +23,7 @@ public sealed class ComparableExtensionsTests
     }
 
     [Fact]
-    public void ExclusiveBetween_tests()
+    public void exclusive_between_tests()
     {
         // Number
         const int number = 5;

@@ -285,7 +285,7 @@ public sealed class CommitCoordinatorTests : TestBase
     }
 
     [Fact]
-    public async Task drain_then_should_propagate_the_drain_fault_when_only_the_drain_throws()
+    public async Task should_propagate_the_drain_fault_when_drain_then_only_the_drain_throws()
     {
         var coordinator = new CommitCoordinator();
         coordinator.OnCommit((_, _) => throw new InvalidOperationException("drain boom"));
@@ -298,7 +298,7 @@ public sealed class CommitCoordinatorTests : TestBase
     }
 
     [Fact]
-    public async Task drain_then_should_propagate_the_after_drain_fault_when_only_after_drain_throws()
+    public async Task should_propagate_the_after_drain_fault_when_drain_then_only_after_drain_throws()
     {
         var coordinator = new CommitCoordinator();
         coordinator.OnCommit((_, _) => ValueTask.CompletedTask);
@@ -315,7 +315,7 @@ public sealed class CommitCoordinatorTests : TestBase
     }
 
     [Fact]
-    public async Task drain_then_should_surface_both_faults_as_aggregate_with_drain_first_when_both_throw()
+    public async Task should_surface_both_faults_as_aggregate_with_drain_first_when_drain_then_both_throw()
     {
         // The #2 fix: a cleanup (afterDrain) fault must NOT mask the drain fault. Both surface via
         // AggregateException with the drain fault as the first inner.

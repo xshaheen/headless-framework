@@ -8,7 +8,7 @@ namespace Tests.Linq;
 public sealed class PredicateBuilderTests
 {
     [Fact]
-    public void true_predicate_should_always_return_true_or_false_based_on_case_predicate()
+    public void should_always_return_true_or_false_based_on_case_predicate_when_true_predicate()
     {
         // given
         var predicateAlwaysTrue = PredicateBuilder.True<int>();
@@ -24,7 +24,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void not_predicate_should_invert_condition()
+    public void should_invert_condition_when_not_predicate()
     {
         // given
         Expression<Func<int, bool>> isEven = x => x % 2 == 0;
@@ -38,7 +38,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void or_predicate_should_return_true_if_any_condition_is_true()
+    public void should_return_true_if_any_condition_is_true_when_or_predicate()
     {
         // given
         Expression<Func<int, bool>> isEven = x => x % 2 == 0;
@@ -57,7 +57,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void and_predicate_should_return_true_if_both_conditions_are_true()
+    public void should_return_true_if_both_conditions_are_true_when_and_predicate()
     {
         // given
         Expression<Func<int, bool>> isEven = x => x % 2 == 0;
@@ -76,7 +76,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void and_not_predicate_should_return_true_if_first_condition_is_true_and_second_is_false()
+    public void should_return_true_if_first_condition_is_true_and_second_is_false_when_and_not_predicate()
     {
         // given
         Expression<Func<int, bool>> isEven = x => x % 2 == 0;
@@ -95,7 +95,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void or_not_predicate_should_return_true_if_first_condition_is_true_or_second_is_false()
+    public void should_return_true_if_first_condition_is_true_or_second_is_false_when_or_not_predicate()
     {
         // given
         Expression<Func<int, bool>> isEven = x => x % 2 == 0;
@@ -114,7 +114,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void or_with_multiple_expressions_should_combine_them_correctly()
+    public void should_combine_them_correctly_when_or_with_multiple_expressions()
     {
         // given
         var predicates = new List<Expression<Func<int, bool>>> { x => x % 2 == 0, x => x > 5, x => x < 0 };
@@ -135,7 +135,7 @@ public sealed class PredicateBuilderTests
     }
 
     [Fact]
-    public void and_with_multiple_expressions_should_combine_them_correctly()
+    public void should_combine_them_correctly_when_and_with_multiple_expressions()
     {
         // given
         var predicates = new List<Expression<Func<int, bool>>> { x => x % 2 == 0, x => x > 5, x => x < 10 };

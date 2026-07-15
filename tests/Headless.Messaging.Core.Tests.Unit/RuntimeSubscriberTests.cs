@@ -219,7 +219,10 @@ public sealed class RuntimeSubscriberTests : TestBase
             ConsumeContext<RuntimeMessage> context,
             IServiceProvider services,
             CancellationToken cancellationToken
-        ) => ValueTask.CompletedTask;
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class AlternateNamedRuntimeHandler
@@ -228,7 +231,10 @@ public sealed class RuntimeSubscriberTests : TestBase
             ConsumeContext<RuntimeMessage> context,
             IServiceProvider services,
             CancellationToken cancellationToken
-        ) => ValueTask.CompletedTask;
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class ConcurrentRuntimeHandler
@@ -237,6 +243,9 @@ public sealed class RuntimeSubscriberTests : TestBase
             ConsumeContext<RuntimeMessage> context,
             IServiceProvider services,
             CancellationToken cancellationToken
-        ) => ValueTask.CompletedTask;
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

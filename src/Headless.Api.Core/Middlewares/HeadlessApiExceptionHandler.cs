@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentValidation;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Api.Resources;
 using Headless.Constants;
 using Headless.Exceptions;

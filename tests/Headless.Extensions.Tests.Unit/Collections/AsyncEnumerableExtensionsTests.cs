@@ -10,7 +10,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // ConcatAsync tests
 
     [Fact]
-    public async Task concat_async_should_combine_two_sequences()
+    public async Task should_combine_two_sequences_when_concat_async()
     {
         // given
         var first = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -24,7 +24,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task concat_async_should_handle_empty_first_sequence()
+    public async Task should_handle_empty_first_sequence_when_concat_async()
     {
         // given
         var first = _CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
@@ -38,7 +38,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task concat_async_should_handle_empty_second_sequence()
+    public async Task should_handle_empty_second_sequence_when_concat_async()
     {
         // given
         var first = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -54,7 +54,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // DistinctAsync tests
 
     [Fact]
-    public async Task distinct_async_should_remove_duplicates()
+    public async Task should_remove_duplicates_when_distinct_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 2, 3, 3, 3, 4], AbortToken);
@@ -67,7 +67,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task distinct_async_should_use_custom_comparer()
+    public async Task should_use_custom_comparer_when_distinct_async()
     {
         // given
         var source = _CreateAsyncEnumerable(["a", "A", "b", "B"], AbortToken);
@@ -84,7 +84,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // DistinctByAsync tests
 
     [Fact]
-    public async Task distinct_by_async_should_use_key_selector()
+    public async Task should_use_key_selector_when_distinct_by_async()
     {
         // given
         var source = _CreateAsyncEnumerable(
@@ -102,7 +102,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task distinct_by_async_should_use_custom_comparer()
+    public async Task should_use_custom_comparer_when_distinct_by_async()
     {
         // given
         var source = _CreateAsyncEnumerable(
@@ -122,7 +122,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // OfTypeAsync tests
 
     [Fact]
-    public async Task of_type_async_should_filter_by_type()
+    public async Task should_filter_by_type_when_of_type_async()
     {
         // given
         var source = _CreateAsyncEnumerable<object>([1, "a", 2, "b", 3], AbortToken);
@@ -135,7 +135,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task of_type_async_should_return_empty_for_no_matches()
+    public async Task should_return_empty_for_no_matches_when_of_type_async()
     {
         // given
         var source = _CreateAsyncEnumerable<object>(["a", "b", "c"], AbortToken);
@@ -150,7 +150,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // SelectAsync tests
 
     [Fact]
-    public async Task select_async_should_project_elements()
+    public async Task should_project_elements_when_select_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -163,7 +163,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task select_async_should_handle_empty_sequence()
+    public async Task should_handle_empty_sequence_when_select_async()
     {
         // given
         var source = _CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
@@ -178,7 +178,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // TakeAsync tests
 
     [Fact]
-    public async Task take_async_should_return_first_n_elements()
+    public async Task should_return_first_n_elements_when_take_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
@@ -191,7 +191,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task take_async_should_return_all_when_count_exceeds_length()
+    public async Task should_return_all_when_take_async_count_exceeds_length()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -204,7 +204,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task take_async_should_return_empty_for_zero_count()
+    public async Task should_return_empty_for_zero_count_when_take_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -217,7 +217,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task take_async_should_return_empty_for_negative_count()
+    public async Task should_return_empty_for_negative_count_when_take_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -232,7 +232,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // TakeWhileAsync tests
 
     [Fact]
-    public async Task take_while_async_should_take_while_predicate_is_true()
+    public async Task should_take_while_predicate_is_true_when_take_while_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
@@ -245,7 +245,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task take_while_async_should_return_empty_when_first_fails()
+    public async Task should_return_empty_when_take_while_async_first_fails()
     {
         // given
         var source = _CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
@@ -260,7 +260,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // SkipAsync tests
 
     [Fact]
-    public async Task skip_async_should_skip_first_n_elements()
+    public async Task should_skip_first_n_elements_when_skip_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
@@ -273,7 +273,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task skip_async_should_return_empty_when_skip_exceeds_length()
+    public async Task should_return_empty_when_skip_async_skip_exceeds_length()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -286,7 +286,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task skip_async_should_return_all_for_zero_count()
+    public async Task should_return_all_for_zero_count_when_skip_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -299,7 +299,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task skip_async_should_return_all_for_negative_count()
+    public async Task should_return_all_for_negative_count_when_skip_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
@@ -314,7 +314,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // SkipWhileAsync tests
 
     [Fact]
-    public async Task skip_while_async_should_skip_leading_matching_items()
+    public async Task should_skip_leading_matching_items_when_skip_while_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3, 2, 4], AbortToken);
@@ -327,7 +327,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task skip_while_async_should_yield_all_when_first_item_fails_predicate()
+    public async Task should_yield_all_when_skip_while_async_first_item_fails_predicate()
     {
         // given
         var source = _CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
@@ -342,7 +342,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // WhereAsync tests
 
     [Fact]
-    public async Task where_async_should_filter_elements()
+    public async Task should_filter_elements_when_where_async()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
@@ -355,7 +355,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task where_async_should_return_empty_when_no_matches()
+    public async Task should_return_empty_when_where_async_no_matches()
     {
         // given
         var source = _CreateAsyncEnumerable([1, 3, 5], AbortToken);
@@ -370,7 +370,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // WhereNotNull tests
 
     [Fact]
-    public async Task where_not_null_should_filter_null_elements()
+    public async Task should_filter_null_elements_when_where_not_null()
     {
         // given
         var source = _CreateAsyncEnumerable(["a", null, "b", null, "c"], AbortToken);
@@ -383,7 +383,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task where_not_null_should_return_empty_for_all_nulls()
+    public async Task should_return_empty_for_all_nulls_when_where_not_null()
     {
         // given
         var source = _CreateAsyncEnumerable(new string?[] { null, null, null }, AbortToken);
@@ -398,7 +398,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // WhereNotNullOrEmpty tests
 
     [Fact]
-    public async Task where_not_null_or_empty_should_filter_null_and_empty_strings()
+    public async Task should_filter_null_and_empty_strings_when_where_not_null_or_empty()
     {
         // given
         var source = _CreateAsyncEnumerable(["a", null, "", "b", "  ", "c"], AbortToken);
@@ -413,7 +413,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // WhereNotNullOrWhiteSpace tests
 
     [Fact]
-    public async Task where_not_null_or_whitespace_should_filter_null_empty_and_whitespace()
+    public async Task should_filter_null_empty_and_whitespace_when_where_not_null_or_whitespace()
     {
         // given
         var source = _CreateAsyncEnumerable(["a", null, "", "b", "  ", "c"], AbortToken);
@@ -428,7 +428,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     // Cancellation tests
 
     [Fact]
-    public async Task concat_async_should_respect_cancellation_token()
+    public async Task should_respect_cancellation_token_when_concat_async()
     {
         // given - intentionally using separate CTS to test mid-iteration cancellation
         using var cts = new CancellationTokenSource();

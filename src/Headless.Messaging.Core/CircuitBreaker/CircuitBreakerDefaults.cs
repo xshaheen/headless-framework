@@ -24,8 +24,9 @@ public static class CircuitBreakerDefaults
     /// <see langword="true"/> if the exception is transient and should contribute to circuit breaker trips;
     /// <see langword="false"/> if the exception is permanent and the circuit breaker should ignore it.
     /// </returns>
-    public static bool IsTransient(Exception exception) =>
-        exception switch
+    public static bool IsTransient(Exception exception)
+    {
+        return exception switch
         {
             TimeoutException => true,
             HttpRequestException { StatusCode: >= System.Net.HttpStatusCode.InternalServerError } => true,
@@ -35,4 +36,5 @@ public static class CircuitBreakerDefaults
             TaskCanceledException tce when !tce.CancellationToken.IsCancellationRequested => true,
             _ => false,
         };
+    }
 }

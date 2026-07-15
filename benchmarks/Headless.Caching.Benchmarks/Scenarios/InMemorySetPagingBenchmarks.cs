@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;
@@ -22,8 +21,7 @@ public sealed class InMemorySetPagingBenchmarks : IDisposable
     [Params(1, 50)]
     public int PageIndex { get; set; }
 
-    [Params(50)]
-    public int PageSize { get; set; }
+    public int PageSize { get; set; } = 50;
 
     [GlobalSetup]
     public async Task GlobalSetup()
@@ -37,13 +35,15 @@ public sealed class InMemorySetPagingBenchmarks : IDisposable
     }
 
     [GlobalCleanup]
-    public void GlobalCleanup() => Dispose();
+    public void GlobalCleanup()
+    {
+        Dispose();
+    }
 
     public void Dispose()
     {
         _cache?.Dispose();
         _cache = null;
-        GC.SuppressFinalize(this);
     }
 
     [Benchmark]

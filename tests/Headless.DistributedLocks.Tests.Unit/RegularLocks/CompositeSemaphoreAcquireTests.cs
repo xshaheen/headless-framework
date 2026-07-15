@@ -91,7 +91,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_dedupe_identical_duplicate_requests_into_one_child()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        var slot = new CompositeTestLease("a");
+        await using var slot = new CompositeTestLease("a");
         var semaphore = _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(slot));
 
         var result = await provider.TryAcquireAllAsync(
@@ -112,7 +112,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_return_original_slot_lease_for_single_canonical_resource()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        var slot = new CompositeTestLease("a", fencingToken: 42);
+        await using var slot = new CompositeTestLease("a", fencingToken: 42);
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(slot));
 
         var result = await provider.TryAcquireAllAsync(
@@ -251,9 +251,11 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
             .TryAcquireAsync(Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
         calls.Should().Equal("a", "b", "a");
 
-        releaseB.SetResult(new CompositeTestLease("b"));
+        await using var leaseB = new CompositeTestLease("b");
+        releaseB.SetResult(leaseB);
         (await firstTask.WaitAsync(_GateTimeout, AbortToken)).Should().NotBeNull();
-        releaseA.SetResult(new CompositeTestLease("a"));
+        await using var leaseA = new CompositeTestLease("a");
+        releaseA.SetResult(leaseA);
         (await secondTask.WaitAsync(_GateTimeout, AbortToken)).Should().NotBeNull();
     }
 
@@ -261,12 +263,14 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_expose_plain_ordinal_join_and_no_fencing_token_on_the_composite()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
+
         _StubSemaphore(
             provider,
             "a",
             5,
             _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("a", fencingToken: 7))
         );
+
         _StubSemaphore(
             provider,
             "b",
@@ -377,7 +381,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var events = new List<string>();
-        var first = new CompositeTestLease("a", events);
+        await using var first = new CompositeTestLease("a", events);
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(first));
         _StubSemaphore(provider, "b", 2, _ => Task.FromResult<IDistributedLease?>(null));
 
@@ -395,7 +399,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         var cleanupError = new InvalidOperationException("release failed");
-        var first = new CompositeTestLease("a", releaseException: cleanupError);
+        await using var first = new CompositeTestLease("a", releaseException: cleanupError);
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(first));
         _StubSemaphore(provider, "b", 2, _ => Task.FromResult<IDistributedLease?>(null));
 
@@ -418,7 +422,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
         var provider = _CreateProvider(new FakeTimeProvider());
         var primary = new InvalidOperationException("acquire failed");
         var cleanup = new IOException("release failed");
-        var first = new CompositeTestLease("a", releaseException: cleanup);
+        await using var first = new CompositeTestLease("a", releaseException: cleanup);
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(first));
         _StubSemaphore(provider, "b", 2, _ => Task.FromException<IDistributedLease?>(primary));
 
@@ -437,8 +441,8 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     {
         var timeProvider = new FakeTimeProvider();
         var provider = _CreateProvider(timeProvider);
-        var first = new CompositeTestLease("a");
-        var second = new CompositeTestLease("b");
+        await using var first = new CompositeTestLease("a");
+        await using var second = new CompositeTestLease("b");
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondResult = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -470,7 +474,11 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_surface_semaphore_rejection_of_infinite_ttl_so_formation_renewal_always_applies()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
+
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
         var rejection = new ArgumentException("a slot is stored with a finite expiry score");
+#pragma warning restore MA0015
+
         _StubSemaphore(
             provider,
             "a",
@@ -499,7 +507,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task acquire_all_should_report_canonical_resource_on_failure(bool tryOnce)
+    public async Task should_report_canonical_resource_on_failure_when_acquire_all(bool tryOnce)
     {
         var provider = _CreateProvider(new FakeTimeProvider());
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(null));
@@ -530,8 +538,8 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     {
         // D4 carries loss linking over from the mutex composite; nothing exercised it for semaphore slots.
         var provider = _CreateProvider(new FakeTimeProvider());
-        var firstSlot = new CompositeTestLease("a", canObserveLoss: true);
-        var secondSlot = new CompositeTestLease("b", canObserveLoss: true);
+        await using var firstSlot = new CompositeTestLease("a", canObserveLoss: true);
+        await using var secondSlot = new CompositeTestLease("b", canObserveLoss: true);
 
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(firstSlot));
         _StubSemaphore(provider, "b", 2, _ => Task.FromResult<IDistributedLease?>(secondSlot));

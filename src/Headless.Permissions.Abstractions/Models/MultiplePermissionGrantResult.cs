@@ -45,5 +45,8 @@ public sealed class MultiplePermissionGrantResult
     public bool this[string permissionName] => _grants[permissionName];
 
     /// <summary>Adds a single name-to-decision entry. Internal population path used by the framework.</summary>
-    internal void Add(string name, bool isGranted) => _grants.Add(name, isGranted);
+    internal void Add(string name, bool isGranted)
+    {
+        _grants.Add(name, isGranted);
+    }
 }

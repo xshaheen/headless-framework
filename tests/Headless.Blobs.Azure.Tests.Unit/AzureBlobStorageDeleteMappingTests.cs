@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Azure;
 using Azure.Core;
 using Headless.Blobs.Azure;
@@ -81,8 +80,14 @@ public sealed class AzureBlobStorageDeleteMappingTests
             return false;
         }
 
-        protected override bool ContainsHeader(string name) => false;
+        protected override bool ContainsHeader(string name)
+        {
+            return false;
+        }
 
-        protected override IEnumerable<HttpHeader> EnumerateHeaders() => [];
+        protected override IEnumerable<HttpHeader> EnumerateHeaders()
+        {
+            return [];
+        }
     }
 }

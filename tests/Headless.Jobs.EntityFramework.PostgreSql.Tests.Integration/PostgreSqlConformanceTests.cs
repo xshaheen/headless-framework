@@ -8,96 +8,142 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     : JobsCoordinationConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
-    public override Task queued_job_is_stamped_with_the_node_incarnation_owner() =>
-        base.queued_job_is_stamped_with_the_node_incarnation_owner();
+    public override Task queued_job_is_stamped_with_the_node_incarnation_owner()
+    {
+        return base.queued_job_is_stamped_with_the_node_incarnation_owner();
+    }
 
     [Fact]
-    public override Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock() =>
-        base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
+    public override Task queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock()
+    {
+        return base.queued_job_lease_uses_the_db_clock_not_a_skewed_claimant_clock();
+    }
 
     [Fact]
-    public override Task portable_claim_results_return_database_timestamps_and_batch_new_crons() =>
-        base.portable_claim_results_return_database_timestamps_and_batch_new_crons();
+    public override Task portable_claim_results_return_database_timestamps_and_batch_new_crons()
+    {
+        return base.portable_claim_results_return_database_timestamps_and_batch_new_crons();
+    }
 
     [Fact]
-    public override Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock() =>
-        base.native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock();
+    public override Task native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock()
+    {
+        return base.native_claim_eligibility_uses_the_db_clock_not_a_fast_application_clock();
+    }
 
     [Fact]
-    public override Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows() =>
-        base.reclaim_touches_only_the_dead_incarnations_non_terminal_rows();
+    public override Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
+    {
+        return base.reclaim_touches_only_the_dead_incarnations_non_terminal_rows();
+    }
 
     [Fact]
-    public override Task reclaim_is_idempotent_a_second_pass_affects_zero_rows() =>
-        base.reclaim_is_idempotent_a_second_pass_affects_zero_rows();
+    public override Task reclaim_is_idempotent_a_second_pass_affects_zero_rows()
+    {
+        return base.reclaim_is_idempotent_a_second_pass_affects_zero_rows();
+    }
 
     [Fact]
-    public override Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event() =>
-        base.surviving_node_recovers_a_crashed_nodes_work_via_node_left_event();
+    public override Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event()
+    {
+        return base.surviving_node_recovers_a_crashed_nodes_work_via_node_left_event();
+    }
 
     [Fact]
-    public override Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed() =>
-        base.dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed();
+    public override Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed()
+    {
+        return base.dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed();
+    }
 
     [Fact]
-    public override Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped() =>
-        base.dead_node_with_skip_policy_transitions_in_flight_row_to_skipped();
+    public override Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped()
+    {
+        return base.dead_node_with_skip_policy_transitions_in_flight_row_to_skipped();
+    }
 
     [Fact]
-    public override Task completion_is_fenced_on_ownership_and_non_terminal_status() =>
-        base.completion_is_fenced_on_ownership_and_non_terminal_status();
+    public override Task completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        return base.completion_is_fenced_on_ownership_and_non_terminal_status();
+    }
 
     [Fact]
-    public override Task cron_occurrence_is_stamped_with_the_node_death_policy() =>
-        base.cron_occurrence_is_stamped_with_the_node_death_policy();
+    public override Task cron_occurrence_is_stamped_with_the_node_death_policy()
+    {
+        return base.cron_occurrence_is_stamped_with_the_node_death_policy();
+    }
 
     [Fact]
-    public override Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows() =>
-        base.running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows();
+    public override Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows()
+    {
+        return base.running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows();
+    }
 
     [Fact]
-    public override Task renewal_returns_the_membership_sentinel_when_membership_is_not_established() =>
-        base.renewal_returns_the_membership_sentinel_when_membership_is_not_established();
+    public override Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
+    {
+        return base.renewal_returns_the_membership_sentinel_when_membership_is_not_established();
+    }
 
     [Fact]
-    public override Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy() =>
-        base.stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy();
+    public override Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy()
+    {
+        return base.stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy();
+    }
 
     [Fact]
-    public override Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock() =>
-        base.stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock();
+    public override Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock()
+    {
+        return base.stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock();
+    }
 
     [Fact]
-    public override Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy() =>
-        base.cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy();
+    public override Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy()
+    {
+        return base.cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy();
+    }
 
     [Fact]
-    public override Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero() =>
-        base.cron_running_occurrence_renews_but_queued_or_foreign_renews_zero();
+    public override Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero()
+    {
+        return base.cron_running_occurrence_renews_but_queued_or_foreign_renews_zero();
+    }
 
     [Fact]
-    public override Task cron_completion_is_fenced_on_ownership_and_non_terminal_status() =>
-        base.cron_completion_is_fenced_on_ownership_and_non_terminal_status();
+    public override Task cron_completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        return base.cron_completion_is_fenced_on_ownership_and_non_terminal_status();
+    }
 
     [Fact]
-    public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
-        base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
+    public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
+    {
+        return base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
+    }
 
     [Fact]
-    public override Task queueing_a_time_job_claims_its_child_tree() =>
-        base.queueing_a_time_job_claims_its_child_tree();
+    public override Task queueing_a_time_job_claims_its_child_tree()
+    {
+        return base.queueing_a_time_job_claims_its_child_tree();
+    }
 
     [Fact]
-    public override Task fallback_queueing_a_time_job_claims_its_child_tree() =>
-        base.fallback_queueing_a_time_job_claims_its_child_tree();
+    public override Task fallback_queueing_a_time_job_claims_its_child_tree()
+    {
+        return base.fallback_queueing_a_time_job_claims_its_child_tree();
+    }
 
     [Fact]
-    public override Task unified_context_inprogress_stamp_requires_a_queued_row() =>
-        base.unified_context_inprogress_stamp_requires_a_queued_row();
+    public override Task unified_context_inprogress_stamp_requires_a_queued_row()
+    {
+        return base.unified_context_inprogress_stamp_requires_a_queued_row();
+    }
 
     [Fact]
-    public override Task cron_unified_context_inprogress_stamp_requires_a_queued_row() =>
-        base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
+    public override Task cron_unified_context_inprogress_stamp_requires_a_queued_row()
+    {
+        return base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
+    }
 }
 
 /// <summary>Runs native Jobs claim conformance through PostgreSQL production registration.</summary>
@@ -106,38 +152,56 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     : JobsClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
-    public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps() =>
-        base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();
+    public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps()
+    {
+        return base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();
+    }
 
     [Fact]
-    public override Task synchronized_workers_claim_disjoint_fallback_cron_occurrences() =>
-        base.synchronized_workers_claim_disjoint_fallback_cron_occurrences();
+    public override Task synchronized_workers_claim_disjoint_fallback_cron_occurrences()
+    {
+        return base.synchronized_workers_claim_disjoint_fallback_cron_occurrences();
+    }
 
     [Fact]
-    public override Task expired_existing_cron_claim_requires_retry_policy() =>
-        base.expired_existing_cron_claim_requires_retry_policy();
+    public override Task expired_existing_cron_claim_requires_retry_policy()
+    {
+        return base.expired_existing_cron_claim_requires_retry_policy();
+    }
 
     [Fact]
-    public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix() =>
-        base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+    public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix()
+    {
+        return base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+    }
 
     [Fact]
-    public override Task expired_fallback_cron_claim_requires_retry_policy() =>
-        base.expired_fallback_cron_claim_requires_retry_policy();
+    public override Task expired_fallback_cron_claim_requires_retry_policy()
+    {
+        return base.expired_fallback_cron_claim_requires_retry_policy();
+    }
 
     [Fact]
-    public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once() =>
-        base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();
+    public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once()
+    {
+        return base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();
+    }
 
     [Fact]
-    public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration() =>
-        base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
+    public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration()
+    {
+        return base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
+    }
 
     [Fact]
-    public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated() =>
-        base.concurrent_missing_cron_occurrence_creation_is_deduplicated();
+    public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated()
+    {
+        return base.concurrent_missing_cron_occurrence_creation_is_deduplicated();
+    }
 
     [Fact]
-    public override Task long_cron_claim_transaction_publishes_a_fresh_lease() =>
-        base.long_cron_claim_transaction_publishes_a_fresh_lease();
+    public override Task long_cron_claim_transaction_publishes_a_fresh_lease()
+    {
+        return base.long_cron_claim_transaction_publishes_a_fresh_lease();
+    }
 }

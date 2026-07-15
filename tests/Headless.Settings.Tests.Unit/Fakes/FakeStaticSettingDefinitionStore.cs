@@ -9,7 +9,10 @@ public sealed class FakeStaticSettingDefinitionStore : IStaticSettingDefinitionS
 {
     private readonly Dictionary<string, SettingDefinition> _definitions = new(StringComparer.Ordinal);
 
-    public void Add(SettingDefinition definition) => _definitions[definition.Name] = definition;
+    public void Add(SettingDefinition definition)
+    {
+        _definitions[definition.Name] = definition;
+    }
 
     public void AddRange(params SettingDefinition[] definitions)
     {
@@ -19,11 +22,18 @@ public sealed class FakeStaticSettingDefinitionStore : IStaticSettingDefinitionS
         }
     }
 
-    public void Clear() => _definitions.Clear();
+    public void Clear()
+    {
+        _definitions.Clear();
+    }
 
-    public Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default) =>
-        Task.FromResult(_definitions.GetValueOrDefault(name));
+    public Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_definitions.GetValueOrDefault(name));
+    }
 
-    public Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<SettingDefinition>>(_definitions.Values.ToList());
+    public Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<SettingDefinition>>(_definitions.Values.ToList());
+    }
 }

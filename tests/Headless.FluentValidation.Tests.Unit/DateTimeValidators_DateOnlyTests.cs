@@ -14,16 +14,21 @@ public sealed class DateTimeValidatorsDateOnlyTests
     private static readonly DateOnly _Past = new(2020, 1, 1);
     private static readonly DateOnly _Future = new(2030, 1, 1);
 
-    private static FakeTimeProvider _Clock() => new(_Now);
+    private static FakeTimeProvider _Clock()
+    {
+        return new(_Now);
+    }
 
-    private static DateOnly _Resolve(string when) =>
-        when switch
+    private static DateOnly _Resolve(string when)
+    {
+        return when switch
         {
             "past" => _Past,
             "today" => _Today,
             "future" => _Future,
             _ => throw new ArgumentOutOfRangeException(nameof(when)),
         };
+    }
 
     private sealed record Model(DateOnly Value);
 

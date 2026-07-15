@@ -38,62 +38,83 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         TArgs request,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, null, options, cancellationToken);
+    )
+    {
+        return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime: null, options, cancellationToken);
+    }
 
     public Task<Guid> EnqueueAsync(
         JobFunctionDescriptor descriptor,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _ScheduleTimeAsync<object?>(_GetRequestlessDescriptor(descriptor), null, null, options, cancellationToken);
+    )
+    {
+        return _ScheduleTimeAsync<object?>(
+            _GetRequestlessDescriptor(descriptor),
+            request: null,
+            executionTime: null,
+            options,
+            cancellationToken
+        );
+    }
 
     public Task<Guid> ScheduleAsync<TArgs>(
         TArgs request,
         DateTime executionTime,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime, options, cancellationToken);
+    )
+    {
+        return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime, options, cancellationToken);
+    }
 
     public Task<Guid> ScheduleAsync(
         JobFunctionDescriptor descriptor,
         DateTime executionTime,
         EnqueueOptions? options = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ScheduleTimeAsync<object?>(
+    )
+    {
+        return _ScheduleTimeAsync<object?>(
             _GetRequestlessDescriptor(descriptor),
-            null,
+            request: null,
             executionTime,
             options,
             cancellationToken
         );
+    }
 
     public Task<Guid> ScheduleRecurringAsync<TArgs>(
         TArgs request,
         string cronExpression,
         RecurringJobOptions? options = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ScheduleRecurringAsync(
+    )
+    {
+        return _ScheduleRecurringAsync(
             _GetDescriptor<TArgs>(),
             request,
             Argument.IsNotNullOrWhiteSpace(cronExpression),
             options,
             cancellationToken
         );
+    }
 
     public Task<Guid> ScheduleRecurringAsync(
         JobFunctionDescriptor descriptor,
         string cronExpression,
         RecurringJobOptions? options = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ScheduleRecurringAsync<object?>(
+    )
+    {
+        return _ScheduleRecurringAsync<object?>(
             _GetRequestlessDescriptor(descriptor),
-            null,
+            request: null,
             Argument.IsNotNullOrWhiteSpace(cronExpression),
             options,
             cancellationToken
         );
+    }
 
     private async Task<Guid> _ScheduleTimeAsync<TArgs>(
         JobFunctionDescriptor descriptor,
@@ -163,9 +184,13 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return registered == descriptor ? registered : throw new JobFunctionNotFoundException(descriptor.FunctionName);
     }
 
-    private static JobFunctionDescriptor? _FindByRequestType(Type requestType) =>
-        JobFunctionProvider.JobFunctionDescriptorsByRequestType.GetValueOrDefault(requestType);
+    private static JobFunctionDescriptor? _FindByRequestType(Type requestType)
+    {
+        return JobFunctionProvider.JobFunctionDescriptorsByRequestType.GetValueOrDefault(requestType);
+    }
 
-    private static JobFunctionDescriptor? _FindByName(string functionName) =>
-        JobFunctionProvider.JobFunctionDescriptors.GetValueOrDefault(functionName);
+    private static JobFunctionDescriptor? _FindByName(string functionName)
+    {
+        return JobFunctionProvider.JobFunctionDescriptors.GetValueOrDefault(functionName);
+    }
 }

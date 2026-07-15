@@ -130,7 +130,7 @@ public sealed class EgyptianNationalIdValidatorTests
     }
 
     [Fact]
-    public void should_return_false_from_TryParse_for_invalid()
+    public void should_return_false_from_try_parse_for_invalid()
     {
         var result = EgyptianNationalIdValidator.TryParse(
             "invalid",
@@ -160,7 +160,7 @@ public sealed class EgyptianNationalIdValidatorTests
     }
 
     [Fact]
-    public void governorate_map_should_contain_all_valid_codes()
+    public void should_contain_all_valid_codes_when_governorate_map()
     {
         var map = EgyptianNationalIdValidator.GovernorateIdMap;
 

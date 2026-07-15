@@ -72,5 +72,8 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     /// <summary>Transforms the caller-supplied <paramref name="providerKey"/> before passing it to the store. Returns <paramref name="providerKey"/> unchanged by default.</summary>
     /// <param name="providerKey">The raw provider key supplied by the caller.</param>
     /// <returns>The normalized key to use in store operations, or <see langword="null"/>.</returns>
-    protected virtual string? NormalizeProviderKey(string? providerKey) => providerKey;
+    protected virtual string? NormalizeProviderKey(string? providerKey)
+    {
+        return providerKey;
+    }
 }

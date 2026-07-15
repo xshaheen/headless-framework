@@ -90,7 +90,7 @@ public sealed class BlockInEnvironmentAttributeTests : TestBase
     }
 
     [Fact]
-    public void should_expose_Environment_property()
+    public void should_expose_environment_property()
     {
         // given
         var attribute = new BlockInEnvironmentAttribute("Production");

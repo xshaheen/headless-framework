@@ -103,8 +103,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     internal IDistributedLock LockProvider { get; }
 
     /// <summary>Sets the current polling interval. Exposed for testing via InternalsVisibleTo.</summary>
-    internal void SetCurrentIntervalForTest(TimeSpan value) =>
+    internal void SetCurrentIntervalForTest(TimeSpan value)
+    {
         Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
+    }
 
     /// <summary>One-shot flag set after the startup jitter delay fires on the first poll.</summary>
     /// <remarks>
@@ -658,7 +660,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         return isOpen;
     }
 
-    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+    private static double _GetRandomUnitDouble()
+    {
+        return RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+    }
 }
 
 internal static partial class RetryProcessorLog

@@ -61,7 +61,10 @@ public sealed class NullCurrentTenant : ICurrentTenant
     public string? Name => null;
 
     /// <inheritdoc/>
-    public IDisposable Change(string? id, string? name = null) => DisposableFactory.Empty;
+    public IDisposable Change(string? id, string? name = null)
+    {
+        return DisposableFactory.Empty;
+    }
 }
 
 /// <summary>
@@ -81,7 +84,10 @@ public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) 
     public string? Name => currentTenantAccessor.Current?.Name;
 
     /// <inheritdoc/>
-    public IDisposable Change(string? id, string? name = null) => _SetCurrent(id, name);
+    public IDisposable Change(string? id, string? name = null)
+    {
+        return _SetCurrent(id, name);
+    }
 
     [MustDisposeResource]
     private IDisposable _SetCurrent(string? tenantId, string? name = null)

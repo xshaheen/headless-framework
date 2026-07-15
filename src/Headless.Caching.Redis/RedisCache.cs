@@ -1790,13 +1790,25 @@ public sealed class RedisCache(
         );
     }
 
-    private string _GetTagMarkerKey(string tag) => string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
+    private string _GetTagMarkerKey(string tag)
+    {
+        return string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
+    }
 
-    private string _GetClearMarkerKey() => string.Concat(_keyPrefix, _ClearMarkerSuffix);
+    private string _GetClearMarkerKey()
+    {
+        return string.Concat(_keyPrefix, _ClearMarkerSuffix);
+    }
 
-    private string _GetRemoveMarkerKey() => string.Concat(_keyPrefix, _RemoveMarkerSuffix);
+    private string _GetRemoveMarkerKey()
+    {
+        return string.Concat(_keyPrefix, _RemoveMarkerSuffix);
+    }
 
-    private static long _StopwatchTicks() => Stopwatch.GetTimestamp();
+    private static long _StopwatchTicks()
+    {
+        return Stopwatch.GetTimestamp();
+    }
 
     private bool _MarkerIsFresh(long fetchedTicks)
     {
@@ -1962,8 +1974,10 @@ public sealed class RedisCache(
         return newestMs;
     }
 
-    private static long _ParseMarkerMs(RedisValue value) =>
-        RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+    private static long _ParseMarkerMs(RedisValue value)
+    {
+        return RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+    }
 
     // Bulk StringGet returning values position-aligned with the input keys, shared by the bulk value reads
     // (GetAllAsync / GetAllWithExpirationAsync / _TryGetAllEntriesAsync) and the tag-marker fetches. Keys carry no
@@ -2252,7 +2266,10 @@ public sealed class RedisCache(
     // Byte-level mirror of the _NullValue comparison for the lease/memory read paths (#580). Compares against
     // _NullValueBytes (derived from _NullValue at init) so there is a single sentinel source of truth; RedisValue
     // equality is content-based, so this matches the RedisValue-path comparison exactly.
-    private static bool _IsNullSentinel(ReadOnlySpan<byte> value) => value.SequenceEqual(_NullValueBytes);
+    private static bool _IsNullSentinel(ReadOnlySpan<byte> value)
+    {
+        return value.SequenceEqual(_NullValueBytes);
+    }
 
     /// <summary>
     /// Single-key read conversion from a pooled <see cref="Lease{T}"/> (#580). The lease buffer is ArrayPool-owned
@@ -2622,7 +2639,10 @@ public sealed class RedisCache(
     {
         public RedisValue Value { get; } = value;
 
-        public void Dispose() => payloadOwner?.Dispose();
+        public void Dispose()
+        {
+            payloadOwner?.Dispose();
+        }
     }
 
     // #580 zero-concat write: same value-segment fast paths as _EncodeFramedValue, but a serialized payload stays
@@ -3210,9 +3230,15 @@ public sealed class RedisCache(
         }
     }
 
-    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt <= now;
+    private static bool _IsExpired(DateTime? expiresAt, DateTime now)
+    {
+        return expiresAt <= now;
+    }
 
-    private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
+    private static TimeSpan _Min(TimeSpan left, TimeSpan right)
+    {
+        return left <= right ? left : right;
+    }
 
     private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
     {

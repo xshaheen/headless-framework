@@ -25,7 +25,7 @@ public sealed class PermissiveOperationsTests
     #region PermissiveOverlaps
 
     [Fact]
-    public void PermissiveOverlaps_should_return_true_for_overlapping_polygons()
+    public void should_return_true_for_overlapping_polygons_when_permissive_overlaps()
     {
         // given - two squares that partially overlap
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -39,7 +39,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveOverlaps_should_return_false_for_non_overlapping()
+    public void should_return_false_for_non_overlapping_when_permissive_overlaps()
     {
         // given - two non-overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -53,7 +53,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveOverlaps_should_unwrap_single_geometry_collection()
+    public void should_unwrap_single_geometry_collection_when_permissive_overlaps()
     {
         // given - two squares wrapped in single-geometry collections
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -69,7 +69,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveOverlaps_should_reduce_precision_on_error()
+    public void should_reduce_precision_on_error_when_permissive_overlaps()
     {
         // given - geometries that might cause topology exceptions
         // Use high-precision coordinates that may cause issues
@@ -104,7 +104,7 @@ public sealed class PermissiveOperationsTests
     #region PermissiveIntersection
 
     [Fact]
-    public void PermissiveIntersection_should_return_intersection()
+    public void should_return_intersection_when_permissive_intersection()
     {
         // given - two overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -120,7 +120,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveIntersection_should_unwrap_single_geometry_collection()
+    public void should_unwrap_single_geometry_collection_when_permissive_intersection()
     {
         // given - two squares wrapped in single-geometry collections
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -137,7 +137,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveIntersection_should_reduce_precision_on_error()
+    public void should_reduce_precision_on_error_when_permissive_intersection()
     {
         // given - geometries with very high precision
         var coords1 = new[]
@@ -171,7 +171,7 @@ public sealed class PermissiveOperationsTests
     #region PermissiveUnion
 
     [Fact]
-    public void PermissiveUnion_should_return_union()
+    public void should_return_union_when_permissive_union()
     {
         // given - two overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -188,7 +188,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveUnion_should_unwrap_single_geometry_collection()
+    public void should_unwrap_single_geometry_collection_when_permissive_union()
     {
         // given - two squares wrapped in single-geometry collections
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -205,7 +205,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveUnion_should_reduce_precision_on_error()
+    public void should_reduce_precision_on_error_when_permissive_union()
     {
         // given - geometries with very high precision
         var coords1 = new[]
@@ -239,7 +239,7 @@ public sealed class PermissiveOperationsTests
     #region PermissiveDifference
 
     [Fact]
-    public void PermissiveDifference_should_return_difference()
+    public void should_return_difference_when_permissive_difference()
     {
         // given - two overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -256,7 +256,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveDifference_should_unwrap_single_geometry_collection()
+    public void should_unwrap_single_geometry_collection_when_permissive_difference()
     {
         // given - two squares wrapped in single-geometry collections
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -273,7 +273,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void PermissiveDifference_should_reduce_precision_on_error()
+    public void should_reduce_precision_on_error_when_permissive_difference()
     {
         // given - geometries with very high precision
         var coords1 = new[]
@@ -307,7 +307,7 @@ public sealed class PermissiveOperationsTests
     #region ComputeOverlap
 
     [Fact]
-    public void ComputeOverlap_should_return_intersection_when_overlapping()
+    public void should_return_intersection_when_compute_overlap_overlapping()
     {
         // given - two overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);
@@ -323,7 +323,7 @@ public sealed class PermissiveOperationsTests
     }
 
     [Fact]
-    public void ComputeOverlap_should_return_null_when_not_overlapping()
+    public void should_return_null_when_compute_overlap_not_overlapping()
     {
         // given - two non-overlapping squares
         var square1 = _CreateSquare(originX: 0, originY: 0);

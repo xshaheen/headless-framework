@@ -42,7 +42,7 @@ public interface IDistributedLockEnvironment
     /// </summary>
     /// <remarks>
     /// Required because disposal must never throw: a handle that fails to release during <c>DisposeAsync</c> has to
-    /// report that failure somewhere, and an exception would replace whatever the caller's <c>using</c> body was
+    /// report that failure somewhere, and an exception would replace whatever the caller's <see langword="using"/> body was
     /// already throwing. Return <see cref="Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance"/> when a
     /// provider has no logger of its own.
     /// </remarks>

@@ -94,8 +94,9 @@ public enum AuditLogJsonColumnType
 
 internal static class AuditLogJsonColumnTypeExtensions
 {
-    public static string ToSqlFragment(this AuditLogJsonColumnType columnType) =>
-        columnType switch
+    public static string ToSqlFragment(this AuditLogJsonColumnType columnType)
+    {
+        return columnType switch
         {
             AuditLogJsonColumnType.Jsonb => "jsonb",
             AuditLogJsonColumnType.Json => "json",
@@ -106,4 +107,5 @@ internal static class AuditLogJsonColumnTypeExtensions
                 "Unknown AuditLogJsonColumnType."
             ),
         };
+    }
 }

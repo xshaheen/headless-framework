@@ -18,7 +18,10 @@ public sealed class PermissionRequirement(string permissionName) : IAuthorizatio
     /// <summary>The permission name that the current user must be granted.</summary>
     public string PermissionName { get; } = Argument.IsNotNull(permissionName);
 
-    public override string ToString() => $"PermissionRequirement: {PermissionName}";
+    public override string ToString()
+    {
+        return $"PermissionRequirement: {PermissionName}";
+    }
 }
 
 /// <summary>Handles <see cref="PermissionRequirement"/> by delegating to <see cref="IPermissionManager"/>.</summary>

@@ -270,12 +270,16 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <inheritdoc />
-    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
         await _pauseGate.PauseAsync().ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
-    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
         await _pauseGate.ResumeAsync().ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Disposes the consumer client and unsubscribes from the queue.

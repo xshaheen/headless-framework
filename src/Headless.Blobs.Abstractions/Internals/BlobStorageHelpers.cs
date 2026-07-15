@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using System.Text.RegularExpressions;
 using Headless.Constants;
 using Headless.Primitives;
@@ -23,7 +22,10 @@ public static class BlobStorageHelpers
     public const string SidecarSuffix = ".hlmeta";
 
     /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is reserved for sidecar metadata (ends with <see cref="SidecarSuffix"/>).</summary>
-    public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase);
+    public static bool IsSidecarKey(string key)
+    {
+        return key.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>Returns <see langword="true"/> when any <c>/</c>-delimited segment is reserved for sidecar metadata.</summary>
     public static bool HasSidecarSegment(string key)

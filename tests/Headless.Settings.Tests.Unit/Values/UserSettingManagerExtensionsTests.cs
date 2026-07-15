@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class UserSettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public UserSettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueForUserAsync
 

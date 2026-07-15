@@ -21,5 +21,8 @@ internal static class ReuseLabel
     public const string Key = "headless.fixture";
 
     /// <summary>Per-project reuse discriminator for <paramref name="fixture"/> (its test assembly name).</summary>
-    public static string For(object fixture) => fixture.GetType().Assembly.GetName().Name ?? fixture.GetType().Name;
+    public static string For(object fixture)
+    {
+        return fixture.GetType().Assembly.GetName().Name ?? fixture.GetType().Name;
+    }
 }

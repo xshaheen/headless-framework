@@ -53,8 +53,10 @@ internal static class PrimitiveUnderlyingTypeExtensions
         };
     }
 
-    private static bool _IsSystemNamespace(INamespaceSymbol ns) =>
-        ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+    private static bool _IsSystemNamespace(INamespaceSymbol ns)
+    {
+        return ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+    }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is numeric.</summary>
     /// <param name="type">The PrimitiveUnderlyingType to check.</param>

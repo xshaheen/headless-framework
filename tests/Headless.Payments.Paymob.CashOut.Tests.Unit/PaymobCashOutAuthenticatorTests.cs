@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Text;
 using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Payments.Paymob.CashOut.Models;

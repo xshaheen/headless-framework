@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixture) : TestBase
 {
     [Fact]
-    public async Task LoadAsync_should_load_requested_bundle()
+    public async Task should_load_requested_bundle_when_load_async()
     {
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
@@ -28,7 +28,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     }
 
     [Fact]
-    public async Task LoadAsync_should_be_idempotent()
+    public async Task should_be_idempotent_when_load_async()
     {
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
@@ -47,7 +47,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     }
 
     [Fact]
-    public async Task EvaluateAsync_should_evaluate_preloaded_script()
+    public async Task should_evaluate_preloaded_script_when_evaluate_async()
     {
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
@@ -71,7 +71,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     }
 
     [Fact]
-    public async Task EvaluateAsync_should_recover_via_eval_after_server_script_cache_flush()
+    public async Task should_recover_via_eval_after_server_script_cache_flush_when_evaluate_async()
     {
         // given — preload + a first eval so the script is cached on the server (EVALSHA path)
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);

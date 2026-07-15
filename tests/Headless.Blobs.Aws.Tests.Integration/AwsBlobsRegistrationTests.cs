@@ -19,12 +19,14 @@ public sealed class AwsBlobsRegistrationTests
 {
     // Dummy AWSOptions so AmazonS3Client construction succeeds without real credentials.
     // No network I/O occurs during construction; errors only surface on actual S3 calls.
-    private static AWSOptions _DummyAwsOptions() =>
-        new()
+    private static AWSOptions _DummyAwsOptions()
+    {
+        return new()
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("test-access-key", "test-secret-key"),
         };
+    }
 
     private static ServiceCollection _BuildBaseServices()
     {
@@ -90,7 +92,7 @@ public sealed class AwsBlobsRegistrationTests
     }
 
     [Fact]
-    public async Task default_store_casts_to_IPresignedUrlBlobStorage()
+    public async Task default_store_casts_to_i_presigned_url_blob_storage()
     {
         // given
         var services = _BuildBaseServices();
@@ -108,7 +110,7 @@ public sealed class AwsBlobsRegistrationTests
     }
 
     [Fact]
-    public async Task named_store_resolves_as_keyed_IPresignedUrlBlobStorage()
+    public async Task named_store_resolves_as_keyed_i_presigned_url_blob_storage()
     {
         // given
         var services = _BuildBaseServices();

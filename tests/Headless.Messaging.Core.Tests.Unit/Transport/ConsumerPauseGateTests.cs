@@ -8,7 +8,7 @@ namespace Tests.Transport;
 public sealed class ConsumerPauseGateTests : TestBase
 {
     [Fact]
-    public async Task wait_if_paused_async_should_complete_immediately_when_not_paused()
+    public async Task should_complete_immediately_when_wait_if_paused_async_not_paused()
     {
         // given
         var gate = new ConsumerPauseGate();
@@ -22,7 +22,7 @@ public sealed class ConsumerPauseGateTests : TestBase
     }
 
     [Fact]
-    public async Task pause_async_should_block_waiters_until_resume_async_is_called()
+    public async Task should_block_waiters_until_resume_async_is_called_when_pause_async()
     {
         // given
         var gate = new ConsumerPauseGate();
@@ -42,7 +42,7 @@ public sealed class ConsumerPauseGateTests : TestBase
     }
 
     [Fact]
-    public async Task pause_and_resume_should_be_idempotent()
+    public async Task should_be_idempotent_when_pause_and_resume()
     {
         // given
         var gate = new ConsumerPauseGate();
@@ -61,7 +61,7 @@ public sealed class ConsumerPauseGateTests : TestBase
     }
 
     [Fact]
-    public async Task wait_if_paused_async_should_observe_cancellation()
+    public async Task should_observe_cancellation_when_wait_if_paused_async()
     {
         // given
         var gate = new ConsumerPauseGate();
@@ -78,7 +78,7 @@ public sealed class ConsumerPauseGateTests : TestBase
     }
 
     [Fact]
-    public async Task release_should_unblock_waiters_and_prevent_future_transitions()
+    public async Task should_unblock_waiters_and_prevent_future_transitions_when_release()
     {
         // given
         var gate = new ConsumerPauseGate();

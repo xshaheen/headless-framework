@@ -10,7 +10,10 @@ public sealed class NullDistributedReadWriteLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private NullDistributedReadWriteLock _CreateProvider() => new(_timeProvider);
+    private NullDistributedReadWriteLock _CreateProvider()
+    {
+        return new(_timeProvider);
+    }
 
     [Fact]
     public void should_expose_injected_time_provider()
@@ -64,7 +67,7 @@ public sealed class NullDistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
-    public async Task try_acquire_should_never_return_null()
+    public async Task should_never_return_null_when_try_acquire()
     {
         // given
         var provider = _CreateProvider();
@@ -99,7 +102,7 @@ public sealed class NullDistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
-    public async Task renew_should_succeed_and_increment_renewal_count()
+    public async Task should_succeed_and_increment_renewal_count_when_renew()
     {
         // given
         var provider = _CreateProvider();

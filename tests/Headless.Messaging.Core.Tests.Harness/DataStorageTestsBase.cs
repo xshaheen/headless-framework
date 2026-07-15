@@ -48,18 +48,26 @@ public abstract class DataStorageTestsBase : TestBase
     /// Creates another storage instance with the supplied application clock when the provider supports
     /// relational clock-skew conformance testing. Other providers return <see langword="null"/>.
     /// </summary>
-    protected virtual IDataStorage? CreateStorageWithTimeProvider(TimeProvider timeProvider) => null;
+    protected virtual IDataStorage? CreateStorageWithTimeProvider(TimeProvider timeProvider)
+    {
+        return null;
+    }
 
     /// <summary>Reads the provider's current database UTC time for relational clock conformance.</summary>
-    protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<DateTime?>(null);
+    protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult<DateTime?>(null);
+    }
 
     /// <summary>Reads the persisted lease identity without going through the storage snapshot mapper.</summary>
     protected virtual Task<PersistedLeaseIdentity?> GetPersistedLeaseIdentityAsync(
         bool published,
         Guid storageId,
         CancellationToken cancellationToken
-    ) => Task.FromResult<PersistedLeaseIdentity?>(null);
+    )
+    {
+        return Task.FromResult<PersistedLeaseIdentity?>(null);
+    }
 
     /// <summary>Persisted ownership generation returned by provider-specific test queries.</summary>
     protected readonly record struct PersistedLeaseIdentity(DateTimeOffset LockedUntil, string? Owner);
@@ -1654,17 +1662,25 @@ public abstract class DataStorageTestsBase : TestBase
         current.Should().BeTrue();
     }
 
-    public virtual Task should_reject_stale_published_lease_generation_writes() =>
-        _ShouldRejectStaleLeaseGenerationWritesAsync(received: false);
+    public virtual Task should_reject_stale_published_lease_generation_writes()
+    {
+        return _ShouldRejectStaleLeaseGenerationWritesAsync(received: false);
+    }
 
-    public virtual Task should_reject_stale_received_lease_generation_writes() =>
-        _ShouldRejectStaleLeaseGenerationWritesAsync(received: true);
+    public virtual Task should_reject_stale_received_lease_generation_writes()
+    {
+        return _ShouldRejectStaleLeaseGenerationWritesAsync(received: true);
+    }
 
-    public virtual Task should_allow_published_fenced_writes_with_fast_application_clock() =>
-        _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: false);
+    public virtual Task should_allow_published_fenced_writes_with_fast_application_clock()
+    {
+        return _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: false);
+    }
 
-    public virtual Task should_allow_received_fenced_writes_with_fast_application_clock() =>
-        _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: true);
+    public virtual Task should_allow_received_fenced_writes_with_fast_application_clock()
+    {
+        return _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: true);
+    }
 
     public virtual async Task should_report_false_when_received_exception_message_is_already_terminal()
     {
@@ -2212,8 +2228,9 @@ public abstract class DataStorageTestsBase : TestBase
         changed.Should().BeTrue("application clock skew must not reject the active owner's fenced state write");
     }
 
-    private static MediumMessage _CopyMessage(MediumMessage message) =>
-        new()
+    private static MediumMessage _CopyMessage(MediumMessage message)
+    {
+        return new()
         {
             StorageId = message.StorageId,
             Origin = message.Origin,
@@ -2228,13 +2245,23 @@ public abstract class DataStorageTestsBase : TestBase
             InlineAttempts = message.InlineAttempts,
             ExceptionInfo = message.ExceptionInfo,
         };
+    }
 
-    private DateTimeOffset _Now() => TimeProvider.GetUtcNow();
+    private DateTimeOffset _Now()
+    {
+        return TimeProvider.GetUtcNow();
+    }
 
     /// <summary>Lease duration long enough that the lease stays live for the whole test.</summary>
-    private static TimeSpan _FutureLease() => TimeSpan.FromHours(1);
+    private static TimeSpan _FutureLease()
+    {
+        return TimeSpan.FromHours(1);
+    }
 
-    private DateTimeOffset _FutureLeaseUntil() => _Now().Add(_FutureLease());
+    private DateTimeOffset _FutureLeaseUntil()
+    {
+        return _Now().Add(_FutureLease());
+    }
 
     private IDataStorage _CreateRelationalClockSkewStorage()
     {

@@ -16,12 +16,14 @@ public sealed class SetupAwsSesNamedEmailTests
 {
     // Region + explicit (fake) credentials so the SES client constructs deterministically without any
     // ambient AWS configuration or network access.
-    private static AWSOptions _AwsOptions() =>
-        new()
+    private static AWSOptions _AwsOptions()
+    {
+        return new()
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("fake-access-key", "fake-secret-key"),
         };
+    }
 
     [Fact]
     public void should_resolve_named_aws_sender_alongside_default_noop()

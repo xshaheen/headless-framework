@@ -15,10 +15,13 @@ public sealed class HybridCacheRecoveryQueueMarkerBumpTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private HybridCacheRecoveryQueue _CreateQueue() =>
-        new(new HybridCacheOptions { EnableAutoRecovery = true }, _timeProvider, NullLogger.Instance);
+    private HybridCacheRecoveryQueue _CreateQueue()
+    {
+        return new(new HybridCacheOptions { EnableAutoRecovery = true }, _timeProvider, NullLogger.Instance);
+    }
 
-    private void _EnqueueMarkerBump(HybridCacheRecoveryQueue queue, string key, DateTimeOffset enqueuedAt) =>
+    private void _EnqueueMarkerBump(HybridCacheRecoveryQueue queue, string key, DateTimeOffset enqueuedAt)
+    {
         queue.Enqueue(
             key,
             HybridCacheRecoveryKind.MarkerBump,
@@ -26,6 +29,7 @@ public sealed class HybridCacheRecoveryQueueMarkerBumpTests : TestBase
             _ => new ValueTask<HybridCacheRecoveryReplayOutcome>(HybridCacheRecoveryReplayOutcome.Replayed),
             enqueuedAt: enqueuedAt
         );
+    }
 
     [Fact]
     public void on_successful_marker_bump_keeps_a_queued_newer_generation()

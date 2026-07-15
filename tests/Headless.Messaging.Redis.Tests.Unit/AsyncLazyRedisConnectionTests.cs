@@ -27,7 +27,7 @@ public sealed class AsyncLazyRedisConnectionTests : TestBase
     }
 
     [Fact]
-    public void created_connection_should_be_null_when_not_created()
+    public void should_be_null_when_created_connection_not_created()
     {
         // given
         var options = new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") };

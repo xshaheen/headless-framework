@@ -6,7 +6,7 @@ namespace Tests;
 public sealed class JobFunctionContextTests
 {
     [Fact]
-    public void GenericContext_Preserves_ScheduledFor_From_Base_Context()
+    public void generic_context_preserves_scheduled_for_from_base_context()
     {
         // given
         var scheduledFor = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -41,7 +41,7 @@ public sealed class JobFunctionContextTests
     }
 
     [Fact]
-    public void RequestCancellation_Invokes_Underlying_Action()
+    public void request_cancellation_invokes_underlying_action()
     {
         // This test is intentionally left empty because RequestCancelOperationAction
         // is an internal delegate that is only set by the runtime scheduler pipeline.

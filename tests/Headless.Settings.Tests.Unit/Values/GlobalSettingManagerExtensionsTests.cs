@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class GlobalSettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public GlobalSettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueGlobalAsync
 

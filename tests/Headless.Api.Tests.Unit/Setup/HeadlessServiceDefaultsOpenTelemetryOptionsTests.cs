@@ -14,7 +14,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     [Theory]
     [InlineData("/health")]
     [InlineData("/alive")]
-    public void build_skip_func_should_skip_default_operational_paths(string path)
+    public void should_skip_default_operational_paths_when_build_skip_func(string path)
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -34,7 +34,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     [InlineData("/healthz")]
     [InlineData("/alive/extra")]
     [InlineData("/")]
-    public void build_skip_func_should_not_skip_non_operational_paths(string path)
+    public void should_not_skip_non_operational_paths_when_build_skip_func(string path)
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -54,7 +54,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void build_skip_func_should_not_skip_health_when_health_not_mapped()
+    public void should_not_skip_health_when_build_skip_func_health_not_mapped()
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -72,7 +72,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     }
 
     [Fact]
-    public void build_skip_func_should_not_skip_alive_when_alive_not_mapped()
+    public void should_not_skip_alive_when_build_skip_func_alive_not_mapped()
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -90,7 +90,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     }
 
     [Fact]
-    public void build_skip_func_should_not_skip_anything_when_both_not_mapped()
+    public void should_not_skip_anything_when_build_skip_func_both_not_mapped()
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -112,7 +112,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     [Theory]
     [InlineData("/healthz")]
     [InlineData("/ready")]
-    public void build_skip_func_should_skip_custom_operational_paths(string path)
+    public void should_skip_custom_operational_paths_when_build_skip_func(string path)
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
@@ -132,7 +132,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void build_skip_func_should_return_false_when_path_is_empty()
+    public void should_return_false_when_build_skip_func_path_is_empty()
     {
         // given
         var func = HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(

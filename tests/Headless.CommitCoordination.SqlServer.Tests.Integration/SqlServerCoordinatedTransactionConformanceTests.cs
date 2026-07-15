@@ -44,12 +44,16 @@ public sealed class SqlServerCoordinatedTransactionConformanceTests
     }
 
     [Fact]
-    public override Task should_drain_buffered_commit_work_and_persist_rows_when_operation_commits() =>
-        base.should_drain_buffered_commit_work_and_persist_rows_when_operation_commits();
+    public override Task should_drain_buffered_commit_work_and_persist_rows_when_operation_commits()
+    {
+        return base.should_drain_buffered_commit_work_and_persist_rows_when_operation_commits();
+    }
 
     [Fact]
-    public override Task should_discard_buffered_commit_work_and_roll_back_rows_when_operation_throws() =>
-        base.should_discard_buffered_commit_work_and_roll_back_rows_when_operation_throws();
+    public override Task should_discard_buffered_commit_work_and_roll_back_rows_when_operation_throws()
+    {
+        return base.should_discard_buffered_commit_work_and_roll_back_rows_when_operation_throws();
+    }
 }
 
 /// <summary>

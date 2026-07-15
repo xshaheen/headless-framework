@@ -274,7 +274,7 @@ public sealed class DistributedLockExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task release_extension_should_throw_when_provider_is_null()
+    public async Task should_throw_when_release_extension_provider_is_null()
     {
         // given
         IDistributedLock provider = null!;

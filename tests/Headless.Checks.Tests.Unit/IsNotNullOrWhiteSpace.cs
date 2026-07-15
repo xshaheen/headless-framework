@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class IsNotNullOrWhiteSpace
 {
     [Fact]
-    public void is_not_null_or_white_space_should_throw_argument_null_exception_if_argument_is_null_or_empty()
+    public void should_throw_argument_null_exception_if_argument_is_null_or_empty_when_is_not_null_or_white_space()
     {
         // given
         const string? nullArgument = null;
@@ -53,7 +53,7 @@ public sealed class IsNotNullOrWhiteSpace
     }
 
     [Fact]
-    public void is_not_null_or_white_space_should_throw_argument_exception_if_argument_is_white_space()
+    public void should_throw_argument_exception_if_argument_is_white_space_when_is_not_null_or_white_space()
     {
         // given
         const string argument = "   ";
@@ -78,7 +78,7 @@ public sealed class IsNotNullOrWhiteSpace
     }
 
     [Fact]
-    public void is_not_null_or_white_space_should_return_argument_if_argument_is_valid()
+    public void should_return_argument_if_argument_is_valid_when_is_not_null_or_white_space()
     {
         // given
         const string argument = "valid";

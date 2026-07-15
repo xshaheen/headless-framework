@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class PublishOptionsTests : TestBase
 {
     [Fact]
-    public void should_default_tenantId_to_null()
+    public void should_default_tenant_id_to_null()
     {
         // when
         var options = new PublishOptions();
@@ -18,7 +18,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_round_trip_tenantId_value()
+    public void should_round_trip_tenant_id_value()
     {
         // given
         const string tenantId = "acme";
@@ -31,7 +31,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_explicit_null_tenantId()
+    public void should_allow_explicit_null_tenant_id()
     {
         // when
         var options = new PublishOptions { TenantId = null };
@@ -41,7 +41,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_store_oversized_tenantId_without_setter_validation()
+    public void should_store_oversized_tenant_id_without_setter_validation()
     {
         // given
         // PublishOptions.TenantId has no setter validation; length is enforced downstream
@@ -56,7 +56,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_expose_tenantId_max_length_constant()
+    public void should_expose_tenant_id_max_length_constant()
     {
         // then
         MessageOptions.TenantIdMaxLength.Should().Be(200);
@@ -99,7 +99,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_compare_publish_options_by_messageName()
+    public void should_compare_publish_options_by_message_name()
     {
         // given
         var left = new PublishOptions { MessageName = "orders.placed" };
@@ -112,7 +112,7 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_compare_enqueue_options_by_messageName()
+    public void should_compare_enqueue_options_by_message_name()
     {
         // given
         var left = new EnqueueOptions { MessageName = "orders.placed" };

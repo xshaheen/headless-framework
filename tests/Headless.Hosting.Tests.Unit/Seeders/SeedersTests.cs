@@ -7,7 +7,7 @@ namespace Tests.Seeders;
 public sealed class SeedersTests : TestBase
 {
     [Fact]
-    public async Task seed_async_should_be_called_once_when_seeding()
+    public async Task should_be_called_once_when_seed_async_seeding()
     {
         // given
         var seeder = Substitute.For<ISeeder>();
@@ -23,7 +23,7 @@ public sealed class SeedersTests : TestBase
     }
 
     [Fact]
-    public async Task seed_async_should_run_all_seeders_in_ascending_priority_order()
+    public async Task should_run_all_seeders_in_ascending_priority_order_when_seed_async()
     {
         // given — registered in reverse order to prove the runner orders by [SeederPriority]
         var recorder = new SeedRecorder();
@@ -47,7 +47,10 @@ public sealed class SeedersTests : TestBase
 
         public IReadOnlyList<string> Ran => _ran;
 
-        public void Record(string name) => _ran.Add(name);
+        public void Record(string name)
+        {
+            _ran.Add(name);
+        }
     }
 
     [SeederPriority(1)]

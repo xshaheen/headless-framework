@@ -12,6 +12,7 @@ public sealed class EmailConfirmationCodeProviderTests : TestBase
 {
     private readonly TotpRfc6238Generator _generator = new(TimeProvider.System);
 
+#pragma warning disable CA2213 // Disposable fields should be disposed
     private readonly UserManager<EmailTestUser> _userManager = Substitute.For<UserManager<EmailTestUser>>(
         Substitute.For<IUserStore<EmailTestUser>>(),
         null,
@@ -23,6 +24,7 @@ public sealed class EmailConfirmationCodeProviderTests : TestBase
         null,
         null
     );
+#pragma warning restore CA2213
 
     private EmailConfirmationCodeProvider<EmailTestUser> _CreateSut(
         EmailConfirmationCodeProviderOptions? options = null,

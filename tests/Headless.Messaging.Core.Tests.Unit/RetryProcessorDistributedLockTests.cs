@@ -426,7 +426,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
-    public async Task should_return_null_when_TryAcquireAsync_acquireTimeout_Zero_and_lock_already_held()
+    public async Task should_return_null_when_try_acquire_async_acquire_timeout_zero_and_lock_already_held()
     {
         // given — hold the lock with the first acquire
         var firstLock = await _realLockProvider.TryAcquireAsync(
@@ -570,31 +570,50 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             string leaseId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult(false);
+        )
+        {
+            return Task.FromResult(false);
+        }
 
-        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
-            Task.FromResult<string?>(null);
+        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<string?>(null);
+        }
 
-        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
+        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(false);
+        }
 
-        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) =>
-            Task.FromResult<TimeSpan?>(null);
+        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<TimeSpan?>(null);
+        }
 
         public Task<DistributedLockInfo?> GetLockInfoAsync(
             string resource,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult<DistributedLockInfo?>(null);
+        )
+        {
+            return Task.FromResult<DistributedLockInfo?>(null);
+        }
 
         public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
-        ) => Task.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        )
+        {
+            return Task.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        }
 
-        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(0L);
+        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(0L);
+        }
     }
 
     private sealed class TrackingLock : IDistributedLease
@@ -625,9 +644,15 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         public bool CanObserveLoss => _lostTokenSource is not null;
 
-        public void MarkLost() => _lostTokenSource?.Cancel();
+        public void MarkLost()
+        {
+            _lostTokenSource?.Cancel();
+        }
 
-        public Task ReleaseAsync() => Task.CompletedTask;
+        public Task ReleaseAsync()
+        {
+            return Task.CompletedTask;
+        }
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {

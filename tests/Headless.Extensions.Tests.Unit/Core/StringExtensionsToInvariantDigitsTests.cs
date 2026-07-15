@@ -18,7 +18,7 @@ public sealed class StringExtensionsToInvariantDigitsTests : IDisposable
     [InlineData("")]
     [InlineData("  ")]
     [InlineData(" \n\n\r\n ")]
-    public void ToInvariantDigits__should_returns_white_spaces_as_it_is_tests(string? value)
+    public void should_returns_white_spaces_as_it_is_tests_when_to_invariant_digits(string? value)
     {
         _Test(value, value);
     }
@@ -31,7 +31,7 @@ public sealed class StringExtensionsToInvariantDigitsTests : IDisposable
     [InlineData("١٢٨", "128")]
     [InlineData("١.٢٨", "1.28")]
     [InlineData("١,٢٨", "1,28")]
-    public void ToInvariantDigits_numerals_tests(string value, string expected)
+    public void to_invariant_digits_numerals_tests(string value, string expected)
     {
         _Test(value, expected);
     }
@@ -40,7 +40,7 @@ public sealed class StringExtensionsToInvariantDigitsTests : IDisposable
     [InlineData("This is numeral ١٢٨", "This is numeral 128")]
     [InlineData("This is numeral ١.٢٨", "This is numeral 1.28")]
     [InlineData("This is numeral ١,٢٨", "This is numeral 1,28")]
-    public void ToInvariantDigits_numeral_with_other_characters_tests(string value, string expected)
+    public void to_invariant_digits_numeral_with_other_characters_tests(string value, string expected)
     {
         _Test(value, expected);
     }
@@ -49,7 +49,7 @@ public sealed class StringExtensionsToInvariantDigitsTests : IDisposable
     [InlineData("This is numeral ١٢٨", "This is numeral 128")]
     [InlineData("This is numeral ١.٢٨", "This is numeral 1.28")]
     [InlineData("This is numeral ١,٢٨", "This is numeral 1,28")]
-    public void ToInvariantDigits__should_work_independent_of_current_culture(string value, string expected)
+    public void should_work_independent_of_current_culture_when_to_invariant_digits(string value, string expected)
     {
         using (CultureHelper.Use("ar-eg"))
         {

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 
 namespace Headless.Messaging.Benchmarks.Scenarios;
@@ -33,5 +32,8 @@ public class MessageHeaderBenchmarks
     }
 
     [Benchmark]
-    public MessageHeader Construct() => new(_headers);
+    public MessageHeader Construct()
+    {
+        return new(_headers);
+    }
 }

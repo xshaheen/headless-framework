@@ -78,7 +78,10 @@ public sealed record EmailRequestAddress(string EmailAddress, string? DisplayNam
     /// Converts a plain email address string to an <see cref="EmailRequestAddress"/>
     /// with no display name.
     /// </summary>
-    public static EmailRequestAddress FromString(string operand) => operand;
+    public static EmailRequestAddress FromString(string operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Returns <c>"DisplayName &lt;EmailAddress&gt;"</c> when a display name is set;

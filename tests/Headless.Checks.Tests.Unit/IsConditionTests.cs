@@ -7,13 +7,13 @@ namespace Tests;
 public sealed class IsConditionTests
 {
     [Fact]
-    public void is_should_not_throw_when_condition_is_true()
+    public void should_not_throw_when_is_condition_is_true()
     {
         Argument.IsTrue(1 < 2);
     }
 
     [Fact]
-    public void is_should_throw_when_condition_is_false()
+    public void should_throw_when_is_condition_is_false()
     {
         const int value = 5;
         var action = () => Argument.IsTrue(value > 10);
@@ -28,13 +28,13 @@ public sealed class IsConditionTests
     }
 
     [Fact]
-    public void is_false_should_not_throw_when_condition_is_false()
+    public void should_not_throw_when_is_false_condition_is_false()
     {
         Argument.IsFalse(1 > 2);
     }
 
     [Fact]
-    public void is_false_should_throw_when_condition_is_true()
+    public void should_throw_when_is_false_condition_is_true()
     {
         const int value = 5;
         var action = () => Argument.IsFalse(value < 10);

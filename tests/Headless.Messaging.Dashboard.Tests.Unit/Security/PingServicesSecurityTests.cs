@@ -32,7 +32,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [InlineData("http://10.0.0.1")]
     [InlineData("http://10.255.255.255")]
     [InlineData("http://10.0.0.1:8080")]
-    public void PingServices_should_reject_internal_ip_10_range(string endpoint)
+    public void should_reject_internal_ip_10_range_when_ping_services(string endpoint)
     {
         // This test documents that 10.x.x.x addresses should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
@@ -43,7 +43,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [InlineData("http://172.16.0.1")]
     [InlineData("http://172.31.255.255")]
     [InlineData("http://172.20.10.5:3000")]
-    public void PingServices_should_reject_internal_ip_172_range(string endpoint)
+    public void should_reject_internal_ip_172_range_when_ping_services(string endpoint)
     {
         // This test documents that 172.16-31.x.x addresses should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
@@ -54,7 +54,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [InlineData("http://192.168.0.1")]
     [InlineData("http://192.168.255.255")]
     [InlineData("http://192.168.1.100:443")]
-    public void PingServices_should_reject_internal_ip_192_168_range(string endpoint)
+    public void should_reject_internal_ip_192_168_range_when_ping_services(string endpoint)
     {
         // This test documents that 192.168.x.x addresses should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
@@ -78,7 +78,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [InlineData("http://169.254.169.254")]
     [InlineData("http://169.254.169.254/latest/meta-data")]
     [InlineData("http://169.254.169.254/latest/user-data")]
-    public void PingServices_should_reject_aws_metadata_endpoint(string endpoint)
+    public void should_reject_aws_metadata_endpoint_when_ping_services(string endpoint)
     {
         // This test documents that AWS/cloud metadata endpoints should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected
@@ -89,7 +89,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [Theory]
     [InlineData("http://169.254.0.1")]
     [InlineData("http://169.254.255.255")]
-    public void PingServices_should_reject_link_local_addresses(string endpoint)
+    public void should_reject_link_local_addresses_when_ping_services(string endpoint)
     {
         // This test documents that link-local addresses should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected
@@ -99,7 +99,7 @@ public sealed class PingServicesSecurityTests : TestBase
     [Theory]
     [InlineData("http://0.0.0.0")]
     [InlineData("http://0.0.0.0:8080")]
-    public void PingServices_should_reject_zero_address(string endpoint)
+    public void should_reject_zero_address_when_ping_services(string endpoint)
     {
         // This test documents that 0.0.0.0 should be rejected
         // SSRF VULNERABILITY: Currently these are NOT rejected
@@ -141,7 +141,7 @@ public sealed class PingServicesSecurityTests : TestBase
 
     // Test to verify the current behavior
     [Fact]
-    public void PingServices_validates_endpoint_against_registered_nodes()
+    public void ping_services_validates_endpoint_against_registered_nodes()
     {
         // The _PingServices handler in MessagingDashboardEndpoints:
         // 1. Reads 'endpoint' from query parameter

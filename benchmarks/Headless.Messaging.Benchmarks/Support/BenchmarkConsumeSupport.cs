@@ -15,14 +15,20 @@ public sealed record BenchmarkPayload(string Value);
 internal sealed class NoOpMessageDispatcher : IMessageDispatcher
 {
     public Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
-        where TMessage : class => Task.CompletedTask;
+        where TMessage : class
+    {
+        return Task.CompletedTask;
+    }
 
     public Task DispatchInScopeAsync<TMessage>(
         IServiceProvider serviceProvider,
         ConsumeContext<TMessage> context,
         CancellationToken cancellationToken
     )
-        where TMessage : class => Task.CompletedTask;
+        where TMessage : class
+    {
+        return Task.CompletedTask;
+    }
 
     public Task DispatchInScopeAsync<TMessage>(
         IServiceProvider serviceProvider,
@@ -30,17 +36,26 @@ internal sealed class NoOpMessageDispatcher : IMessageDispatcher
         ConsumeContext<TMessage> context,
         CancellationToken cancellationToken
     )
-        where TMessage : class => Task.CompletedTask;
+        where TMessage : class
+    {
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>A pass-through consume middleware used to vary the registered middleware count per dispatch.</summary>
 internal sealed class NoOpConsumeMiddleware : IConsumeMiddleware<ConsumeContext>
 {
-    public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next) => next();
+    public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        return next();
+    }
 }
 
 /// <summary>A pass-through publish middleware used to vary the registered middleware count per publish.</summary>
 internal sealed class NoOpPublishMiddleware : IPublishMiddleware<PublishContext>
 {
-    public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next) => next();
+    public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+    {
+        return next();
+    }
 }

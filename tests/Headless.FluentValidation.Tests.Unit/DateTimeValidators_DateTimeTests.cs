@@ -10,7 +10,10 @@ public sealed class DateTimeValidatorsDateTimeTests
 {
     private static readonly DateTimeOffset _Now = new(2026, 6, 27, 12, 0, 0, TimeSpan.Zero);
 
-    private static FakeTimeProvider _Clock() => new(_Now);
+    private static FakeTimeProvider _Clock()
+    {
+        return new(_Now);
+    }
 
     private sealed record Model(DateTime Value);
 

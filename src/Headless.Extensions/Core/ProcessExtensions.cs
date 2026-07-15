@@ -360,10 +360,16 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
     /// <summary>Returns an enumerator over the captured output lines.</summary>
     /// <returns>An enumerator for the collection.</returns>
     [MustDisposeResource]
-    public IEnumerator<ProcessOutput> GetEnumerator() => _output.GetEnumerator();
+    public IEnumerator<ProcessOutput> GetEnumerator()
+    {
+        return _output.GetEnumerator();
+    }
 
     [MustDisposeResource]
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 
     /// <summary>Concatenates every captured line, separated by blank lines, into a single string.</summary>
     /// <returns>All captured output lines joined together.</returns>

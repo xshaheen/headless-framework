@@ -27,7 +27,7 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
     }
 
     [Fact]
-    public void is_entity_entry_modified_when_navigation_added_should_return_true()
+    public void should_report_entity_entry_as_modified_when_navigation_is_added()
     {
         // given
         var user = new User { Name = "Test User" };
@@ -46,7 +46,7 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
     }
 
     [Fact]
-    public void is_navigation_entry_modified_when_navigation_added_should_return_true()
+    public void should_report_navigation_entry_as_modified_when_navigation_is_added()
     {
         // given
         var user = new User { Name = "Test User" };
@@ -65,7 +65,7 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
     }
 
     [Fact]
-    public void get_modified_entity_entries_when_navigation_added_should_contain_entry()
+    public void should_return_modified_entries_when_navigation_is_added()
     {
         // given
         var user = new User { Name = "Test User" };
@@ -86,7 +86,7 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
     }
 
     [Fact]
-    public void is_navigation_entry_modified_when_navigation_removed_should_return_true()
+    public void should_report_navigation_entry_as_modified_when_navigation_is_removed()
     {
         // given
         var role = new Role { Name = "Admin" };
@@ -104,7 +104,7 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
     }
 
     [Fact]
-    public void clear_when_called_should_empty_trackers()
+    public void should_empty_trackers_when_clear_is_called()
     {
         // given
         var user = new User { Name = "Test User" };
@@ -138,7 +138,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public List<Post> Posts { get; init; } = [];
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class Role : IEntity<Guid>
@@ -149,7 +152,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public List<User> Users { get; init; } = [];
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class Post : IEntity<Guid>
@@ -162,7 +168,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public User User { get; init; } = null!;
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class TestDb(DbContextOptions options) : DbContext(options)

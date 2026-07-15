@@ -86,7 +86,10 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return TimeZoneInfo.ConvertTimeToUtc(localTime, TimeZoneInfo);
     }
 
-    public bool Invalidate(string expression) => _cache.TryRemove(_Normalize(expression), out _);
+    public bool Invalidate(string expression)
+    {
+        return _cache.TryRemove(_Normalize(expression), out _);
+    }
 
     [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ReplaceRegex { get; }

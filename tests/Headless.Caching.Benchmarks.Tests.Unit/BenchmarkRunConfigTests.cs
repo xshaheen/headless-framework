@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class BenchmarkRunConfigTests
 {
     [Fact]
-    public void Create_WithoutJobArguments_AddsDefaultCacheComparisonJob()
+    public void create_without_job_arguments_adds_default_cache_comparison_job()
     {
         var config = BenchmarkRunConfig.Create([]);
 
@@ -18,7 +18,7 @@ public sealed class BenchmarkRunConfigTests
     [InlineData("-j", "Dry")]
     [InlineData("--job", "Dry")]
     [InlineData("--job=Dry")]
-    public void Create_WithJobArguments_DoesNotAddDefaultCacheComparisonJob(params string[] args)
+    public void create_with_job_arguments_does_not_add_default_cache_comparison_job(params string[] args)
     {
         var config = BenchmarkRunConfig.Create(args);
 

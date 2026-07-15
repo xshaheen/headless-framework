@@ -34,7 +34,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
+    private static string _CircuitKey(string group)
+    {
+        return $"{IntentType.Bus:D}:{group}";
+    }
 
     private CircuitBreakerStateManager _CreateStateManager(
         int failureThreshold = 3,

@@ -9,7 +9,7 @@ public sealed class EquatableArrayTests
     // Equals tests
 
     [Fact]
-    public void equals_should_return_true_for_equal_arrays()
+    public void should_return_true_for_equal_arrays_when_equals()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -23,7 +23,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_length()
+    public void should_return_false_for_different_length_when_equals()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -37,7 +37,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_should_return_false_for_different_elements()
+    public void should_return_false_for_different_elements_when_equals()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -51,7 +51,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_should_return_true_for_both_empty()
+    public void should_return_true_for_both_empty_when_equals()
     {
         // given
         var array1 = new EquatableArray<int>([]);
@@ -65,7 +65,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_object_should_return_true_for_equal_arrays()
+    public void should_return_true_for_equal_arrays_when_equals_object()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -79,7 +79,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_object_should_return_false_for_non_equatable_array()
+    public void should_return_false_for_non_equatable_array_when_equals_object()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -93,7 +93,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equals_should_use_custom_comparer()
+    public void should_use_custom_comparer_when_equals()
     {
         // given
         var array1 = new EquatableArray<string>(["a", "b"], StringComparer.OrdinalIgnoreCase);
@@ -109,7 +109,7 @@ public sealed class EquatableArrayTests
     // GetHashCode tests
 
     [Fact]
-    public void get_hash_code_should_be_consistent_for_equal_arrays()
+    public void should_be_consistent_for_equal_arrays_when_get_hash_code()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -124,7 +124,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void get_hash_code_should_differ_for_different_arrays()
+    public void should_differ_for_different_arrays_when_get_hash_code()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -139,7 +139,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void get_hash_code_should_return_zero_for_null_array()
+    public void should_return_zero_for_null_array_when_get_hash_code()
     {
         // given
         var array = new EquatableArray<int>(null!);
@@ -152,7 +152,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void get_hash_code_should_use_custom_comparer()
+    public void should_use_custom_comparer_when_get_hash_code()
     {
         // given
         var array1 = new EquatableArray<string>(["a", "b"], StringComparer.OrdinalIgnoreCase);
@@ -169,7 +169,7 @@ public sealed class EquatableArrayTests
     // Operator tests
 
     [Fact]
-    public void equality_operator_should_return_true_for_equal_arrays()
+    public void should_return_true_for_equal_arrays_when_equality_operator()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -183,7 +183,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void equality_operator_should_return_false_for_different_arrays()
+    public void should_return_false_for_different_arrays_when_equality_operator()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -197,7 +197,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void inequality_operator_should_return_false_for_equal_arrays()
+    public void should_return_false_for_equal_arrays_when_inequality_operator()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -211,7 +211,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void inequality_operator_should_return_true_for_different_arrays()
+    public void should_return_true_for_different_arrays_when_inequality_operator()
     {
         // given
         var array1 = new EquatableArray<int>([1, 2, 3]);
@@ -227,7 +227,7 @@ public sealed class EquatableArrayTests
     // AsSpan tests
 
     [Fact]
-    public void as_span_should_return_span_of_underlying_array()
+    public void should_return_span_of_underlying_array_when_as_span()
     {
         // given
         var array = new EquatableArray<int>([1, 2, 3]);
@@ -245,7 +245,7 @@ public sealed class EquatableArrayTests
     // AsArray tests
 
     [Fact]
-    public void as_array_should_return_underlying_array()
+    public void should_return_underlying_array_when_as_array()
     {
         // given
         int[] original = [1, 2, 3];
@@ -261,7 +261,7 @@ public sealed class EquatableArrayTests
     // Count tests
 
     [Fact]
-    public void count_should_return_length_of_array()
+    public void should_return_length_of_array_when_count()
     {
         // given
         var array = new EquatableArray<int>([1, 2, 3]);
@@ -274,7 +274,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void count_should_return_zero_for_null_array()
+    public void should_return_zero_for_null_array_when_count()
     {
         // given
         var array = new EquatableArray<int>(null!);
@@ -287,7 +287,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void count_should_return_zero_for_empty_array()
+    public void should_return_zero_for_empty_array_when_count()
     {
         // given
         var array = new EquatableArray<int>([]);
@@ -302,7 +302,7 @@ public sealed class EquatableArrayTests
     // IEnumerable tests
 
     [Fact]
-    public void enumerable_should_iterate_over_elements()
+    public void should_iterate_over_elements_when_enumerable()
     {
         // given
         var array = new EquatableArray<int>([1, 2, 3]);
@@ -315,7 +315,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void enumerable_should_return_empty_for_null_array()
+    public void should_return_empty_for_null_array_when_enumerable()
     {
         // given
         var array = new EquatableArray<int>(null!);
@@ -328,7 +328,7 @@ public sealed class EquatableArrayTests
     }
 
     [Fact]
-    public void non_generic_enumerable_should_iterate_over_elements()
+    public void should_iterate_over_elements_when_non_generic_enumerable()
     {
         // given
         var array = new EquatableArray<int>([1, 2, 3]);

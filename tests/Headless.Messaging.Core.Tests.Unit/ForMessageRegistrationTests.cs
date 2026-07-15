@@ -7,7 +7,6 @@ using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Tests.Helpers;
 
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
@@ -1228,14 +1227,23 @@ public sealed class ForMessageRegistrationTests : TestBase
     {
         public void Dispose() { }
 
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new CapturingLogger(sink);
+        }
 
         private sealed class CapturingLogger(List<(LogLevel Level, string Message)> sink) : ILogger
         {
-            public bool IsEnabled(LogLevel logLevel) => true;
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
 
             public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
+                where TState : notnull
+            {
+                return null;
+            }
 
             public void Log<TState>(
                 LogLevel logLevel,

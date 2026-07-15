@@ -2,7 +2,6 @@
 
 using System.Security.Cryptography;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
@@ -299,7 +298,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
-    public async Task should_use_empty_user_segment_in_cache_key_when_only_tenant_is_present_and_RequireUserIdentity_is_false()
+    public async Task should_use_empty_user_segment_in_cache_key_when_only_tenant_is_present_and_require_user_identity_is_false()
     {
         // With RequireUserIdentity=false the middleware permits tenant-only anonymous traffic.
         // The user segment in the cache key is empty (rather than a literal "anon") so a real

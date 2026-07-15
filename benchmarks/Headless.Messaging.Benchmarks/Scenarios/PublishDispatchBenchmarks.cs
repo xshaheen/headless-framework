@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Headless.Messaging.Benchmarks.Support;
 using Headless.Messaging.Internal;
@@ -56,7 +55,10 @@ public class PublishDispatchBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _provider.Dispose();
+    public void Cleanup()
+    {
+        _provider.Dispose();
+    }
 
     [Benchmark]
     public Task ExecuteDispatch()

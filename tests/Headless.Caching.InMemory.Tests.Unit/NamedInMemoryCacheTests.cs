@@ -45,7 +45,7 @@ public sealed class NamedInMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_instances_should_be_isolated_from_each_other_and_from_default()
+    public async Task should_be_isolated_from_each_other_and_from_default_when_named_instances()
     {
         // given
         await using var provider = _BuildProvider();
@@ -65,7 +65,7 @@ public sealed class NamedInMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_instances_should_honor_their_own_default_entry_options()
+    public async Task should_honor_their_own_default_entry_options_when_named_instances()
     {
         // given
         await using var provider = _BuildProvider();
@@ -90,7 +90,7 @@ public sealed class NamedInMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_registration_should_not_disturb_default_cache()
+    public async Task should_not_disturb_default_cache_when_named_registration()
     {
         // given
         await using var provider = _BuildProvider();
@@ -107,7 +107,7 @@ public sealed class NamedInMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task cache_provider_should_resolve_named_instances_and_role_keys()
+    public async Task should_resolve_named_instances_and_role_keys_when_cache_provider()
     {
         // given
         await using var provider = _BuildProvider();

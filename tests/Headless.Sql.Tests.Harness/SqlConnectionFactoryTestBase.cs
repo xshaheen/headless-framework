@@ -12,7 +12,10 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
 
     public abstract ISqlConnectionFactory GetFactory();
 
-    public ISqlCurrentConnection GetCurrent() => new DefaultSqlCurrentConnection(GetFactory());
+    public ISqlCurrentConnection GetCurrent()
+    {
+        return new DefaultSqlCurrentConnection(GetFactory());
+    }
 
     public virtual Task should_return_connection_string()
     {

@@ -165,8 +165,10 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
     /// <param name="options">Storage options that supply the schema name.</param>
     /// <param name="tableName">Unqualified table name.</param>
     /// <returns>A double-quoted, schema-qualified table reference safe for interpolation into SQL.</returns>
-    internal static string Qualified(SettingsStorageOptions options, string tableName) =>
-        _Qualified(options.Schema, tableName);
+    internal static string Qualified(SettingsStorageOptions options, string tableName)
+    {
+        return _Qualified(options.Schema, tableName);
+    }
 
     /// <summary>Returns <c>"<paramref name="schema"/>"."<paramref name="tableName"/>"</c>.</summary>
     private static string _Qualified(string schema, string tableName)

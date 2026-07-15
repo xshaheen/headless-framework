@@ -38,18 +38,30 @@ public sealed record CollectionEnvelope<T>(IReadOnlyCollection<T> Items)
 public static class CollectionEnvelope
 {
     /// <summary>Wraps a <typeparamref name="T"/> array; a <see langword="null"/> array produces an empty envelope.</summary>
-    public static CollectionEnvelope<T> FromArray<T>(T[]? operand) => operand;
+    public static CollectionEnvelope<T> FromArray<T>(T[]? operand)
+    {
+        return operand;
+    }
 
     /// <summary>Wraps a <see cref="HashSet{T}"/>; a <see langword="null"/> set produces an empty envelope.</summary>
-    public static CollectionEnvelope<T> FromHashSet<T>(HashSet<T>? operand) => operand;
+    public static CollectionEnvelope<T> FromHashSet<T>(HashSet<T>? operand)
+    {
+        return operand;
+    }
 
     /// <summary>Wraps a <see cref="List{T}"/>; a <see langword="null"/> list produces an empty envelope.</summary>
-    public static CollectionEnvelope<T> FromList<T>(List<T>? operand) => operand;
+    public static CollectionEnvelope<T> FromList<T>(List<T>? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Materializes <paramref name="operand"/> to an array and wraps it.
     /// A <see langword="null"/> enumerable produces an empty envelope.
     /// Enumerates <paramref name="operand"/> exactly once.
     /// </summary>
-    public static CollectionEnvelope<T> FromEnumerable<T>(IEnumerable<T>? operand) => operand?.ToArray();
+    public static CollectionEnvelope<T> FromEnumerable<T>(IEnumerable<T>? operand)
+    {
+        return operand?.ToArray();
+    }
 }

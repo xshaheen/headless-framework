@@ -100,8 +100,10 @@ public static class SetupMessaging
         /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
         /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
         [PublicAPI]
-        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>() =>
-            setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>()
+        {
+            return setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+        }
 
         /// <summary>
         /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/>
@@ -116,7 +118,10 @@ public static class SetupMessaging
         [PublicAPI]
         public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>(
             [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
-        ) => setup.ForMessagesFromAssembly(typeof(TMarker).Assembly, configure);
+        )
+        {
+            return setup.ForMessagesFromAssembly(typeof(TMarker).Assembly, configure);
+        }
     }
 
     /// <summary>
@@ -297,10 +302,7 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<
-            Headless.CommitCoordination.ICurrentCommitCoordinator,
-            MessagingNullCommitCoordinator
-        >();
+        services.TryAddSingleton<CommitCoordination.ICurrentCommitCoordinator, MessagingNullCommitCoordinator>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
         // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
         // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real
@@ -613,19 +615,23 @@ public static class SetupMessaging
     {
         // Message names are matched case-insensitively at dispatch, so the dedup key must treat
         // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
-        public bool Equals(ConsumerRegistrationKey other) =>
-            IntentType == other.IntentType
-            && ConsumerType == other.ConsumerType
-            && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(Group, other.Group, StringComparison.Ordinal);
+        public bool Equals(ConsumerRegistrationKey other)
+        {
+            return IntentType == other.IntentType
+                && ConsumerType == other.ConsumerType
+                && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Group, other.Group, StringComparison.Ordinal);
+        }
 
-        public override int GetHashCode() =>
-            HashCode.Combine(
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(
                 StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
                 Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
                 IntentType,
                 ConsumerType
             );
+        }
     }
 
     private readonly struct ConsumerRegistrationSettings(
@@ -640,13 +646,18 @@ public static class SetupMessaging
         private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
         private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
 
-        public bool Equals(ConsumerRegistrationSettings other) =>
-            _concurrency == other._concurrency
-            && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
-            && _circuitBreaker == other._circuitBreaker
-            && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
+        public bool Equals(ConsumerRegistrationSettings other)
+        {
+            return _concurrency == other._concurrency
+                && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
+                && _circuitBreaker == other._circuitBreaker
+                && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
+        }
 
-        public override bool Equals(object? obj) => obj is ConsumerRegistrationSettings other && Equals(other);
+        public override bool Equals(object? obj)
+        {
+            return obj is ConsumerRegistrationSettings other && Equals(other);
+        }
 
         public override int GetHashCode()
         {

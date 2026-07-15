@@ -8,7 +8,7 @@ namespace Tests.Extensions;
 public sealed class FormFileExtensionsTests : TestBase
 {
     [Fact]
-    public async Task save_many_should_bound_parallel_file_streams()
+    public async Task should_bound_parallel_file_streams_when_save_many()
     {
         // given
         var directory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -50,9 +50,15 @@ public sealed class FormFileExtensionsTests : TestBase
 
         public string FileName => fileName;
 
-        public Stream OpenReadStream() => new TrackingReadStream(tracker);
+        public Stream OpenReadStream()
+        {
+            return new TrackingReadStream(tracker);
+        }
 
-        public void CopyTo(Stream target) => throw new NotSupportedException();
+        public void CopyTo(Stream target)
+        {
+            throw new NotSupportedException();
+        }
 
         public async Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
         {
@@ -138,11 +144,20 @@ public sealed class FormFileExtensionsTests : TestBase
             return 1;
         }
 
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
 
-        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
 
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
 
         protected override void Dispose(bool disposing)
         {
@@ -176,6 +191,9 @@ public sealed class FormFileExtensionsTests : TestBase
             }
         }
 
-        public void Close() => Interlocked.Decrement(ref _active);
+        public void Close()
+        {
+            Interlocked.Decrement(ref _active);
+        }
     }
 }

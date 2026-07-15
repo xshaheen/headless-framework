@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using Headless.Abstractions;
 using Headless.Api.Middlewares;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,7 +76,7 @@ public static class SetupMiddlewares
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.
     /// It intercepts bare 401, 403, and 404 responses (without an existing body) and rewrites them
-    /// as structured <c>application/problem+json</c> responses via <see cref="Headless.Api.Abstractions.IProblemDetailsCreator"/>.
+    /// as structured <c>application/problem+json</c> responses via <see cref="IProblemDetailsCreator"/>.
     /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> marker, it substitutes the
     /// <c>g:tenant_required</c> ProblemDetails body regardless of any upstream
     /// <c>Content-Type</c> already set.

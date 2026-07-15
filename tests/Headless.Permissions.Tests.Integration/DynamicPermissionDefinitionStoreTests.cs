@@ -49,6 +49,9 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
     [UsedImplicitly]
     private sealed class PermissionsDefinitionProvider : IPermissionDefinitionProvider
     {
-        public void Define(IPermissionDefinitionContext context) => context.AddGroup(_GroupDefinition);
+        public void Define(IPermissionDefinitionContext context)
+        {
+            context.AddGroup(_GroupDefinition);
+        }
     }
 }

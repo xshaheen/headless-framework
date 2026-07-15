@@ -142,5 +142,8 @@ public sealed class FeatureDefinition : ICanAddChildFeature, IHasExtraProperties
     }
 
     /// <inheritdoc/>
-    public override string ToString() => $"[{nameof(FeatureDefinition)}: {Name}]";
+    public override string ToString()
+    {
+        return $"[{nameof(FeatureDefinition)}: {Name}]";
+    }
 }

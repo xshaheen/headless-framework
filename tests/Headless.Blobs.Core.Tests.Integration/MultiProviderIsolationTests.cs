@@ -21,11 +21,15 @@ namespace Tests;
 
 public sealed class MultiProviderIsolationTests : TestBase
 {
-    private static AWSOptions _DummyAwsOptions() =>
-        new() { Region = RegionEndpoint.USEast1, Credentials = new BasicAWSCredentials("k", "s") };
+    private static AWSOptions _DummyAwsOptions()
+    {
+        return new() { Region = RegionEndpoint.USEast1, Credentials = new BasicAWSCredentials("k", "s") };
+    }
 
-    private static BlobServiceClient _DummyAzureClient() =>
-        new(new Uri("https://devstoreaccount1.blob.core.windows.net/"));
+    private static BlobServiceClient _DummyAzureClient()
+    {
+        return new(new Uri("https://devstoreaccount1.blob.core.windows.net/"));
+    }
 
     private static void _ConfigureR2(R2BlobStorageOptions options)
     {

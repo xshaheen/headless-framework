@@ -13,7 +13,7 @@ public sealed class UnixTimeJsonConverterTests
     };
 
     [Fact]
-    public void unix_time_converter_should_successfully_read_valid_unix_timestamp_json()
+    public void should_successfully_read_valid_unix_timestamp_json_when_unix_time_converter()
     {
         // given
         const long unixTimestamp = 1631564345;
@@ -27,7 +27,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_throw_exception_for_invalid_timestamp_json()
+    public void should_throw_exception_for_invalid_timestamp_json_when_unix_time_converter()
     {
         // given
         const string invalidJson = "invalid_timestamp";
@@ -40,7 +40,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_convert_date_time_offset_to_unix_timestamp()
+    public void should_convert_date_time_offset_to_unix_timestamp_when_unix_time_converter()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 9, 14, 9, 25, 45, TimeSpan.Zero);
@@ -53,7 +53,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_write_min_value_of_date_time_offset()
+    public void should_write_min_value_of_date_time_offset_when_unix_time_converter()
     {
         // given
         var dateTimeOffset = DateTimeOffset.MinValue;
@@ -66,7 +66,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_write_max_value_of_date_time_offset()
+    public void should_write_max_value_of_date_time_offset_when_unix_time_converter()
     {
         // given
         var dateTimeOffset = DateTimeOffset.MaxValue;
@@ -79,7 +79,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_handle_negative_timestamp()
+    public void should_handle_negative_timestamp_when_unix_time_converter()
     {
         // given
         const long negativeUnixTimestamp = -1;
@@ -93,7 +93,7 @@ public sealed class UnixTimeJsonConverterTests
     }
 
     [Fact]
-    public void unix_time_converter_should_throw_json_exception_on_non_number_values()
+    public void should_throw_json_exception_on_non_number_values_when_unix_time_converter()
     {
         // given
         const string nonNumberJson = "\"Not a number\"";

@@ -32,10 +32,16 @@ public interface IBlobNamingNormalizer
 public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
 {
     /// <inheritdoc />
-    public string NormalizeContainerName(string containerName) => _Normalize(containerName);
+    public string NormalizeContainerName(string containerName)
+    {
+        return _Normalize(containerName);
+    }
 
     /// <inheritdoc />
-    public string NormalizeBlobName(string blobName) => _Normalize(blobName);
+    public string NormalizeBlobName(string blobName)
+    {
+        return _Normalize(blobName);
+    }
 
     private static string _Normalize(string fileName)
     {

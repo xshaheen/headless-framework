@@ -364,9 +364,15 @@ public sealed partial class HybridCache(
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) == 1, this);
     }
 
-    private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+    private DateTime _GetUtcNow()
+    {
+        return _timeProvider.GetUtcNow().UtcDateTime;
+    }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
     {

@@ -25,7 +25,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
-    public void read_write_lock_should_delegate_clock_and_logger_to_backing_mutex_provider()
+    public void should_delegate_clock_and_logger_to_backing_mutex_provider_when_read_write_lock()
     {
         // given — the connection-scoped RW wrapper owns neither dependency; it republishes the mutex provider's
         var mutexProvider = _CreateProvider();
@@ -510,42 +510,57 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             bool isShared,
             bool observeLoss,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
-        public ValueTask ReleaseAsync(
-            ConnectionScopedLockHandle handle,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask<bool> IsLockedAsync(
             string resource,
             bool? isShared = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal));
+        )
+        {
+            return ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal));
+        }
 
         public ValueTask<long> GetLocksCountAsync(
             string resource,
             bool? isShared = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal) ? 1L : 0L);
+        )
+        {
+            return ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal) ? 1L : 0L);
+        }
 
-        public ValueTask<string?> GetLocalLeaseIdAsync(
-            string resource,
-            CancellationToken cancellationToken = default
-        ) =>
-            ValueTask.FromResult(
+        public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(
                 string.Equals(resource, lockedResource, StringComparison.Ordinal) ? localLeaseId : null
             );
+        }
 
         public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        )
+        {
+            return ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        }
 
-        public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0L);
+        public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(0L);
+        }
     }
 
     private sealed class FakeReleaseSignal : IReleaseSignal
@@ -594,7 +609,10 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     {
         private volatile bool _grant;
 
-        public void GrantNext() => _grant = true;
+        public void GrantNext()
+        {
+            _grant = true;
+        }
 
         public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
@@ -617,37 +635,50 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, CancellationToken.None);
         }
 
-        public ValueTask ReleaseAsync(
-            ConnectionScopedLockHandle handle,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask<bool> IsLockedAsync(
             string resource,
             bool? isShared = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult(false);
+        )
+        {
+            return ValueTask.FromResult(false);
+        }
 
         public ValueTask<long> GetLocksCountAsync(
             string resource,
             bool? isShared = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult(0L);
+        )
+        {
+            return ValueTask.FromResult(0L);
+        }
 
-        public ValueTask<string?> GetLocalLeaseIdAsync(
-            string resource,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<string?>(null);
+        public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<string?>(null);
+        }
 
         public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
-        ) => ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        )
+        {
+            return ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        }
 
-        public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0L);
+        public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(0L);
+        }
     }
 
     /// <summary>Release signal whose <see cref="WaitAsync"/> blocks until <see cref="ReleaseAll"/> is called.</summary>
@@ -658,7 +689,10 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
         public int ActiveWaiters => Volatile.Read(ref _activeWaiters);
 
-        public void ReleaseAll() => _gate.TrySetResult();
+        public void ReleaseAll()
+        {
+            _gate.TrySetResult();
+        }
 
         public async ValueTask WaitAsync(
             string resource,
@@ -678,7 +712,9 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             }
         }
 
-        public ValueTask PublishAsync(string resource, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask PublishAsync(string resource, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

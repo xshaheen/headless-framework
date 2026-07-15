@@ -11,7 +11,7 @@ public sealed class PrecisionTests
     private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
-    public void ChangePrecision_geometry_should_reduce_precision()
+    public void should_reduce_precision_when_change_precision_geometry()
     {
         // High precision point with many decimal places
         var point = Factory.CreatePoint(30.123456789, 31.987654321);
@@ -24,7 +24,7 @@ public sealed class PrecisionTests
     }
 
     [Fact]
-    public void ChangePrecision_geometry_should_return_same_when_precision_matches()
+    public void should_return_same_when_change_precision_geometry_precision_matches()
     {
         var point = Factory.CreatePoint(30.0, 31.0);
 
@@ -34,7 +34,7 @@ public sealed class PrecisionTests
     }
 
     [Fact]
-    public void ChangePrecision_factory_should_reduce_precision()
+    public void should_reduce_precision_when_change_precision_factory()
     {
         var point = Factory.CreatePoint(30.123456789, 31.987654321);
         var streetLevelFactory = new GeometryFactory(GeoConstants.StreetLevelPrecision, GeoConstants.GoogleMapsSrid);
@@ -46,7 +46,7 @@ public sealed class PrecisionTests
     }
 
     [Fact]
-    public void ChangePrecision_factory_should_return_same_when_precision_matches()
+    public void should_return_same_when_change_precision_factory_precision_matches()
     {
         var point = Factory.CreatePoint(30.0, 31.0);
 
@@ -56,7 +56,7 @@ public sealed class PrecisionTests
     }
 
     [Fact]
-    public void ChangePrecision_factory_should_convert_multipolygon_to_polygon_and_back()
+    public void should_convert_multipolygon_to_polygon_and_back_when_change_precision_factory()
     {
         // Create a simple square polygon
         var coordinates = new Coordinate[]

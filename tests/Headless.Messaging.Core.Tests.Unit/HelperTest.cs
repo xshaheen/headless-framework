@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class HelperTest
 {
     [Fact]
-    public void IsControllerTest()
+    public void is_controller_test()
     {
         // given
         var typeInfo = typeof(HomeController).GetTypeInfo();
@@ -21,7 +21,7 @@ public sealed class HelperTest
     }
 
     [Fact]
-    public void IsControllerAbstractTest()
+    public void is_controller_abstract_test()
     {
         // given
         var typeInfo = typeof(AbstractController).GetTypeInfo();
@@ -41,7 +41,7 @@ public sealed class HelperTest
     [InlineData(typeof(Guid))]
     [InlineData(typeof(TimeSpan))]
     [InlineData(typeof(Uri))]
-    public void IsSimpleTypeTest(Type type)
+    public void is_simple_type_test(Type type)
     {
         // when
         var result = RuntimeTypeInspection.IsComplexType(type);
@@ -53,7 +53,7 @@ public sealed class HelperTest
     [Theory]
     [InlineData(typeof(HomeController))]
     [InlineData(typeof(Exception))]
-    public void IsComplexTypeTest(Type type)
+    public void is_complex_type_test(Type type)
     {
         // when
         var result = RuntimeTypeInspection.IsComplexType(type);

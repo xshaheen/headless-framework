@@ -69,8 +69,9 @@ public sealed class HybridCacheTierControlTests : TestBase
         bool skipMemoryRead = false,
         bool skipDistributedRead = false,
         bool failSafe = false
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Duration = TimeSpan.FromMinutes(5),
             SkipMemoryCacheWrite = skipMemory,
@@ -81,6 +82,7 @@ public sealed class HybridCacheTierControlTests : TestBase
             IsFailSafeEnabled = failSafe,
             FailSafeMaxDuration = TimeSpan.FromHours(1),
         };
+    }
 
     #region SkipCacheRead (force-refresh)
 

@@ -435,22 +435,8 @@ public sealed record LeaseSqlFragment(string Fragment, IReadOnlyList<string> Tem
 /// quoted column identifier (<c>"LockedUntil"</c> on Postgres, <c>[LockedUntil]</c> on SQL Server) and on which
 /// parameters the clause references, never on how a provider happens to spell its clock.
 /// </summary>
-public static class LeaseSqlAnalysis
+public static partial class LeaseSqlAnalysis
 {
-    // Column reference in either dialect's quoting. A bare occurrence in a SELECT list or INSERT column list is
-    // matched too, but carries no operator, so it falls out below.
-    private static readonly Regex _LeaseColumn = new(
-        """["\[]LockedUntil["\]]""",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromSeconds(1)
-    );
-
-    private static readonly Regex _ParameterReference = new(
-        "@[A-Za-z0-9_]+",
-        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
-        TimeSpan.FromSeconds(1)
-    );
-
     // Words that end the clause we are reading. INTERVAL / CAST / DATEADD arguments are intentionally absent: they
     // belong to the lease expression and must stay inside the fragment.
     private static readonly string[] _ClauseTerminators =
@@ -473,30 +459,37 @@ public static class LeaseSqlAnalysis
         "END",
     ];
 
-    public static bool TouchesLeaseColumn(string sql) => _LeaseColumn.IsMatch(sql);
+    public static bool TouchesLeaseColumn(string sql)
+    {
+        return LeaseColumn.IsMatch(sql);
+    }
 
     /// <summary>Assignments of a lease deadline: <c>LockedUntil = &lt;expression&gt;</c>, excluding the release to NULL.</summary>
-    public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement) =>
-        _Clauses(statement)
+    public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement)
             .Where(clause =>
                 string.Equals(clause.Operator, "=", StringComparison.Ordinal)
                 && !string.Equals(clause.Fragment.Trim(), "NULL", StringComparison.OrdinalIgnoreCase)
             )
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
+    }
 
     /// <summary>Ownership comparisons: <c>LockedUntil &lt;= &lt;clock&gt;</c> and friends. <c>IS NULL</c> tests carry no clock and are skipped.</summary>
-    public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement) =>
-        _Clauses(statement)
+    public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement)
             .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
+    }
 
     private static LeaseSqlFragment _Describe(string fragment, CapturedSqlStatement statement)
     {
         // An unresolvable parameter reference means the capture and the SQL disagree; count it as temporal so the
         // guard fails loud rather than passing a clause it cannot vouch for.
-        var temporal = _ParameterReference
+        var temporal = ParameterReference
             .Matches(fragment)
             .Select(match => match.Value.TrimStart('@'))
             .Where(name => !statement.Parameters.TryGetValue(name, out var parameter) || parameter.IsTemporal)
@@ -510,7 +503,7 @@ public static class LeaseSqlAnalysis
     {
         var sql = statement.Sql;
 
-        foreach (Match match in _LeaseColumn.Matches(sql))
+        foreach (Match match in LeaseColumn.Matches(sql))
         {
             var index = _SkipWhitespace(sql, match.Index + match.Length);
             var @operator = _ReadOperator(sql, index);
@@ -645,4 +638,16 @@ public static class LeaseSqlAnalysis
 
         return index;
     }
+
+    [GeneratedRegex(
+        "@[A-Za-z0-9_]+",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: 1000
+    )]
+    private static partial Regex ParameterReference { get; }
+
+    // Column reference in either dialect's quoting. A bare occurrence in a SELECT list or INSERT column list is
+    // matched too, but carries no operator, so it falls out below.
+    [GeneratedRegex("""["\[]LockedUntil["\]]""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex LeaseColumn { get; }
 }

@@ -70,22 +70,11 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         result.Should().BeSameAs(_server);
     }
 
-    public static TheoryData<Func<Exception>> TransientResetExceptions =>
-        new()
-        {
-            () => Substitute.For<DbException>(),
-            () => new IOException("Transport interrupted."),
-            () => new SocketException((int)SocketError.ConnectionReset),
-            () =>
-                new InvalidOperationException(
-                    "The connection is broken.",
-                    new SocketException((int)SocketError.ConnectionReset)
-                ),
-        };
+    public static TheoryData<string> TransientResetExceptions => ["database", "io", "socket", "wrapped-socket"];
 
     [Theory]
     [MemberData(nameof(TransientResetExceptions))]
-    public async Task should_retry_on_transient_reset_exception(Func<Exception> exceptionFactory)
+    public async Task should_retry_on_transient_reset_exception(string exceptionKind)
     {
         // Use a real SQLite connection for CreateAsync to succeed
         await using var connection = await TestSqliteConnection.CreateAsync(AbortToken);
@@ -108,7 +97,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
             callCount++;
             if (callCount < 3)
             {
-                throw exceptionFactory();
+                throw _CreateTransientException(exceptionKind);
             }
             return Task.CompletedTask;
         };
@@ -168,7 +157,9 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         _server.ResetAction = (_, _, _) =>
         {
             callCount++;
+#pragma warning disable MA0015 // The reset action has no parameter; this simulates a dependency validation failure.
             return Task.FromException(new ArgumentException("Invalid reset configuration."));
+#pragma warning restore MA0015
         };
 
         await _server.InitializeAsync();
@@ -263,7 +254,9 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         providerCalls.Should().Be(2);
         failedConnection
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(DbConnection.DisposeAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(DbConnection.DisposeAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
     }
@@ -304,7 +297,9 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         resetCalls.Should().Be(2);
         failedReplacement
             .ReceivedCalls()
-            .Count(call => call.GetMethodInfo().Name == nameof(DbConnection.DisposeAsync))
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(DbConnection.DisposeAsync), StringComparison.Ordinal)
+            )
             .Should()
             .Be(1);
     }
@@ -366,19 +361,36 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         };
 
         await _server.InitializeAsync();
-        await _server.ResetDatabaseAsync();
+        await _server.ResetDatabaseAsync(AbortToken);
 
         capturedToken.Should().Be(AbortToken);
     }
 
-    private static string _CreateSharedDatabaseConnectionString() =>
-        new SqliteConnectionStringBuilder
+    private static string _CreateSharedDatabaseConnectionString()
+    {
+        return new SqliteConnectionStringBuilder
         {
             DataSource = $"headless-reset-{Guid.NewGuid():N}",
             Mode = SqliteOpenMode.Memory,
             Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 1,
         }.ToString();
+    }
+
+    private static Exception _CreateTransientException(string exceptionKind)
+    {
+        return exceptionKind switch
+        {
+            "database" => Substitute.For<DbException>(),
+            "io" => new IOException("Transport interrupted."),
+            "socket" => new SocketException((int)SocketError.ConnectionReset),
+            "wrapped-socket" => new InvalidOperationException(
+                "The connection is broken.",
+                new SocketException((int)SocketError.ConnectionReset)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(exceptionKind), exceptionKind, null),
+        };
+    }
 
     private static async Task<SqliteConnection> _CreateSharedDatabaseAsync(string connectionString)
     {

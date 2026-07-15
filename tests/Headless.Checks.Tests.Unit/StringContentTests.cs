@@ -7,14 +7,14 @@ namespace Tests;
 public sealed class StringContentTests
 {
     [Fact]
-    public void starts_with_should_return_value_when_matches()
+    public void should_return_value_when_starts_with_matches()
     {
         Argument.StartsWith("hello world", "hello").Should().Be("hello world");
         Argument.StartsWith("HELLO", "hello", StringComparison.OrdinalIgnoreCase).Should().Be("HELLO");
     }
 
     [Fact]
-    public void starts_with_should_throw_when_not_matching()
+    public void should_throw_when_starts_with_not_matching()
     {
         const string value = "hello world";
         var action = () => Argument.StartsWith(value, "world");
@@ -26,13 +26,13 @@ public sealed class StringContentTests
     }
 
     [Fact]
-    public void ends_with_should_return_value_when_matches()
+    public void should_return_value_when_ends_with_matches()
     {
         Argument.EndsWith("hello world", "world").Should().Be("hello world");
     }
 
     [Fact]
-    public void ends_with_should_throw_when_not_matching()
+    public void should_throw_when_ends_with_not_matching()
     {
         const string value = "hello world";
         var action = () => Argument.EndsWith(value, "hello");
@@ -40,13 +40,13 @@ public sealed class StringContentTests
     }
 
     [Fact]
-    public void contains_should_return_value_when_matches()
+    public void should_return_value_when_contains_matches()
     {
         Argument.Contains("hello world", "o w").Should().Be("hello world");
     }
 
     [Fact]
-    public void contains_should_throw_when_not_matching()
+    public void should_throw_when_contains_not_matching()
     {
         const string value = "hello world";
         var action = () => Argument.Contains(value, "xyz");
@@ -54,7 +54,7 @@ public sealed class StringContentTests
     }
 
     [Fact]
-    public void string_content_should_throw_argument_null_when_argument_null()
+    public void should_throw_argument_null_when_string_content_argument_null()
     {
         var startsAction = () => Argument.StartsWith(null, "x");
         var endsAction = () => Argument.EndsWith(null, "x");

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Redis;
 using Headless.Redis.Testing;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Testcontainers;

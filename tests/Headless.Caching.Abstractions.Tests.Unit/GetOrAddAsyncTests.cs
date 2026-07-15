@@ -15,7 +15,10 @@ public sealed class GetOrAddAsyncTests : TestBase
     private static readonly TimeSpan _DefaultExpiration = TimeSpan.FromMinutes(5);
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private InMemoryCache _CreateCache() => new(_timeProvider, new InMemoryCacheOptions());
+    private InMemoryCache _CreateCache()
+    {
+        return new(_timeProvider, new InMemoryCacheOptions());
+    }
 
     [Theory]
     [InlineData(0)]

@@ -22,7 +22,7 @@ namespace Headless.DistributedLocks;
 /// <em>surfaces</em> cleanup failures — an <see cref="AggregateException"/> carrying the primary failure plus every
 /// cleanup error, or <see cref="LockCleanupFailedException"/> when there is no primary. Only disposal of a
 /// <em>successfully returned</em> <see cref="CompositeDistributedLease"/> swallows and logs, because it runs from a
-/// <c>finally</c> where a throw would replace the caller's in-flight exception.
+/// <see langword="finally"/> where a throw would replace the caller's in-flight exception.
 /// </para>
 /// </remarks>
 internal static class CompositeAcquireCoordinator
@@ -56,7 +56,7 @@ internal static class CompositeAcquireCoordinator
         Argument.IsNotNull(resourceOf);
         Argument.IsNotNull(tryAcquireChild);
         Argument.IsNotNull(compositeResourceOf);
-        Argument.IsNotEmpty(canonicalRequests, paramName: nameof(canonicalRequests));
+        Argument.IsNotEmpty(canonicalRequests);
 
         var compositeResource =
             canonicalRequests.Count == 1 ? resourceOf(canonicalRequests[0]) : compositeResourceOf(canonicalRequests);
@@ -152,7 +152,9 @@ internal static class CompositeAcquireCoordinator
                     formationLossSource ??= new CancellationTokenSource();
                     formationLossRegistrations.Add(
                         child.LostToken.Register(
+#pragma warning disable MA0045 // CancellationToken.Register requires a synchronous callback.
                             static state => ((CancellationTokenSource)state!).Cancel(),
+#pragma warning restore MA0045
                             formationLossSource
                         )
                     );
@@ -214,7 +216,7 @@ internal static class CompositeAcquireCoordinator
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            return new CompositeAcquireResult(null, compositeResource, tryOnce);
+            return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: tryOnce);
         }
         catch (Exception exception)
         {
@@ -285,11 +287,13 @@ internal static class CompositeAcquireCoordinator
         // infinite Task.Delay sentinels: there is no timer to schedule and nothing to cancel-and-drain, and the
         // signal cannot fault, so the wait arm never needs exception handling.
         var waitSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var operationRegistration = operationToken.Register(
+
+        await using var operationRegistration = operationToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetResult(),
             waitSignal
         );
-        using var lossRegistration = formationLossToken.CanBeCanceled
+
+        await using var lossRegistration = formationLossToken.CanBeCanceled
             ? formationLossToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), waitSignal)
             : default;
 
@@ -327,7 +331,11 @@ internal static class CompositeAcquireCoordinator
                     }
                     else
                     {
-                        cadenceTask = Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+                        cadenceTask = Task.Delay(
+                            Timeout.InfiniteTimeSpan,
+                            environment.TimeProvider,
+                            CancellationToken.None
+                        );
                     }
 
                     var completed = await Task.WhenAny(pendingWinner, cadenceTask).ConfigureAwait(false);
@@ -635,7 +643,7 @@ internal static class CompositeAcquireCoordinator
             _ThrowCombined(new OperationCanceledException(deadlineToken), cleanupErrors);
         }
 
-        return new CompositeAcquireResult(null, compositeResource, TryOnce: false);
+        return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: false);
     }
 
     private static async Task<CompositeAcquireResult> _RollbackForNullAsync(
@@ -670,7 +678,7 @@ internal static class CompositeAcquireCoordinator
 
         callerToken.ThrowIfCancellationRequested();
 
-        return new CompositeAcquireResult(null, compositeResource, tryOnce);
+        return new CompositeAcquireResult(Lease: null, Resource: compositeResource, TryOnce: tryOnce);
     }
 
     private static async Task<List<Exception>?> _RollbackAsync(List<IDistributedLease> acquired)

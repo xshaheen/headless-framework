@@ -60,7 +60,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void serialize_valid_object_should_write_to_buffer()
+    public void should_write_to_buffer_when_serialize_valid_object()
     {
         // given
         var person = new Person { Name = "Alice", Age = 30 };
@@ -74,7 +74,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void serialize_object_typed_value_should_write_to_buffer()
+    public void should_write_to_buffer_when_serialize_object_typed_value()
     {
         // given
         var person = new Person { Name = "Bob", Age = 40 };
@@ -88,7 +88,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void serialize_non_serializable_object_should_throw_exception()
+    public void should_throw_exception_when_serialize_non_serializable_object()
     {
         // given
         var nonSerializable = new NonSerializable { Action = () => Console.WriteLine("Test") };
@@ -102,7 +102,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void roundtrip_via_bytes_should_return_object()
+    public void should_return_object_when_roundtrip_via_bytes()
     {
         // given
         var person = new Person { Name = "Alice", Age = 30 };
@@ -118,7 +118,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void roundtrip_via_buffer_and_memory_should_return_object()
+    public void should_return_object_when_roundtrip_via_buffer_and_memory()
     {
         // given
         var person = new Person { Name = "Bob", Age = 40 };
@@ -135,7 +135,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void deserialize_from_read_only_sequence_should_return_object()
+    public void should_return_object_when_deserialize_from_read_only_sequence()
     {
         // given — a multi-segment sequence exercises the non-contiguous read path.
         var person = new Person { Name = "Seq", Age = 7 };
@@ -152,7 +152,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void deserialize_invalid_data_should_throw_exception()
+    public void should_throw_exception_when_deserialize_invalid_data()
     {
         // given
         byte[] invalid = [0x01, 0x02, 0x03];
@@ -328,7 +328,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void parameterless_serializer_should_use_untrusted_security_by_default()
+    public void should_use_untrusted_security_by_default_when_parameterless_serializer()
     {
         // given
         var serializer = new MessagePackSerializer();
@@ -341,7 +341,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void trusted_data_opt_out_should_use_trusted_security()
+    public void should_use_trusted_security_when_trusted_data_opt_out()
     {
         // given
         var serializer = new MessagePackSerializer(untrustedData: false);
@@ -354,7 +354,7 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void supplied_options_should_own_security_level()
+    public void should_own_security_level_when_supplied_options()
     {
         // given
         var suppliedOptions = MessagePackSerializerOptions.Standard.WithSecurity(MessagePackSecurity.TrustedData);

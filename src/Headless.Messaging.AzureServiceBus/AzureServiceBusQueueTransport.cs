@@ -79,7 +79,10 @@ internal sealed class AzureServiceBusQueueTransport(
 
     private sealed class SenderFactory(AzureServiceBusQueueTransport transport, string queueName)
     {
-        public ServiceBusSender Create() => transport._CreateSender(queueName);
+        public ServiceBusSender Create()
+        {
+            return transport._CreateSender(queueName);
+        }
     }
 }
 

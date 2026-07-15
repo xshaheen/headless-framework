@@ -19,7 +19,10 @@ public interface IMessageEnvelope
 public sealed record MessageEnvelope(MessageDescriptor Message) : IMessageEnvelope
 {
     /// <summary>Wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelope"/>.</summary>
-    public static MessageEnvelope FromMessageDescriptor(MessageDescriptor operand) => new(operand);
+    public static MessageEnvelope FromMessageDescriptor(MessageDescriptor operand)
+    {
+        return new(operand);
+    }
 
     /// <summary>Implicitly wraps a <see cref="MessageDescriptor"/> in a <see cref="MessageEnvelope"/>.</summary>
     public static implicit operator MessageEnvelope(MessageDescriptor operand) => new(operand);
@@ -28,7 +31,10 @@ public sealed record MessageEnvelope(MessageDescriptor Message) : IMessageEnvelo
     /// Wraps a plain string message. The string is implicitly converted to a
     /// <see cref="MessageDescriptor"/> before wrapping.
     /// </summary>
-    public static MessageEnvelope FromString(string operand) => new(operand);
+    public static MessageEnvelope FromString(string operand)
+    {
+        return new(operand);
+    }
 
     /// <summary>
     /// Implicitly wraps a plain string message. The string is implicitly converted to a

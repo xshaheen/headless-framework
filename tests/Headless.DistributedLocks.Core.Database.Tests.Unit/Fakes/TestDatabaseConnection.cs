@@ -19,7 +19,10 @@ internal sealed class TestDatabaseConnection(
 
     public override bool ShouldPrepareCommands => false;
 
-    public override bool IsCommandCancellationException(Exception exception) => exception is OperationCanceledException;
+    public override bool IsCommandCancellationException(Exception exception)
+    {
+        return exception is OperationCanceledException;
+    }
 
     public override async Task SleepAsync(
         TimeSpan sleepTime,

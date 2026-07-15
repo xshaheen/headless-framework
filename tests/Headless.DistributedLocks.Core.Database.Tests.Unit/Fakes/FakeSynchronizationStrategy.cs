@@ -33,10 +33,15 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
     public int ReleaseCount { get; private set; }
 
     /// <summary>Maps <paramref name="resource"/> to <paramref name="identity"/> for collision modelling.</summary>
-    public void MapIdentity(string resource, object identity) => _identityByResource[resource] = identity;
+    public void MapIdentity(string resource, object identity)
+    {
+        _identityByResource[resource] = identity;
+    }
 
-    public object GetHeldLockIdentity(string resourceName) =>
-        _identityByResource.TryGetValue(resourceName, out var identity) ? identity : resourceName;
+    public object GetHeldLockIdentity(string resourceName)
+    {
+        return _identityByResource.TryGetValue(resourceName, out var identity) ? identity : resourceName;
+    }
 
     public ValueTask<object?> TryAcquireAsync(
         DatabaseConnection connection,
@@ -79,5 +84,8 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
     }
 
     /// <summary><see langword="true"/> if the given identity is recorded as held on the given connection id.</summary>
-    public bool IsHeld(Guid connectionId, object identity) => _held.ContainsKey((connectionId, identity));
+    public bool IsHeld(Guid connectionId, object identity)
+    {
+        return _held.ContainsKey((connectionId, identity));
+    }
 }

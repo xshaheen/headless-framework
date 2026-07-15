@@ -19,8 +19,9 @@ internal static class JobsAdmissionWorkItem
         SemaphoreSlim? semaphore,
         JobExecutionState function,
         bool isDue
-    ) =>
-        async ct =>
+    )
+    {
+        return async ct =>
         {
             if (semaphore != null)
             {
@@ -58,6 +59,7 @@ internal static class JobsAdmissionWorkItem
                 semaphore?.Release();
             }
         };
+    }
 }
 
 // Shared by JobsSchedulerBackgroundService and JobsFallbackBackgroundService — the per-service ILogger

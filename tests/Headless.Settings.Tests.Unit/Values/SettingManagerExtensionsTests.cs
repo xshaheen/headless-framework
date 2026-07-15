@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class SettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public SettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueAsync
 
@@ -35,7 +30,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_true_when_value_is_TRUE_case_insensitive()
+    public async Task should_return_true_when_value_is_true_case_insensitive()
     {
         // given
         const string settingName = "TestSetting";
@@ -67,7 +62,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_pass_provider_name_and_key_to_IsTrue()
+    public async Task should_pass_provider_name_and_key_to_is_true()
     {
         // given
         const string settingName = "TestSetting";
@@ -113,7 +108,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_true_when_value_is_FALSE_case_insensitive()
+    public async Task should_return_true_when_value_is_false_case_insensitive()
     {
         // given
         const string settingName = "TestSetting";
@@ -176,7 +171,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
         _settingManager
             .GetAsync(settingName, null, null, true, AbortToken)
-            .Returns(new SettingValue(settingName, (string?)null));
+            .Returns(new SettingValue(settingName, null));
 
         // when
         var result = await _settingManager.GetAsync<TestSettings>(settingName, cancellationToken: AbortToken);

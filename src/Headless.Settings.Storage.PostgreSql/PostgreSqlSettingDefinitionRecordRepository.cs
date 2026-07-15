@@ -118,21 +118,32 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
     }
 
     /// <summary>Returns the parameterized INSERT SQL for the setting definitions table.</summary>
-    private string _InsertSql() =>
-        $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ("Id","Name","DisplayName","Description","DefaultValue","Providers","IsVisibleToClients","IsInherited","IsEncrypted","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
+    private string _InsertSql()
+    {
+        return $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ("Id","Name","DisplayName","Description","DefaultValue","Providers","IsVisibleToClients","IsInherited","IsEncrypted","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
+    }
 
     /// <summary>Returns the parameterized UPDATE SQL for the setting definitions table.</summary>
-    private string _UpdateSql() =>
-        $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"Description"=@Description,"DefaultValue"=@DefaultValue,"Providers"=@Providers,"IsVisibleToClients"=@IsVisibleToClients,"IsInherited"=@IsInherited,"IsEncrypted"=@IsEncrypted,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    private string _UpdateSql()
+    {
+        return $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"Description"=@Description,"DefaultValue"=@DefaultValue,"Providers"=@Providers,"IsVisibleToClients"=@IsVisibleToClients,"IsInherited"=@IsInherited,"IsEncrypted"=@IsEncrypted,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+    }
 
     /// <summary>Returns the parameterized DELETE SQL for the setting definitions table.</summary>
-    private string _DeleteSql() =>
-        $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE "Id"=@Id;""";
+    private string _DeleteSql()
+    {
+        return $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE "Id"=@Id;""";
+    }
 
     /// <summary>Deserializes <paramref name="json"/> into an <see cref="ExtraProperties"/> collection, returning an empty collection when the result is <see langword="null"/>.</summary>
-    private ExtraProperties _DeserializeExtraProperties(string json) =>
-        serializer.Deserialize<ExtraProperties>(json) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json)
+    {
+        return serializer.Deserialize<ExtraProperties>(json) ?? [];
+    }
 
     /// <summary>Returns <see cref="PostgreSqlSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 }

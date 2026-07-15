@@ -19,7 +19,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     > _ContextFactory = (context, _) => ValueTask.FromResult(context.Modified("value"));
 
     [Fact]
-    public async Task simple_overload_should_throw_when_default_entry_options_is_null()
+    public async Task should_throw_when_simple_overload_default_entry_options_is_null()
     {
         // given
         var cache = Substitute.For<ICache>();
@@ -33,7 +33,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task context_overload_should_throw_when_default_entry_options_is_null()
+    public async Task should_throw_when_context_overload_default_entry_options_is_null()
     {
         // given
         var cache = Substitute.For<ICache>();
@@ -47,7 +47,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task simple_overload_should_flow_default_entry_options_when_present()
+    public async Task should_flow_default_entry_options_when_simple_overload_present()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), IsFailSafeEnabled = true };
@@ -62,7 +62,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task context_overload_should_flow_default_entry_options_when_present()
+    public async Task should_flow_default_entry_options_when_context_overload_present()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
@@ -77,7 +77,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task no_options_overload_should_apply_default_duration_to_real_cache_entries()
+    public async Task should_apply_default_duration_to_real_cache_entries_when_no_options_overload()
     {
         // given — a real cache whose instance default is a 5-minute duration
         var timeProvider = new FakeTimeProvider();
@@ -111,7 +111,7 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task per_call_options_should_beat_default_entry_options()
+    public async Task should_beat_default_entry_options_when_per_call_options()
     {
         // given — a real cache with a LONG instance default and a SHORT per-call duration
         var timeProvider = new FakeTimeProvider();

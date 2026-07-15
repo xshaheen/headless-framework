@@ -48,7 +48,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     public void Dispose() => JobFunctionProvider.ResetForTests();
 
     [Fact]
-    public async Task TimeJob_without_coordinator_takes_direct_path()
+    public async Task time_job_without_coordinator_takes_direct_path()
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
 
@@ -61,7 +61,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Schedule_middleware_that_omits_next_rejects_before_direct_or_coordinated_write()
+    public async Task schedule_middleware_that_omits_next_rejects_before_direct_or_coordinated_write()
     {
         using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
         {
@@ -151,7 +151,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_coordinator_without_relational_capability_takes_direct_path()
+    public async Task time_job_coordinator_without_relational_capability_takes_direct_path()
     {
         // A messaging-only coordinated scope: coordination must not become infectious — fall back to direct insert.
         var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
@@ -171,7 +171,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_dead_transaction_throws_and_persists_nothing()
+    public async Task time_job_dead_transaction_throws_and_persists_nothing()
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
 
@@ -191,7 +191,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    public async Task time_job_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
     {
         // Live relational coordinator, but the provider cannot write inside the ambient transaction (in-memory shape).
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
@@ -205,7 +205,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_dead_transaction_throws_and_persists_nothing()
+    public async Task cron_dead_transaction_throws_and_persists_nothing()
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
 
@@ -225,7 +225,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    public async Task cron_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
 
@@ -238,7 +238,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_batch_dead_transaction_throws_and_persists_nothing()
+    public async Task time_job_batch_dead_transaction_throws_and_persists_nothing()
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
@@ -259,7 +259,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    public async Task time_job_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
@@ -273,7 +273,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_batch_dead_transaction_throws_and_persists_nothing()
+    public async Task cron_batch_dead_transaction_throws_and_persists_nothing()
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
@@ -294,7 +294,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    public async Task cron_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
@@ -308,7 +308,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_live_coordinator_writes_in_transaction_and_defers_side_effects()
+    public async Task time_job_live_coordinator_writes_in_transaction_and_defers_side_effects()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var job = _FutureTimeJob();
@@ -339,7 +339,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Deferred_side_effect_failure_is_swallowed_and_logged()
+    public async Task deferred_side_effect_failure_is_swallowed_and_logged()
     {
         // KTD-4 crash isolation: once the row is durably committed, a deferred post-commit side-effect failure must
         // NOT propagate out of the commit drain (which would surface as a caller error after a successful commit) —
@@ -358,7 +358,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Deferred_side_effect_timeout_is_swallowed_and_logged()
+    public async Task deferred_side_effect_timeout_is_swallowed_and_logged()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var timeout = TimeSpan.FromSeconds(5);
@@ -390,7 +390,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Deferred_side_effect_timeout_bounds_work_that_ignores_cancellation()
+    public async Task deferred_side_effect_timeout_bounds_work_that_ignores_cancellation()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var timeout = TimeSpan.FromSeconds(5);
@@ -430,7 +430,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Deferred_side_effect_fault_after_timeout_is_observed_and_logged()
+    public async Task deferred_side_effect_fault_after_timeout_is_observed_and_logged()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var timeout = TimeSpan.FromSeconds(5);
@@ -469,7 +469,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
+    public async Task coordinated_enqueue_registers_no_rollback_callbacks()
     {
         // Coordinated side effects must fire only on commit — a rollback discards the row, so the manager must
         // never register a rollback callback (which would run side effects for work that was rolled back).
@@ -482,7 +482,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_live_coordinator_defers_immediate_dispatch_to_commit()
+    public async Task time_job_live_coordinator_defers_immediate_dispatch_to_commit()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, dispatcherEnabled: true);
         sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
@@ -502,7 +502,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task TimeJob_batch_live_coordinator_routes_all_and_defers_side_effects_once()
+    public async Task time_job_batch_live_coordinator_routes_all_and_defers_side_effects_once()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
@@ -527,7 +527,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_without_coordinator_takes_direct_path()
+    public async Task cron_without_coordinator_takes_direct_path()
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
 
@@ -538,7 +538,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_live_coordinator_writes_in_transaction_and_defers_cache_invalidation()
+    public async Task cron_live_coordinator_writes_in_transaction_and_defers_cache_invalidation()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var cron = _CronJob();
@@ -570,7 +570,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task Cron_batch_live_coordinator_routes_all_and_defers_side_effects_once()
+    public async Task cron_batch_live_coordinator_routes_all_and_defers_side_effects_once()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
@@ -608,7 +608,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
-    public void Jobs_only_host_resolves_manager_with_null_coordinator_fallback()
+    public void jobs_only_host_resolves_manager_with_null_coordinator_fallback()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -619,8 +619,9 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         provider.GetRequiredService<ICurrentCommitCoordinator>().Current.Should().BeNull();
     }
 
-    private static TimeJobEntity _FutureTimeJob() =>
-        new()
+    private static TimeJobEntity _FutureTimeJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -628,9 +629,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             Request = [],
             ExecutionTime = DateTime.UtcNow.AddHours(1),
         };
+    }
 
-    private static TimeJobEntity _ImmediateTimeJob() =>
-        new()
+    private static TimeJobEntity _ImmediateTimeJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -638,9 +641,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             Request = [],
             ExecutionTime = DateTime.UtcNow,
         };
+    }
 
-    private static CronJobEntity _CronJob() =>
-        new()
+    private static CronJobEntity _CronJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -649,6 +654,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             Expression = "0 0 0 * * *",
             Request = [],
         };
+    }
 
     private enum CoordinatorMode
     {
@@ -791,10 +797,16 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         }
 
         public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer => factory(this);
+            where TBuffer : class, ICommitWorkBuffer
+        {
+            return factory(this);
+        }
 
         public TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer => factory(this, state);
+            where TBuffer : class, ICommitWorkBuffer
+        {
+            return factory(this, state);
+        }
 
         public bool TryGetCapability<TCapability>([NotNullWhen(true)] out TCapability? capability)
             where TCapability : class, ICommitCapability
@@ -837,7 +849,10 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     {
         public static readonly EmptyServiceProvider Instance = new();
 
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     // Records the LoggerMessage-emitted entries so a test can assert the deferred-failure log without a logging mock.
@@ -846,9 +861,15 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -856,7 +877,10 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Entries.Add((logLevel, exception));
+        )
+        {
+            Entries.Add((logLevel, exception));
+        }
 
         private sealed class NullScope : IDisposable
         {

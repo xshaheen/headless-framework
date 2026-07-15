@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class AwsSesEmailSenderTests
 {
     [Fact]
-    public async Task caller_cancellation_should_propagate()
+    public async Task should_propagate_when_caller_cancellation()
     {
         // given - the caller's own token is cancelled and SES surfaces an OperationCanceledException.
         using var cts = new CancellationTokenSource();
@@ -31,7 +31,7 @@ public sealed class AwsSesEmailSenderTests
     }
 
     [Fact]
-    public async Task non_caller_cancellation_should_return_failed()
+    public async Task should_return_failed_when_non_caller_cancellation()
     {
         // given - an OperationCanceledException is raised while the caller's token is NOT cancelled (for
         // example an AWS SDK internal HttpClient timeout surfacing as a TaskCanceledException).

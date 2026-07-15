@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
-using Tests.Helpers;
 
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests.Registration;
@@ -223,7 +222,9 @@ public sealed class ProviderConfigBagTests
 
     private sealed class TestConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

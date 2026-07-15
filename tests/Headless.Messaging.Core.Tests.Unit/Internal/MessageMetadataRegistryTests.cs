@@ -127,8 +127,10 @@ public sealed class MessageMetadataRegistryTests
         metadata!.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(second);
     }
 
-    private static IReadOnlyDictionary<Type, object> _Configs(object config) =>
-        new Dictionary<Type, object> { [config.GetType()] = config };
+    private static IReadOnlyDictionary<Type, object> _Configs(object config)
+    {
+        return new Dictionary<Type, object> { [config.GetType()] = config };
+    }
 
     private interface ITestEvent;
 

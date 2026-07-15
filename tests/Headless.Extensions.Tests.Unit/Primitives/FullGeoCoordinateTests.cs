@@ -9,7 +9,7 @@ public sealed class FullGeoCoordinateTests
     #region GetHashCode
 
     [Fact]
-    public void get_hash_code_should_not_collide_for_swapped_coordinates()
+    public void should_not_collide_for_swapped_coordinates_when_get_hash_code()
     {
         // given - the old XOR hash made (10, 20) and (20, 10) collide
         var a = new FullGeoCoordinate(latitude: 10, longitude: 20);
@@ -20,7 +20,7 @@ public sealed class FullGeoCoordinateTests
     }
 
     [Fact]
-    public void get_hash_code_should_be_equal_for_equal_coordinates()
+    public void should_be_equal_for_equal_coordinates_when_get_hash_code()
     {
         // given
         var a = new FullGeoCoordinate(latitude: 40.7128, longitude: -74.0060);
@@ -35,7 +35,7 @@ public sealed class FullGeoCoordinateTests
     #region GetDistanceTo
 
     [Fact]
-    public void get_distance_to_should_be_zero_for_the_same_point()
+    public void should_be_zero_for_the_same_point_when_get_distance_to()
     {
         // given
         var point = new FullGeoCoordinate(latitude: 30.0444, longitude: 31.2357);
@@ -48,7 +48,7 @@ public sealed class FullGeoCoordinateTests
     }
 
     [Fact]
-    public void get_distance_to_should_be_symmetric_and_positive()
+    public void should_be_symmetric_and_positive_when_get_distance_to()
     {
         // given
         var cairo = new FullGeoCoordinate(latitude: 30.0444, longitude: 31.2357);

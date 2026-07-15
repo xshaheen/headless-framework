@@ -462,9 +462,15 @@ public sealed class DiagnosticListenerTests : TestBase
         public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

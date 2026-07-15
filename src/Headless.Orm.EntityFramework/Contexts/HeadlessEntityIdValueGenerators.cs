@@ -50,11 +50,15 @@ internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
         return generator.Create();
     }
 
-    private static SequentialGuidType _GetKey(string? providerName) =>
-        string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
+    private static SequentialGuidType _GetKey(string? providerName)
+    {
+        return string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
             ? SequentialGuidType.SqlServer
             : SequentialGuidType.Version7;
+    }
 
-    private static IGuidGenerator _GetFallback(SequentialGuidType key) =>
-        key == SequentialGuidType.SqlServer ? _SqlServerGenerator : _Version7Generator;
+    private static IGuidGenerator _GetFallback(SequentialGuidType key)
+    {
+        return key == SequentialGuidType.SqlServer ? _SqlServerGenerator : _Version7Generator;
+    }
 }

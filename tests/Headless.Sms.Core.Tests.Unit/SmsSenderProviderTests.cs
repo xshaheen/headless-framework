@@ -23,7 +23,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void get_sender_should_resolve_known_name()
+    public void should_resolve_known_name_when_get_sender()
     {
         // given
         using var provider = _BuildProvider();
@@ -38,7 +38,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void get_sender_or_null_should_return_null_for_unknown_name()
+    public void should_return_null_for_unknown_name_when_get_sender_or_null()
     {
         // given
         using var provider = _BuildProvider();
@@ -48,7 +48,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void get_sender_should_throw_for_unknown_name_with_message_naming_add_named()
+    public void should_throw_for_unknown_name_with_message_naming_add_named_when_get_sender()
     {
         // given
         using var provider = _BuildProvider();
@@ -67,7 +67,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void get_sender_should_guard_null_and_whitespace_names()
+    public void should_guard_null_and_whitespace_names_when_get_sender()
     {
         // given
         using var provider = _BuildProvider();
@@ -81,7 +81,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void get_sender_or_null_should_guard_null_and_whitespace_names()
+    public void should_guard_null_and_whitespace_names_when_get_sender_or_null()
     {
         // given
         using var provider = _BuildProvider();
@@ -95,7 +95,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void default_sender_should_not_be_reachable_by_name()
+    public void should_not_be_reachable_by_name_when_default_sender()
     {
         // given - the default is unkeyed by design; the factory only surfaces named (keyed) instances.
         using var provider = _BuildProvider();
@@ -105,7 +105,7 @@ public sealed class SmsSenderProviderTests
     }
 
     [Fact]
-    public void registered_names_should_list_named_instances_and_exclude_the_default()
+    public void should_list_named_instances_and_exclude_the_default_when_registered_names()
     {
         // given
         using var provider = _BuildProvider();

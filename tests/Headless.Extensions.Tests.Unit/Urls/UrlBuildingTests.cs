@@ -313,7 +313,7 @@ public sealed class UrlBuildingTests
     }
 
     [Fact]
-    public void should_reencode_when_isEncoded_false()
+    public void should_reencode_when_is_encoded_false()
     {
         var url = "http://www.mysite.com".SetQueryParam("x", "%CD%EE%E2%FB%E9%20%E3%EE%E4", false);
         url.ToString().Should().Be("http://www.mysite.com?x=%25CD%25EE%25E2%25FB%25E9%2520%25E3%25EE%25E4");

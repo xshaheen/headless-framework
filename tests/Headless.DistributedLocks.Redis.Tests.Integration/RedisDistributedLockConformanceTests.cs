@@ -29,25 +29,38 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     }
 
     [Fact]
-    public override Task should_acquire_composite_in_canonical_order_and_deduplicate() =>
-        base.should_acquire_composite_in_canonical_order_and_deduplicate();
+    public override Task should_acquire_composite_in_canonical_order_and_deduplicate()
+    {
+        return base.should_acquire_composite_in_canonical_order_and_deduplicate();
+    }
 
     [Fact]
-    public override Task should_acquire_opposite_composite_orders_sequentially() =>
-        base.should_acquire_opposite_composite_orders_sequentially();
+    public override Task should_acquire_opposite_composite_orders_sequentially()
+    {
+        return base.should_acquire_opposite_composite_orders_sequentially();
+    }
 
     [Fact]
-    public override Task should_release_earlier_composite_children_when_later_resource_is_contended() =>
-        base.should_release_earlier_composite_children_when_later_resource_is_contended();
+    public override Task should_release_earlier_composite_children_when_later_resource_is_contended()
+    {
+        return base.should_release_earlier_composite_children_when_later_resource_is_contended();
+    }
 
     [Fact]
-    public override Task should_renew_and_release_composite_lease() => base.should_renew_and_release_composite_lease();
+    public override Task should_renew_and_release_composite_lease()
+    {
+        return base.should_renew_and_release_composite_lease();
+    }
 
     [Fact]
-    public override Task should_dispatch_composite_renew_and_release_through_provider() =>
-        base.should_dispatch_composite_renew_and_release_through_provider();
+    public override Task should_dispatch_composite_renew_and_release_through_provider()
+    {
+        return base.should_dispatch_composite_renew_and_release_through_provider();
+    }
 
     [Fact]
-    public override Task should_keep_composite_resources_when_disposed_without_release() =>
-        base.should_keep_composite_resources_when_disposed_without_release();
+    public override Task should_keep_composite_resources_when_disposed_without_release()
+    {
+        return base.should_keep_composite_resources_when_disposed_without_release();
+    }
 }

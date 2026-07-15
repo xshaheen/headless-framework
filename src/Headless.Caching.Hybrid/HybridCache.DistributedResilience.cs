@@ -188,17 +188,25 @@ public sealed partial class HybridCache
     {
         public bool IsSuccess => Status == DistributedCacheReadStatus.Success;
 
-        public static DistributedCacheReadResult<T> Success(T value) =>
-            new(DistributedCacheReadStatus.Success, value, Exception: null);
+        public static DistributedCacheReadResult<T> Success(T value)
+        {
+            return new(DistributedCacheReadStatus.Success, value, Exception: null);
+        }
 
-        public static DistributedCacheReadResult<T> Failed(Exception exception) =>
-            new(DistributedCacheReadStatus.Failure, Value: default, exception);
+        public static DistributedCacheReadResult<T> Failed(Exception exception)
+        {
+            return new(DistributedCacheReadStatus.Failure, Value: default, exception);
+        }
 
-        public static DistributedCacheReadResult<T> TimedOut() =>
-            new(DistributedCacheReadStatus.TimedOut, Value: default, Exception: null);
+        public static DistributedCacheReadResult<T> TimedOut()
+        {
+            return new(DistributedCacheReadStatus.TimedOut, Value: default, Exception: null);
+        }
 
-        public static DistributedCacheReadResult<T> SkippedByCircuit() =>
-            new(DistributedCacheReadStatus.CircuitOpen, Value: default, Exception: null);
+        public static DistributedCacheReadResult<T> SkippedByCircuit()
+        {
+            return new(DistributedCacheReadStatus.CircuitOpen, Value: default, Exception: null);
+        }
     }
 
     private sealed class DistributedCacheCircuitBreaker(TimeSpan duration, TimeProvider timeProvider)

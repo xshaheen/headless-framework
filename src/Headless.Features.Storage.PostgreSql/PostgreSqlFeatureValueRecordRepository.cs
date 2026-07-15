@@ -213,7 +213,13 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
-    private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
+    private static NpgsqlParameter _Param(string name, object? value)
+    {
+        return new(name, value ?? DBNull.Value);
+    }
 }

@@ -1,4 +1,3 @@
-using Headless.Jobs;
 using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
@@ -14,8 +13,7 @@ public static class ConsoleSampleJobs
     [JobFunction(FunctionName)]
     public static Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
-
+        cancellationToken.ThrowIfCancellationRequested();
         System.Console.WriteLine($"[Console] Hello from Jobs! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}");
         return Task.CompletedTask;
     }
@@ -42,10 +40,11 @@ public class SampleScheduler(IJobScheduler scheduler) : IHostedService
             return;
         }
 
-        System.Console.WriteLine(
-            string.Create(CultureInfo.InvariantCulture, $"Scheduled console sample job with Id={jobId}")
-        );
+        System.Console.WriteLine($"Scheduled console sample job with Id={jobId}");
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 }

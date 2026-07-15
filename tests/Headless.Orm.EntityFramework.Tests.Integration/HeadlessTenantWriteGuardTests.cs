@@ -26,7 +26,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void guard_tenant_writes_capabilities_should_expose_documented_capability_labels()
+    public void should_expose_documented_capability_labels_when_guard_tenant_writes_capabilities()
     {
         // given/when — the static capabilities property must contain the two labels recorded by the
         // EF seam so downstream posture assertions stay stable across refactors of the seam wiring.
@@ -37,7 +37,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void cross_tenant_write_exception_should_expose_safe_structural_diagnostics()
+    public void should_expose_safe_structural_diagnostics_when_cross_tenant_write_exception()
     {
         // given
         var exception = new CrossTenantWriteException(entityType: typeof(TestEntity).FullName!, operation: "Modified");
@@ -54,7 +54,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_db_context_services_should_register_disabled_tenant_write_guard_options()
+    public void should_register_disabled_tenant_write_guard_options_when_add_headless_db_context_services()
     {
         // given
         var services = new ServiceCollection();
@@ -71,7 +71,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_tenant_write_guard_should_enable_options()
+    public void should_enable_options_when_add_headless_tenant_write_guard()
     {
         // given
         var services = new ServiceCollection();
@@ -88,7 +88,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_tenant_write_guard_with_noop_configurator_should_keep_guard_enabled()
+    public void should_keep_guard_enabled_when_add_headless_tenant_write_guard_with_noop_configurator()
     {
         // given
         var services = new ServiceCollection();
@@ -105,7 +105,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_tenant_write_guard_should_bind_configuration_and_keep_guard_enabled()
+    public void should_bind_configuration_and_keep_guard_enabled_when_add_headless_tenant_write_guard()
     {
         // given
         var services = new ServiceCollection();
@@ -125,7 +125,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_tenant_write_guard_should_support_service_provider_aware_configuration()
+    public void should_support_service_provider_aware_configuration_when_add_headless_tenant_write_guard()
     {
         // given
         var marker = new TenantWriteGuardOptionsMarker(Guid.NewGuid());
@@ -148,7 +148,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void add_headless_tenancy_entity_framework_should_enable_write_guard_and_record_manifest()
+    public void should_enable_write_guard_and_record_manifest_when_add_headless_tenancy_entity_framework()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -171,7 +171,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void guard_tenant_writes_with_noop_configurator_should_keep_guard_enabled()
+    public void should_keep_guard_enabled_when_guard_tenant_writes_with_noop_configurator()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -188,7 +188,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void tenant_write_guard_bypass_should_restore_after_dispose()
+    public void should_restore_after_dispose_when_tenant_write_guard_bypass()
     {
         // given
         using var provider = _BuildBypassProvider();
@@ -205,7 +205,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void tenant_write_guard_bypass_should_restore_nested_scopes_in_lifo_order()
+    public void should_restore_nested_scopes_in_lifo_order_when_tenant_write_guard_bypass()
     {
         // given
         using var provider = _BuildBypassProvider();
@@ -229,7 +229,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task tenant_write_guard_bypass_should_not_leak_into_unrelated_async_flow()
+    public async Task should_not_leak_into_unrelated_async_flow_when_tenant_write_guard_bypass()
     {
         // given
         await using var provider = _BuildBypassProvider();
@@ -258,7 +258,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task tenant_write_guard_bypass_should_not_leak_into_async_work_spawned_inside_scope()
+    public async Task should_not_leak_into_async_work_spawned_inside_scope_when_tenant_write_guard_bypass()
     {
         // given
         await using var provider = _BuildBypassProvider();
@@ -299,7 +299,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_disabled_should_preserve_current_create_without_current_tenant_behavior()
+    public async Task should_preserve_current_create_without_current_tenant_behavior_when_guard_disabled()
     {
         // given
         var fixture = disabledFixture;
@@ -320,7 +320,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_tenant_owned_add_without_current_tenant_before_side_effects()
+    public async Task should_reject_tenant_owned_add_without_current_tenant_before_side_effects_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -342,7 +342,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_tenant_owned_update_without_current_tenant_before_side_effects()
+    public async Task should_reject_tenant_owned_update_without_current_tenant_before_side_effects_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -367,7 +367,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_tenant_owned_physical_delete_without_current_tenant_before_side_effects()
+    public async Task should_reject_tenant_owned_physical_delete_without_current_tenant_before_side_effects_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -392,7 +392,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_stamp_added_tenant_owned_entity_under_current_tenant()
+    public async Task should_stamp_added_tenant_owned_entity_under_current_tenant_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -417,7 +417,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_tenant_owned_add_with_different_tenant()
+    public async Task should_reject_tenant_owned_add_with_different_tenant_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -440,7 +440,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_matching_tenant_create()
+    public async Task should_allow_matching_tenant_create_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -460,7 +460,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_matching_tenant_create_with_sync_save_changes()
+    public async Task should_allow_matching_tenant_create_with_sync_save_changes_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -482,7 +482,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_matching_tenant_update()
+    public async Task should_allow_matching_tenant_update_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -503,7 +503,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_matching_tenant_physical_delete()
+    public async Task should_allow_matching_tenant_physical_delete_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -524,7 +524,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_remove_after_tenant_id_rewrite_on_tracked_entity()
+    public async Task should_reject_remove_after_tenant_id_rewrite_on_tracked_entity_when_guard_enabled()
     {
         // given — load entity owned by tenant-a, rewrite CurrentValue, then Remove
         var fixture = enabledFixture;
@@ -549,7 +549,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_delete_when_entity_tenant_id_is_null()
+    public async Task should_reject_delete_when_guard_enabled_entity_tenant_id_is_null()
     {
         // given — bypass to create a row with null TenantId, then attempt a guarded delete
         var fixture = enabledFixture;
@@ -584,7 +584,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_cross_tenant_update_loaded_through_ignored_filter()
+    public async Task should_reject_cross_tenant_update_loaded_through_ignored_filter_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -609,7 +609,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_cross_tenant_update_loaded_through_ignored_filter_with_sync_save_changes()
+    public async Task should_reject_cross_tenant_update_loaded_through_ignored_filter_with_sync_save_changes_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -636,7 +636,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_tenant_id_reassignment_on_tracked_update()
+    public async Task should_reject_tenant_id_reassignment_on_tracked_update_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -661,7 +661,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_clearing_tenant_id_on_tracked_update()
+    public async Task should_reject_clearing_tenant_id_on_tracked_update_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -686,7 +686,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_cross_tenant_physical_delete_loaded_through_ignored_filter()
+    public async Task should_reject_cross_tenant_physical_delete_loaded_through_ignored_filter_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -711,7 +711,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_reject_cross_tenant_soft_delete_as_modified_write()
+    public async Task should_reject_cross_tenant_soft_delete_as_modified_write_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -799,7 +799,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_non_tenant_entity_add_update_and_delete_without_current_tenant()
+    public async Task should_allow_non_tenant_entity_add_update_and_delete_without_current_tenant_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -824,7 +824,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_scoped_bypass_and_restore_strict_behavior_after_dispose()
+    public async Task should_allow_scoped_bypass_and_restore_strict_behavior_after_dispose_when_guard_enabled()
     {
         // given
         var fixture = enabledFixture;
@@ -865,7 +865,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task multi_tenancy_filter_should_scope_execute_update_to_current_tenant()
+    public async Task should_scope_execute_update_to_current_tenant_when_multi_tenancy_filter()
     {
         // given
         var fixture = enabledFixture;
@@ -894,7 +894,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task multi_tenancy_filter_should_scope_execute_delete_to_current_tenant()
+    public async Task should_scope_execute_delete_to_current_tenant_when_multi_tenancy_filter()
     {
         // given
         var fixture = enabledFixture;
@@ -920,7 +920,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public async Task ignore_multi_tenancy_filter_should_bypass_scoping_for_bulk_operations()
+    public async Task should_bypass_scoping_for_bulk_operations_when_ignore_multi_tenancy_filter()
     {
         // given
         var fixture = enabledFixture;

@@ -135,9 +135,12 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var directTimePersisted = await fixture.ReadTimeJobClaimTimestampsAsync(directTimeJobId, ct);
-            directTimeClaim.LockedUntil.Should().Be(directTimePersisted.LockedUntil);
-            directTimeClaim.UpdatedAt.Should().Be(directTimePersisted.UpdatedAt);
+            var (directLockedUntil, directUpdatedAt) = await fixture.ReadTimeJobClaimTimestampsAsync(
+                directTimeJobId,
+                ct
+            );
+            directTimeClaim.LockedUntil.Should().Be(directLockedUntil);
+            directTimeClaim.UpdatedAt.Should().Be(directUpdatedAt);
 
             var fallbackTimeJob = new TimeJobEntity
             {
@@ -150,9 +153,12 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var fallbackTimePersisted = await fixture.ReadTimeJobClaimTimestampsAsync(fallbackTimeJob.Id, ct);
-            fallbackTimeClaim.LockedUntil.Should().Be(fallbackTimePersisted.LockedUntil);
-            fallbackTimeClaim.UpdatedAt.Should().Be(fallbackTimePersisted.UpdatedAt);
+            var (fallbackLockedUntil, fallbackUpdatedAt) = await fixture.ReadTimeJobClaimTimestampsAsync(
+                fallbackTimeJob.Id,
+                ct
+            );
+            fallbackTimeClaim.LockedUntil.Should().Be(fallbackLockedUntil);
+            fallbackTimeClaim.UpdatedAt.Should().Be(fallbackUpdatedAt);
 
             var executionTime = DateTime.UtcNow.AddMinutes(1);
             var newCronId1 = Guid.NewGuid();
@@ -199,9 +205,9 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             directCronClaims.Select(x => x.CronJobId).Should().Equal(newCronId1, existingCronId, newCronId2);
             foreach (var claim in directCronClaims)
             {
-                var persisted = await fixture.ReadCronOccurrenceClaimTimestampsAsync(claim.Id, ct);
-                claim.LockedUntil.Should().Be(persisted.LockedUntil);
-                claim.UpdatedAt.Should().Be(persisted.UpdatedAt);
+                var (lockedUntil, updatedAt) = await fixture.ReadCronOccurrenceClaimTimestampsAsync(claim.Id, ct);
+                claim.LockedUntil.Should().Be(lockedUntil);
+                claim.UpdatedAt.Should().Be(updatedAt);
             }
 
             var fallbackCronId = Guid.NewGuid();
@@ -228,9 +234,12 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var fallbackCronPersisted = await fixture.ReadCronOccurrenceClaimTimestampsAsync(fallbackOccurrenceId, ct);
-            fallbackCronClaim.LockedUntil.Should().Be(fallbackCronPersisted.LockedUntil);
-            fallbackCronClaim.UpdatedAt.Should().Be(fallbackCronPersisted.UpdatedAt);
+            var (fallbackCronLockedUntil, fallbackCronUpdatedAt) = await fixture.ReadCronOccurrenceClaimTimestampsAsync(
+                fallbackOccurrenceId,
+                ct
+            );
+            fallbackCronClaim.LockedUntil.Should().Be(fallbackCronLockedUntil);
+            fallbackCronClaim.UpdatedAt.Should().Be(fallbackCronUpdatedAt);
 
             directTimeClaim.UpdatedAt.Should().BeAfter(DateTime.UtcNow.AddMinutes(-1));
             directTimeClaim.LockedUntil.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
@@ -815,7 +824,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     // the DB clock rather than this node's TimeProvider (#316 clock-skew). Only GetUtcNow is exercised by the test.
     private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
+        public override DateTimeOffset GetUtcNow()
+        {
+            return DateTimeOffset.UtcNow.Add(offset);
+        }
     }
 
     /// <summary>

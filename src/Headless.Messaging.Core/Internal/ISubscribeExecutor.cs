@@ -121,7 +121,7 @@ internal sealed class SubscribeExecutor(
 
         return await _retryPipeline
             .ExecuteAsync(
-                (inlineRetries, ct) => _ExecuteWithoutRetryAsync(message, descriptor, inlineRetries, ct),
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, ct),
                 (inlineRetries, exception, delay, strategyFailed, ct) =>
                     _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
                 (inlineRetries, exception, ct) =>
@@ -135,7 +135,6 @@ internal sealed class SubscribeExecutor(
     private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
-        int inlineRetries,
         CancellationToken cancellationToken
     )
     {
@@ -148,7 +147,7 @@ internal sealed class SubscribeExecutor(
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        inlineRetries = message.InlineAttempts;
+        var inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
             // The recovery transition still writes CAS-guarded state, which requires an active

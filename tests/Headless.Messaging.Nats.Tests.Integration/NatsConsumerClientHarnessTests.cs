@@ -71,17 +71,28 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     }
 
     [Fact]
-    public override Task should_subscribe_to_topic() => base.should_subscribe_to_topic();
+    public override Task should_subscribe_to_topic()
+    {
+        return base.should_subscribe_to_topic();
+    }
 
     [Fact]
-    public override Task should_receive_messages_via_listen_callback() =>
-        base.should_receive_messages_via_listen_callback();
+    public override Task should_receive_messages_via_listen_callback()
+    {
+        return base.should_receive_messages_via_listen_callback();
+    }
 
     [Fact]
-    public override Task should_commit_message_successfully() => base.should_commit_message_successfully();
+    public override Task should_commit_message_successfully()
+    {
+        return base.should_commit_message_successfully();
+    }
 
     [Fact]
-    public override Task should_reject_message_successfully() => base.should_reject_message_successfully();
+    public override Task should_reject_message_successfully()
+    {
+        return base.should_reject_message_successfully();
+    }
 
     [Fact]
     public override async Task should_fetch_topics()
@@ -102,18 +113,32 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     }
 
     [Fact]
-    public override Task should_shutdown_gracefully() => base.should_shutdown_gracefully();
+    public override Task should_shutdown_gracefully()
+    {
+        return base.should_shutdown_gracefully();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_message_processing() =>
-        base.should_handle_concurrent_message_processing();
+    public override Task should_handle_concurrent_message_processing()
+    {
+        return base.should_handle_concurrent_message_processing();
+    }
 
     [Fact]
-    public override Task should_dispose_without_exception() => base.should_dispose_without_exception();
+    public override Task should_dispose_without_exception()
+    {
+        return base.should_dispose_without_exception();
+    }
 
     [Fact]
-    public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
+    public override Task should_have_valid_broker_address()
+    {
+        return base.should_have_valid_broker_address();
+    }
 
     [Fact]
-    public override Task should_invoke_log_callback_on_events() => base.should_invoke_log_callback_on_events();
+    public override Task should_invoke_log_callback_on_events()
+    {
+        return base.should_invoke_log_callback_on_events();
+    }
 }

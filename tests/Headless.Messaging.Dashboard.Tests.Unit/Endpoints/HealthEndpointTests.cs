@@ -14,7 +14,7 @@ namespace Tests.Endpoints;
 public sealed class HealthEndpointTests : TestBase
 {
     [Fact]
-    public async Task Health_should_return_OK()
+    public async Task should_return_ok_when_health()
     {
         // given
         await using var app = _CreateTestApp();
@@ -31,7 +31,7 @@ public sealed class HealthEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task Health_should_not_require_authentication()
+    public async Task should_not_require_authentication_when_health()
     {
         // given - no auth header set
         await using var app = _CreateTestApp();

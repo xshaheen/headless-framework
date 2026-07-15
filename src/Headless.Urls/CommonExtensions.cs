@@ -37,17 +37,25 @@ public static class CommonExtensions
         };
     }
 
-    internal static bool OrdinalEquals(this string? s, string? value, bool ignoreCase = false) =>
-        s?.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    internal static bool OrdinalEquals(this string? s, string? value, bool ignoreCase = false)
+    {
+        return s?.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    }
 
-    internal static bool OrdinalContains(this string? s, string value, bool ignoreCase = false) =>
-        s?.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    internal static bool OrdinalContains(this string? s, string value, bool ignoreCase = false)
+    {
+        return s?.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    }
 
-    internal static bool OrdinalStartsWith(this string? s, string value, bool ignoreCase = false) =>
-        s?.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    internal static bool OrdinalStartsWith(this string? s, string value, bool ignoreCase = false)
+    {
+        return s?.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    }
 
-    internal static bool OrdinalEndsWith(this string? s, string value, bool ignoreCase = false) =>
-        s?.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    internal static bool OrdinalEndsWith(this string? s, string value, bool ignoreCase = false)
+    {
+        return s?.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
+    }
 
     /// <summary>
     /// Splits at the first occurrence of the given separator.
@@ -94,12 +102,14 @@ public static class CommonExtensions
     }
 
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
-    private static IEnumerable<(string Name, object? Value)> _ObjectToKV(object obj) =>
-        from prop in obj.GetType().GetProperties()
-        let getter = prop.GetGetMethod(nonPublic: false)
-        where getter is not null
-        let val = getter.Invoke(obj, parameters: null)
-        select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
+    private static IEnumerable<(string Name, object? Value)> _ObjectToKV(object obj)
+    {
+        return from prop in obj.GetType().GetProperties()
+            let getter = prop.GetGetMethod(nonPublic: false)
+            where getter is not null
+            let val = getter.Invoke(obj, parameters: null)
+            select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
+    }
 
     [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
     internal static object? GetDeclaredTypeValue(object? value, Type declaredType)

@@ -9,7 +9,7 @@ public sealed class PaginationTests
     #region IndexPage - Construction & Properties
 
     [Fact]
-    public void index_page_should_store_items_and_pagination_info()
+    public void should_store_items_and_pagination_info_when_index_page()
     {
         // given
         var items = new[] { "a", "b", "c" };
@@ -25,7 +25,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_calculate_total_pages()
+    public void should_calculate_total_pages_when_index_page()
     {
         // when
         var page = new IndexPage<int>([1, 2, 3], index: 0, size: 10, totalItems: 100);
@@ -35,7 +35,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_calculate_total_pages_with_remainder()
+    public void should_calculate_total_pages_with_remainder_when_index_page()
     {
         // when
         var page = new IndexPage<int>([1, 2, 3], index: 0, size: 10, totalItems: 95);
@@ -45,7 +45,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_return_zero_total_pages_when_no_items()
+    public void should_return_zero_total_pages_when_index_page_no_items()
     {
         // when
         var page = new IndexPage<int>([], index: 0, size: 10, totalItems: 0);
@@ -55,7 +55,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_return_zero_total_pages_when_size_is_zero()
+    public void should_return_zero_total_pages_when_index_page_size_is_zero()
     {
         // when
         var page = new IndexPage<int>([1, 2], index: 0, size: 0, totalItems: 10);
@@ -69,7 +69,7 @@ public sealed class PaginationTests
     #region IndexPage - HasPrevious & HasNext
 
     [Fact]
-    public void index_page_should_identify_has_previous_page()
+    public void should_identify_has_previous_page_when_index_page()
     {
         // when
         var firstPage = new IndexPage<int>([1], index: 0, size: 10, totalItems: 100);
@@ -81,7 +81,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_identify_has_next_page()
+    public void should_identify_has_next_page_when_index_page()
     {
         // given
         const int totalPages = 10; // 100 items / 10 per page
@@ -96,7 +96,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_handle_single_page()
+    public void should_handle_single_page_when_index_page()
     {
         // when
         var page = new IndexPage<int>([1, 2, 3], index: 0, size: 10, totalItems: 3);
@@ -108,7 +108,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_should_handle_empty_page()
+    public void should_handle_empty_page_when_index_page()
     {
         // when
         var page = new IndexPage<int>([], index: 0, size: 10, totalItems: 0);
@@ -124,7 +124,7 @@ public sealed class PaginationTests
     #region IndexPage - Select & Where
 
     [Fact]
-    public void index_page_select_should_transform_items()
+    public void should_transform_items_when_index_page_select()
     {
         // given
         var page = new IndexPage<int>([1, 2, 3], index: 0, size: 10, totalItems: 100);
@@ -140,7 +140,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void index_page_where_should_filter_items()
+    public void should_filter_items_when_index_page_where()
     {
         // given
         var page = new IndexPage<int>([1, 2, 3, 4, 5], index: 0, size: 10, totalItems: 100);
@@ -160,7 +160,7 @@ public sealed class PaginationTests
     #region ContinuationPage - Construction & Properties
 
     [Fact]
-    public void continuation_page_should_store_items_and_token()
+    public void should_store_items_and_token_when_continuation_page()
     {
         // given
         var items = new[] { "a", "b", "c" };
@@ -176,7 +176,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void continuation_page_should_expose_continuation_token()
+    public void should_expose_continuation_token_when_continuation_page()
     {
         // given
         const string token = "abc123";
@@ -189,7 +189,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void continuation_page_should_allow_null_token()
+    public void should_allow_null_token_when_continuation_page()
     {
         // when
         var page = new ContinuationPage<int>([1, 2], size: 10, continuationToken: null);
@@ -203,7 +203,7 @@ public sealed class PaginationTests
     #region ContinuationPage - HasNext
 
     [Fact]
-    public void continuation_page_should_have_no_next_when_token_is_null()
+    public void should_have_no_next_when_continuation_page_token_is_null()
     {
         // when
         var page = new ContinuationPage<int>([1], size: 10, continuationToken: null);
@@ -213,7 +213,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void continuation_page_should_have_next_when_token_exists()
+    public void should_have_next_when_continuation_page_token_exists()
     {
         // when
         var page = new ContinuationPage<int>([1], size: 10, continuationToken: "next");
@@ -227,7 +227,7 @@ public sealed class PaginationTests
     #region ContinuationPage - Select & Where
 
     [Fact]
-    public void continuation_page_select_should_transform_items()
+    public void should_transform_items_when_continuation_page_select()
     {
         // given
         var page = new ContinuationPage<int>([1, 2, 3], size: 10, continuationToken: "token");
@@ -242,7 +242,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void continuation_page_where_should_filter_items()
+    public void should_filter_items_when_continuation_page_where()
     {
         // given
         var page = new ContinuationPage<int>([1, 2, 3, 4, 5], size: 10, continuationToken: "token");
@@ -257,7 +257,7 @@ public sealed class PaginationTests
     }
 
     [Fact]
-    public void continuation_page_select_should_preserve_null_token()
+    public void should_preserve_null_token_when_continuation_page_select()
     {
         // given
         var page = new ContinuationPage<int>([1, 2], size: 10, continuationToken: null);

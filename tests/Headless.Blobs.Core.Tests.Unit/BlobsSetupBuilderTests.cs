@@ -93,7 +93,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_duplicate_names()
+    public void should_reject_duplicate_names_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -111,7 +111,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_whitespace_name()
+    public void should_reject_whitespace_name_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -127,7 +127,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_zero_providers()
+    public void should_reject_zero_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -140,7 +140,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_multiple_providers()
+    public void should_reject_multiple_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -163,7 +163,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public async Task named_extension_keyed_registration_should_be_reachable_via_blob_storage_provider()
+    public async Task should_be_reachable_via_blob_storage_provider_when_named_extension_keyed_registration()
     {
         // given
         var namedStorage = Substitute.For<IBlobStorage>();
@@ -189,7 +189,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public async Task blob_storage_provider_should_throw_for_unknown_name_and_return_null_from_or_null()
+    public async Task should_throw_for_unknown_name_and_return_null_from_or_null_when_blob_storage_provider()
     {
         // given
         var services = new ServiceCollection();
@@ -206,7 +206,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public async Task named_only_setup_should_not_register_default_blob_storage()
+    public async Task should_not_register_default_blob_storage_when_named_only_setup()
     {
         // given
         var namedStorage = Substitute.For<IBlobStorage>();
@@ -231,7 +231,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public void repeated_registration_should_not_mutate_the_service_collection_on_the_second_call()
+    public void should_not_mutate_the_service_collection_on_the_second_call_when_repeated_registration()
     {
         // given — a successful first registration
         var services = new ServiceCollection();
@@ -247,7 +247,7 @@ public sealed class BlobsSetupBuilderTests
     }
 
     [Fact]
-    public async Task blob_storage_provider_should_reject_empty_name()
+    public async Task should_reject_empty_name_when_blob_storage_provider()
     {
         // given
         var services = new ServiceCollection();

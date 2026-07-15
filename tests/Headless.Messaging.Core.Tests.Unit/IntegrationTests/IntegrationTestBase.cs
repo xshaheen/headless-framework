@@ -3,7 +3,6 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Tests.Helpers;
 
 namespace Tests.IntegrationTests;
 

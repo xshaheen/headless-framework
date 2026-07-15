@@ -9,7 +9,7 @@ namespace Tests;
 public sealed class DashboardOptionsTests : TestBase
 {
     [Fact]
-    public void default_auth_mode_should_be_None()
+    public void should_be_none_when_default_auth_mode()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder();
@@ -19,7 +19,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void BasePath_should_have_sensible_default()
+    public void should_have_sensible_default_when_base_path()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder();
@@ -29,7 +29,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void StatsPollingInterval_should_have_default_value()
+    public void should_have_default_value_when_stats_polling_interval()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder();
@@ -39,7 +39,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_custom_BasePath()
+    public void should_allow_custom_base_path()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().SetBasePath("/custom/dashboard");
@@ -49,7 +49,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_custom_StatsPollingInterval()
+    public void should_allow_custom_stats_polling_interval()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().SetStatsPollingInterval(5000);
@@ -59,7 +59,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithNoAuth_should_set_mode_to_None()
+    public void should_set_mode_to_none_when_with_no_auth()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithNoAuth();
@@ -70,7 +70,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithBasicAuth_should_set_mode_and_credentials()
+    public void should_set_mode_and_credentials_when_with_basic_auth()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithBasicAuth("admin", "password");
@@ -82,7 +82,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithApiKey_should_set_mode_and_key()
+    public void should_set_mode_and_key_when_with_api_key()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithApiKey("my-secret-key");
@@ -94,7 +94,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithHostAuthentication_should_set_mode_and_policy()
+    public void should_set_mode_and_policy_when_with_host_authentication()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("AdminOnly");
@@ -106,7 +106,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithHostAuthentication_without_policy_should_use_default()
+    public void should_use_default_when_with_host_authentication_without_policy()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication();
@@ -117,7 +117,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithCustomAuth_should_set_mode_and_validator()
+    public void should_set_mode_and_validator_when_with_custom_auth()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth(
@@ -131,7 +131,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void WithSessionTimeout_should_set_timeout()
+    public void should_set_timeout_when_with_session_timeout()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithSessionTimeout(30);
@@ -141,7 +141,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void fluent_api_should_be_chainable()
+    public void should_be_chainable_when_fluent_api()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder()
@@ -158,7 +158,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_throw_for_Basic_without_credentials()
+    public void should_throw_for_basic_without_credentials_when_validate()
     {
         // given
         var builder = new MessagingDashboardOptionsBuilder().WithBasicAuth("admin", "password");
@@ -172,7 +172,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_throw_for_ApiKey_without_key()
+    public void should_throw_for_api_key_without_key_when_validate()
     {
         // given
         var builder = new MessagingDashboardOptionsBuilder().WithApiKey("temp-key");
@@ -186,7 +186,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_throw_for_Custom_without_validator()
+    public void should_throw_for_custom_without_validator_when_validate()
     {
         // given
         var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth((_, _) => true);
@@ -200,7 +200,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_throw_when_no_auth_mode_configured()
+    public void should_throw_when_validate_no_auth_mode_configured()
     {
         // given — a builder where no WithXxx auth method (not even WithNoAuth) was ever called
         var builder = new MessagingDashboardOptionsBuilder();
@@ -213,7 +213,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_pass_when_explicitly_opting_out_with_WithNoAuth()
+    public void should_pass_when_validate_explicitly_opting_out_with_with_no_auth()
     {
         // given
         var builder = new MessagingDashboardOptionsBuilder().WithNoAuth();
@@ -226,7 +226,7 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void Validate_should_pass_for_properly_configured_BasicAuth()
+    public void should_pass_for_properly_configured_basic_auth_when_validate()
     {
         // given
         var builder = new MessagingDashboardOptionsBuilder().WithBasicAuth("admin", "password");

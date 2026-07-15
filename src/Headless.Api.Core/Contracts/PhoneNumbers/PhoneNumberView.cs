@@ -18,7 +18,10 @@ public sealed record PhoneNumberView(int Code, string Number)
     /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
     /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
-    public static PhoneNumberView? FromPhoneNumber(PhoneNumber? operand) => operand;
+    public static PhoneNumberView? FromPhoneNumber(PhoneNumber? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Implicitly converts a domain <see cref="PhoneNumber"/> to a <see cref="PhoneNumberView"/>.

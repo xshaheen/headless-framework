@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Abstractions;
+using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Microsoft.AspNetCore.Http;

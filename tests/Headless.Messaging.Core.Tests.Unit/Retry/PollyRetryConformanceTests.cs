@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,7 +16,7 @@ public sealed class PollyRetryConformanceTests : TestBase
     [InlineData(typeof(ArgumentException), false)]
     [InlineData(typeof(TimeoutException), true)]
     [InlineData(typeof(OperationCanceledException), false)]
-    public async Task should_route_failures_through_explicit_Polly_classification(
+    public async Task should_route_failures_through_explicit_polly_classification(
         Type exceptionType,
         bool expectedRetry
     )
@@ -55,7 +54,7 @@ public sealed class PollyRetryConformanceTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_Polly_exponential_delay_and_attempt_numbering()
+    public async Task should_use_polly_exponential_delay_and_attempt_numbering()
     {
         var delays = new List<TimeSpan>();
         var attempts = 0;
@@ -107,7 +106,7 @@ public sealed class PollyRetryConformanceTests : TestBase
             (_, _) =>
             {
                 Exception exception =
-                    attempts++ == 0 ? new TimeoutException("transient") : new ArgumentException("permanent");
+                    attempts++ == 0 ? new TimeoutException("transient") : new InvalidOperationException("permanent");
                 return Task.FromResult(MessagingRetryAttempt.Retryable(OperateResult.Failed(exception)));
             },
             static (_, _, _, _, _) => Task.FromResult(true),
@@ -121,11 +120,11 @@ public sealed class PollyRetryConformanceTests : TestBase
         );
 
         attempts.Should().Be(2);
-        stoppedException.Should().BeOfType<ArgumentException>();
+        stoppedException.Should().BeOfType<InvalidOperationException>();
     }
 
     [Fact]
-    public async Task should_not_notify_Polly_observer_when_durable_budget_stops_retry()
+    public async Task should_not_notify_polly_observer_when_durable_budget_stops_retry()
     {
         var observerCalls = 0;
         var pipeline = _Pipeline(
@@ -155,7 +154,7 @@ public sealed class PollyRetryConformanceTests : TestBase
     }
 
     [Fact]
-    public async Task should_force_exhaustion_when_Polly_predicate_throws()
+    public async Task should_force_exhaustion_when_polly_predicate_throws()
     {
         await _ShouldForceExhaustionAsync(
             new RetryStrategyOptions
@@ -168,7 +167,7 @@ public sealed class PollyRetryConformanceTests : TestBase
     }
 
     [Fact]
-    public async Task should_force_exhaustion_when_Polly_delay_generator_throws()
+    public async Task should_force_exhaustion_when_polly_delay_generator_throws()
     {
         await _ShouldForceExhaustionAsync(
             new RetryStrategyOptions
@@ -248,6 +247,8 @@ public sealed class PollyRetryConformanceTests : TestBase
         strategyFailed.Should().BeTrue();
     }
 
-    private static MessagingRetryPipeline _Pipeline(RetryStrategyOptions strategy) =>
-        new(new RetryPolicyOptions { RetryStrategy = strategy }, TimeProvider.System, NullLogger.Instance);
+    private static MessagingRetryPipeline _Pipeline(RetryStrategyOptions strategy)
+    {
+        return new(new RetryPolicyOptions { RetryStrategy = strategy }, TimeProvider.System, NullLogger.Instance);
+    }
 }

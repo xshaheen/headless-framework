@@ -1125,7 +1125,10 @@ public sealed partial class HybridCache
     private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
     private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
 
-    private static string _TagMarkerRecoveryKey(string tag) => $"\0hybrid-marker:tag:{tag}";
+    private static string _TagMarkerRecoveryKey(string tag)
+    {
+        return $"\0hybrid-marker:tag:{tag}";
+    }
 
     /// <summary>
     /// Applies a Family-2 marker bump (tag/clear/remove) to L2 as a best-effort operation: skipped when the

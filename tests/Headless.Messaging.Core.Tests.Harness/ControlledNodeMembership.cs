@@ -46,14 +46,22 @@ public sealed class ControlledNodeMembership : INodeMembership
     }
 
     /// <summary>Builds a snapshot entry for <paramref name="identity"/> in the given <paramref name="state"/>.</summary>
-    public static NodeLivenessSnapshot Snapshot(NodeIdentity identity, NodeLivenessState state) =>
-        new(identity, state, Role: null, Metadata: new Dictionary<string, string>(StringComparer.Ordinal));
+    public static NodeLivenessSnapshot Snapshot(NodeIdentity identity, NodeLivenessState state)
+    {
+        return new(identity, state, Role: null, Metadata: new Dictionary<string, string>(StringComparer.Ordinal));
+    }
 
     /// <summary>Pushes a <see cref="NodeLeft"/> event onto the watch stream (best-effort acceleration path).</summary>
-    public void EmitNodeLeft(NodeIdentity identity) => _events.Writer.TryWrite(new NodeLeft(identity));
+    public void EmitNodeLeft(NodeIdentity identity)
+    {
+        _events.Writer.TryWrite(new NodeLeft(identity));
+    }
 
     /// <summary>Pushes any membership event onto the watch stream.</summary>
-    public void Emit(NodeMembershipEvent membershipEvent) => _events.Writer.TryWrite(membershipEvent);
+    public void Emit(NodeMembershipEvent membershipEvent)
+    {
+        _events.Writer.TryWrite(membershipEvent);
+    }
 
     public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
     {

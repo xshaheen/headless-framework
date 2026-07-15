@@ -535,8 +535,10 @@ public sealed partial class FactoryCacheCoordinator(
     // A fail-safe stale candidate must carry a non-null physical expiration. A genuine fail-safe reserve
     // always has one (the coordinator writes it); requiring it here closes the throttle hole where a
     // null-physical entry would be served as stale without a throttle write, hammering the factory.
-    private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now) =>
-        entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
+    private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now)
+    {
+        return entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
+    }
 
     // Serve-stale-immediately: with fail-safe enabled and a usable stale reserve, an entry flagged
     // ServeStaleImmediately is returned without contending for the factory lock. Deduped across the three
@@ -545,7 +547,10 @@ public sealed partial class FactoryCacheCoordinator(
         CacheEntryOptions options,
         CacheStoreEntry<T> entry,
         DateTime now
-    ) => entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now);
+    )
+    {
+        return entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now);
+    }
 
     // Soft timeout governs the waiter wait only when a stale reserve can be served on elapse; otherwise the
     // waiter is bounded by LockTimeout (default Timeout.InfiniteTimeSpan), and on elapse with no stale reserve
@@ -555,12 +560,15 @@ public sealed partial class FactoryCacheCoordinator(
         CacheEntryOptions options,
         CacheStoreEntry<T> staleCandidate,
         DateTime now
-    ) =>
-        options.IsFailSafeEnabled
-        && _IsStaleCandidate(staleCandidate, now)
-        && options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
+    )
+    {
+        return
+            options.IsFailSafeEnabled
+            && _IsStaleCandidate(staleCandidate, now)
+            && options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
             ? options.FactorySoftTimeout
             : options.LockTimeout;
+    }
 
     private FactoryTimeoutSelection _SelectFactoryTimeout<T>(
         CacheEntryOptions options,
@@ -747,19 +755,27 @@ public sealed partial class FactoryCacheCoordinator(
             && operationCanceled.CancellationToken == cancellationToken;
     }
 
-    private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+    private DateTime _GetUtcNow()
+    {
+        return _timeProvider.GetUtcNow().UtcDateTime;
+    }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
     // Keep the structured TimeoutKind log value consistent (kebab/lower) with the other LogCacheFactoryTimedOut
     // call sites (lock-soft, lock-timeout, background-ceiling) so log-based monitoring can match on one shape.
-    private static string _TimeoutKindLabel(FactoryTimeoutKind kind) =>
-        kind switch
+    private static string _TimeoutKindLabel(FactoryTimeoutKind kind)
+    {
+        return kind switch
         {
             FactoryTimeoutKind.Soft => "soft",
             FactoryTimeoutKind.Hard => "hard",
             _ => "none",
         };
+    }
 
     // Attach a fault-only observer to a detached task (an abandoned factory or a background completion) so its
     // exception is logged rather than lost. Task<T?> upcasts to Task, so both call shapes share this one observer.
@@ -800,7 +816,10 @@ public sealed partial class FactoryCacheCoordinator(
 
     // The validation rules live in CacheEntryStamps so the coordinator and the providers' direct
     // options-based upserts always agree; keep this thin wrapper for call-site brevity.
-    private static void _ValidateOptions(CacheEntryOptions options) => CacheEntryStamps.ValidateOptions(options);
+    private static void _ValidateOptions(CacheEntryOptions options)
+    {
+        CacheEntryStamps.ValidateOptions(options);
+    }
 
     private enum FactoryTimeoutKind
     {
@@ -840,13 +859,18 @@ public sealed partial class FactoryCacheCoordinator(
         [MemberNotNullWhen(true, nameof(RunningTask), nameof(InternalCancellationTokenSource))]
         public bool IsSoftTimeout => InternalCancellationTokenSource is not null;
 
-        public static FactoryRunResult<T> Completed(T? value) =>
-            new(value, runningTask: null, internalCancellationTokenSource: null);
+        public static FactoryRunResult<T> Completed(T? value)
+        {
+            return new(value, runningTask: null, internalCancellationTokenSource: null);
+        }
 
         public static FactoryRunResult<T> TimedOut(
             Task<T?> runningTask,
             CancellationTokenSource? internalCancellationTokenSource
-        ) => new(value: default, runningTask, internalCancellationTokenSource);
+        )
+        {
+            return new(value: default, runningTask, internalCancellationTokenSource);
+        }
     }
 
     // Wraps a simple Func<CancellationToken, ValueTask<T?>> so the simple GetOrAddAsync overload can form a
@@ -858,7 +882,10 @@ public sealed partial class FactoryCacheCoordinator(
         public async ValueTask<CacheFactoryResult<T>> InvokeAsync(
             CacheFactoryContext<T> context,
             CancellationToken cancellationToken
-        ) => context.Modified(await factory(cancellationToken).ConfigureAwait(false));
+        )
+        {
+            return context.Modified(await factory(cancellationToken).ConfigureAwait(false));
+        }
     }
 }
 

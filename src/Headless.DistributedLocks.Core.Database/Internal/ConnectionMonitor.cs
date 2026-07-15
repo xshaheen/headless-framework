@@ -275,13 +275,19 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     /// (a stop represents clean teardown, not connection loss). Only valid for internally-owned connections.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection or when the monitor is already disposed.</exception>
-    public ValueTask StopAsync() => _StopOrDisposeAsync(isDispose: false);
+    public ValueTask StopAsync()
+    {
+        return _StopOrDisposeAsync(isDispose: false);
+    }
 
     /// <summary>
     /// Stops the background worker, unregisters the state-change handler, disposes internal resources,
     /// and waits for the worker to drain. Monitoring handles are closed without cancellation.
     /// </summary>
-    public ValueTask DisposeAsync() => _StopOrDisposeAsync(isDispose: true);
+    public ValueTask DisposeAsync()
+    {
+        return _StopOrDisposeAsync(isDispose: true);
+    }
 
     private async ValueTask _StopOrDisposeAsync(bool isDispose)
     {

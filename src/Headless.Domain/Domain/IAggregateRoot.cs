@@ -26,32 +26,54 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <summary>Appends an integration event to the pending outbox for this aggregate.</summary>
     /// <remarks>Call from the aggregate's own behavior methods to raise integration events.</remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
-    protected void AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
+    protected void AddIntegrationEvent(IIntegrationEvent integrationEvent)
+    {
         (_integrationEvents ??= []).Add(integrationEvent);
+    }
 
     /// <summary>Discards all pending integration events without dispatching them.</summary>
-    public void ClearIntegrationEvents() => _integrationEvents?.Clear();
+    public void ClearIntegrationEvents()
+    {
+        _integrationEvents?.Clear();
+    }
 
     /// <summary>Returns the current list of pending integration events.</summary>
     /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
-    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents() => _integrationEvents ?? [];
+    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents()
+    {
+        return _integrationEvents ?? [];
+    }
 
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
     /// <remarks>Call from the aggregate's own behavior methods to raise domain events.</remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
-    protected void AddDomainEvent(IDomainEvent domainEvent) => (_domainEvents ??= []).Add(domainEvent);
+    protected void AddDomainEvent(IDomainEvent domainEvent)
+    {
+        (_domainEvents ??= []).Add(domainEvent);
+    }
 
     /// <summary>Returns the current list of pending domain events.</summary>
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
-    public IReadOnlyList<IDomainEvent> GetDomainEvents() => _domainEvents ?? [];
+    public IReadOnlyList<IDomainEvent> GetDomainEvents()
+    {
+        return _domainEvents ?? [];
+    }
 
     /// <summary>Discards all pending domain events without dispatching them.</summary>
-    public void ClearDomainEvents() => _domainEvents?.Clear();
+    public void ClearDomainEvents()
+    {
+        _domainEvents?.Clear();
+    }
 
     /// <inheritdoc/>
-    void IIntegrationEventEmitter.AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
+    void IIntegrationEventEmitter.AddIntegrationEvent(IIntegrationEvent integrationEvent)
+    {
         AddIntegrationEvent(integrationEvent);
+    }
 
     /// <inheritdoc/>
-    void IDomainEventEmitter.AddDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+    void IDomainEventEmitter.AddDomainEvent(IDomainEvent domainEvent)
+    {
+        AddDomainEvent(domainEvent);
+    }
 }

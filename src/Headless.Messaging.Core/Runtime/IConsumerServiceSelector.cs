@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Messages;
-using JetBrains.Annotations;
 
 namespace Headless.Messaging.Runtime;
 
