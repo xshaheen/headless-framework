@@ -592,6 +592,9 @@ internal sealed class SubscribeExecutor(
                 e.ReThrow();
             }
 
+            // A genuine cancellation (caller/shutdown token) propagates; stop the span un-errored so it is
+            // exported rather than leaked into Activity.Current.
+            traceHandle.Activity?.Dispose();
             throw;
         }
         catch (Exception ex)

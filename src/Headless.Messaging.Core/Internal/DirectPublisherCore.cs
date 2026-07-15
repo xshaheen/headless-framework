@@ -44,6 +44,9 @@ internal static class DirectPublisherCore
         }
         catch (OperationCanceledException)
         {
+            // Cancellation is not a send failure: stop (export) the span without an error status so the
+            // started activity never leaks into Activity.Current past this frame.
+            traceHandle.Activity?.Dispose();
             throw;
         }
         catch (Exception e) when (e is not PublisherSentFailedException)

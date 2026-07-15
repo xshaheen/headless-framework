@@ -477,7 +477,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.Core` — Reliable distributed job scheduling (cron, delayed execution, monitoring).
 - `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[JobFunction]`-marked methods.
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
-- `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
 - `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
 - `Headless.Jobs.EntityFramework.PostgreSql` — PostgreSQL atomic claims using `FOR UPDATE SKIP LOCKED`.
 - `Headless.Jobs.EntityFramework.SqlServer` — SQL Server atomic claims using `UPDLOCK`, `READPAST`, and `ROWLOCK`.

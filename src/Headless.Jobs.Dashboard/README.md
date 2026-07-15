@@ -13,7 +13,7 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
-- **Pair with OpenTelemetry**: Dashboard for operational triage; `Headless.Jobs.OpenTelemetry` for trace-level diagnostics.
+- **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation in `Headless.Jobs.Core` (`AddOpenTelemetryInstrumentation()` + `AddJobsInstrumentation()`) for trace-level diagnostics.
 
 ## Design Notes
 

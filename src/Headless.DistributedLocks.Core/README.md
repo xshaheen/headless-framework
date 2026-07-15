@@ -81,6 +81,10 @@ await using var lease = await lockProvider.AcquireAsync(
 );
 ```
 
+## Observability
+
+Emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (both `Meter` and `ActivitySource`), exposed as `DistributedLocksDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddDistributedLocksInstrumentation()` / `MeterProviderBuilder.AddDistributedLocksInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Instruments: `headless.lock.failed` / `headless.semaphore.failed` (counters carrying the namespaced `headless.lock.reason` / `headless.semaphore.reason` dimension — **renamed from the former bare `reason`; update dashboards and alerts**) and `headless.lock.wait.time` / `headless.semaphore.wait.time` (histograms, ms). See [docs/llms/distributed-locks.md](../../docs/llms/distributed-locks.md) for dimension values and alerting guidance.
+
 ## Dependencies
 
 - `Headless.DistributedLocks.Abstractions`

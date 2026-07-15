@@ -1104,6 +1104,26 @@ builder
     .WithMetrics(metrics => metrics.AddMessagingInstrumentation());
 ```
 
+### Instrument reference
+
+All instruments register on the `Headless.Messaging` meter. Names and standard dimensions follow the OTel messaging semantic conventions; span attributes specific to the framework are namespaced `headless.messaging.*`.
+
+| Instrument | Kind | Dimensions |
+| --- | --- | --- |
+| `messaging.publish.messages` | Counter | `messaging.operation`, `messaging.system` |
+| `messaging.publish.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type` |
+| `messaging.publish.duration` | Histogram (ms) | `messaging.operation`, `messaging.system` |
+| `messaging.consume.messages` | Counter | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
+| `messaging.consume.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type`, `messaging.consumer.group` |
+| `messaging.consume.duration` | Histogram (ms) | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
+| `messaging.subscriber.invocations` | Counter | `messaging.subscriber`, `messaging.operation` |
+| `messaging.subscriber.errors` | Counter | `messaging.subscriber`, `messaging.operation`, `error.type` |
+| `messaging.subscriber.duration` | Histogram (ms) | `messaging.subscriber`, `messaging.operation` |
+| `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
+| `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
+
+Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headless.messaging.tenant_id` (suppressible), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
+
 ## Headless.Messaging.Aws
 
 ### Problem Solved

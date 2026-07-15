@@ -294,6 +294,13 @@ public sealed partial class FactoryCacheCoordinator(
                     _RecordFailSafe(activity, CachingMetrics.TriggerLockAcquireFailed);
                     return _ToCacheValue(staleCandidate, isStale: true);
                 }
+                catch
+                {
+                    // Caller cancellation bypasses the filtered catch above (KTD-7: it must propagate untouched);
+                    // still dispose the span so it is exported and Activity.Current is restored for the caller.
+                    lockActivity?.Dispose();
+                    throw;
+                }
 
                 lockActivity?.Dispose();
 
@@ -382,6 +389,13 @@ public sealed partial class FactoryCacheCoordinator(
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
                 _RecordFailSafe(activity, CachingMetrics.TriggerFactoryError);
                 return _ToCacheValue(staleCandidate, isStale: true);
+            }
+            catch
+            {
+                // Caller cancellation bypasses the filtered catch above (KTD-7: it must propagate untouched);
+                // still dispose the span so it is exported and Activity.Current is restored for the caller.
+                factoryActivity?.Dispose();
+                throw;
             }
 
             if (factoryResult.IsTimedOut)

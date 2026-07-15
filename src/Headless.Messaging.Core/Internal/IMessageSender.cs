@@ -149,7 +149,26 @@ internal sealed class MessageSender : IMessageSender
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
-        var result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+        OperateResult result;
+
+        try
+        {
+            result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Publish timeout / shutdown: stop (export) the span without an error status; the retry
+            // machinery above owns the failure classification. Rethrow unchanged.
+            traceHandle.Activity?.Dispose();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // A throwing send must stop the span and record messaging.publish.errors exactly like the
+            // failed-OperateResult path below; the exception then propagates unchanged.
+            _TracingError(traceHandle, transportMsg, brokerAddress, OperateResult.Failed(ex));
+            throw;
+        }
 
         if (result.Succeeded)
         {

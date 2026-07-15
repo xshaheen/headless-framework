@@ -169,21 +169,39 @@ public sealed class MessagingTelemetryTests : TestBase
         using var listener = _StartActivityListener([]);
         var telemetry = MessagingTelemetry.Default;
 
-        var message = _CreateTransportMessage("orders.placed");
-        var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
-        publish.Should().NotBeNull();
+        try
+        {
+            // Ambient baggage present at publish time must survive the header round-trip (AE2).
+            Baggage.Current = Baggage.Create(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["tenant"] = "t-42" }
+            );
 
-        // The publish span injected a W3C traceparent into the outgoing headers.
-        message.Headers.Should().ContainKey("traceparent");
-        message.Headers["traceparent"].Should().Contain(publish!.TraceId.ToHexString());
+            var message = _CreateTransportMessage("orders.placed");
+            var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+            publish.Should().NotBeNull();
 
-        MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 120);
+            // The publish span injected a W3C traceparent into the outgoing headers.
+            message.Headers.Should().ContainKey("traceparent");
+            message.Headers["traceparent"].Should().Contain(publish!.TraceId.ToHexString());
+            message.Headers.Should().ContainKey("baggage");
 
-        // A consumer reading those headers continues the publish trace.
-        var consume = telemetry.ConsumeStart(message, IntentType.Bus, _Broker, 200);
-        consume.Should().NotBeNull();
-        consume!.TraceId.Should().Be(publish.TraceId);
-        consume.ParentSpanId.Should().Be(publish.SpanId);
+            MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 120);
+
+            // Simulate the consume side arriving with no ambient baggage of its own.
+            Baggage.Current = default;
+
+            // A consumer reading those headers continues the publish trace with baggage intact.
+            var consume = telemetry.ConsumeStart(message, IntentType.Bus, _Broker, 200);
+            consume.Should().NotBeNull();
+            consume!.TraceId.Should().Be(publish.TraceId);
+            consume.ParentSpanId.Should().Be(publish.SpanId);
+            Baggage.Current.GetBaggage("tenant").Should().Be("t-42");
+        }
+        finally
+        {
+            // AsyncLocal hygiene: never leak baggage into parallel tests.
+            Baggage.Current = default;
+        }
     }
 
     // AE3 (R7): a custom enricher's tag is present even when the span ends immediately (sync at start).
