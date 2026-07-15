@@ -130,9 +130,9 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         public long Count(string instrumentName, params (string Key, string Value)[] requiredTags)
         {
             return _measurements
-                .Where(m => string.Equals(m.Name, instrumentName, StringComparison.Ordinal))
                 .Where(m =>
-                    requiredTags.All(rt =>
+                    string.Equals(m.Name, instrumentName, StringComparison.Ordinal)
+                    && requiredTags.All(rt =>
                         m.Tags.Any(t =>
                             string.Equals(t.Key, rt.Key, StringComparison.Ordinal)
                             && string.Equals(t.Value as string, rt.Value, StringComparison.Ordinal)

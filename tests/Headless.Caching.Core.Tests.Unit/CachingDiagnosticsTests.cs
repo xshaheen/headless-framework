@@ -250,7 +250,7 @@ public sealed class CachingDiagnosticsTests : TestBase
             {
                 ShouldListenTo = source =>
                     string.Equals(source.Name, CachingDiagnostics.SourceName, StringComparison.Ordinal),
-                Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                Sample = static (ref _) => ActivitySamplingResult.AllData,
                 ActivityStopped = _activities.Add,
             };
 
@@ -301,9 +301,9 @@ public sealed class CachingDiagnosticsTests : TestBase
         public long Count(string instrumentName, params (string Key, string Value)[] requiredTags)
         {
             return _measurements
-                .Where(m => string.Equals(m.Name, instrumentName, StringComparison.Ordinal))
                 .Where(m =>
-                    requiredTags.All(rt =>
+                    string.Equals(m.Name, instrumentName, StringComparison.Ordinal)
+                    && requiredTags.All(rt =>
                         m.Tags.Any(t =>
                             string.Equals(t.Key, rt.Key, StringComparison.Ordinal)
                             && string.Equals(t.Value as string, rt.Value, StringComparison.Ordinal)

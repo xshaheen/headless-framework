@@ -8,7 +8,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
-namespace Tests;
+namespace Tests.Diagnostics;
 
 /// <summary>
 /// Tests for the messaging instrumentation registration surface: built-in enrichers, the
@@ -24,7 +24,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     [Fact]
     public void should_tag_bus_intent_when_intent_enricher()
     {
-        var activity = new Activity("test");
+        using var activity = new Activity("test");
 
         new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { IntentType = IntentType.Bus });
 
@@ -35,7 +35,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     [Fact]
     public void should_tag_queue_intent_when_intent_enricher()
     {
-        var activity = new Activity("test");
+        using var activity = new Activity("test");
 
         new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { IntentType = IntentType.Queue });
 
@@ -46,11 +46,11 @@ public sealed class MessagingInstrumentationTests : TestBase
     [Fact]
     public void should_tag_tenant_when_present_and_skip_when_absent()
     {
-        var withTenant = new Activity("with");
+        using var withTenant = new Activity("with");
         new TenantIdTagEnricher().Enrich(withTenant, new MessagingEnrichmentContext { TenantId = "tenant-9" });
         withTenant.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-9");
 
-        var withoutTenant = new Activity("without");
+        using var withoutTenant = new Activity("without");
         new TenantIdTagEnricher().Enrich(withoutTenant, new MessagingEnrichmentContext { TenantId = null });
         withoutTenant.GetTagItem(MessagingTags.TenantId).Should().BeNull();
     }
@@ -58,11 +58,11 @@ public sealed class MessagingInstrumentationTests : TestBase
     [Fact]
     public void should_tag_retry_count_when_positive_and_skip_when_zero()
     {
-        var withRetry = new Activity("with");
+        using var withRetry = new Activity("with");
         new RetryCountTagEnricher().Enrich(withRetry, new MessagingEnrichmentContext { RetryCount = 4 });
         withRetry.GetTagItem(MessagingTags.RetryCount).Should().Be(4);
 
-        var noRetry = new Activity("without");
+        using var noRetry = new Activity("without");
         new RetryCountTagEnricher().Enrich(noRetry, new MessagingEnrichmentContext { RetryCount = 0 });
         noRetry.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
     }

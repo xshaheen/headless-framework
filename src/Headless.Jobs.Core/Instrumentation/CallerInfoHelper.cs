@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 
-namespace Headless.Jobs;
+namespace Headless.Jobs.Instrumentation;
 
 internal static class CallerInfoHelper
 {

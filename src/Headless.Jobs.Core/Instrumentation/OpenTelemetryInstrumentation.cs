@@ -2,12 +2,11 @@
 
 using System.Diagnostics;
 using Headless.Jobs.Enums;
-using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Jobs;
+namespace Headless.Jobs.Instrumentation;
 
 internal sealed class OpenTelemetryInstrumentation(
     ILogger<OpenTelemetryInstrumentation> logger,

@@ -619,7 +619,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             ShouldListenTo = source =>
                 string.Equals(source.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal),
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStarted = captured.Add,
         };
 

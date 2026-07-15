@@ -9,7 +9,7 @@ namespace OpenTelemetry.Trace;
 /// <summary>
 /// OpenTelemetry tracing registration for the distributed-locks subsystem. Lives in the
 /// <c>OpenTelemetry.Trace</c> namespace so it surfaces next to the provider builder without an
-/// extra <c>using</c>; only <c>OpenTelemetry.Api</c> surface is used (no SDK dependency).
+/// extra <c>using Headless.DistributedLocks</c> import; only <c>OpenTelemetry.Api</c> surface is used (no SDK dependency).
 /// </summary>
 [PublicAPI]
 public static class HeadlessDistributedLocksTracingExtensions

@@ -10,7 +10,7 @@ using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
-namespace Tests;
+namespace Tests.Diagnostics;
 
 /// <summary>
 /// Parity + behavior tests for the native <see cref="MessagingTelemetry"/> emitter that replaced the former
@@ -143,16 +143,16 @@ public sealed class MessagingTelemetryTests : TestBase
                 "messaging.subscriber.errors",
             ]);
 
-        var publishCounter = measurements.First(m =>
+        var (_, publishTagKeys) = measurements.First(m =>
             string.Equals(m.Name, "messaging.publish.messages", StringComparison.Ordinal)
         );
-        publishCounter.TagKeys.Should().Contain(["messaging.operation", "messaging.system"]);
+        publishTagKeys.Should().Contain(["messaging.operation", "messaging.system"]);
 
-        var consumeError = measurements.First(m =>
+        var (_, consumeErrorTagKeys) = measurements.First(m =>
             string.Equals(m.Name, "messaging.consume.errors", StringComparison.Ordinal)
         );
-        consumeError
-            .TagKeys.Should()
+        consumeErrorTagKeys
+            .Should()
             .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group"]);
     }
 
@@ -239,7 +239,7 @@ public sealed class MessagingTelemetryTests : TestBase
         {
             ShouldListenTo = source =>
                 string.Equals(source.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal),
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStarted = captured.Add,
         };
 
@@ -286,7 +286,7 @@ public sealed class MessagingTelemetryTests : TestBase
 
     private static string[] _TagKeys(Activity activity)
     {
-        return activity.TagObjects.Select(t => t.Key).ToArray();
+        return [.. activity.TagObjects.Select(t => t.Key)];
     }
 
     private static TransportMessage _CreateTransportMessage(
