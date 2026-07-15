@@ -65,7 +65,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (_timeJobs.TryGetValue(timeJob.Id, out var existingTicker))
             {
                 // Check if we can update (similar to optimistic concurrency)
-                if (existingTicker.UpdatedAt == timeJob.UpdatedAt)
+                if (existingTicker.UpdatedAt == timeJob.UpdatedAt && _CanAcquire(existingTicker))
                 {
                     // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
@@ -271,6 +271,132 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         return Task.FromResult(Array.Empty<byte>());
     }
+
+    public Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        while (true)
+        {
+            if (!_timeJobs.TryGetValue(jobId, out var job))
+            {
+                return Task.FromResult(false);
+            }
+
+            if (job.CancelRequested || job.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+            {
+                return Task.FromResult(false);
+            }
+
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var updated = _CloneTicker(job);
+            updated.CancelRequested = true;
+            updated.UpdatedAt = now;
+
+            if (job.Status == JobStatus.Idle)
+            {
+                updated.Status = JobStatus.Cancelled;
+                updated.ExecutedAt = now;
+                updated.OwnerId = null;
+                updated.LockedUntil = null;
+            }
+
+            if (!_timeJobs.TryUpdate(jobId, updated, job))
+            {
+                continue;
+            }
+
+            if (job.Status == JobStatus.Idle)
+            {
+                _ApplyCancelledParentRunConditions(jobId, now);
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_timeJobs.TryGetValue(jobId, out var job) || !_IsOwnedRunning(job.OwnerId, job.Status))
+        {
+            return Task.FromResult<bool?>(null);
+        }
+
+        return Task.FromResult<bool?>(job.CancelRequested);
+    }
+
+    private void _ApplyCancelledParentRunConditions(Guid parentId, DateTime now)
+    {
+        foreach (var childId in _GetChildrenIds(parentId))
+        {
+            while (_timeJobs.TryGetValue(childId, out var child))
+            {
+                if (child.Status != JobStatus.Idle || child.ExecutionTime is not null)
+                {
+                    break;
+                }
+
+                if (_RunsAfterCancelled(child.RunCondition))
+                {
+                    var released = _CloneTicker(child);
+                    released.ExecutionTime = now;
+                    released.OwnerId = null;
+                    released.LockedUntil = null;
+                    released.UpdatedAt = now;
+                    if (!_timeJobs.TryUpdate(childId, released, child))
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
+
+                _SkipRejectedBranch(
+                    childId,
+                    now,
+                    "Parent cancellation did not satisfy the job run condition.",
+                    requireUnscheduled: true
+                );
+                break;
+            }
+        }
+    }
+
+    private void _SkipRejectedBranch(Guid jobId, DateTime now, string reason, bool requireUnscheduled = false)
+    {
+        while (_timeJobs.TryGetValue(jobId, out var job))
+        {
+            if (job.Status != JobStatus.Idle || (requireUnscheduled && job.ExecutionTime is not null))
+            {
+                return;
+            }
+
+            var skipped = _CloneTicker(job);
+            skipped.Status = JobStatus.Skipped;
+            skipped.ExecutedAt = now;
+            skipped.OwnerId = null;
+            skipped.LockedUntil = null;
+            skipped.SkippedReason = reason;
+            skipped.UpdatedAt = now;
+            if (_timeJobs.TryUpdate(jobId, skipped, job))
+            {
+                break;
+            }
+        }
+
+        foreach (var childId in _GetChildrenIds(jobId))
+        {
+            _SkipRejectedBranch(childId, now, "Ancestor job was skipped after parent cancellation.");
+        }
+    }
+
+    private static bool _RunsAfterCancelled(RunCondition? runCondition) =>
+        runCondition
+            is RunCondition.OnCancelled
+                or RunCondition.OnFailureOrCancelled
+                or RunCondition.OnAnyCompletedStatus;
 
     public Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
@@ -1707,6 +1833,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             RetryIntervals = job.RetryIntervals,
             RunCondition = job.RunCondition,
             ExecutedAt = job.ExecutedAt,
+            CancelRequested = job.CancelRequested,
             CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
             Description = job.Description,

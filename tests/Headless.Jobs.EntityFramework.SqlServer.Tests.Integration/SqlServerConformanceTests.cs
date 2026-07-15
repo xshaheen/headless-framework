@@ -8,6 +8,14 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     : JobsCoordinationConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
 {
     [Fact]
+    public override Task time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state() =>
+        base.time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state();
+
+    [Fact]
+    public override Task idle_parent_cancellation_applies_terminal_run_conditions_in_one_transaction() =>
+        base.idle_parent_cancellation_applies_terminal_run_conditions_in_one_transaction();
+
+    [Fact]
     public override Task queued_job_is_stamped_with_the_node_incarnation_owner() =>
         base.queued_job_is_stamped_with_the_node_incarnation_owner();
 

@@ -171,10 +171,7 @@ internal static class DashboardEndpoints
             .WithSummary("Delete cron job occurrence");
 
         // Job operations
-        apiGroup
-            .MapPost("/job/cancel", _CancelJob<TTimeJob, TCronJob>)
-            .WithName("CancelJob")
-            .WithSummary("Cancel job by ID");
+        apiGroup.MapPost("/job/cancel", CancelJobAsync).WithName("CancelJob").WithSummary("Cancel job by ID");
 
         // Literal "id" segment (not a route parameter): the SPA calls "job-request/id" and supplies
         // jobId + jobType via query string, which _GetJobRequest binds. Avoids a dead {id} route token.
@@ -743,14 +740,13 @@ internal static class DashboardEndpoints
         return Results.Ok();
     }
 
-    private static IResult _CancelJob<TTimeJob, TCronJob>(
+    internal static async Task<IResult> CancelJobAsync(
         Guid id,
-        IJobsDashboardRepository<TTimeJob, TCronJob> repository
+        IJobScheduler scheduler,
+        CancellationToken cancellationToken
     )
-        where TTimeJob : TimeJobEntity<TTimeJob>, new()
-        where TCronJob : CronJobEntity, new()
     {
-        if (repository.CancelJobById(id))
+        if (await scheduler.CancelAsync(id, cancellationToken).ConfigureAwait(false))
         {
             return Results.Ok();
         }

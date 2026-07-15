@@ -5,6 +5,10 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference
+      Include="..\..\test-assets\Headless.Jobs.CancellationProcessFixture\Headless.Jobs.CancellationProcessFixture.csproj"
+      ReferenceOutputAssembly="false"
+    />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
@@ -22,4 +26,16 @@
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.Jobs.EntityFramework.Tests.Harness\Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
   </ItemGroup>
+  <Target Name="CopyJobsCancellationProcessFixture" AfterTargets="Build">
+    <ItemGroup>
+      <JobsCancellationProcessFixtureFiles
+        Include="..\..\test-assets\Headless.Jobs.CancellationProcessFixture\bin\$(Configuration)\net10.0\*"
+      />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(JobsCancellationProcessFixtureFiles)"
+      DestinationFolder="$(OutDir)fixtures"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
 </Project>

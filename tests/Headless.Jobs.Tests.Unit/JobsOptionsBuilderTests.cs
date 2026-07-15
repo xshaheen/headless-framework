@@ -222,6 +222,36 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void CancellationObservationInterval_defaults_to_the_effective_lease_renewal_interval()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(3),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(45),
+        };
+
+        schedulerOptions.ResolveCancellationObservationInterval().Should().Be(TimeSpan.FromSeconds(45));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(301)]
+    public void AddHeadlessJobs_rejects_an_invalid_CancellationObservationInterval(int seconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.CancellationObservationInterval = TimeSpan.FromSeconds(seconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void Default_PostCommitDrainTimeout_Is_30_Seconds()
     {
         var schedulerOptions = new SchedulerOptionsBuilder();

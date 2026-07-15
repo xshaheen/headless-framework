@@ -31,6 +31,13 @@ internal interface IInternalJobManager
     /// membership is not currently established (#461) and the caller should skip the tick rather than cancel.
     /// </summary>
     Task<int> RenewLeaseAsync(JobExecutionState context, CancellationToken cancellationToken = default);
+
+    /// <summary>Requests the durable time-job cancellation transition and publishes its post-commit side effects.</summary>
+    Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads the durable cancellation flag through the provider's current owner/status fence.</summary>
+    Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
+
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
     Task MigrateDefinedCronJobs((string, string)[] cronExpressions, CancellationToken cancellationToken = default);

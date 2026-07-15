@@ -18,6 +18,8 @@ public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.Defa
 
         builder.Property(x => x.ExecutionTime).IsRequired(false);
 
+        builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(false);
+
         // Persist enums by name (not ordinal) so the stored value is stable and self-describing, and reordering
         // an enum never silently remaps existing rows. Matches Headless.Messaging's StatusName-as-string storage.
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);

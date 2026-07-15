@@ -66,6 +66,7 @@ public static class SetupJobs
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
+        _ = schedulerOptionsBuilder.ResolveCancellationObservationInterval();
         Ensure.True(
             schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
             "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
@@ -136,6 +137,7 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
+            services.AddSingleton<JobsExecutionCancellationRegistry>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();
             services.AddSingleton(sp =>
             {

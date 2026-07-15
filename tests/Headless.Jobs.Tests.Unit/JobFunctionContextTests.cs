@@ -1,9 +1,11 @@
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class JobFunctionContextTests
+public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
 {
     [Fact]
     public void GenericContext_Preserves_ScheduledFor_From_Base_Context()
@@ -20,7 +22,6 @@ public sealed class JobFunctionContextTests
             ScheduledFor = scheduledFor,
             FunctionName = "TestFunction",
             CronOccurrenceOperations = new CronOccurrenceOperations { SkipIfAlreadyRunningAction = () => { } },
-            RequestCancelOperationAction = () => { },
         };
 
         var request = new TestRequest { Value = 42 };
@@ -36,18 +37,29 @@ public sealed class JobFunctionContextTests
         genericContext.ScheduledFor.Should().Be(baseContext.ScheduledFor);
         genericContext.FunctionName.Should().Be(baseContext.FunctionName);
         genericContext.CronOccurrenceOperations.Should().BeSameAs(baseContext.CronOccurrenceOperations);
-        genericContext.RequestCancelOperationAction.Should().BeSameAs(baseContext.RequestCancelOperationAction);
         genericContext.Request.Should().Be(request);
     }
 
     [Fact]
-    public void RequestCancellation_Invokes_Underlying_Action()
+    public async Task RequestCancellationAsync_routes_the_time_job_id_through_the_scoped_scheduler()
     {
-        // This test is intentionally left empty because RequestCancelOperationAction
-        // is an internal delegate that is only set by the runtime scheduler pipeline.
-        // Verifying its behavior would require testing internal wiring rather than
-        // the public surface area of JobFunctionContext.
-        true.Should().BeTrue();
+        var scheduler = Substitute.For<IJobScheduler>();
+        var id = Guid.NewGuid();
+        scheduler.CancelAsync(id, AbortToken).Returns(true);
+        var services = new ServiceCollection().AddSingleton(scheduler).BuildServiceProvider();
+        await using var scope = services.CreateAsyncScope();
+        var context = new JobFunctionContext
+        {
+            Id = id,
+            Type = JobType.TimeJob,
+            FunctionName = "TestFunction",
+            CronOccurrenceOperations = new CronOccurrenceOperations { SkipIfAlreadyRunningAction = () => { } },
+        };
+        context.SetServiceScope(scope);
+
+        (await context.RequestCancellationAsync(AbortToken)).Should().BeTrue();
+
+        await scheduler.Received(1).CancelAsync(id, AbortToken);
     }
 
     private sealed class TestRequest

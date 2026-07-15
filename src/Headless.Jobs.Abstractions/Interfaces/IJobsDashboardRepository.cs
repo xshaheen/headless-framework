@@ -56,7 +56,6 @@ internal interface IJobsDashboardRepository<TTimeJob, TCronJob>
         Guid guid,
         CancellationToken cancellationToken = default
     );
-    bool CancelJobById(Guid jobId);
     Task DeleteCronJobOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<(string, int)> GetJobRequestByIdAsync(
         Guid jobId,

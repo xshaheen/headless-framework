@@ -603,11 +603,6 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         return finalData;
     }
 
-    public bool CancelJobById(Guid jobId)
-    {
-        return JobsCancellationTokenManager.RequestTickerCancellationById(jobId);
-    }
-
     public async Task DeleteCronJobOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await _persistenceProvider.RemoveCronJobOccurrencesAsync([id], cancellationToken).ConfigureAwait(false);

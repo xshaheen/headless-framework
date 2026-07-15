@@ -273,6 +273,170 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
+    public async Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var affected = await dbContext
+            .Set<TTimeJob>()
+            .Where(x => x.Id == jobId && !x.CancelRequested)
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.CancelRequested, true)
+                        .SetProperty(x => x.Status, x => x.Status == JobStatus.Idle ? JobStatus.Cancelled : x.Status)
+                        .SetProperty(
+                            x => x.ExecutedAt,
+                            x => x.Status == JobStatus.Idle ? DateTime.UtcNow : x.ExecutedAt
+                        )
+                        .SetProperty(x => x.OwnerId, x => x.Status == JobStatus.Idle ? null : x.OwnerId)
+                        .SetProperty(x => x.LockedUntil, x => x.Status == JobStatus.Idle ? null : x.LockedUntil)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected != 1)
+        {
+            return false;
+        }
+
+        var resultingStatus = await dbContext
+            .Set<TTimeJob>()
+            .AsNoTracking()
+            .Where(x => x.Id == jobId)
+            .Select(x => x.Status)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (resultingStatus == JobStatus.Cancelled)
+        {
+            await _ApplyCancelledParentRunConditionsAsync(dbContext, jobId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task<bool?> IsTimeJobCancellationRequestedAsync(
+        Guid jobId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return null;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await dbContext
+            .Set<TTimeJob>()
+            .AsNoTracking()
+            .Where(x => x.Id == jobId && x.OwnerId == owner && x.Status == JobStatus.InProgress)
+            .Select(x => (bool?)x.CancelRequested)
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task _ApplyCancelledParentRunConditionsAsync(
+        TDbContext dbContext,
+        Guid parentId,
+        CancellationToken cancellationToken
+    )
+    {
+        var jobs = dbContext.Set<TTimeJob>();
+        await jobs.Where(x => x.ParentId == parentId && x.Status == JobStatus.Idle && x.ExecutionTime == null)
+            .Where(x =>
+                x.RunCondition == RunCondition.OnCancelled
+                || x.RunCondition == RunCondition.OnFailureOrCancelled
+                || x.RunCondition == RunCondition.OnAnyCompletedStatus
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var rejectedIds = await jobs.AsNoTracking()
+            .Where(x => x.ParentId == parentId && x.Status == JobStatus.Idle && x.ExecutionTime == null)
+            .Where(x =>
+                x.RunCondition == null
+                || (
+                    x.RunCondition != RunCondition.OnCancelled
+                    && x.RunCondition != RunCondition.OnFailureOrCancelled
+                    && x.RunCondition != RunCondition.OnAnyCompletedStatus
+                )
+            )
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (rejectedIds.Length == 0)
+        {
+            return;
+        }
+
+        await _SkipCancellationBranchAsync(
+                jobs,
+                rejectedIds,
+                "Parent cancellation did not satisfy the job run condition.",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var frontier = rejectedIds;
+        while (frontier.Length != 0)
+        {
+            var parentIds = frontier;
+            frontier = await jobs.AsNoTracking()
+                .Where(x => x.ParentId != null && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value))
+                .Where(x => x.Status == JobStatus.Idle)
+                .Select(x => x.Id)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (frontier.Length != 0)
+            {
+                await _SkipCancellationBranchAsync(
+                        jobs,
+                        frontier,
+                        "Ancestor job was skipped after parent cancellation.",
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static Task<int> _SkipCancellationBranchAsync(
+        DbSet<TTimeJob> jobs,
+        Guid[] jobIds,
+        string reason,
+        CancellationToken cancellationToken
+    ) =>
+        jobs.Where(x => ((IEnumerable<Guid>)jobIds).Contains(x.Id) && x.Status == JobStatus.Idle)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.SkippedReason, reason)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            );
+
     public async Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
