@@ -25,11 +25,11 @@ internal sealed class OpenTelemetryInstrumentation(
             activity.SetTag("headless.job.function", context.FunctionName);
             activity.SetTag("headless.job.priority", context.CachedPriority.ToString());
             activity.SetTag("headless.job.machine", InstanceIdentifier);
-            activity.SetTag("headless.job.retry.count", context.Retries);
+            activity.SetTag("headless.job.retry_count", context.Retries);
 
             if (context.ParentId.HasValue)
             {
-                activity.SetTag("headless.job.parent.id", context.ParentId.Value.ToString());
+                activity.SetTag("headless.job.parent_id", context.ParentId.Value.ToString());
             }
 
             if (context is { Type: JobType.TimeJob, ParentId: not null })
@@ -79,7 +79,7 @@ internal sealed class OpenTelemetryInstrumentation(
         using var activity = JobsDiagnostics.Start("job.fail");
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
-        activity?.SetTag("headless.job.retry.count", retryCount);
+        activity?.SetTag("headless.job.retry_count", retryCount);
         activity?.SetTag("exception.type", exception.GetType().Name);
         activity?.SetTag("exception.message", exception.Message);
 
@@ -101,7 +101,7 @@ internal sealed class OpenTelemetryInstrumentation(
         using var activity = JobsDiagnostics.Start("job.cancel");
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
-        activity?.SetTag("headless.job.cancellation.reason", reason);
+        activity?.SetTag("headless.job.cancellation_reason", reason);
 
         activity?.SetStatus(ActivityStatusCode.Error, reason);
 
@@ -113,7 +113,7 @@ internal sealed class OpenTelemetryInstrumentation(
         using var activity = JobsDiagnostics.Start("job.skip");
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
-        activity?.SetTag("headless.job.skip.reason", reason);
+        activity?.SetTag("headless.job.skip_reason", reason);
 
         base.LogJobSkipped(jobId, functionName, reason);
     }
