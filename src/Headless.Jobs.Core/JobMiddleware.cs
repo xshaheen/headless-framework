@@ -7,16 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-/// <summary>Declares the phase to which a generated Jobs middleware registration applies.</summary>
-public enum JobMiddlewareStage
-{
-    /// <summary>Runs while a job entity is being scheduled.</summary>
-    Schedule,
-
-    /// <summary>Runs around one job-function execution attempt.</summary>
-    Execute,
-}
-
 /// <summary>Ordering constants for Jobs middleware. Lower values run first.</summary>
 public static class JobMiddlewarePriority
 {
@@ -30,17 +20,32 @@ public static class JobMiddlewarePriority
     public const int Late = 1000;
 }
 
-/// <summary>Assembly-level declaration consumed by the Jobs source generator.</summary>
-[AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
-public sealed class JobMiddlewareAttribute(Type middlewareType, JobMiddlewareStage stage) : Attribute
+/// <summary>Declares schedule middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+[PublicAPI]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+public sealed class JobScheduleMiddlewareAttribute<TMiddleware> : Attribute
+    where TMiddleware : IJobScheduleMiddleware
 {
-    /// <summary>The middleware implementation type.</summary>
-    public Type MiddlewareType { get; } = middlewareType ?? throw new ArgumentNullException(nameof(middlewareType));
+    /// <summary>
+    /// Targets a function declared in another assembly. Omit for global assembly middleware or
+    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// </summary>
+    public string? Function { get; init; }
 
-    /// <summary>The pipeline phase.</summary>
-    public JobMiddlewareStage Stage { get; } = stage;
+    /// <summary>Ordering priority; equal priorities are ordered by stable middleware identity.</summary>
+    public int Priority { get; init; }
+}
 
-    /// <summary>Optional durable job-function name target; absent means global.</summary>
+/// <summary>Declares execute middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+[PublicAPI]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+public sealed class JobExecuteMiddlewareAttribute<TMiddleware> : Attribute
+    where TMiddleware : IJobExecuteMiddleware
+{
+    /// <summary>
+    /// Targets a function declared in another assembly. Omit for global assembly middleware or
+    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// </summary>
     public string? Function { get; init; }
 
     /// <summary>Ordering priority; equal priorities are ordered by stable middleware identity.</summary>

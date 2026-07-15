@@ -199,14 +199,14 @@ public sealed class JobSchedulerTests : TestBase
 
         (await typed.Should().ThrowAsync<JobFunctionNotFoundException>())
             .Which.RequestType.Should()
-            .Be(typeof(UnknownRequest));
+            .Be<UnknownRequest>();
         (await unknownDescriptor.Should().ThrowAsync<JobFunctionNotFoundException>())
             .Which.FunctionName.Should()
             .Be("unknown");
         await staleDescriptor.Should().ThrowAsync<JobFunctionNotFoundException>();
         await typedDescriptor.Should().ThrowAsync<ArgumentException>();
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
-        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -232,8 +232,8 @@ public sealed class JobSchedulerTests : TestBase
             await scheduler.EnqueueAsync(new UnsupportedRequest(typeof(string)), cancellationToken: AbortToken);
 
         await act.Should().ThrowAsync<NotSupportedException>();
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
-        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -371,7 +371,8 @@ public sealed class JobSchedulerTests : TestBase
     )
     {
         var method = methods.Single(candidate =>
-            candidate.Name == name && candidate.IsGenericMethodDefinition == generic
+            string.Equals(candidate.Name, name, StringComparison.Ordinal)
+            && candidate.IsGenericMethodDefinition == generic
         );
         var parameters = method.GetParameters();
 
@@ -382,12 +383,12 @@ public sealed class JobSchedulerTests : TestBase
         }
         else
         {
-            parameters[0].ParameterType.Should().Be(typeof(JobFunctionDescriptor));
+            parameters[0].ParameterType.Should().Be<JobFunctionDescriptor>();
         }
 
         parameters[1..^1].Select(parameter => parameter.ParameterType).Should().Equal(middleParameterTypes);
         parameters[^2].HasDefaultValue.Should().BeTrue();
-        parameters[^1].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[^1].ParameterType.Should().Be<CancellationToken>();
         parameters[^1].HasDefaultValue.Should().BeTrue();
     }
 

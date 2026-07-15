@@ -37,39 +37,49 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var jobMethods = context
+        var attributedMethods = context
             .SyntaxProvider.CreateSyntaxProvider(
                 predicate: (node, _) => node is MethodDeclarationSyntax { AttributeLists.Count: > 0 },
-                transform: (ctx, _) => _GetJobMethodIfAny(ctx)
+                transform: (ctx, _) => _GetAttributedMethodIfAny(ctx)
             )
             .Where(pair => pair is not null)
             .Select((pair, _) => pair!.Value);
 
-        var compilationAndMethods = context.CompilationProvider.Combine(jobMethods.Collect());
+        var compilationAndMethods = context.CompilationProvider.Combine(attributedMethods.Collect());
 
         context.RegisterSourceOutput(
             compilationAndMethods,
             (productionContext, source) =>
             {
-                var (compilation, methodPairs) = source;
+                var (compilation, methodInfos) = source;
 
                 if (string.Equals(compilation.Assembly.Name, "Jobs", StringComparison.Ordinal))
                 {
                     return;
                 }
 
-                if (!CompilationCollisionValidator.Validate(methodPairs, compilation, productionContext))
+                var jobMethodPairs = methodInfos
+                    .Where(info => info.HasJobFunction)
+                    .Select(info => (info.ClassDecl, info.MethodDecl))
+                    .ToImmutableArray();
+                var methodPairs = methodInfos.Select(info => (info.ClassDecl, info.MethodDecl)).ToImmutableArray();
+
+                if (!CompilationCollisionValidator.Validate(jobMethodPairs, compilation, productionContext))
                 {
                     return;
                 }
 
                 // Generate constructor calls (no need for class conflict detection since we always use full names)
-                var constructorCalls = _BuildConstructorMethodCalls(methodPairs, compilation, compilation.Assembly.Name)
+                var constructorCalls = _BuildConstructorMethodCalls(
+                        jobMethodPairs,
+                        compilation,
+                        compilation.Assembly.Name
+                    )
                     .ToList();
 
                 // Generate delegates and detect type conflicts for generic types
                 var initialDelegatesWithMetadata = _BuildJobFunctionDelegates(
-                        methodPairs,
+                        jobMethodPairs,
                         compilation,
                         productionContext,
                         compilation.Assembly.Name
@@ -83,7 +93,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
                 // Regenerate delegates with type conflict information for generic types
                 var delegatesWithMetadata = _BuildJobFunctionDelegates(
-                        methodPairs,
+                        jobMethodPairs,
                         compilation,
                         productionContext,
                         compilation.Assembly.Name,
@@ -94,11 +104,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var delegateCodes = delegatesWithMetadata.ConvertAll(info => info.DelegateCode);
                 var requestTypes = delegatesWithMetadata.ConvertAll(info => info.RequestType);
                 var descriptors = delegatesWithMetadata.ConvertAll(info => info.Descriptor);
-                var middleware = _GetMiddlewareRegistrations(
-                        compilation,
-                        descriptors.Select(x => x.FunctionName),
-                        productionContext
-                    )
+                var middleware = MiddlewareRegistrationCollector
+                    .Collect(compilation, descriptors.Select(x => x.FunctionName), methodPairs, productionContext)
                     .ToList();
 
                 var generatedCode = _GenerateSourceWithFullNamespaces(
@@ -120,11 +127,13 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Extracts job method information from the syntax context if it has a JobFunction attribute.
+    /// Extracts attributed method information from the current compilation.
     /// </summary>
-    private static (ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)? _GetJobMethodIfAny(
-        GeneratorSyntaxContext ctx
-    )
+    private static (
+        ClassDeclarationSyntax ClassDecl,
+        MethodDeclarationSyntax MethodDecl,
+        bool HasJobFunction
+    )? _GetAttributedMethodIfAny(GeneratorSyntaxContext ctx)
     {
         if (ctx.Node is not MethodDeclarationSyntax methodSyntax)
         {
@@ -148,26 +157,20 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             return null;
         }
 
-        var hasJobFunction = methodSymbol
-            .GetAttributes()
-            .Any(attr =>
-                string.Equals(
-                    attr.AttributeClass?.Name,
-                    SourceGeneratorConstants.JobFunctionAttributeName,
-                    StringComparison.Ordinal
-                )
-            );
-        if (!hasJobFunction)
-        {
-            return null;
-        }
-
         if (methodSyntax.Parent is not ClassDeclarationSyntax cd)
         {
             return null;
         }
 
-        return (cd, methodSyntax);
+        var attributes = methodSymbol.GetAttributes();
+        var hasJobFunction = attributes.Any(_IsJobFunctionAttribute);
+        var hasMiddleware = attributes.Any(MiddlewareRegistrationCollector.IsMiddlewareAttribute);
+        if (!hasJobFunction && !hasMiddleware)
+        {
+            return null;
+        }
+
+        return (cd, methodSyntax, hasJobFunction);
     }
 
     /// <summary>
@@ -197,15 +200,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
             var methodSymbol = semanticModel.GetDeclaredSymbol(methodDeclaration);
 
-            var jobFunctionAttributeData = methodSymbol
-                ?.GetAttributes()
-                .FirstOrDefault(ad =>
-                    string.Equals(
-                        ad.AttributeClass?.Name,
-                        SourceGeneratorConstants.JobFunctionAttributeName,
-                        StringComparison.Ordinal
-                    )
-                );
+            var jobFunctionAttributeData = methodSymbol?.GetAttributes().FirstOrDefault(_IsJobFunctionAttribute);
             if (jobFunctionAttributeData == null)
             {
                 continue;
@@ -348,134 +343,12 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         }
     }
 
-    private sealed class MiddlewareRegistrationInfo
-    {
-        public MiddlewareRegistrationInfo(
-            string typeName,
-            string identity,
-            string? function,
-            int priority,
-            bool isSchedule
-        )
-        {
-            TypeName = typeName;
-            Identity = identity;
-            Function = function;
-            Priority = priority;
-            IsSchedule = isSchedule;
-        }
-
-        public string TypeName { get; }
-        public string Identity { get; }
-        public string? Function { get; }
-        public int Priority { get; }
-        public bool IsSchedule { get; }
-    }
-
-    private static IEnumerable<MiddlewareRegistrationInfo> _GetMiddlewareRegistrations(
-        Compilation compilation,
-        IEnumerable<string> ownFunctionNames,
-        SourceProductionContext context
-    )
-    {
-        var functions = new HashSet<string>(ownFunctionNames, StringComparer.Ordinal);
-        foreach (var assembly in _GetReferencedAssemblies(compilation))
-        {
-            foreach (
-                var descriptor in assembly
-                    .GetAttributes()
-                    .Where(attribute =>
-                        string.Equals(
-                            attribute.AttributeClass?.ToDisplayString(),
-                            "Headless.Jobs.JobFunctionDescriptorMetadataAttribute",
-                            StringComparison.Ordinal
-                        )
-                    )
-            )
-            {
-                if (
-                    descriptor.ConstructorArguments.Length == 1
-                    && descriptor.ConstructorArguments[0].Value is string name
-                )
-                {
-                    functions.Add(name);
-                }
-            }
-        }
-        var declarations = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var attribute in compilation.Assembly.GetAttributes())
-        {
-            if (
-                !string.Equals(
-                    attribute.AttributeClass?.ToDisplayString(),
-                    "Headless.Jobs.JobMiddlewareAttribute",
-                    StringComparison.Ordinal
-                )
-                || attribute.ConstructorArguments.Length < 2
-                || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol middlewareType
-                || attribute.ConstructorArguments[1].Value is not int stage
-            )
-            {
-                continue;
-            }
-
-            var target =
-                attribute
-                    .NamedArguments.FirstOrDefault(x => string.Equals(x.Key, "Function", StringComparison.Ordinal))
-                    .Value.Value as string;
-            if (target is not null && !functions.Contains(target))
-            {
-                context.ReportDiagnostic(
-                    Diagnostic.Create(DiagnosticDescriptors.UnknownMiddlewareTarget, Location.None, target)
-                );
-                continue;
-            }
-
-            var priority =
-                attribute
-                    .NamedArguments.FirstOrDefault(x => string.Equals(x.Key, "Priority", StringComparison.Ordinal))
-                    .Value.Value as int?
-                ?? 0;
-            var typeName = middlewareType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var identity = $"{compilation.Assembly.Name}:{_GetMetadataName(middlewareType)}";
-            var declarationKey = $"{stage}|{target}|{priority}|{identity}";
-            if (!declarations.Add(declarationKey))
-            {
-                context.ReportDiagnostic(
-                    Diagnostic.Create(DiagnosticDescriptors.DuplicateMiddleware, Location.None, identity)
-                );
-                continue;
-            }
-            yield return new(typeName, identity, target, priority, stage == 0);
-        }
-    }
-
-    private static string _GetMetadataName(INamedTypeSymbol symbol)
-    {
-        var names = new Stack<string>();
-        for (var current = symbol; current is not null; current = current.ContainingType)
-        {
-            names.Push(current.MetadataName);
-        }
-
-        var namespaceName = symbol.ContainingNamespace.IsGlobalNamespace
-            ? string.Empty
-            : symbol.ContainingNamespace.ToDisplayString();
-        return string.IsNullOrEmpty(namespaceName)
-            ? string.Join("+", names)
-            : $"{namespaceName}.{string.Join("+", names)}";
-    }
-
-    private static IEnumerable<IAssemblySymbol> _GetReferencedAssemblies(Compilation compilation)
-    {
-        foreach (var reference in compilation.References)
-        {
-            if (compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly)
-            {
-                yield return assembly;
-            }
-        }
-    }
+    private static bool _IsJobFunctionAttribute(AttributeData attribute) =>
+        string.Equals(
+            attribute.AttributeClass?.Name,
+            SourceGeneratorConstants.JobFunctionAttributeName,
+            StringComparison.Ordinal
+        );
 
     /// <summary>
     /// Generates the complete source code for the factory class (legacy method with using statements).

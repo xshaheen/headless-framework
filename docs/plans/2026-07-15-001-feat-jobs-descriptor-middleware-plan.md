@@ -16,7 +16,7 @@ origin:
 
 ## Summary
 
-Add AOT-safe, source-generated schedule and execute middleware to Jobs. Assembly metadata is the single registration mechanism selected by #302; generated chains select global and descriptor-targeted middleware by `[JobFunction]` identity and impose one deterministic order.
+Add AOT-safe, source-generated schedule and execute middleware to Jobs. Stage-specific generic attributes support global assembly declarations and targeted declarations placed beside `[JobFunction]`; generated chains select global and descriptor-targeted middleware by durable identity and impose one deterministic order.
 
 ---
 
@@ -28,7 +28,7 @@ The change must introduce those seams without adding a handler model, scanning a
 
 ### Scope boundaries
 
-Included: public middleware contracts/contexts, assembly metadata discovery, generated dispatch, manager and retry integration, focused unit/generator/integration coverage, and Jobs documentation.
+Included: public middleware contracts/contexts, assembly and method attribute discovery, generated dispatch, manager and retry integration, focused unit/generator/integration coverage, and Jobs documentation.
 
 Excluded: #278 tenancy behavior, #319 OpenTelemetry behavior, class handlers (`IJob<T>`, `ICronJob`, `TJob`), runtime plugins/registration after `JobFunctionProvider.Build()`, shared Messaging infrastructure, and unrelated cleanup.
 
@@ -50,8 +50,8 @@ Excluded: #278 tenancy behavior, #319 OpenTelemetry behavior, class handlers (`I
 
 ## Key Technical Decisions
 
-1. Use assembly-level `JobMiddleware` metadata, following #678/#302. The production generator reads the current compilation plus referenced assembly metadata; it does not retain the spike's generated-hook fallback.
-2. Treat a middleware declaration as global or targeted by durable descriptor function name. Build chains ordered by numeric priority, then stable `assembly-name:metadata-name` identity. Diagnose an unknown target and duplicate declaration during generation.
+1. Use compile-time constrained `JobScheduleMiddleware<TMiddleware>` and `JobExecuteMiddleware<TMiddleware>` attributes. Assembly placement is global. Method placement beside `[JobFunction]` derives its local target. `Function` remains only as an assembly-level fallback for a descriptor declared in another assembly. The production generator reads the current compilation plus referenced descriptor metadata; it does not retain the spike's generated-hook fallback.
+2. Normalize assembly and method declarations into the same global-or-targeted registration model. Build chains ordered by numeric priority, then stable `assembly-name:metadata-name` identity. Diagnose unknown targets, duplicate declarations, invalid method placement, redundant method `Function`, and assembly fallback targeting a local descriptor during generation.
 3. Keep two distinct public contracts and contexts in Jobs Core. Schedule context carries the resolved descriptor and the mutable time/cron entity being submitted. Execute context carries the descriptor, `JobFunctionContext`, attempt number, and attempt-scoped services. Neither exposes provider registries.
 4. Generate a dispatcher into each consuming compilation, because Core cannot directly reference application middleware types. Its module initializer registers static schedule/execute delegates with a Core callback registry before `JobFunctionProvider.Build()`; Core freezes and invokes those delegates alongside function/descriptor registrations. Dispatch itself is direct generated calls, while middleware instances are resolved from bounded DI scopes. Schedule terminal completion is tracked so a middleware that omits `next` fails rather than returning a false successful enqueue.
 5. Resolve `JobFunctionProvider.JobFunctionDescriptors` by durable `Function` at manager entry only to construct the context. An unknown function keeps the current `JobValidatorException` behavior and runs no middleware, write, or deferred side effect; cron/entity validation remains after schedule dispatch.
@@ -79,7 +79,7 @@ flowchart LR
 
 **Files:** `src/Headless.Jobs.Core/`, `tests/Headless.Jobs.Tests.Unit/`, and source-generator reference fixtures.
 
-Define public schedule/execute middleware delegates, interfaces or compatible contracts, context types, priority constants, and `JobMiddlewareAttribute` in Jobs Core. Add generated assembly-level descriptor metadata for every `[JobFunction]`, so production generator discovery can validate targets from referenced assembly metadata. Make targets optional and validate declaration arguments. Preserve trailing cancellation-token conventions and public XML documentation.
+Define public schedule/execute middleware delegates, interfaces or compatible contracts, context types, priority constants, and constrained stage-specific generic attributes in Jobs Core. Add generated assembly-level descriptor metadata for every `[JobFunction]`, so production generator discovery can validate external assembly targets. Derive local method targets from `[JobFunction]`, keep `Function` only for cross-assembly fallback, and validate declaration placement and arguments. Preserve trailing cancellation-token conventions and public XML documentation.
 
 **Test scenarios:** contract shape exposes descriptor and appropriate state; invalid attribute inputs fail predictably; target identity is optional/global versus explicit/targeted; generated descriptor metadata is available from a metadata reference; public API members have expected cancellation-token placement.
 

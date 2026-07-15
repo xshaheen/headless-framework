@@ -1,13 +1,22 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
+using System.Runtime.Loader;
 using Headless.Jobs;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class JobFunctionProviderTests
+[Collection<JobsHelperCollection>]
+public sealed class JobFunctionProviderTests : IDisposable
 {
+    public JobFunctionProviderTests() => JobFunctionProvider.ResetForTests();
+
+    public void Dispose() => JobFunctionProvider.ResetForTests();
+
     [Fact]
     public void should_build_name_and_request_type_descriptor_indexes()
     {
@@ -47,7 +56,7 @@ public sealed class JobFunctionProviderTests
                 .Build()
         );
 
-        registry.Descriptors["typed"].RequestType.Should().Be(typeof(FirstRequest));
+        registry.Descriptors["typed"].RequestType.Should().Be<FirstRequest>();
         registry.Descriptors["typed"].CronExpression.Should().Be("%Jobs:Typed:Cron");
         registry.Descriptors["requestless"].RequestType.Should().BeNull();
         registry.DescriptorsByRequestType[typeof(FirstRequest)].Should().BeSameAs(registry.Descriptors["typed"]);
@@ -121,6 +130,49 @@ public sealed class JobFunctionProviderTests
         var build = () => JobFunctionRegistryBuilder.Build([], [], descriptors);
 
         build.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("'duplicate'");
+    }
+
+    [Fact]
+    public async Task should_load_middleware_only_discovery_once_before_registry_freeze()
+    {
+        const string assemblyName = "Headless.Jobs.DiscoveryFixture.dll";
+        const string middlewareTypeName = "Headless.Jobs.DiscoveryFixture.DiscoveryScheduleMiddleware";
+        Assembly? discoveredAssembly = null;
+        AssemblyLoadContext
+            .Default.Assemblies.Should()
+            .NotContain(assembly =>
+                string.Equals(
+                    assembly.GetName().Name,
+                    Path.GetFileNameWithoutExtension(assemblyName),
+                    StringComparison.Ordinal
+                )
+            );
+
+        new ServiceCollection().AddHeadlessJobs(options =>
+        {
+            discoveredAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(
+                Path.Combine(AppContext.BaseDirectory, "fixtures", assemblyName)
+            );
+            options.AddJobsDiscovery([discoveredAssembly]);
+            options.AddJobsDiscovery([discoveredAssembly]);
+        });
+        JobFunctionProvider.Build();
+
+        var middlewareType = discoveredAssembly!.GetType(middlewareTypeName, throwOnError: true)!;
+        await using var services = new ServiceCollection().AddSingleton(middlewareType).BuildServiceProvider();
+        var nextCalled = false;
+        await JobMiddlewareRegistry.DispatchScheduleAsync(
+            new JobScheduleContext(_Descriptor("fixture", null), new TimeJobEntity(), services),
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        nextCalled.Should().BeTrue();
+        middlewareType.GetProperty("InvocationCount")!.GetValue(null).Should().Be(1);
     }
 
     private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "") =>

@@ -116,7 +116,7 @@ public sealed class RetryBehaviorTests : TestBase
             [],
             retries: 3,
             retryOptions: options,
-            exceptionFactory: static () => new ArgumentException("permanent")
+            exceptionFactory: static () => new InvalidOperationException("permanent")
         );
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
