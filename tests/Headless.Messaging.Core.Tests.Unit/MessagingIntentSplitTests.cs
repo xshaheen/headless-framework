@@ -316,10 +316,12 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Bus
             );
         transport.LastMessage!.Value.Name.Should().Be("events.prepared");
+        // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
+        // creating message.publish activities must not break the Single.
         var publishActivity = activities.Single(a =>
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
+            && Equals(a.GetTagItem("messaging.destination.name"), "events.prepared")
         );
-        publishActivity.GetTagItem("messaging.destination.name").Should().Be("events.prepared");
         publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
     }
 
@@ -364,10 +366,12 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Queue
             );
         transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
+        // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
+        // creating message.publish activities must not break the Single.
         var publishActivity = activities.Single(a =>
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
+            && Equals(a.GetTagItem("messaging.destination.name"), "jobs.prepared")
         );
-        publishActivity.GetTagItem("messaging.destination.name").Should().Be("jobs.prepared");
         publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
     }
 
