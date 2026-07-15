@@ -44,9 +44,14 @@ internal sealed class TestHeadlessServicesOptionsExtension(
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) { }
 
-        public override int GetServiceProviderHashCode() => 0;
+        public override int GetServiceProviderHashCode()
+        {
+            return 0;
+        }
 
-        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) =>
-            other is TestExtensionInfo;
+        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
+        {
+            return other is TestExtensionInfo;
+        }
     }
 }

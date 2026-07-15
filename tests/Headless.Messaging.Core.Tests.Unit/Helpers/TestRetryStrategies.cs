@@ -8,10 +8,14 @@ namespace Tests.Helpers;
 
 internal static class TestRetryStrategies
 {
-    public static RetryStrategyOptions ZeroDelay(int maxRetryAttempts) => FixedDelay(maxRetryAttempts, TimeSpan.Zero);
+    public static RetryStrategyOptions ZeroDelay(int maxRetryAttempts)
+    {
+        return FixedDelay(maxRetryAttempts, TimeSpan.Zero);
+    }
 
-    public static RetryStrategyOptions FixedDelay(int maxRetryAttempts, TimeSpan delay) =>
-        new()
+    public static RetryStrategyOptions FixedDelay(int maxRetryAttempts, TimeSpan delay)
+    {
+        return new()
         {
             MaxRetryAttempts = maxRetryAttempts,
             Delay = delay,
@@ -23,9 +27,11 @@ internal static class TestRetryStrategies
                         && !RetryExceptionClassifier.IsPermanent(exception)
                 ),
         };
+    }
 
-    public static RetryStrategyOptions PermanentArgument(int maxRetryAttempts) =>
-        new()
+    public static RetryStrategyOptions PermanentArgument(int maxRetryAttempts)
+    {
+        return new()
         {
             MaxRetryAttempts = maxRetryAttempts,
             Delay = TimeSpan.Zero,
@@ -34,4 +40,5 @@ internal static class TestRetryStrategies
                     args.Outcome.Exception is { } exception && !RetryExceptionClassifier.IsPermanent(exception)
                 ),
         };
+    }
 }

@@ -8,5 +8,8 @@ public sealed class BasicEntity : IEntity<Guid>
 
     public required string Name { get; init; }
 
-    public IReadOnlyList<object> GetKeys() => [Id];
+    public IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }

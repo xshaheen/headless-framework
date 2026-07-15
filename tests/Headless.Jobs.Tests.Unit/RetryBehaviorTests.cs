@@ -862,9 +862,15 @@ public sealed class RetryBehaviorTests : TestBase
         public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -872,7 +878,10 @@ public sealed class RetryBehaviorTests : TestBase
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+        )
+        {
+            Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+        }
 
         private sealed class NullScope : IDisposable
         {
@@ -957,8 +966,9 @@ public sealed class RetryBehaviorTests : TestBase
         return (handler, context, internalManager, attempts);
     }
 
-    private static JobsRetryOptions _ZeroDelayRetryOptions() =>
-        new()
+    private static JobsRetryOptions _ZeroDelayRetryOptions()
+    {
+        return new()
         {
             RetryStrategy = new RetryStrategyOptions
             {
@@ -968,6 +978,7 @@ public sealed class RetryBehaviorTests : TestBase
                     ValueTask.FromResult(args.Outcome.Exception is not null and not OperationCanceledException),
             },
         };
+    }
 
     private sealed class RetryScopeMarker;
 }

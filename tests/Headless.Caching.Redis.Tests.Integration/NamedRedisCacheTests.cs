@@ -210,7 +210,10 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             return (T?)(object?)int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public T? Deserialize<T>(in ReadOnlySequence<byte> data) => Deserialize<T>(data.ToArray());
+        public T? Deserialize<T>(in ReadOnlySequence<byte> data)
+        {
+            return Deserialize<T>(data.ToArray());
+        }
 
         public void Serialize<T>(T value, IBufferWriter<byte> output)
         {
@@ -243,6 +246,9 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             return int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public object Deserialize(in ReadOnlySequence<byte> data, Type type) => Deserialize(data.ToArray(), type);
+        public object Deserialize(in ReadOnlySequence<byte> data, Type type)
+        {
+            return Deserialize(data.ToArray(), type);
+        }
     }
 }

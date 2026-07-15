@@ -109,5 +109,8 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
     /// from the await and are caught at the deadline boundary as
     /// <see cref="LeaseMonitor.LeaseState.Unknown"/>.
     /// </summary>
-    protected override LeaseMonitor.LeaseState? ClassifyRenewFailure() => LeaseMonitor.LeaseState.Lost;
+    protected override LeaseMonitor.LeaseState? ClassifyRenewFailure()
+    {
+        return LeaseMonitor.LeaseState.Lost;
+    }
 }

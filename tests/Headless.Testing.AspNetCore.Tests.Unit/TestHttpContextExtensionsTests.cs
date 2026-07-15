@@ -19,7 +19,10 @@ public sealed class TestHttpContextExtensionsTests : IDisposable
         _sp = services.BuildServiceProvider();
     }
 
-    public void Dispose() => _sp.Dispose();
+    public void Dispose()
+    {
+        _sp.Dispose();
+    }
 
     [Fact]
     public void should_set_principal()

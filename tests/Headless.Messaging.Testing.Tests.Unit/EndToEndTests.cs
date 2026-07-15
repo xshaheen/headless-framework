@@ -30,8 +30,10 @@ public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
     // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
     // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
     // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken) =>
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
+    {
         throw new TimeoutException("Test failure");
+    }
 }
 
 public interface INotificationService
@@ -54,7 +56,10 @@ public sealed class IntentRecorder
 
     public IReadOnlyCollection<IntentType> Intents => _intents.ToArray();
 
-    public void Record(IntentType intentType) => _intents.Enqueue(intentType);
+    public void Record(IntentType intentType)
+    {
+        _intents.Enqueue(intentType);
+    }
 }
 
 public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
@@ -488,10 +493,15 @@ public sealed class EndToEndTests : TestBase
     {
         public BrokerAddress BrokerAddress => new("QueueOnly", "localhost");
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            Task.FromResult(OperateResult.Success);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperateResult.Success);
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
@@ -500,7 +510,10 @@ public sealed class EndToEndTests : TestBase
             string groupName,
             byte groupConcurrent,
             CancellationToken cancellationToken = default
-        ) => throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
+        )
+        {
+            throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
+        }
     }
 
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───

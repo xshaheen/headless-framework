@@ -8,7 +8,10 @@ public sealed class InvalidPrimitiveValueExceptionTests
 {
     private sealed class TestPrimitive : IPrimitive
     {
-        public Type GetUnderlyingPrimitiveType() => typeof(int);
+        public Type GetUnderlyingPrimitiveType()
+        {
+            return typeof(int);
+        }
     }
 
     [Fact]

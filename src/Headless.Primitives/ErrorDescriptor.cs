@@ -97,7 +97,10 @@ public sealed class ErrorDescriptor
     }
 
     /// <summary>Returns the descriptor formatted as <c>{Code}: {Description}</c>.</summary>
-    public override string ToString() => $"{Code}: {Description}";
+    public override string ToString()
+    {
+        return $"{Code}: {Description}";
+    }
 }
 
 /// <summary>The severity assigned to an <see cref="ErrorDescriptor"/>.</summary>

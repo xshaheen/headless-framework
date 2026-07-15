@@ -669,6 +669,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         };
     }
 
-    private static string _ParameterName(string prefix, int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    private static string _ParameterName(string prefix, int index)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    }
 }

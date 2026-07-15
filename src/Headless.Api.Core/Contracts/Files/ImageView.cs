@@ -25,7 +25,10 @@ public sealed class ImageView : FileView
     /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
     /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
-    public static ImageView? FromImage(Image? operand) => operand;
+    public static ImageView? FromImage(Image? operand)
+    {
+        return operand;
+    }
 
     /// <summary>
     /// Implicitly converts a domain <see cref="Image"/> to an <see cref="ImageView"/>.

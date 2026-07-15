@@ -117,16 +117,25 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
 
     private sealed class TypedBusConsumeMiddleware : IConsumeMiddleware<ConsumeContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class TypedBusPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class ObjectBusConsumeMiddleware : IConsumeMiddleware<ConsumeContext>
     {
-        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 }

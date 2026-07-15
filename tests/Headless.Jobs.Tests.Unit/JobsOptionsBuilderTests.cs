@@ -23,14 +23,20 @@ public sealed class JobsOptionsBuilderTests
             Guid jobId,
             JobType jobType,
             CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
+        )
+        {
+            return Task.CompletedTask;
+        }
 
         public Task HandleCanceledExceptionAsync(
             Exception exception,
             Guid jobId,
             JobType jobType,
             CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
+        )
+        {
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]

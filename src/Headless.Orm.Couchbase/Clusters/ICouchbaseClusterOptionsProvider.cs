@@ -26,6 +26,8 @@ public interface ICouchbaseClusterOptionsProvider
 public sealed class CouchbaseClusterOptionsProvider(ClusterOptions options) : ICouchbaseClusterOptionsProvider
 {
     /// <inheritdoc/>
-    public ValueTask<ClusterOptions> GetAsync(string clusterKey, CancellationToken cancellationToken = default) =>
-        new(options);
+    public ValueTask<ClusterOptions> GetAsync(string clusterKey, CancellationToken cancellationToken = default)
+    {
+        return new(options);
+    }
 }

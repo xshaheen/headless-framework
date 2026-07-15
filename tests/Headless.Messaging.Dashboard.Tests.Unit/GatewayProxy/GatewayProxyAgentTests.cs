@@ -224,7 +224,12 @@ public sealed class GatewayProxyAgentTests : TestBase
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
-        ) => _exception is not null ? Task.FromException<HttpResponseMessage>(_exception) : Task.FromResult(_response!);
+        )
+        {
+            return _exception is not null
+                ? Task.FromException<HttpResponseMessage>(_exception)
+                : Task.FromResult(_response!);
+        }
     }
 
     private static DefaultHttpContext _CreateHttpContext()

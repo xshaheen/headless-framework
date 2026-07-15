@@ -138,7 +138,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public List<Post> Posts { get; init; } = [];
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class Role : IEntity<Guid>
@@ -149,7 +152,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public List<User> Users { get; init; } = [];
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class Post : IEntity<Guid>
@@ -162,7 +168,10 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
         public User User { get; init; } = null!;
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     public sealed class TestDb(DbContextOptions options) : DbContext(options)

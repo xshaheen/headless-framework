@@ -47,7 +47,10 @@ public sealed class SeedersTests : TestBase
 
         public IReadOnlyList<string> Ran => _ran;
 
-        public void Record(string name) => _ran.Add(name);
+        public void Record(string name)
+        {
+            _ran.Add(name);
+        }
     }
 
     [SeederPriority(1)]

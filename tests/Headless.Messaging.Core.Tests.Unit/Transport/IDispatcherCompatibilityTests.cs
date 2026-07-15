@@ -25,7 +25,10 @@ public sealed class IDispatcherCompatibilityTests : TestBase
     {
         public bool IsDisposed { get; private set; }
 
-        public ValueTask StartAsync(CancellationToken stoppingToken) => ValueTask.CompletedTask;
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {
@@ -33,20 +36,28 @@ public sealed class IDispatcherCompatibilityTests : TestBase
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask EnqueueToExecute(
             MediumMessage message,
             ConsumerExecutorDescriptor? descriptor = null,
             CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public Task EnqueueToScheduler(
             MediumMessage message,
             DateTimeOffset publishTime,
             object? transaction = null,
             CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
+        )
+        {
+            return Task.CompletedTask;
+        }
     }
 }

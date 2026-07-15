@@ -980,20 +980,30 @@ public sealed class MessageSenderTests : TestBase
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private sealed class TestQueueTransportAdapter(ITransport transport) : IQueueTransport
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private sealed class ScopedMarker;

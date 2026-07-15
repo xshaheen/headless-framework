@@ -59,8 +59,10 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         }
     }
 
-    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     public virtual async Task should_allow_multiple_readers_and_release_on_dispose()
     {

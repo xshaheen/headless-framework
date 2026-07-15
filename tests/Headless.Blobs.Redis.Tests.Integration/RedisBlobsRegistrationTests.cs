@@ -17,7 +17,10 @@ namespace Tests;
 /// </summary>
 public sealed class RedisBlobsRegistrationTests
 {
-    private static IConnectionMultiplexer _CreateMockMultiplexer() => Substitute.For<IConnectionMultiplexer>();
+    private static IConnectionMultiplexer _CreateMockMultiplexer()
+    {
+        return Substitute.For<IConnectionMultiplexer>();
+    }
 
     // RedisBlobStorage resolves TimeProvider (and the blobs core resolves IMimeTypeProvider); register them like the
     // other provider registration tests so the container can construct the store.

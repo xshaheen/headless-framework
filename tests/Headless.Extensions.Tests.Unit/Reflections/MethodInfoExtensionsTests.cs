@@ -39,16 +39,31 @@ public sealed class MethodInfoExtensionsTests
 
         // ReSharper disable once AsyncVoidMethod
 #pragma warning disable AsyncFixer03, VSTHRD100 // Intentional async-void test data for reflection tests.
-        public static async void AsyncVoidMethod() => await Task.Delay(10);
+        public static async void AsyncVoidMethod()
+        {
+            await Task.Delay(10);
+        }
 #pragma warning restore AsyncFixer03, VSTHRD100
 
-        public static async Task AsyncTaskMethod() => await Task.CompletedTask;
+        public static async Task AsyncTaskMethod()
+        {
+            await Task.CompletedTask;
+        }
 
-        public static Task TaskMethod() => Task.CompletedTask;
+        public static Task TaskMethod()
+        {
+            return Task.CompletedTask;
+        }
 
-        public static ValueTask ValueTaskMethod() => ValueTask.CompletedTask;
+        public static ValueTask ValueTaskMethod()
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public static async ValueTask AsyncValueTaskMethod() => await Task.Delay(10);
+        public static async ValueTask AsyncValueTaskMethod()
+        {
+            await Task.Delay(10);
+        }
 
         public static IAsyncEnumerable<int> IAsyncEnumerableMethod()
         {

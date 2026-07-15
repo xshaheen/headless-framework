@@ -4,22 +4,34 @@ namespace Headless.Caching.Benchmarks.Scenarios;
 
 public static class BenchmarkScenarioSources
 {
-    public static IEnumerable<string> CommonProviders() =>
-        CacheBenchmarkClientFactory.GetDescriptors(CacheBenchmarkClientFactory.IsRedisAvailable).Select(x => x.Id);
+    public static IEnumerable<string> CommonProviders()
+    {
+        return CacheBenchmarkClientFactory
+            .GetDescriptors(CacheBenchmarkClientFactory.IsRedisAvailable)
+            .Select(x => x.Id);
+    }
 
-    public static IEnumerable<string> MemoryOnlyProviders() => CacheBenchmarkClientFactory.MemoryOnlyProviderIds();
+    public static IEnumerable<string> MemoryOnlyProviders()
+    {
+        return CacheBenchmarkClientFactory.MemoryOnlyProviderIds();
+    }
 
-    public static IEnumerable<string> DistributedOnlyProviders() =>
-        CacheBenchmarkClientFactory.DistributedOnlyProviderIds(CacheBenchmarkClientFactory.IsRedisAvailable);
+    public static IEnumerable<string> DistributedOnlyProviders()
+    {
+        return CacheBenchmarkClientFactory.DistributedOnlyProviderIds(CacheBenchmarkClientFactory.IsRedisAvailable);
+    }
 
-    public static IEnumerable<string> GetOrAddProviders() =>
-        CacheBenchmarkClientFactory
+    public static IEnumerable<string> GetOrAddProviders()
+    {
+        return CacheBenchmarkClientFactory
             .GetDescriptors(CacheBenchmarkClientFactory.IsRedisAvailable)
             .Where(x => x.Features.HasFlag(CacheBenchmarkFeatures.GetOrAdd))
             .Select(x => x.Id);
+    }
 
-    public static IEnumerable<string> FeatureProviders() =>
-        CacheBenchmarkClientFactory
+    public static IEnumerable<string> FeatureProviders()
+    {
+        return CacheBenchmarkClientFactory
             .GetDescriptors(CacheBenchmarkClientFactory.IsRedisAvailable)
             .Where(x =>
                 x.Features.HasFlag(CacheBenchmarkFeatures.FailSafe)
@@ -27,4 +39,5 @@ public static class BenchmarkScenarioSources
                 || x.Features.HasFlag(CacheBenchmarkFeatures.Hybrid)
             )
             .Select(x => x.Id);
+    }
 }

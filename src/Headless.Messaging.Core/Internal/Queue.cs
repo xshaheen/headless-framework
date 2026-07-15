@@ -47,5 +47,8 @@ internal sealed class Queue(
         );
     }
 
-    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    private long _NowUnixTimeMilliseconds()
+    {
+        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    }
 }

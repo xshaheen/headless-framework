@@ -990,7 +990,10 @@ public sealed class DispatcherTests : TestBase
         await dispose;
     }
 
-    private static MediumMessage _CreateTestMessage(int storageId) => _CreateTestMessage(_StorageGuid(storageId));
+    private static MediumMessage _CreateTestMessage(int storageId)
+    {
+        return _CreateTestMessage(_StorageGuid(storageId));
+    }
 
     private static MediumMessage _CreateTestMessage(Guid? storageId = null)
     {
@@ -1010,7 +1013,10 @@ public sealed class DispatcherTests : TestBase
         };
     }
 
-    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    private static Guid _StorageGuid(int value)
+    {
+        return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
 
     /// <summary>
     /// Captures <see cref="IHostApplicationLifetime.StopApplication"/> calls so tests can assert

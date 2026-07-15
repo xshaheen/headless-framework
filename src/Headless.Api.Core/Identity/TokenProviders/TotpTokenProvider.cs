@@ -39,7 +39,10 @@ public class TotpTokenProvider<TUser> : IUserTwoFactorTokenProvider<TUser>
     }
 
     /// <summary>Always returns <see langword="false"/>; TOTP codes are not used as 2FA tokens in this provider.</summary>
-    public Task<bool> CanGenerateTwoFactorTokenAsync(UserManager<TUser> manager, TUser user) => Task.FromResult(false);
+    public Task<bool> CanGenerateTwoFactorTokenAsync(UserManager<TUser> manager, TUser user)
+    {
+        return Task.FromResult(false);
+    }
 
     /// <summary>Generates a 6-digit TOTP code bound to <paramref name="user"/> and <paramref name="purpose"/>.</summary>
     /// <param name="purpose">The intended purpose of the token (e.g. <c>"EmailConfirmation"</c>).</param>

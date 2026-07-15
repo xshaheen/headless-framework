@@ -37,10 +37,15 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     public string PostgreSqlConnectionString => _postgreSql.ConnectionString;
 
-    public Task EnsureStreamAsync(string streamName, string subjectWildcard) =>
-        _nats.EnsureStreamAsync(streamName, subjectWildcard);
+    public Task EnsureStreamAsync(string streamName, string subjectWildcard)
+    {
+        return _nats.EnsureStreamAsync(streamName, subjectWildcard);
+    }
 
-    public Task ResetAsync() => _postgreSql.ResetAsync();
+    public Task ResetAsync()
+    {
+        return _postgreSql.ResetAsync();
+    }
 
     private sealed class NatsStackComponent : IAsyncLifetime
     {

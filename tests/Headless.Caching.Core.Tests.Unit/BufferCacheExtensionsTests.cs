@@ -76,8 +76,9 @@ public sealed class BufferCacheExtensionsTests
     /// NSubstitute's argument-matcher engine, which mis-binds specs on this generic method; the unconfigured
     /// <see cref="ValueTask{Boolean}"/> return is a completed <see langword="false"/> the helper ignores.
     /// </summary>
-    private IReadOnlyList<(string Key, byte[] Value, CacheEntryOptions Options)> _UpsertCalls() =>
-        _cache
+    private IReadOnlyList<(string Key, byte[] Value, CacheEntryOptions Options)> _UpsertCalls()
+    {
+        return _cache
             .ReceivedCalls()
             .Where(call =>
                 string.Equals(call.GetMethodInfo().Name, nameof(ICache.UpsertEntryAsync), StringComparison.Ordinal)
@@ -89,6 +90,7 @@ public sealed class BufferCacheExtensionsTests
                 return ((string)args[0]!, (byte[])args[1]!, (CacheEntryOptions)args[2]!);
             })
             .ToList();
+    }
 
     private static ReadOnlySequence<byte> _MultiSegment(params byte[][] segments)
     {

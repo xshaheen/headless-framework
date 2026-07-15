@@ -568,8 +568,9 @@ public sealed class InMemoryCache
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -580,14 +581,16 @@ public sealed class InMemoryCache
             },
             cancellationToken
         );
+    }
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -598,14 +601,16 @@ public sealed class InMemoryCache
             },
             cancellationToken
         );
+    }
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -615,14 +620,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -632,14 +639,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -649,14 +658,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -666,6 +677,7 @@ public sealed class InMemoryCache
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     // Shared numeric mutation pipeline for the double/long Increment / SetIfHigher / SetIfLower overloads: it owns
     // validation, zero-expiration eviction, the AddOrUpdate, size/expiry bookkeeping, and maintenance scheduling.
@@ -1613,8 +1625,10 @@ public sealed class InMemoryCache
     }
 
     /// <summary>Returns whether <paramref name="entry"/> is logically invalidated by a tag or clear marker.</summary>
-    private bool _IsTagInvalidated(CacheEntry entry) =>
-        CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
+    private bool _IsTagInvalidated(CacheEntry entry)
+    {
+        return CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
+    }
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
@@ -2690,12 +2704,18 @@ public sealed class InMemoryCache
 
         /// <summary>Physical-expiry check against a caller-supplied <paramref name="now"/>, so a hot read path can
         /// fetch the clock once and reuse it across the expiry/logical-expiry/sliding-rearm checks.</summary>
-        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt <= now;
+        internal bool IsExpiredAt(DateTime now)
+        {
+            return PhysicalExpiresAt <= now;
+        }
 
         internal bool IsLogicallyExpired => IsLogicallyExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
 
         /// <summary>Logical-expiry check against a caller-supplied <paramref name="now"/> (see <see cref="IsExpiredAt"/>).</summary>
-        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt <= now;
+        internal bool IsLogicallyExpiredAt(DateTime now)
+        {
+            return LogicalExpiresAt <= now;
+        }
 
         internal bool ShouldRemoveAt(long expiresAtTicks)
         {
@@ -2724,22 +2744,35 @@ public sealed class InMemoryCache
         /// use inside <c>AddOrUpdate</c>/<c>TryUpdate</c> factories where the caller is inspecting
         /// the existing entry to decide the next entry — a context in which LRU touches and clones
         /// are both incorrect and wasteful.</summary>
-        internal object? PeekValue() => _cacheValue;
+        internal object? PeekValue()
+        {
+            return _cacheValue;
+        }
 
         /// <summary>Converts the raw stored value to <typeparamref name="T"/> without touching LRU or
         /// cloning. Used for metadata reads where a clone/LRU touch would be incorrect or wasteful.</summary>
-        internal T? PeekValue<T>() => _ConvertValue<T>(_cacheValue);
+        internal T? PeekValue<T>()
+        {
+            return _ConvertValue<T>(_cacheValue);
+        }
 
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
-        internal CacheEntry WithExpiration(DateTime? expiresAt) =>
-            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+        internal CacheEntry WithExpiration(DateTime? expiresAt)
+        {
+            return new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+        }
 
         /// <summary>Returns a new entry that shares this entry's value but only moves logical expiration.</summary>
-        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt) =>
-            new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
+        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt)
+        {
+            return new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
+        }
 
-        public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
+        public T? GetValue<T>()
+        {
+            return _ConvertValue<T>(ReadValue());
+        }
 
         private static T? _ConvertValue<T>(object? val)
         {
@@ -2889,7 +2922,10 @@ public sealed class InMemoryCache
         return hasInfinite ? null : max;
     }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
     #endregion
 }

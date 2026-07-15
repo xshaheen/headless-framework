@@ -69,10 +69,16 @@ public sealed class HeadlessTestServer<TProgram>(
     public IServiceProvider Services => Factory.Services;
 
     /// <summary>Creates an <see cref="HttpClient"/> backed by the in-memory test server.</summary>
-    public HttpClient CreateClient() => Factory.CreateClient();
+    public HttpClient CreateClient()
+    {
+        return Factory.CreateClient();
+    }
 
     /// <summary>Creates an <see cref="HttpClient"/> with the specified options.</summary>
-    public HttpClient CreateClient(WebApplicationFactoryClientOptions options) => Factory.CreateClient(options);
+    public HttpClient CreateClient(WebApplicationFactoryClientOptions options)
+    {
+        return Factory.CreateClient(options);
+    }
 
     /// <summary>Advances <see cref="TimeProvider"/> by the specified duration.</summary>
     /// <returns>The new UTC time after advancement.</returns>
@@ -253,10 +259,12 @@ public sealed class HeadlessTestServer<TProgram>(
         }
     }
 
-    private bool _IsTransientResetException(Exception exception) =>
-        exception is DbException or IOException or SocketException
-        || (exception.InnerException is not null && _IsTransientResetException(exception.InnerException))
-        || _additionalTransientExceptionFilter?.Invoke(exception) == true;
+    private bool _IsTransientResetException(Exception exception)
+    {
+        return exception is DbException or IOException or SocketException
+            || (exception.InnerException is not null && _IsTransientResetException(exception.InnerException))
+            || _additionalTransientExceptionFilter?.Invoke(exception) == true;
+    }
 
     private async Task _ReplaceResetConnectionAsync(CancellationToken cancellationToken)
     {

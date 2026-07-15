@@ -11,7 +11,10 @@ public sealed class InMemoryCacheGuardTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private InMemoryCache _CreateCache() => new(_timeProvider, new InMemoryCacheOptions());
+    private InMemoryCache _CreateCache()
+    {
+        return new(_timeProvider, new InMemoryCacheOptions());
+    }
 
     #region Cancellation
 

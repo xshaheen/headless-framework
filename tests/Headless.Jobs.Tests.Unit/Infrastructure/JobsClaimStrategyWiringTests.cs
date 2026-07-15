@@ -154,8 +154,10 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
 
     private sealed class PlainJobsDbContext(DbContextOptions<PlainJobsDbContext> options) : DbContext(options)
     {
-        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
             _ConfigureJobsModel<TimeJobEntity>(modelBuilder);
+        }
     }
 
     private static void _ConfigureJobsModel<TTimeJob>(ModelBuilder modelBuilder)
@@ -176,7 +178,10 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
         : IDbContextFactory<TDbContext>
         where TDbContext : DbContext
     {
-        public TDbContext CreateDbContext() => (TDbContext)Activator.CreateInstance(typeof(TDbContext), options)!;
+        public TDbContext CreateDbContext()
+        {
+            return (TDbContext)Activator.CreateInstance(typeof(TDbContext), options)!;
+        }
     }
 
     private sealed class CountingJobsClaimStrategy<TTimeJob, TCronJob> : IJobsClaimStrategy<TTimeJob, TCronJob>
@@ -188,19 +193,30 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
         public IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
             TimeJobEntity[] timeJobs,
             CancellationToken cancellationToken
-        ) => _Count<TimeJobEntity>();
+        )
+        {
+            return _Count<TimeJobEntity>();
+        }
 
-        public IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(CancellationToken cancellationToken) =>
-            _Count<TimeJobEntity>();
+        public IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(CancellationToken cancellationToken)
+        {
+            return _Count<TimeJobEntity>();
+        }
 
         public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimCronJobOccurrencesAsync(
             (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
             CancellationToken cancellationToken
-        ) => _Count<CronJobOccurrenceEntity<TCronJob>>();
+        )
+        {
+            return _Count<CronJobOccurrenceEntity<TCronJob>>();
+        }
 
         public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
             CancellationToken cancellationToken
-        ) => _Count<CronJobOccurrenceEntity<TCronJob>>();
+        )
+        {
+            return _Count<CronJobOccurrenceEntity<TCronJob>>();
+        }
 
         private async IAsyncEnumerable<T> _Count<T>()
         {
@@ -218,19 +234,30 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
         public IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
             TimeJobEntity[] timeJobs,
             CancellationToken cancellationToken
-        ) => _Empty<TimeJobEntity>();
+        )
+        {
+            return _Empty<TimeJobEntity>();
+        }
 
-        public IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(CancellationToken cancellationToken) =>
-            _Empty<TimeJobEntity>();
+        public IAsyncEnumerable<TimeJobEntity> ClaimTimedOutTimeJobsAsync(CancellationToken cancellationToken)
+        {
+            return _Empty<TimeJobEntity>();
+        }
 
         public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimCronJobOccurrencesAsync(
             (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
             CancellationToken cancellationToken
-        ) => _Empty<CronJobOccurrenceEntity<TCronJob>>();
+        )
+        {
+            return _Empty<CronJobOccurrenceEntity<TCronJob>>();
+        }
 
         public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
             CancellationToken cancellationToken
-        ) => _Empty<CronJobOccurrenceEntity<TCronJob>>();
+        )
+        {
+            return _Empty<CronJobOccurrenceEntity<TCronJob>>();
+        }
 
         private static async IAsyncEnumerable<T> _Empty<T>()
         {

@@ -103,5 +103,8 @@ public sealed class CacheEntryOptionsTests
         options.SlidingExpiration.Should().Be(slidingExpiration);
     }
 
-    private static CacheEntryOptions _CreateOptions(CacheEntryOptions options) => options;
+    private static CacheEntryOptions _CreateOptions(CacheEntryOptions options)
+    {
+        return options;
+    }
 }

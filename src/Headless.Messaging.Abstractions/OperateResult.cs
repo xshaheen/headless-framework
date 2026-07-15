@@ -60,7 +60,10 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// <returns>
     /// "Succeeded" if the operation was successful; otherwise "Failed" with the error code.
     /// </returns>
-    public override string ToString() => Succeeded ? "Succeeded" : $"Failed : {_operateError?.Code}";
+    public override string ToString()
+    {
+        return Succeeded ? "Succeeded" : $"Failed : {_operateError?.Code}";
+    }
 
     /// <summary>
     /// Determines whether two <see cref="OperateResult"/> instances are equal based on success status,
@@ -69,10 +72,12 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// <param name="x">The first result to compare.</param>
     /// <param name="y">The second result to compare.</param>
     /// <returns>true if both results match on all three fields; otherwise false.</returns>
-    public bool Equals(OperateResult x, OperateResult y) =>
-        x.Succeeded == y.Succeeded
-        && ReferenceEquals(x.Exception, y.Exception)
-        && Nullable.Equals(x._operateError, y._operateError);
+    public bool Equals(OperateResult x, OperateResult y)
+    {
+        return x.Succeeded == y.Succeeded
+            && ReferenceEquals(x.Exception, y.Exception)
+            && Nullable.Equals(x._operateError, y._operateError);
+    }
 
     /// <summary>
     /// Serves as the default hash function for the <see cref="OperateResult"/> struct.
@@ -80,17 +85,29 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// </summary>
     /// <param name="o">The result to compute the hash code for.</param>
     /// <returns>A hash code combining the error, success status, and exception information.</returns>
-    public int GetHashCode(OperateResult o) => HashCode.Combine(o._operateError, o.Succeeded, o.Exception);
+    public int GetHashCode(OperateResult o)
+    {
+        return HashCode.Combine(o._operateError, o.Succeeded, o.Exception);
+    }
 
-    public override bool Equals(object? obj) => obj is OperateResult other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is OperateResult other && Equals(other);
+    }
 
-    public override int GetHashCode() => GetHashCode(this);
+    public override int GetHashCode()
+    {
+        return GetHashCode(this);
+    }
 
     public static bool operator ==(OperateResult left, OperateResult right) => left.Equals(right);
 
     public static bool operator !=(OperateResult left, OperateResult right) => !(left == right);
 
-    public bool Equals(OperateResult other) => Equals(this, other);
+    public bool Equals(OperateResult other)
+    {
+        return Equals(this, other);
+    }
 }
 
 /// <summary>

@@ -16,8 +16,9 @@ namespace Tests;
 
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
-    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions() =>
-        Options.Create(
+    private static IOptions<AmazonSqsMessagingOptions> _CreateOptions()
+    {
+        return Options.Create(
             new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
@@ -25,6 +26,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 SnsServiceUrl = "http://localhost:4566",
             }
         );
+    }
 
     private static void _SetPrivateFields(AmazonSqsConsumerClient client, IAmazonSQS sqsClient, string queueUrl)
     {

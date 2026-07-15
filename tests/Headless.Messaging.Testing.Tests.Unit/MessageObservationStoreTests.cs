@@ -13,8 +13,9 @@ public sealed class MessageObservationStoreTests : TestBase
         string id = "msg-1",
         object? payload = null,
         IntentType intentType = IntentType.Bus
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             MessageType = type,
             Message = payload ?? Activator.CreateInstance(type)!,
@@ -25,6 +26,7 @@ public sealed class MessageObservationStoreTests : TestBase
             Timestamp = DateTimeOffset.UtcNow,
             IntentType = intentType,
         };
+    }
 
     // --- Record ---
 

@@ -247,6 +247,8 @@ public sealed class PollyRetryConformanceTests : TestBase
         strategyFailed.Should().BeTrue();
     }
 
-    private static MessagingRetryPipeline _Pipeline(RetryStrategyOptions strategy) =>
-        new(new RetryPolicyOptions { RetryStrategy = strategy }, TimeProvider.System, NullLogger.Instance);
+    private static MessagingRetryPipeline _Pipeline(RetryStrategyOptions strategy)
+    {
+        return new(new RetryPolicyOptions { RetryStrategy = strategy }, TimeProvider.System, NullLogger.Instance);
+    }
 }

@@ -179,7 +179,9 @@ public sealed class SetupTests : TestBase
 
     private sealed class ShardTestConsumer : IConsume<ShardTestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<ShardTestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<ShardTestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

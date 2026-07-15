@@ -20,7 +20,10 @@ public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeCont
 
     /// <summary>Creates an <see cref="ImageProcessState.Unsupported"/> result indicating the stream could not be read.</summary>
     /// <returns>A result with <see cref="ImageProcessState.Unsupported"/> state.</returns>
-    public static ImageStreamResizeResult CannotRead() => NotSupported(CannotReadError);
+    public static ImageStreamResizeResult CannotRead()
+    {
+        return NotSupported(CannotReadError);
+    }
 
     /// <summary>Creates an <see cref="ImageProcessState.Unsupported"/> result for an unsupported MIME type.</summary>
     /// <param name="mimType">The MIME type that is not supported.</param>

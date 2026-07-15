@@ -243,7 +243,10 @@ public sealed class PasswordGenerator : IPasswordGenerator
 
     #region Helpers
 
-    private static char _GetUppercase() => _GetCharInclusiveBetween(_AUpperCase, _ZUpperCase);
+    private static char _GetUppercase()
+    {
+        return _GetCharInclusiveBetween(_AUpperCase, _ZUpperCase);
+    }
 
     private static char _GetNonAlphanumeric()
     {
@@ -252,15 +255,27 @@ public sealed class PasswordGenerator : IPasswordGenerator
         return _NonAlphanumericChars[index];
     }
 
-    private static char _GetLowercase() => _GetCharInclusiveBetween(_ALowercase, _ZLowercase);
+    private static char _GetLowercase()
+    {
+        return _GetCharInclusiveBetween(_ALowercase, _ZLowercase);
+    }
 
-    private static char _GetDigit() => _GetCharInclusiveBetween(_Zero, _Nine);
+    private static char _GetDigit()
+    {
+        return _GetCharInclusiveBetween(_Zero, _Nine);
+    }
 
-    private static char _GetCharInclusiveBetween(int min, int max) => (char)_GetIntInclusiveBetween(min, max);
+    private static char _GetCharInclusiveBetween(int min, int max)
+    {
+        return (char)_GetIntInclusiveBetween(min, max);
+    }
 
     // Cryptographically secure: passwords are security-sensitive material, so character selection
     // and shuffling must not use the predictable Random.Shared PRNG.
-    private static int _GetIntInclusiveBetween(int min, int max) => RandomNumberGenerator.GetInt32(min, max + 1);
+    private static int _GetIntInclusiveBetween(int min, int max)
+    {
+        return RandomNumberGenerator.GetInt32(min, max + 1);
+    }
 
     #endregion
 }

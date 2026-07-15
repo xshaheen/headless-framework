@@ -22,7 +22,10 @@ public sealed class GrantedPermissionResult(string name, bool isGranted)
     public IReadOnlyList<GrantPermissionProvider> Providers => _providers;
 
     /// <summary>Records that <paramref name="provider"/> contributed a grant. Internal population path used by the framework.</summary>
-    internal void AddProvider(GrantPermissionProvider provider) => _providers.Add(provider);
+    internal void AddProvider(GrantPermissionProvider provider)
+    {
+        _providers.Add(provider);
+    }
 }
 
 /// <summary>Identifies a grant provider and the specific keys under which it granted the permission.</summary>

@@ -390,7 +390,10 @@ public sealed class SetupApiTests
 
         public string Name => "Custom";
 
-        public IDisposable Change(string? id, string? name = null) => new ApiCurrentTenantScope();
+        public IDisposable Change(string? id, string? name = null)
+        {
+            return new ApiCurrentTenantScope();
+        }
     }
 
     private sealed class ApiCurrentTenantScope : IDisposable

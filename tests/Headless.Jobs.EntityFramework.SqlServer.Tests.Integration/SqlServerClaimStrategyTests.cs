@@ -460,24 +460,44 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public string CreateProbeTableSql => string.Empty;
 
-    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
+    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup)
+    {
+        setup.UseSqlServer(ConnectionString);
+    }
 
-    public void ConfigureStore(DbContextOptionsBuilder db) => db.UseSqlServer(ConnectionString);
+    public void ConfigureStore(DbContextOptionsBuilder db)
+    {
+        db.UseSqlServer(ConnectionString);
+    }
 
-    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder) =>
+    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
+    {
         builder.UseSqlServerClaims();
+    }
 
-    public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
+    public DbConnection CreateConnection()
+    {
+        return new SqlConnection(ConnectionString);
+    }
 
-    public void ConfigureCommitCoordination(IServiceCollection services) => services.AddSqlServerCommitCoordination();
+    public void ConfigureCommitCoordination(IServiceCollection services)
+    {
+        services.AddSqlServerCommitCoordination();
+    }
 
-    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup)
+    {
+        setup.UseSqlServer(ConnectionString);
+    }
 
     public Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
         Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
-    ) => throw new NotSupportedException();
+    )
+    {
+        throw new NotSupportedException();
+    }
 }
 
 internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMappedJobsDbContext> options)

@@ -16,12 +16,14 @@ public sealed class AwsSnsNamedSetupTests
 {
     // Region + explicit (fake) credentials so the SNS client constructs deterministically without any
     // ambient AWS configuration or network access.
-    private static AWSOptions _AwsOptions(RegionEndpoint? region = null) =>
-        new()
+    private static AWSOptions _AwsOptions(RegionEndpoint? region = null)
+    {
+        return new()
         {
             Region = region ?? RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("fake-access-key", "fake-secret-key"),
         };
+    }
 
     private static IConfiguration _Config(string senderId)
     {

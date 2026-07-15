@@ -175,8 +175,9 @@ public sealed class ConsumeContextAccessorTests
         corrB.Should().Be("corr-b");
     }
 
-    private static ConsumeContext<TestMessage> _Context(string correlationId) =>
-        new()
+    private static ConsumeContext<TestMessage> _Context(string correlationId)
+    {
+        return new()
         {
             Message = new TestMessage(),
             MessageId = Guid.NewGuid().ToString(),
@@ -186,6 +187,7 @@ public sealed class ConsumeContextAccessorTests
             MessageName = "test",
             IntentType = IntentType.Bus,
         };
+    }
 
     private sealed record TestMessage;
 }

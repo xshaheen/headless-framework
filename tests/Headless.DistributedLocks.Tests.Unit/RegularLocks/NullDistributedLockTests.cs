@@ -10,7 +10,10 @@ public sealed class NullDistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private NullDistributedLock _CreateProvider() => new(_timeProvider);
+    private NullDistributedLock _CreateProvider()
+    {
+        return new(_timeProvider);
+    }
 
     [Fact]
     public void should_expose_injected_time_provider()

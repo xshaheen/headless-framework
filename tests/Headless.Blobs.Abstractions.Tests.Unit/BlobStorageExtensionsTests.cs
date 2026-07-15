@@ -15,14 +15,16 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await base.DisposeAsyncCore();
     }
 
-    private static BlobInfo _Blob(string key) =>
-        new()
+    private static BlobInfo _Blob(string key)
+    {
+        return new()
         {
             BlobKey = key,
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
             Size = 0,
         };
+    }
 
     #region GetBlobsAsync (streaming) Tests
 
@@ -537,48 +539,71 @@ file sealed class InMemoryBlobStorage : IBlobStorage
         return ValueTask.FromResult<BlobDownloadResult?>(result);
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
         string container,
         IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
-    ) => throw new NotSupportedException();
-
-    public ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default) =>
+    )
+    {
         throw new NotSupportedException();
+    }
+
+    public ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
+    }
 
     public ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
         string container,
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default
-    ) => throw new NotSupportedException();
-
-    public ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default) =>
+    )
+    {
         throw new NotSupportedException();
+    }
+
+    public ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
+    }
 
     public ValueTask<bool> MoveAsync(
         BlobLocation source,
         BlobLocation destination,
         CancellationToken cancellationToken = default
-    ) => throw new NotSupportedException();
+    )
+    {
+        throw new NotSupportedException();
+    }
 
     public ValueTask<bool> CopyAsync(
         BlobLocation source,
         BlobLocation destination,
         CancellationToken cancellationToken = default
-    ) => throw new NotSupportedException();
-
-    public ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default) =>
+    )
+    {
         throw new NotSupportedException();
+    }
 
-    public ValueTask<BlobInfo?> GetBlobInfoAsync(
-        BlobLocation location,
-        CancellationToken cancellationToken = default
-    ) => throw new NotSupportedException();
-
-    public ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default) =>
+    public ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default)
+    {
         throw new NotSupportedException();
+    }
+
+    public ValueTask<BlobInfo?> GetBlobInfoAsync(BlobLocation location, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
+    }
+
+    public ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
+    }
 }
 
 public sealed class TestData

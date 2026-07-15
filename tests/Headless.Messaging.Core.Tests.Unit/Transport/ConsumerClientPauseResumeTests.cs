@@ -141,22 +141,39 @@ public sealed class ConsumerClientPauseResumeTests
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

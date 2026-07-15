@@ -82,7 +82,10 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// Returns the string representation of the broker address in the format "Name$Endpoint".
     /// </summary>
     /// <returns>A string combining the broker name and endpoint separated by "$".</returns>
-    public override readonly string ToString() => Name + "$" + Endpoint;
+    public override readonly string ToString()
+    {
+        return Name + "$" + Endpoint;
+    }
 
     public readonly bool Equals(BrokerAddress other)
     {

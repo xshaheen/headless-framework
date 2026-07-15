@@ -263,8 +263,9 @@ public sealed class DevEmailSenderTests : TestBase
         IReadOnlyList<EmailRequestAddress>? cc = null,
         IReadOnlyList<EmailRequestAddress>? bcc = null,
         IReadOnlyList<EmailRequestAttachment>? attachments = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             From = "from@example.com",
             Destination = new EmailRequestDestination
@@ -278,6 +279,7 @@ public sealed class DevEmailSenderTests : TestBase
             MessageHtml = html,
             Attachments = attachments ?? [],
         };
+    }
 }
 
 public sealed class NoopEmailSenderTests : TestBase

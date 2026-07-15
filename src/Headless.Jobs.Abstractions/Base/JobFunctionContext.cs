@@ -99,9 +99,15 @@ public class JobFunctionContext
     /// passed to the job function method will be cancelled, and the job's status will transition
     /// to <c>Cancelled</c>.
     /// </summary>
-    public void RequestCancellation() => RequestCancelOperationAction();
+    public void RequestCancellation()
+    {
+        RequestCancelOperationAction();
+    }
 
-    internal void SetServiceScope(AsyncServiceScope serviceScope) => ServiceScope = serviceScope;
+    internal void SetServiceScope(AsyncServiceScope serviceScope)
+    {
+        ServiceScope = serviceScope;
+    }
 }
 
 /// <summary>
@@ -124,5 +130,8 @@ public class CronOccurrenceOperations
     /// same cron job is currently running on this node. Use this to prevent overlapping executions for
     /// long-running cron jobs.
     /// </summary>
-    public void SkipIfAlreadyRunning() => SkipIfAlreadyRunningAction();
+    public void SkipIfAlreadyRunning()
+    {
+        SkipIfAlreadyRunningAction();
+    }
 }

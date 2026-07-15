@@ -27,7 +27,10 @@ public sealed record GeoCoordinateRequest(double Latitude, double Longitude)
     }
 
     /// <summary>Maps this request to the domain <see cref="GeoCoordinate"/> primitive.</summary>
-    public GeoCoordinate ToGeoCoordinate() => this;
+    public GeoCoordinate ToGeoCoordinate()
+    {
+        return this;
+    }
 
     /// <summary>
     /// Implicitly converts to the domain <see cref="GeoCoordinate"/> primitive.

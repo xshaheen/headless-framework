@@ -27,12 +27,14 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     // SFTP root directories are real containers, so the SSH provider supports container lifecycle through a
     // separately-resolved manager (constructed directly here, never cast from IBlobStorage). It shares the fixture's
     // DI-owned pool and a matching normalizer with GetStorage().
-    protected override IBlobContainerManager GetContainerManager() =>
-        new SshBlobContainerManager(
+    protected override IBlobContainerManager GetContainerManager()
+    {
+        return new SshBlobContainerManager(
             fixture.Pool,
             fixture.CrossOsNamingNormalizer,
             LoggerFactory.CreateLogger<SshBlobContainerManager>()
         );
+    }
 
     #region SSH-specific
 
@@ -113,133 +115,214 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     #region List / Round-trip
 
     [Fact]
-    public override Task can_get_empty_file_list_on_missing_directory() =>
-        base.can_get_empty_file_list_on_missing_directory();
+    public override Task can_get_empty_file_list_on_missing_directory()
+    {
+        return base.can_get_empty_file_list_on_missing_directory();
+    }
 
     [Fact]
-    public override Task can_get_file_list_for_single_folder() => base.can_get_file_list_for_single_folder();
+    public override Task can_get_file_list_for_single_folder()
+    {
+        return base.can_get_file_list_for_single_folder();
+    }
 
     [Fact]
-    public override Task can_get_file_list_for_single_file() => base.can_get_file_list_for_single_file();
+    public override Task can_get_file_list_for_single_file()
+    {
+        return base.can_get_file_list_for_single_file();
+    }
 
     [Fact]
-    public override Task can_get_file_info() => base.can_get_file_info();
+    public override Task can_get_file_info()
+    {
+        return base.can_get_file_info();
+    }
 
     [Fact]
-    public override Task can_get_non_existent_file_info() => base.can_get_non_existent_file_info();
+    public override Task can_get_non_existent_file_info()
+    {
+        return base.can_get_non_existent_file_info();
+    }
 
     [Fact]
-    public override Task can_manage_files() => base.can_manage_files();
+    public override Task can_manage_files()
+    {
+        return base.can_manage_files();
+    }
 
     [Fact]
-    public override Task can_move_files() => base.can_move_files();
+    public override Task can_move_files()
+    {
+        return base.can_move_files();
+    }
 
     [Fact]
-    public override Task can_round_trip_seekable_stream() => base.can_round_trip_seekable_stream();
+    public override Task can_round_trip_seekable_stream()
+    {
+        return base.can_round_trip_seekable_stream();
+    }
 
     [Fact]
-    public override Task will_reset_stream_position() => base.will_reset_stream_position();
+    public override Task will_reset_stream_position()
+    {
+        return base.will_reset_stream_position();
+    }
 
     [Fact]
-    public override Task can_save_over_existing_stored_content() => base.can_save_over_existing_stored_content();
+    public override Task can_save_over_existing_stored_content()
+    {
+        return base.can_save_over_existing_stored_content();
+    }
 
     [Fact]
-    public override Task can_concurrently_manage_files() => base.can_concurrently_manage_files();
+    public override Task can_concurrently_manage_files()
+    {
+        return base.can_concurrently_manage_files();
+    }
 
     #endregion
 
     #region Token Paging
 
     [Fact]
-    public override Task token_paging_round_trips_across_serialization() =>
-        base.token_paging_round_trips_across_serialization();
+    public override Task token_paging_round_trips_across_serialization()
+    {
+        return base.token_paging_round_trips_across_serialization();
+    }
 
     [Fact]
-    public override Task list_rejects_malformed_continuation_token() =>
-        base.list_rejects_malformed_continuation_token();
+    public override Task list_rejects_malformed_continuation_token()
+    {
+        return base.list_rejects_malformed_continuation_token();
+    }
 
     #endregion
 
     #region Delete by prefix / glob
 
     [Fact]
-    public override Task delete_by_prefix_removes_only_matching_blobs() =>
-        base.delete_by_prefix_removes_only_matching_blobs();
+    public override Task delete_by_prefix_removes_only_matching_blobs()
+    {
+        return base.delete_by_prefix_removes_only_matching_blobs();
+    }
 
     [Fact]
-    public override Task can_delete_entire_folder() => base.can_delete_entire_folder();
+    public override Task can_delete_entire_folder()
+    {
+        return base.can_delete_entire_folder();
+    }
 
     [Fact]
-    public override Task can_delete_entire_folder_with_wildcard() => base.can_delete_entire_folder_with_wildcard();
+    public override Task can_delete_entire_folder_with_wildcard()
+    {
+        return base.can_delete_entire_folder_with_wildcard();
+    }
 
     [Fact]
-    public override Task can_delete_folder_with_multi_folder_wildcards() =>
-        base.can_delete_folder_with_multi_folder_wildcards();
+    public override Task can_delete_folder_with_multi_folder_wildcards()
+    {
+        return base.can_delete_folder_with_multi_folder_wildcards();
+    }
 
     [Fact]
-    public override Task can_delete_specific_files() => base.can_delete_specific_files();
+    public override Task can_delete_specific_files()
+    {
+        return base.can_delete_specific_files();
+    }
 
     [Fact]
-    public override Task can_delete_nested_folder() => base.can_delete_nested_folder();
+    public override Task can_delete_nested_folder()
+    {
+        return base.can_delete_nested_folder();
+    }
 
     [Fact]
-    public override Task can_delete_specific_files_in_nested_folder() =>
-        base.can_delete_specific_files_in_nested_folder();
+    public override Task can_delete_specific_files_in_nested_folder()
+    {
+        return base.can_delete_specific_files_in_nested_folder();
+    }
 
     #endregion
 
     #region Metadata / Move with metadata
 
     [Fact]
-    public override Task metadata_round_trips_and_sidecar_is_hidden() =>
-        base.metadata_round_trips_and_sidecar_is_hidden();
+    public override Task metadata_round_trips_and_sidecar_is_hidden()
+    {
+        return base.metadata_round_trips_and_sidecar_is_hidden();
+    }
 
     [Fact]
-    public override Task list_metadata_is_opt_in() => base.list_metadata_is_opt_in();
+    public override Task list_metadata_is_opt_in()
+    {
+        return base.list_metadata_is_opt_in();
+    }
 
     [Fact]
-    public override Task move_relocates_blob_and_metadata() => base.move_relocates_blob_and_metadata();
+    public override Task move_relocates_blob_and_metadata()
+    {
+        return base.move_relocates_blob_and_metadata();
+    }
 
     #endregion
 
     #region Normalization round-trip
 
     [Fact]
-    public override Task normalization_round_trips_through_bulk_and_info() =>
-        base.normalization_round_trips_through_bulk_and_info();
+    public override Task normalization_round_trips_through_bulk_and_info()
+    {
+        return base.normalization_round_trips_through_bulk_and_info();
+    }
 
     #endregion
 
     #region Bulk operations
 
     [Fact]
-    public override Task bulk_upload_reports_per_blob_results() => base.bulk_upload_reports_per_blob_results();
+    public override Task bulk_upload_reports_per_blob_results()
+    {
+        return base.bulk_upload_reports_per_blob_results();
+    }
 
     [Fact]
-    public override Task bulk_upload_failure_does_not_abort_batch() => base.bulk_upload_failure_does_not_abort_batch();
+    public override Task bulk_upload_failure_does_not_abort_batch()
+    {
+        return base.bulk_upload_failure_does_not_abort_batch();
+    }
 
     [Fact]
-    public override Task bulk_delete_reports_per_entry_results() => base.bulk_delete_reports_per_entry_results();
+    public override Task bulk_delete_reports_per_entry_results()
+    {
+        return base.bulk_delete_reports_per_entry_results();
+    }
 
     [Fact]
-    public override Task bulk_delete_reports_each_blob_by_identity() =>
-        base.bulk_delete_reports_each_blob_by_identity();
+    public override Task bulk_delete_reports_each_blob_by_identity()
+    {
+        return base.bulk_delete_reports_each_blob_by_identity();
+    }
 
     #endregion
 
     #region Container management capability
 
     [Fact]
-    public override Task container_management_capability_matches_support_flag() =>
-        base.container_management_capability_matches_support_flag();
+    public override Task container_management_capability_matches_support_flag()
+    {
+        return base.container_management_capability_matches_support_flag();
+    }
 
     [Fact]
-    public override Task container_manager_rejects_traversal_container() =>
-        base.container_manager_rejects_traversal_container();
+    public override Task container_manager_rejects_traversal_container()
+    {
+        return base.container_manager_rejects_traversal_container();
+    }
 
     [Fact]
-    public override Task requires_container_provisioning_reflects_backend_reality() =>
-        base.requires_container_provisioning_reflects_backend_reality();
+    public override Task requires_container_provisioning_reflects_backend_reality()
+    {
+        return base.requires_container_provisioning_reflects_backend_reality();
+    }
 
     [Fact]
     public async Task upload_to_unprovisioned_container_throws_in_sftp_test_fixture()
@@ -267,34 +350,58 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     #region Empty / missing container (no throw)
 
     [Fact]
-    public override Task can_call_delete_all_async_with_empty_container() =>
-        base.can_call_delete_all_async_with_empty_container();
+    public override Task can_call_delete_all_async_with_empty_container()
+    {
+        return base.can_call_delete_all_async_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_delete_with_empty_container() => base.can_call_delete_with_empty_container();
+    public override Task can_call_delete_with_empty_container()
+    {
+        return base.can_call_delete_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_bulk_Delete_with_empty_container() =>
-        base.can_call_bulk_Delete_with_empty_container();
+    public override Task can_call_bulk_Delete_with_empty_container()
+    {
+        return base.can_call_bulk_Delete_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_move_with_empty_container() => base.can_call_move_with_empty_container();
+    public override Task can_call_move_with_empty_container()
+    {
+        return base.can_call_move_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_copy_with_empty_container() => base.can_call_copy_with_empty_container();
+    public override Task can_call_copy_with_empty_container()
+    {
+        return base.can_call_copy_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_exists_with_empty_container() => base.can_call_exists_with_empty_container();
+    public override Task can_call_exists_with_empty_container()
+    {
+        return base.can_call_exists_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_download_with_empty_container() => base.can_call_download_with_empty_container();
+    public override Task can_call_download_with_empty_container()
+    {
+        return base.can_call_download_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_get_blob_info_with_empty_container() =>
-        base.can_call_get_blob_info_with_empty_container();
+    public override Task can_call_get_blob_info_with_empty_container()
+    {
+        return base.can_call_get_blob_info_with_empty_container();
+    }
 
     [Fact]
-    public override Task can_call_list_with_empty_container() => base.can_call_list_with_empty_container();
+    public override Task can_call_list_with_empty_container()
+    {
+        return base.can_call_list_with_empty_container();
+    }
 
     #endregion
 
@@ -304,40 +411,57 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\..\\etc\\passwd")]
     [InlineData("subdir/../../../etc/passwd")]
-    public override Task blob_location_with_traversal_path_throws(string path) =>
-        base.blob_location_with_traversal_path_throws(path);
+    public override Task blob_location_with_traversal_path_throws(string path)
+    {
+        return base.blob_location_with_traversal_path_throws(path);
+    }
 
     [Fact]
-    public override Task blob_location_with_traversal_container_throws() =>
-        base.blob_location_with_traversal_container_throws();
+    public override Task blob_location_with_traversal_container_throws()
+    {
+        return base.blob_location_with_traversal_container_throws();
+    }
 
     [Fact]
-    public override Task blob_location_with_control_characters_throws() =>
-        base.blob_location_with_control_characters_throws();
+    public override Task blob_location_with_control_characters_throws()
+    {
+        return base.blob_location_with_control_characters_throws();
+    }
 
     [Theory]
     [InlineData("/etc/passwd")]
     [InlineData("\\windows\\system32")]
-    public override Task blob_location_with_absolute_path_throws(string path) =>
-        base.blob_location_with_absolute_path_throws(path);
+    public override Task blob_location_with_absolute_path_throws(string path)
+    {
+        return base.blob_location_with_absolute_path_throws(path);
+    }
 
     [Fact]
-    public override Task blob_location_with_reserved_sidecar_suffix_throws() =>
-        base.blob_location_with_reserved_sidecar_suffix_throws();
+    public override Task blob_location_with_reserved_sidecar_suffix_throws()
+    {
+        return base.blob_location_with_reserved_sidecar_suffix_throws();
+    }
 
     [Theory]
     [InlineData("../escape/")]
     [InlineData("..\\escape\\")]
     [InlineData("foo/../bar")]
-    public override Task blob_query_with_traversal_prefix_throws(string prefix) =>
-        base.blob_query_with_traversal_prefix_throws(prefix);
+    public override Task blob_query_with_traversal_prefix_throws(string prefix)
+    {
+        return base.blob_query_with_traversal_prefix_throws(prefix);
+    }
 
     [Fact]
-    public override Task blob_query_with_empty_container_throws() => base.blob_query_with_empty_container_throws();
+    public override Task blob_query_with_empty_container_throws()
+    {
+        return base.blob_query_with_empty_container_throws();
+    }
 
     [Fact]
-    public override Task bulk_delete_with_traversal_path_reports_failure() =>
-        base.bulk_delete_with_traversal_path_reports_failure();
+    public override Task bulk_delete_with_traversal_path_reports_failure()
+    {
+        return base.bulk_delete_with_traversal_path_reports_failure();
+    }
 
     #endregion
 }

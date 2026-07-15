@@ -106,8 +106,10 @@ internal static class CacheBenchmarkClientFactory
         ),
     ];
 
-    public static IReadOnlyList<CacheBenchmarkClientDescriptor> GetDescriptors(bool includeRedis = false) =>
-        includeRedis ? [.. _BaseDescriptors, .. _RedisDescriptors] : _BaseDescriptors;
+    public static IReadOnlyList<CacheBenchmarkClientDescriptor> GetDescriptors(bool includeRedis = false)
+    {
+        return includeRedis ? [.. _BaseDescriptors, .. _RedisDescriptors] : _BaseDescriptors;
+    }
 
     public static bool IsRedisAvailable =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HEADLESS_CACHE_BENCHMARK_REDIS"));
@@ -135,13 +137,16 @@ internal static class CacheBenchmarkClientFactory
         };
     }
 
-    public static IEnumerable<string> MemoryOnlyProviderIds() =>
+    public static IEnumerable<string> MemoryOnlyProviderIds()
+    {
+        return
         [
             BenchmarkProviderIds.HeadlessInMemory,
             BenchmarkProviderIds.FusionMemory,
             BenchmarkProviderIds.FoundatioMemory,
             BenchmarkProviderIds.MicrosoftMemory,
         ];
+    }
 
     public static IEnumerable<string> DistributedOnlyProviderIds(bool includeRedis = false)
     {
@@ -357,8 +362,11 @@ internal static class CacheBenchmarkClientFactory
         return new MicrosoftDistributedCacheBenchmarkClient(descriptor, cache);
     }
 
-    private static CacheBenchmarkClientDescriptor _GetDescriptor(string providerId) =>
-        GetDescriptors(includeRedis: true).Single(x => string.Equals(x.Id, providerId, StringComparison.Ordinal));
+    private static CacheBenchmarkClientDescriptor _GetDescriptor(string providerId)
+    {
+        return GetDescriptors(includeRedis: true)
+            .Single(x => string.Equals(x.Id, providerId, StringComparison.Ordinal));
+    }
 
     private static string _GetRequiredRedisConnectionString()
     {
@@ -400,30 +408,50 @@ internal static class CacheBenchmarkClientFactory
 
     private sealed class PrefixDistributedCache(string prefix, IDistributedCache inner) : IDistributedCache, IDisposable
     {
-        public byte[]? Get(string key) => inner.Get(prefix + key);
+        public byte[]? Get(string key)
+        {
+            return inner.Get(prefix + key);
+        }
 
-        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) =>
-            inner.GetAsync(prefix + key, token);
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            return inner.GetAsync(prefix + key, token);
+        }
 
-        public void Refresh(string key) => inner.Refresh(prefix + key);
+        public void Refresh(string key)
+        {
+            inner.Refresh(prefix + key);
+        }
 
-        public Task RefreshAsync(string key, CancellationToken token = default) =>
-            inner.RefreshAsync(prefix + key, token);
+        public Task RefreshAsync(string key, CancellationToken token = default)
+        {
+            return inner.RefreshAsync(prefix + key, token);
+        }
 
-        public void Remove(string key) => inner.Remove(prefix + key);
+        public void Remove(string key)
+        {
+            inner.Remove(prefix + key);
+        }
 
-        public Task RemoveAsync(string key, CancellationToken token = default) =>
-            inner.RemoveAsync(prefix + key, token);
+        public Task RemoveAsync(string key, CancellationToken token = default)
+        {
+            return inner.RemoveAsync(prefix + key, token);
+        }
 
-        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) =>
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+        {
             inner.Set(prefix + key, value, options);
+        }
 
         public Task SetAsync(
             string key,
             byte[] value,
             DistributedCacheEntryOptions options,
             CancellationToken token = default
-        ) => inner.SetAsync(prefix + key, value, options, token);
+        )
+        {
+            return inner.SetAsync(prefix + key, value, options, token);
+        }
 
         public void Dispose()
         {

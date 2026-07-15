@@ -74,7 +74,10 @@ internal sealed class MessageSender : IMessageSender
             serviceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
     }
 
-    public Task<OperateResult> SendAsync(MediumMessage message) => SendAsync(message, _serviceProvider);
+    public Task<OperateResult> SendAsync(MediumMessage message)
+    {
+        return SendAsync(message, _serviceProvider);
+    }
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {

@@ -172,5 +172,8 @@ internal sealed partial class InMemoryDataStorage
         return scheduleTask(null, result);
     }
 
-    public IMonitoringApi GetMonitoringApi() => new InMemoryMonitoringApi(this, timeProvider);
+    public IMonitoringApi GetMonitoringApi()
+    {
+        return new InMemoryMonitoringApi(this, timeProvider);
+    }
 }

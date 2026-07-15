@@ -27,9 +27,15 @@ public sealed class EmittingOrder : IAuditTracked, IIntegrationEventEmitter
         _messages.Clear();
     }
 
-    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents() => _messages;
+    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents()
+    {
+        return _messages;
+    }
 
-    public void Emit(IIntegrationEvent message) => _messages.Add(message);
+    public void Emit(IIntegrationEvent message)
+    {
+        _messages.Add(message);
+    }
 }
 
 internal sealed record TestDistributedMessage(string UniqueId) : IIntegrationEvent;

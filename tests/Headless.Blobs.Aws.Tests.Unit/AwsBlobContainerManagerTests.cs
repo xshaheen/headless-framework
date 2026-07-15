@@ -20,7 +20,10 @@ public sealed class AwsBlobContainerManagerTests : TestBase
 {
     private readonly IAmazonS3 _s3 = Substitute.For<IAmazonS3>();
 
-    private AwsBlobContainerManager _CreateSut() => new(_s3, new AwsBlobNamingNormalizer());
+    private AwsBlobContainerManager _CreateSut()
+    {
+        return new(_s3, new AwsBlobNamingNormalizer());
+    }
 
     [Fact]
     public async Task ensure_container_ensures_bucket_at_most_once()

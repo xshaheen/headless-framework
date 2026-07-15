@@ -80,8 +80,14 @@ public sealed class AzureBlobStorageDeleteMappingTests
             return false;
         }
 
-        protected override bool ContainsHeader(string name) => false;
+        protected override bool ContainsHeader(string name)
+        {
+            return false;
+        }
 
-        protected override IEnumerable<HttpHeader> EnumerateHeaders() => [];
+        protected override IEnumerable<HttpHeader> EnumerateHeaders()
+        {
+            return [];
+        }
     }
 }

@@ -77,8 +77,9 @@ public sealed class DistributedLockCoreHelpersTests
         DistributedLockCoreHelpers.IsTransientStorageException(exception).Should().BeFalse();
     }
 
-    private static Exception _CreateException(ExceptionKind kind) =>
-        kind switch
+    private static Exception _CreateException(ExceptionKind kind)
+    {
+        return kind switch
         {
             ExceptionKind.Timeout => new TimeoutException(),
             ExceptionKind.IOException => new IOException("connection reset"),
@@ -92,6 +93,7 @@ public sealed class DistributedLockCoreHelpersTests
             ExceptionKind.ArgumentOutOfRange => new ArgumentOutOfRangeException(nameof(kind)),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
         };
+    }
 
     #endregion
 

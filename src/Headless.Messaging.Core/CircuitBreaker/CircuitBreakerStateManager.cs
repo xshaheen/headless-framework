@@ -344,8 +344,10 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public bool IsOpen(IntentType intentType, string groupName) =>
-        IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public bool IsOpen(IntentType intentType, string groupName)
+    {
+        return IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
+    }
 
     /// <inheritdoc />
     public async ValueTask RemoveGroupAsync(string groupName)
@@ -444,8 +446,10 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerState? GetState(IntentType intentType, string groupName) =>
-        GetState(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public CircuitBreakerState? GetState(IntentType intentType, string groupName)
+    {
+        return GetState(CircuitBreakerGroupKeys.For(intentType, groupName));
+    }
 
     /// <inheritdoc />
     public IReadOnlySet<string> KnownGroups => Volatile.Read(ref _knownGroups);
@@ -517,8 +521,10 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName) =>
-        GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName)
+    {
+        return GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
+    }
 
     /// <inheritdoc />
     public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
@@ -583,7 +589,10 @@ internal sealed class CircuitBreakerStateManager(
         IntentType intentType,
         string groupName,
         CancellationToken cancellationToken = default
-    ) => ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+    )
+    {
+        return ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+    }
 
     /// <inheritdoc />
     public async ValueTask<bool> ForceOpenAsync(string groupName, CancellationToken cancellationToken = default)
@@ -666,7 +675,10 @@ internal sealed class CircuitBreakerStateManager(
         IntentType intentType,
         string groupName,
         CancellationToken cancellationToken = default
-    ) => ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+    )
+    {
+        return ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+    }
 
     /// <summary>
     /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels

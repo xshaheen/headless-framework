@@ -140,8 +140,9 @@ public sealed class EnsureHasBodyTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    private static SendSingleEmailRequest _Request(string? text, string? html) =>
-        new()
+    private static SendSingleEmailRequest _Request(string? text, string? html)
+    {
+        return new()
         {
             From = "from@example.com",
             Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
@@ -149,4 +150,5 @@ public sealed class EnsureHasBodyTests
             MessageText = text,
             MessageHtml = html,
         };
+    }
 }

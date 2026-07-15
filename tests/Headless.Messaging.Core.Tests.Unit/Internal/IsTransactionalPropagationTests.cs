@@ -210,7 +210,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
     private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     private sealed class TestDbTransaction : DbTransaction
@@ -244,5 +247,8 @@ internal sealed class RecordingTransport : IBusTransport
         return Task.FromResult(OperateResult.Success);
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }

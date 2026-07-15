@@ -45,14 +45,16 @@ public sealed class MailkitSmtpOptionsValidatorTests
         _validator.Validate(_Valid(timeout: TimeSpan.FromDays(30))).IsValid.Should().BeFalse();
     }
 
-    private static MailkitSmtpOptions _Valid(int maxPoolSize = 10, TimeSpan? timeout = null) =>
-        new()
+    private static MailkitSmtpOptions _Valid(int maxPoolSize = 10, TimeSpan? timeout = null)
+    {
+        return new()
         {
             Server = "smtp.example.com",
             Port = 587,
             MaxPoolSize = maxPoolSize,
             Timeout = timeout ?? TimeSpan.FromSeconds(30),
         };
+    }
 }
 
 public sealed class SmtpClientPooledObjectPolicyTests
@@ -161,14 +163,16 @@ public sealed class MailkitEmailSenderTests : TestBase
         return new MailkitEmailSender(pool, options, optionsName: null, NullLogger<MailkitEmailSender>.Instance);
     }
 
-    private static SendSingleEmailRequest _Request() =>
-        new()
+    private static SendSingleEmailRequest _Request()
+    {
+        return new()
         {
             From = "from@example.com",
             Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
             Subject = "subject",
             MessageText = "body",
         };
+    }
 
     // A test double whose connect step is scripted; no network is touched. A fresh client reports
     // IsConnected == false, so the sender always reaches ConnectAsync.
@@ -179,6 +183,9 @@ public sealed class MailkitEmailSenderTests : TestBase
             int port = 0,
             SecureSocketOptions options = SecureSocketOptions.Auto,
             CancellationToken cancellationToken = default
-        ) => onConnect(cancellationToken);
+        )
+        {
+            return onConnect(cancellationToken);
+        }
     }
 }

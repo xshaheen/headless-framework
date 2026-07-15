@@ -87,7 +87,10 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     }
 
     /// <inheritdoc />
-    public void Add(string name, TValue value) => Add((name, value));
+    public void Add(string name, TValue value)
+    {
+        Add((name, value));
+    }
 
     /// <inheritdoc />
     public void AddOrReplace(string name, TValue value)
@@ -119,7 +122,10 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     }
 
     /// <inheritdoc />
-    public bool Remove(string name) => RemoveAll(x => x.Name.OrdinalEquals(name, !caseSensitiveNames)) > 0;
+    public bool Remove(string name)
+    {
+        return RemoveAll(x => x.Name.OrdinalEquals(name, !caseSensitiveNames)) > 0;
+    }
 
     /// <inheritdoc />
     public TValue? FirstOrDefault(string name)

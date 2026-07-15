@@ -146,5 +146,8 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         };
     }
 
-    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    private static Guid _StorageGuid(int value)
+    {
+        return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
 }

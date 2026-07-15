@@ -24,8 +24,10 @@ internal sealed class JobsExecutionContext
     private JobExecutionState[] _functions = [];
     internal JobExecutionState[] Functions => Volatile.Read(ref _functions);
 
-    public void SetNextPlannedOccurrence(DateTime? dt) =>
+    public void SetNextPlannedOccurrence(DateTime? dt)
+    {
         Interlocked.Exchange(ref _nextOccurrenceTicks, dt?.Ticks ?? -1);
+    }
 
     public DateTime? GetNextPlannedOccurrence()
     {

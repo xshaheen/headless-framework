@@ -56,18 +56,35 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id integer);";
 
-    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
+    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup)
+    {
+        setup.UsePostgreSql(ConnectionString);
+    }
 
-    public void ConfigureStore(DbContextOptionsBuilder db) => db.UseNpgsql(ConnectionString);
+    public void ConfigureStore(DbContextOptionsBuilder db)
+    {
+        db.UseNpgsql(ConnectionString);
+    }
 
-    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder) =>
+    public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
+    {
         builder.UsePostgreSqlClaims();
+    }
 
-    public DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
+    public DbConnection CreateConnection()
+    {
+        return new NpgsqlConnection(ConnectionString);
+    }
 
-    public void ConfigureCommitCoordination(IServiceCollection services) => services.AddPostgreSqlCommitCoordination();
+    public void ConfigureCommitCoordination(IServiceCollection services)
+    {
+        services.AddPostgreSqlCommitCoordination();
+    }
 
-    public void ConfigureMessagingStorage(MessagingSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
+    public void ConfigureMessagingStorage(MessagingSetupBuilder setup)
+    {
+        setup.UsePostgreSql(ConnectionString);
+    }
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,

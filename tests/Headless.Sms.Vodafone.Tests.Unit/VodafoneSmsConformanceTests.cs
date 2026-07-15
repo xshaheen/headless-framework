@@ -39,7 +39,10 @@ public sealed class VodafoneSmsConformanceTests : SmsSenderConformanceTests, ICl
         return _CreateSender($"{_fixture.BaseUrl}/submit");
     }
 
-    protected override ISmsSender CreateFaultingSender() => _CreateSender("http://localhost:1/submit");
+    protected override ISmsSender CreateFaultingSender()
+    {
+        return _CreateSender("http://localhost:1/submit");
+    }
 
     private VodafoneSmsSender _CreateSender(string endpoint)
     {
@@ -64,22 +67,38 @@ public sealed class VodafoneSmsConformanceTests : SmsSenderConformanceTests, ICl
     }
 
     [Fact]
-    public override Task should_reject_a_null_request() => base.should_reject_a_null_request();
+    public override Task should_reject_a_null_request()
+    {
+        return base.should_reject_a_null_request();
+    }
 
     [Fact]
-    public override Task should_reject_a_null_destination() => base.should_reject_a_null_destination();
+    public override Task should_reject_a_null_destination()
+    {
+        return base.should_reject_a_null_destination();
+    }
 
     [Fact]
-    public override Task should_reject_a_request_with_an_empty_body() =>
-        base.should_reject_a_request_with_an_empty_body();
+    public override Task should_reject_a_request_with_an_empty_body()
+    {
+        return base.should_reject_a_request_with_an_empty_body();
+    }
 
     [Fact]
-    public override Task should_succeed_for_a_single_destination() => base.should_succeed_for_a_single_destination();
+    public override Task should_succeed_for_a_single_destination()
+    {
+        return base.should_succeed_for_a_single_destination();
+    }
 
     [Fact]
-    public override Task should_report_a_transient_failure_on_a_transport_fault() =>
-        base.should_report_a_transient_failure_on_a_transport_fault();
+    public override Task should_report_a_transient_failure_on_a_transport_fault()
+    {
+        return base.should_report_a_transient_failure_on_a_transport_fault();
+    }
 
     [Fact]
-    public override Task should_propagate_cancellation() => base.should_propagate_cancellation();
+    public override Task should_propagate_cancellation()
+    {
+        return base.should_propagate_cancellation();
+    }
 }

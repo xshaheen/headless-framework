@@ -471,9 +471,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
         public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent => LocalEmitters.Add(domainEvent);
+            where T : class, IDomainEvent
+        {
+            LocalEmitters.Add(domainEvent);
+        }
 
-        public void Publish(IDomainEvent domainEvent) => LocalEmitters.Add(domainEvent);
+        public void Publish(IDomainEvent domainEvent)
+        {
+            LocalEmitters.Add(domainEvent);
+        }
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
@@ -520,9 +526,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public int PublishCount => _publishCount;
 
         public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent => Interlocked.Increment(ref _publishCount);
+            where T : class, IDomainEvent
+        {
+            Interlocked.Increment(ref _publishCount);
+        }
 
-        public void Publish(IDomainEvent domainEvent) => Interlocked.Increment(ref _publishCount);
+        public void Publish(IDomainEvent domainEvent)
+        {
+            Interlocked.Increment(ref _publishCount);
+        }
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
@@ -580,13 +592,19 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     private sealed class OneShotRetryExecutionStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
     {
-        protected override bool ShouldRetryOn(Exception exception) => exception is TransientMarkerException;
+        protected override bool ShouldRetryOn(Exception exception)
+        {
+            return exception is TransientMarkerException;
+        }
     }
 
     private sealed class OneShotRetryExecutionStrategyFactory(ExecutionStrategyDependencies dependencies)
         : IExecutionStrategyFactory
     {
-        public IExecutionStrategy Create() => new OneShotRetryExecutionStrategy(dependencies);
+        public IExecutionStrategy Create()
+        {
+            return new OneShotRetryExecutionStrategy(dependencies);
+        }
     }
 
     private sealed record RuntimeLocalMessage(string UniqueId) : IDomainEvent;
@@ -615,7 +633,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public string Name => "Custom";
 
-        public IDisposable Change(string? id, string? name = null) => new RuntimeCurrentTenantScope();
+        public IDisposable Change(string? id, string? name = null)
+        {
+            return new RuntimeCurrentTenantScope();
+        }
     }
 
     private sealed class RuntimeCurrentTenantScope : IDisposable
@@ -639,7 +660,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public required string Name { get; init; }
 
-        public IReadOnlyList<object> GetKeys() => [Id];
+        public IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     private sealed class RuntimeEntity : AggregateRoot, IEntity<Guid>
@@ -649,10 +673,19 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public required string Name { get; init; }
 
         // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
-        public void EmitDomainEvent(IDomainEvent domainEvent) => AddDomainEvent(domainEvent);
+        public void EmitDomainEvent(IDomainEvent domainEvent)
+        {
+            AddDomainEvent(domainEvent);
+        }
 
-        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+        {
+            AddIntegrationEvent(integrationEvent);
+        }
 
-        public override IReadOnlyList<object> GetKeys() => [Id];
+        public override IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 }

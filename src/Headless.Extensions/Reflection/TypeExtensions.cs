@@ -221,7 +221,10 @@ public static class TypeExtensions
     [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
     public static object? GetDefaultValue(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] this Type type
-    ) => TypeHelper.GetDefaultValue(type);
+    )
+    {
+        return TypeHelper.GetDefaultValue(type);
+    }
 
     /// <summary>Determines whether the object equals the default value of its runtime type.</summary>
     /// <param name="obj">The object to test. A <see langword="null"/> reference is treated as a default value.</param>

@@ -115,7 +115,10 @@ public sealed class NatsMessageConfigBuilder<TMessage>
         return this;
     }
 
-    internal NatsMessageConfig<TMessage> Build() => new(_subjectShardSelector);
+    internal NatsMessageConfig<TMessage> Build()
+    {
+        return new(_subjectShardSelector);
+    }
 }
 
 internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subjectShardSelector)
@@ -154,7 +157,10 @@ public sealed class NatsConsumerConfigBuilder
         return this;
     }
 
-    internal NatsConsumerConfig Build() => new(_isSharded);
+    internal NatsConsumerConfig Build()
+    {
+        return new(_isSharded);
+    }
 }
 
 internal sealed record NatsConsumerConfig(bool IsSharded);

@@ -373,9 +373,15 @@ public sealed class RangeTests
         result.Should().BeEquivalentTo(remaining);
     }
 
-    private static string _NextLetter(string value) => ((char)(value[0] + 1)).ToString();
+    private static string _NextLetter(string value)
+    {
+        return ((char)(value[0] + 1)).ToString();
+    }
 
-    private static string _PreviousLetter(string value) => ((char)(value[0] - 1)).ToString();
+    private static string _PreviousLetter(string value)
+    {
+        return ((char)(value[0] - 1)).ToString();
+    }
 
     #endregion
 

@@ -121,5 +121,8 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission, IHasExtr
         }
     }
 
-    public override string ToString() => $"[{nameof(PermissionGroupDefinition)} {Name}]";
+    public override string ToString()
+    {
+        return $"[{nameof(PermissionGroupDefinition)} {Name}]";
+    }
 }

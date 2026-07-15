@@ -374,16 +374,22 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
-    public Task startup_cancels_when_consumer_factory_creation_is_blocked() =>
-        _AssertStartupCancellationAsync(StartupBoundary.FactoryCreation);
+    public Task startup_cancels_when_consumer_factory_creation_is_blocked()
+    {
+        return _AssertStartupCancellationAsync(StartupBoundary.FactoryCreation);
+    }
 
     [Fact]
-    public Task startup_cancels_when_fetching_message_names_is_blocked() =>
-        _AssertStartupCancellationAsync(StartupBoundary.FetchMessageNames);
+    public Task startup_cancels_when_fetching_message_names_is_blocked()
+    {
+        return _AssertStartupCancellationAsync(StartupBoundary.FetchMessageNames);
+    }
 
     [Fact]
-    public Task startup_cancels_when_subscription_is_blocked() =>
-        _AssertStartupCancellationAsync(StartupBoundary.Subscribe);
+    public Task startup_cancels_when_subscription_is_blocked()
+    {
+        return _AssertStartupCancellationAsync(StartupBoundary.Subscribe);
+    }
 
     [Fact]
     public async Task should_mark_register_unhealthy_when_consumer_loop_fails_after_startup()
@@ -642,8 +648,10 @@ public sealed class ConsumerRegisterTests : TestBase
             return new BoundaryConsumerClient(null, boundary == StartupBoundary.Subscribe ? _BlockAsync : null);
         }
 
-        public Task WaitUntilBlockedAsync(CancellationToken cancellationToken) =>
-            _blocked.Task.WaitAsync(cancellationToken);
+        public Task WaitUntilBlockedAsync(CancellationToken cancellationToken)
+        {
+            return _blocked.Task.WaitAsync(cancellationToken);
+        }
 
         private async ValueTask _BlockAsync(CancellationToken cancellationToken)
         {
@@ -687,20 +695,35 @@ public sealed class ConsumerRegisterTests : TestBase
             }
         }
 
-        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
-            new(Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return new(Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+        }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class SequencedConsumerClientFactory(params IConsumerClient[] clients) : IConsumerClientFactory
@@ -738,27 +761,40 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(
-            IEnumerable<string> messageNames,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class StartupControlledConsumerClient : IConsumerClient
@@ -782,10 +818,10 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(
-            IEnumerable<string> messageNames,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -809,15 +845,25 @@ public sealed class ConsumerRegisterTests : TestBase
             _ready.TrySetResult();
         }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {
@@ -842,29 +888,45 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(
-            IEnumerable<string> messageNames,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
             await Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class PostStartupFailingConsumerClient : IConsumerClient
@@ -885,12 +947,15 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(
-            IEnumerable<string> messageNames,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -902,15 +967,25 @@ public sealed class ConsumerRegisterTests : TestBase
             _failure.TrySetException(exception);
         }
 
-        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
-        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {

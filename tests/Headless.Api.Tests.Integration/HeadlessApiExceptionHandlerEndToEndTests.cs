@@ -363,5 +363,8 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 public sealed class TenancyThrowingController : Microsoft.AspNetCore.Mvc.ControllerBase
 {
     [Microsoft.AspNetCore.Mvc.HttpGet("throw-tenancy")]
-    public Microsoft.AspNetCore.Mvc.IActionResult ThrowTenancy() => throw new MissingTenantContextException();
+    public Microsoft.AspNetCore.Mvc.IActionResult ThrowTenancy()
+    {
+        throw new MissingTenantContextException();
+    }
 }

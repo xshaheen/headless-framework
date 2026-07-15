@@ -141,7 +141,10 @@ public sealed class CountPerMonthExtensionsTests : TestBase
 
         public IReadOnlyList<string> Commands => _commands;
 
-        public void Clear() => _commands.Clear();
+        public void Clear()
+        {
+            _commands.Clear();
+        }
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(
             DbCommand command,

@@ -526,8 +526,9 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         provider.GetRequiredService<ICurrentCommitCoordinator>().Current.Should().BeNull();
     }
 
-    private static TimeJobEntity _FutureTimeJob() =>
-        new()
+    private static TimeJobEntity _FutureTimeJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -535,9 +536,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             Request = [],
             ExecutionTime = DateTime.UtcNow.AddHours(1),
         };
+    }
 
-    private static TimeJobEntity _ImmediateTimeJob() =>
-        new()
+    private static TimeJobEntity _ImmediateTimeJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -545,9 +548,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             Request = [],
             ExecutionTime = DateTime.UtcNow,
         };
+    }
 
-    private static CronJobEntity _CronJob() =>
-        new()
+    private static CronJobEntity _CronJob()
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = _FunctionName,
@@ -556,6 +561,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             Expression = "0 0 0 * * *",
             Request = [],
         };
+    }
 
     private enum CoordinatorMode
     {
@@ -684,10 +690,16 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         }
 
         public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer => factory(this);
+            where TBuffer : class, ICommitWorkBuffer
+        {
+            return factory(this);
+        }
 
         public TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer => factory(this, state);
+            where TBuffer : class, ICommitWorkBuffer
+        {
+            return factory(this, state);
+        }
 
         public bool TryGetCapability<TCapability>([NotNullWhen(true)] out TCapability? capability)
             where TCapability : class, ICommitCapability
@@ -730,7 +742,10 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
     {
         public static readonly EmptyServiceProvider Instance = new();
 
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     // Records the LoggerMessage-emitted entries so a test can assert the deferred-failure log without a logging mock.
@@ -739,9 +754,15 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -749,7 +770,10 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Entries.Add((logLevel, exception));
+        )
+        {
+            Entries.Add((logLevel, exception));
+        }
 
         private sealed class NullScope : IDisposable
         {

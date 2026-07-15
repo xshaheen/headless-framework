@@ -29,7 +29,10 @@ public sealed class PageMetadataRequest
     public HashSet<string>? Tags { get; init; }
 
     /// <summary>Maps this request to the domain <see cref="PageMetadata"/> primitive.</summary>
-    public PageMetadata ToPageMetadata() => this;
+    public PageMetadata ToPageMetadata()
+    {
+        return this;
+    }
 
     /// <summary>
     /// Implicitly converts to the domain <see cref="PageMetadata"/> primitive.

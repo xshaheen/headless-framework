@@ -24,7 +24,10 @@ public static class AuditIntegrationFixture
         Action<AuditLogOptions>? configure = null,
         Action<IServiceCollection>? configureServices = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null
-    ) => CreateAsync<AuditTestDbContext>(configure, configureServices, configureDbContext);
+    )
+    {
+        return CreateAsync<AuditTestDbContext>(configure, configureServices, configureDbContext);
+    }
 
     /// <summary>
     /// Builds an isolated <see cref="ServiceProvider"/> with the supplied DbContext. The optional

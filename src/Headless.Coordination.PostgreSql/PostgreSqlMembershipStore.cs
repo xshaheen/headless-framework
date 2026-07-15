@@ -383,6 +383,9 @@ internal sealed class PostgreSqlMembershipStore(
         };
     }
 
-    private static long _ToMilliseconds(TimeSpan value) => (long)Math.Ceiling(value.TotalMilliseconds);
+    private static long _ToMilliseconds(TimeSpan value)
+    {
+        return (long)Math.Ceiling(value.TotalMilliseconds);
+    }
 }
 #pragma warning restore CA2100

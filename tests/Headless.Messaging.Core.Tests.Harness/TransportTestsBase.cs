@@ -13,7 +13,10 @@ namespace Tests;
 public abstract class TransportTestsBase : TestBase
 {
     /// <summary>Gets the transport instance for testing.</summary>
-    protected virtual ITransport? GetTransport() => null;
+    protected virtual ITransport? GetTransport()
+    {
+        return null;
+    }
 
     /// <summary>Gets the bus transport instance for testing.</summary>
     protected virtual IBusTransport GetBusTransport()
@@ -326,20 +329,30 @@ public abstract class TransportTestsBase : TestBase
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private sealed class QueueTransportAdapter(ITransport transport) : IQueueTransport
     {
         public BrokerAddress BrokerAddress => transport.BrokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            transport.SendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return transport.SendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => transport.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return transport.DisposeAsync();
+        }
     }
 
     private ProbeTransport _GetPrimaryTransport()
@@ -375,9 +388,14 @@ public abstract class TransportTestsBase : TestBase
     {
         public BrokerAddress BrokerAddress { get; } = brokerAddress;
 
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
-            sendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return sendAsync(message, cancellationToken);
+        }
 
-        public ValueTask DisposeAsync() => disposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            return disposeAsync();
+        }
     }
 }

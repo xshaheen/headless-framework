@@ -845,31 +845,46 @@ public interface IMyService
 
 public sealed class MyService : IMyService
 {
-    public string Greet() => "original";
+    public string Greet()
+    {
+        return "original";
+    }
 }
 
 public sealed class ReplacementService : IMyService
 {
-    public string Greet() => "replacement";
+    public string Greet()
+    {
+        return "replacement";
+    }
 }
 
 public sealed class DecoratedService(IMyService inner, DecoratorOptions options) : IMyService
 {
     public IMyService Inner { get; } = inner;
 
-    public string Greet() => $"{options.Prefix}:{Inner.Greet()}";
+    public string Greet()
+    {
+        return $"{options.Prefix}:{Inner.Greet()}";
+    }
 }
 
 public sealed class FactoryDecoratedService(IMyService inner) : IMyService
 {
-    public string Greet() => $"factory:{inner.Greet()}";
+    public string Greet()
+    {
+        return $"factory:{inner.Greet()}";
+    }
 }
 
 public sealed record DecoratorOptions(string Prefix);
 
 public sealed class FallbackService : IMyService
 {
-    public string Greet() => "fallback";
+    public string Greet()
+    {
+        return "fallback";
+    }
 }
 
 // Helpers for AddInitializerHostedService<T> tests
@@ -877,20 +892,38 @@ public sealed class MyInitializerService : IHostedService, IInitializer
 {
     public bool IsInitialized => true;
 
-    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 }
 
 public sealed class AnotherInitializerService : IHostedService, IInitializer
 {
     public bool IsInitialized => true;
 
-    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 }

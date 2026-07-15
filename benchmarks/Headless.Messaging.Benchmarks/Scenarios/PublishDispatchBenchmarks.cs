@@ -55,7 +55,10 @@ public class PublishDispatchBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _provider.Dispose();
+    public void Cleanup()
+    {
+        _provider.Dispose();
+    }
 
     [Benchmark]
     public Task ExecuteDispatch()

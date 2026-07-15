@@ -24,5 +24,8 @@ public sealed record MessageDescriptor(string Code, [LocalizationRequired] strin
     /// </summary>
     /// <param name="description">The text used as both the code and the description.</param>
     /// <returns>A <see cref="MessageDescriptor"/> whose code and description both equal <paramref name="description"/>.</returns>
-    public static MessageDescriptor ToMessageDescriptor(string description) => description;
+    public static MessageDescriptor ToMessageDescriptor(string description)
+    {
+        return description;
+    }
 }

@@ -16,8 +16,9 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         "xml-entity-escape",
     ];
 
-    private static (List<SitemapUrl> Urls, string Expected) _GetCase(string name) =>
-        name switch
+    private static (List<SitemapUrl> Urls, string Expected) _GetCase(string name)
+    {
+        return name switch
         {
             "basic" => (
                 [
@@ -78,6 +79,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(name)),
         };
+    }
 
     [Theory]
     [MemberData(memberName: nameof(TestData))]

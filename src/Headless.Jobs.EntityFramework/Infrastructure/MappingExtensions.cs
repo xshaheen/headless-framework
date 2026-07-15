@@ -11,8 +11,9 @@ namespace Headless.Jobs.Infrastructure;
 internal static class MappingExtensions
 {
     internal static TCronJob ProjectCronJob<TCronJob>(JobManagerDispatchContext item, string owner)
-        where TCronJob : CronJobEntity, new() =>
-        new()
+        where TCronJob : CronJobEntity, new()
+    {
+        return new()
         {
             Id = item.Id,
             Function = item.FunctionName,
@@ -21,10 +22,12 @@ internal static class MappingExtensions
             Retries = item.Retries,
             RetryIntervals = item.RetryIntervals,
         };
+    }
 
     public static Expression<Func<TCronJob, CronJobEntity>> ForCronJobExpressions<TCronJob>()
-        where TCronJob : CronJobEntity, new() =>
-        e => new CronJobEntity
+        where TCronJob : CronJobEntity, new()
+    {
+        return e => new CronJobEntity
         {
             Id = e.Id,
             Expression = e.Expression,
@@ -32,10 +35,12 @@ internal static class MappingExtensions
             RetryIntervals = e.RetryIntervals,
             Retries = e.Retries,
         };
+    }
 
     internal static Expression<Func<TTimeJob, TimeJobEntity>> ForQueueTimeJobs<TTimeJob>()
-        where TTimeJob : TimeJobEntity<TTimeJob>, new() =>
-        e => new TimeJobEntity
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        return e => new TimeJobEntity
         {
             Id = e.Id,
             Function = e.Function,
@@ -73,14 +78,16 @@ internal static class MappingExtensions
                 })
                 .ToArray(),
         };
+    }
 
     internal static Expression<Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>> ForQueueCronJobOccurrence<
         TCronJobOccurrence,
         TCronJob
     >()
         where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
-        where TCronJob : CronJobEntity, new() =>
-        e => new CronJobOccurrenceEntity<TCronJob>
+        where TCronJob : CronJobEntity, new()
+    {
+        return e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
@@ -97,13 +104,15 @@ internal static class MappingExtensions
                 OnNodeDeath = e.CronJob.OnNodeDeath,
             },
         };
+    }
 
     internal static Expression<
         Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
     > ForLatestQueuedCronJobOccurrence<TCronJobOccurrence, TCronJob>()
         where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new()
-        where TCronJob : CronJobEntity, new() =>
-        e => new CronJobOccurrenceEntity<TCronJob>
+        where TCronJob : CronJobEntity, new()
+    {
+        return e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
             CreatedAt = e.CreatedAt,
@@ -126,6 +135,7 @@ internal static class MappingExtensions
                 OnNodeDeath = e.CronJob.OnNodeDeath,
             },
         };
+    }
 
     internal static void UpdateCronJobOccurrence<TCronJob>(
         this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,

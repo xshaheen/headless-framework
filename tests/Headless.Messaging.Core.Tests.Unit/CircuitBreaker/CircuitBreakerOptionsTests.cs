@@ -233,7 +233,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
 
 public sealed class RetryProcessorOptionsTests : TestBase
 {
-    private static RetryProcessorOptionsValidator _CreateValidator() => new();
+    private static RetryProcessorOptionsValidator _CreateValidator()
+    {
+        return new();
+    }
 
     [Fact]
     public void defaults_are_correct()

@@ -31,7 +31,10 @@ public sealed class FakeBackplaneBus : IBus
 
     public FakeBackplaneState State { get; set; } = FakeBackplaneState.Up;
 
-    public void Attach(HybridCache cache) => _subscribers.Add(cache);
+    public void Attach(HybridCache cache)
+    {
+        _subscribers.Add(cache);
+    }
 
     public async Task PublishAsync<T>(
         T? contentObj,

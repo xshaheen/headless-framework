@@ -877,7 +877,10 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
     #region Dispose
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
     #endregion
 }

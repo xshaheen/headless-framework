@@ -103,21 +103,36 @@ internal sealed class CaptureStream : Stream
         _inner.WriteByte(value);
     }
 
-    public override void Flush() => _inner.Flush();
+    public override void Flush()
+    {
+        _inner.Flush();
+    }
 
-    public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+        return _inner.FlushAsync(cancellationToken);
+    }
 
     /// <inheritdoc/>
     /// <exception cref="NotSupportedException">Always — this stream is write-only.</exception>
-    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        throw new NotSupportedException();
+    }
 
     /// <inheritdoc/>
     /// <exception cref="NotSupportedException">Always — this stream is forward-only.</exception>
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        throw new NotSupportedException();
+    }
 
     /// <inheritdoc/>
     /// <exception cref="NotSupportedException">Always — this stream is forward-only.</exception>
-    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void SetLength(long value)
+    {
+        throw new NotSupportedException();
+    }
 
     protected override void Dispose(bool disposing)
     {

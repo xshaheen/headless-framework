@@ -323,8 +323,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         capturedPublishTimes[0].Offset.Should().Be(TimeSpan.Zero);
     }
 
-    private static MediumMessage _BuildMessage() =>
-        new()
+    private static MediumMessage _BuildMessage()
+    {
+        return new()
         {
             StorageId = Guid.NewGuid(),
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
@@ -332,6 +333,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             IntentType = IntentType.Bus,
             Added = DateTimeOffset.UtcNow,
         };
+    }
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()
     {
@@ -351,7 +353,10 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
     private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>
@@ -359,9 +364,15 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         public List<string> Warnings { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull
+        {
+            return null;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

@@ -200,25 +200,43 @@ public sealed class HtmlHelperTests : TestBase
     {
         public void VoidMethod() { }
 
-        public async Task AsyncTaskMethod() => await Task.CompletedTask;
+        public async Task AsyncTaskMethod()
+        {
+            await Task.CompletedTask;
+        }
 
-        public async Task<string> AsyncTaskWithResultMethod() => await Task.FromResult("result");
+        public async Task<string> AsyncTaskWithResultMethod()
+        {
+            return await Task.FromResult("result");
+        }
 
 #pragma warning disable IDE0060 // Remove unused parameter
         public void MethodWithStringParam(string input) { }
 #pragma warning restore IDE0060
 
-        public int IntReturningMethod() => 42;
+        public int IntReturningMethod()
+        {
+            return 42;
+        }
 
 #pragma warning disable IDE0060 // Remove unused parameter
         public void MethodWithComplexParam(ComplexType param) { }
 #pragma warning restore IDE0060
 
-        public string NoParamMethod() => "test";
+        public string NoParamMethod()
+        {
+            return "test";
+        }
 
-        public async ValueTask ValueTaskMethod() => await ValueTask.CompletedTask;
+        public async ValueTask ValueTaskMethod()
+        {
+            await ValueTask.CompletedTask;
+        }
 
-        public async ValueTask<int> ValueTaskWithResultMethod() => await ValueTask.FromResult(42);
+        public async ValueTask<int> ValueTaskWithResultMethod()
+        {
+            return await ValueTask.FromResult(42);
+        }
     }
 
     public class ComplexType

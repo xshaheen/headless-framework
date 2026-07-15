@@ -25,7 +25,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
+    private static string _CircuitKey(string group)
+    {
+        return $"{IntentType.Bus:D}:{group}";
+    }
 
     private static MediumMessage _CreateMessage(string? group = _Group)
     {
@@ -122,16 +125,24 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
     // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.
 
-    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut) => sut.CurrentPollingInterval;
+    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)
+    {
+        return sut.CurrentPollingInterval;
+    }
 
-    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value) =>
+    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value)
+    {
         sut.SetCurrentIntervalForTest(value);
+    }
 
     private static void _InvokeAdjustPollingInterval(
         MessageNeedToRetryProcessor sut,
         int enqueued,
         int skippedCircuitOpen
-    ) => sut.AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    )
+    {
+        sut.AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    }
 
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness

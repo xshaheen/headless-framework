@@ -13,8 +13,10 @@ namespace Tests;
 /// </summary>
 public sealed class MoveViaCopyThenDeleteTests : TestBase
 {
-    private static void _UnexpectedInvocation(string callbackName) =>
+    private static void _UnexpectedInvocation(string callbackName)
+    {
         false.Should().BeTrue("{0} must not be invoked", callbackName);
+    }
 
     [Fact]
     public async Task should_reject_occupied_destination_without_copying_or_deleting()

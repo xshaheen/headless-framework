@@ -304,7 +304,10 @@ internal sealed class MiddlewareCallRecorder
 
     public IReadOnlyList<string> Calls => _calls.ToArray();
 
-    public void Record(string call) => _calls.Enqueue(call);
+    public void Record(string call)
+    {
+        _calls.Enqueue(call);
+    }
 }
 
 internal sealed class RecordingPublishMiddlewareA(MiddlewareCallRecorder recorder) : IPublishMiddleware<PublishContext>

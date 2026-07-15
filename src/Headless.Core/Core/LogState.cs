@@ -94,7 +94,13 @@ public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
 
     /// <summary>Returns an enumerator over the key/value property pairs in this log state.</summary>
     /// <returns>An enumerator of <see cref="KeyValuePair{TKey,TValue}" /> entries.</returns>
-    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() => _state.GetEnumerator();
+    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+    {
+        return _state.GetEnumerator();
+    }
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 }

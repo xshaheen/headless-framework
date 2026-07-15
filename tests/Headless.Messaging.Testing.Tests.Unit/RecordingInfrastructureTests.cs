@@ -461,18 +461,33 @@ public sealed class RecordingInfrastructureTests : TestBase
         }
 
         // Remaining members are not used by RecordingBusTransport
-        public string Serialize(Message message) => throw new NotSupportedException();
+        public string Serialize(Message message)
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<TransportMessage> SerializeToTransportMessageAsync(
             Message message,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
-        public Message Deserialize(string json) => throw new NotSupportedException();
+        public Message Deserialize(string json)
+        {
+            throw new NotSupportedException();
+        }
 
-        public object Deserialize(object value, Type valueType) => throw new NotSupportedException();
+        public object Deserialize(object value, Type valueType)
+        {
+            throw new NotSupportedException();
+        }
 
-        public bool IsJsonType(object jsonObject) => throw new NotSupportedException();
+        public bool IsJsonType(object jsonObject)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     /// <summary>Stub <see cref="IBusTransport"/> that always returns a fixed <see cref="OperateResult"/>.</summary>
@@ -488,7 +503,10 @@ public sealed class RecordingInfrastructureTests : TestBase
             return Task.FromResult(result);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>

@@ -75,7 +75,10 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
     private static byte[] _GetMessageBodyArray(ReadOnlyMemory<byte> body)
     {

@@ -113,7 +113,10 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
     private sealed class EmptyServiceProvider : IServiceProvider
     {
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
     }
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline

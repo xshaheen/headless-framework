@@ -341,9 +341,15 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         public required string Name { get; init; }
 
         // Domain behavior that raises events through the encapsulated (protected) aggregate mutator.
-        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent) => AddIntegrationEvent(integrationEvent);
+        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+        {
+            AddIntegrationEvent(integrationEvent);
+        }
 
-        public override IReadOnlyList<object> GetKeys() => [Id];
+        public override IReadOnlyList<object> GetKeys()
+        {
+            return [Id];
+        }
     }
 
     private sealed class BridgeTestDbContext(HeadlessDbContextServices services, DbContextOptions options)

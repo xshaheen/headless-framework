@@ -57,6 +57,8 @@ public sealed class SerilogFactoryTests
         logger.Should().NotBeNull();
     }
 
-    private static string _CreateTempLogDirectory() =>
-        Path.Combine(Path.GetTempPath(), "headless-serilog-tests", Guid.NewGuid().ToString("N"));
+    private static string _CreateTempLogDirectory()
+    {
+        return Path.Combine(Path.GetTempPath(), "headless-serilog-tests", Guid.NewGuid().ToString("N"));
+    }
 }

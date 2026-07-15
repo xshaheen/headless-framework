@@ -265,22 +265,34 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
 
     private sealed class NoopBusConsumeMiddleware : IConsumeMiddleware<ConsumeContext>
     {
-        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class NoopBusPublishMiddleware : IPublishMiddleware<PublishContext>
     {
-        public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class TypedConsumeMiddleware : IConsumeMiddleware<ConsumeContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(ConsumeContext<OrderPlaced> context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class TypedPublishMiddleware : IPublishMiddleware<PublishContext<OrderPlaced>>
     {
-        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next) => next();
+        public ValueTask InvokeAsync(PublishContext<OrderPlaced> context, Func<ValueTask> next)
+        {
+            return next();
+        }
     }
 
     private sealed class MiddlewareOrderRecorder
@@ -289,7 +301,10 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
 
         public IReadOnlyList<string> Calls => _calls.ToArray();
 
-        public void Record(string call) => _calls.Enqueue(call);
+        public void Record(string call)
+        {
+            _calls.Enqueue(call);
+        }
     }
 
     private sealed class PriorityZeroPublishMiddlewareA(MiddlewareOrderRecorder recorder)

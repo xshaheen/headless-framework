@@ -18,5 +18,8 @@ public sealed record DataEnvelope<T>(T Data)
     /// Returns this envelope unchanged. Provided as a named factory alternative to the implicit
     /// conversion so callers that cannot rely on implicit casts have a discoverable entry point.
     /// </summary>
-    public DataEnvelope<T> FromT() => this;
+    public DataEnvelope<T> FromT()
+    {
+        return this;
+    }
 }

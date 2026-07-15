@@ -21,11 +21,15 @@ public sealed class ReCaptchaV3VerifierFixture : ICaptchaVerifierFixture, IDispo
             {"success":false,"error-codes":["timeout-or-duplicate"]}
             """;
 
-    public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler) =>
-        _Build(handler).GetRequiredService<ICaptchaVerifier>();
+    public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler)
+    {
+        return _Build(handler).GetRequiredService<ICaptchaVerifier>();
+    }
 
-    public IReCaptchaV3Verifier CreateV3Verifier(StubSiteVerifyHandler handler) =>
-        _Build(handler).GetRequiredService<IReCaptchaV3Verifier>();
+    public IReCaptchaV3Verifier CreateV3Verifier(StubSiteVerifyHandler handler)
+    {
+        return _Build(handler).GetRequiredService<IReCaptchaV3Verifier>();
+    }
 
     private ServiceProvider _Build(StubSiteVerifyHandler handler)
     {
@@ -41,8 +45,9 @@ public sealed class ReCaptchaV3VerifierFixture : ICaptchaVerifierFixture, IDispo
         return serviceProvider;
     }
 
-    private static IConfiguration _Configuration() =>
-        new ConfigurationBuilder()
+    private static IConfiguration _Configuration()
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -51,6 +56,7 @@ public sealed class ReCaptchaV3VerifierFixture : ICaptchaVerifierFixture, IDispo
                 }
             )
             .Build();
+    }
 
     public void Dispose()
     {

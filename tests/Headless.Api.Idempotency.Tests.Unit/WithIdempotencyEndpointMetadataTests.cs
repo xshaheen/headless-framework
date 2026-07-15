@@ -52,12 +52,14 @@ public sealed class WithIdempotencyEndpointMetadataTests
 
         private sealed class StubEndpointBuilder : EndpointBuilder
         {
-            public override Endpoint Build() =>
-                new(
+            public override Endpoint Build()
+            {
+                return new(
                     RequestDelegate ?? (_ => Task.CompletedTask),
                     new EndpointMetadataCollection(Metadata),
                     DisplayName
                 );
+            }
         }
     }
 }

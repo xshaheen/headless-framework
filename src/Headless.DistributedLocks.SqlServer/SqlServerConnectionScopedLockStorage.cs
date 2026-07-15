@@ -328,7 +328,10 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         }
     }
 
-    private string _CreateResource(string resource) => SqlServerResourceName.Encode(_options.KeyPrefix + resource);
+    private string _CreateResource(string resource)
+    {
+        return SqlServerResourceName.Encode(_options.KeyPrefix + resource);
+    }
 
     private async ValueTask<bool> _IsLockedInDatabaseAsync(
         string resource,

@@ -204,7 +204,10 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>Returns the fully configured root <typeparamref name="TTimeJob"/> entity with all child links set.</summary>
-    public TTimeJob Build() => _rootTicker;
+    public TTimeJob Build()
+    {
+        return _rootTicker;
+    }
 
     /// <summary>Implicit conversion to <typeparamref name="TTimeJob"/>; equivalent to calling <see cref="Build"/>.</summary>
     public static implicit operator TTimeJob(FluentChainJobBuilder<TTimeJob> builder) => builder.Build();
@@ -298,23 +301,37 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             return this;
         }
 
-        public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithSecondChild(configure);
+        public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithSecondChild(configure);
+        }
 
-        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithThirdChild(configure);
+        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithThirdChild(configure);
+        }
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFourthChild(configure);
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFourthChild(configure);
+        }
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFifthChild(configure);
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFifthChild(configure);
+        }
 
-        public TTimeJob Build() => _mainBuilder.Build();
+        public TTimeJob Build()
+        {
+            return _mainBuilder.Build();
+        }
 
         public static implicit operator TTimeJob(FirstChildBuilder builder) => builder.Build();
 
-        public TTimeJob ToTTimeJob() => Build();
+        public TTimeJob ToTTimeJob()
+        {
+            return Build();
+        }
     }
 
     public sealed class SecondChildBuilder
@@ -405,20 +422,32 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             return this;
         }
 
-        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithThirdChild(configure);
+        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithThirdChild(configure);
+        }
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFourthChild(configure);
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFourthChild(configure);
+        }
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFifthChild(configure);
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFifthChild(configure);
+        }
 
-        public TTimeJob Build() => _mainBuilder.Build();
+        public TTimeJob Build()
+        {
+            return _mainBuilder.Build();
+        }
 
         public static implicit operator TTimeJob(SecondChildBuilder builder) => builder.Build();
 
-        public TTimeJob ToTTimeJob() => Build();
+        public TTimeJob ToTTimeJob()
+        {
+            return Build();
+        }
     }
 
     public sealed class ThirdChildBuilder
@@ -509,17 +538,27 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             return this;
         }
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFourthChild(configure);
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFourthChild(configure);
+        }
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFifthChild(configure);
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFifthChild(configure);
+        }
 
-        public TTimeJob Build() => _mainBuilder.Build();
+        public TTimeJob Build()
+        {
+            return _mainBuilder.Build();
+        }
 
         public static implicit operator TTimeJob(ThirdChildBuilder builder) => builder.Build();
 
-        public TTimeJob ToTTimeJob() => Build();
+        public TTimeJob ToTTimeJob()
+        {
+            return Build();
+        }
     }
 
     public sealed class FourthChildBuilder
@@ -610,14 +649,22 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             return this;
         }
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
-            _mainBuilder.WithFifthChild(configure);
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
+        {
+            return _mainBuilder.WithFifthChild(configure);
+        }
 
-        public TTimeJob Build() => _mainBuilder.Build();
+        public TTimeJob Build()
+        {
+            return _mainBuilder.Build();
+        }
 
         public static implicit operator TTimeJob(FourthChildBuilder builder) => builder.Build();
 
-        public TTimeJob ToTTimeJob() => Build();
+        public TTimeJob ToTTimeJob()
+        {
+            return Build();
+        }
     }
 
     public sealed class FifthChildBuilder
@@ -708,14 +755,23 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             return this;
         }
 
-        public TTimeJob Build() => _mainBuilder.Build();
+        public TTimeJob Build()
+        {
+            return _mainBuilder.Build();
+        }
 
         public static implicit operator TTimeJob(FifthChildBuilder builder) => builder.Build();
 
-        public TTimeJob ToTTimeJob() => Build();
+        public TTimeJob ToTTimeJob()
+        {
+            return Build();
+        }
     }
 
-    public TTimeJob ToTTimeJob() => Build();
+    public TTimeJob ToTTimeJob()
+    {
+        return Build();
+    }
 }
 
 /// <summary>
@@ -959,6 +1015,8 @@ public static class FluentChainJobBuilderExtensions
         Action<ParentBuilder<TTimeJob>> configure,
         TimeProvider? timeProvider = null
     )
-        where TTimeJob : TimeJobEntity<TTimeJob>, new() =>
-        FluentChainJobBuilder<TTimeJob>.BeginWith(configure, timeProvider);
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        return FluentChainJobBuilder<TTimeJob>.BeginWith(configure, timeProvider);
+    }
 }

@@ -395,17 +395,20 @@ public sealed class MessagingIntentSplitTests : TestBase
 
     private static IMessagePublishRequestFactory _CreatePublishRequestFactory(
         IOptions<MessagingOptions> optionsAccessor
-    ) =>
-        new MessagePublishRequestFactory(
+    )
+    {
+        return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new ConsumerRegistry(),
             new NullCurrentTenant()
         );
+    }
 
-    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType) =>
-        new()
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType)
+    {
+        return new()
         {
             MessageName = messageName,
             PublishAt = DateTimeOffset.UtcNow,
@@ -419,6 +422,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ),
             IntentType = intentType,
         };
+    }
 
     [Fact]
     public void should_treat_bus_and_queue_with_same_topic_group_as_distinct_when_descriptor_comparer()
@@ -488,23 +492,36 @@ public sealed class MessagingIntentSplitTests : TestBase
 
     private sealed class TestBusConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class TestQueueConsumer : IConsume<TestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class NoOpStorageInitializer : IStorageInitializer
     {
-        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
 
-        public string GetPublishedTableName() => "published";
+        public string GetPublishedTableName()
+        {
+            return "published";
+        }
 
-        public string GetReceivedTableName() => "received";
+        public string GetReceivedTableName()
+        {
+            return "received";
+        }
     }
 
     private sealed class QueueOnlyMessagingExtension : IMessagesOptionsExtension
@@ -538,7 +555,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Failed(new Exception("bus boom")));
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FailingQueueTransport : IQueueTransport
@@ -550,7 +570,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Failed(new Exception("queue boom")));
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingBusTransport : IBusTransport
@@ -565,7 +588,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Success);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingQueueTransport : IQueueTransport
@@ -580,7 +606,10 @@ public sealed class MessagingIntentSplitTests : TestBase
             return Task.FromResult(OperateResult.Success);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingDiagnosticObserver
@@ -635,7 +664,9 @@ public sealed class MessagingIntentSplitTests : TestBase
             _allListenersSubscription.Dispose();
         }
 
-        private static bool _IsBeforePublish(string eventName, object? _, object? __) =>
-            string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
+        private static bool _IsBeforePublish(string eventName, object? _, object? __)
+        {
+            return string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
+        }
     }
 }

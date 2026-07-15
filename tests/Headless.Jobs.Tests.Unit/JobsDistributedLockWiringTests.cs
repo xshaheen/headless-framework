@@ -14,12 +14,14 @@ namespace Tests;
 /// </summary>
 public sealed class JobsDistributedLockWiringTests
 {
-    private static int _CountJobsLockDescriptors(IServiceCollection services) =>
-        services.Count(d =>
+    private static int _CountJobsLockDescriptors(IServiceCollection services)
+    {
+        return services.Count(d =>
             d.ServiceType == typeof(IDistributedLock)
             && d.IsKeyedService
             && string.Equals(d.ServiceKey as string, JobsKeys.LockProvider, StringComparison.Ordinal)
         );
+    }
 
     [Fact]
     public void use_distributed_lock_instance_registers_provider_and_enables_flag()

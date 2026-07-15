@@ -271,7 +271,10 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             await _completed.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         }
 
-        public void Release() => _release.TrySetResult();
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
     }
 
     private sealed class BlockingProcessingServer : IProcessingServer

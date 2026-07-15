@@ -66,7 +66,10 @@ public sealed class Money(decimal amount, string currencyCode)
     /// <param name="obj">The object to compare with this instance.</param>
     /// <returns><see langword="true"/> if <paramref name="obj"/> is a <see cref="Money"/> with the same amount and currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override bool Equals(object? obj) => obj is Money other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is Money other && Equals(other);
+    }
 
     /// <summary>Determines whether <paramref name="other"/> has the same amount and currency code as this instance.</summary>
     /// <param name="other">The currency to compare with this instance.</param>
@@ -138,7 +141,10 @@ public sealed class Money(decimal amount, string currencyCode)
     /// <summary>Compares this instance's <see cref="Amount"/> with <paramref name="other"/> and returns their relative order.</summary>
     /// <param name="other">The amount to compare with.</param>
     /// <returns>A negative value if <see cref="Amount"/> is less than <paramref name="other"/>, zero if equal, or a positive value if greater.</returns>
-    public int CompareTo(decimal other) => Amount.CompareTo(other);
+    public int CompareTo(decimal other)
+    {
+        return Amount.CompareTo(other);
+    }
 
     #endregion
 
@@ -273,7 +279,10 @@ public sealed class Money(decimal amount, string currencyCode)
     /// <param name="right">The right operand.</param>
     /// <returns>A <see cref="Money"/> whose amount is the sum of the operands' amounts.</returns>
     /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Money Add(Money left, Money right) => left + right;
+    public static Money Add(Money left, Money right)
+    {
+        return left + right;
+    }
 
     /// <summary>Subtracts one currency from another of the same currency code.</summary>
     /// <param name="left">The left operand.</param>
@@ -295,7 +304,10 @@ public sealed class Money(decimal amount, string currencyCode)
     /// <param name="right">The right operand.</param>
     /// <returns>A <see cref="Money"/> whose amount is <paramref name="left"/> minus <paramref name="right"/>.</returns>
     /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Money Subtract(Money left, Money right) => left - right;
+    public static Money Subtract(Money left, Money right)
+    {
+        return left - right;
+    }
 
     /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code.</summary>
     /// <param name="left">The currency to scale.</param>
@@ -432,18 +444,26 @@ public sealed class Money(decimal amount, string currencyCode)
 
     /// <summary>Returns a hash code derived from the <see cref="Amount"/> and <see cref="CurrencyCode"/>.</summary>
     /// <returns>A hash code for this instance.</returns>
-    public override int GetHashCode() => HashCode.Combine(Amount, CurrencyCode);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Amount, CurrencyCode);
+    }
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the invariant culture.</summary>
     /// <returns>The string representation of this currency.</returns>
-    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Amount}{CurrencyCode}");
+    public override string ToString()
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{Amount}{CurrencyCode}");
+    }
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the supplied provider.</summary>
     /// <param name="format">A format string (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
     /// <param name="formatProvider">An optional format provider used to format the amount.</param>
     /// <returns>The string representation of this currency.</returns>
-    public string ToString(string? format, IFormatProvider? formatProvider) =>
-        string.Create(formatProvider, $"{Amount}{CurrencyCode}");
+    public string ToString(string? format, IFormatProvider? formatProvider)
+    {
+        return string.Create(formatProvider, $"{Amount}{CurrencyCode}");
+    }
 
     #endregion
 }

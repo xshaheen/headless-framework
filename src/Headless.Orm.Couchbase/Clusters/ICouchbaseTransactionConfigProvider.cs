@@ -43,7 +43,10 @@ public sealed class CouchbaseTransactionConfigProvider : ICouchbaseTransactionCo
     public ValueTask<TransactionConfigBuilder> GetAsync(
         string clusterKey,
         CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(_builder);
+    )
+    {
+        return ValueTask.FromResult(_builder);
+    }
 }
 
 /// <summary>

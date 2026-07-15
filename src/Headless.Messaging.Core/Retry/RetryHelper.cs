@@ -41,8 +41,10 @@ internal static class RetryHelper
     /// outer token is NOT cancelled, so this method returns <see langword="false"/> and the
     /// failure flows through the normal retry pipeline).
     /// </remarks>
-    public static bool IsCancellation(Exception ex, CancellationToken cancellationToken) =>
-        cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
+    public static bool IsCancellation(Exception ex, CancellationToken cancellationToken)
+    {
+        return cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
+    }
 
     /// <summary>
     /// Detects a crash-recovered inline burst: the durable <see cref="MediumMessage.InlineAttempts"/>

@@ -17,10 +17,16 @@ public sealed record PreferredLocaleRequest(string Country, string Language)
     /// <summary>
     /// Returns the locale as a BCP-47-style language tag (e.g., <c>en-US</c>).
     /// </summary>
-    public override string ToString() => $"{Language}-{Country}";
+    public override string ToString()
+    {
+        return $"{Language}-{Country}";
+    }
 
     /// <summary>Maps this request to the domain <see cref="PreferredLocale"/> primitive.</summary>
-    public PreferredLocale ToPreferredLocale() => this;
+    public PreferredLocale ToPreferredLocale()
+    {
+        return this;
+    }
 
     /// <summary>
     /// Implicitly converts to the domain <see cref="PreferredLocale"/> primitive.

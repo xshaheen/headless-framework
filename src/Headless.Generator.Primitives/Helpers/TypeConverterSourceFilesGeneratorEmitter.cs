@@ -89,7 +89,13 @@ internal static class TypeConverterSourceFilesGeneratorEmitter
         context.AddSource(_CreateFileName(data.ClassName), builder.ToString());
     }
 
-    public static string CreateClassName(string className) => $"{className}TypeConverter";
+    public static string CreateClassName(string className)
+    {
+        return $"{className}TypeConverter";
+    }
 
-    private static string _CreateFileName(string className) => $"{CreateClassName(className)}.g.cs";
+    private static string _CreateFileName(string className)
+    {
+        return $"{CreateClassName(className)}.g.cs";
+    }
 }

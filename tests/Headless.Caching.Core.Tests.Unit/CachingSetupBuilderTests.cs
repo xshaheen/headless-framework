@@ -324,16 +324,34 @@ public sealed class CachingSetupBuilderTests
 
     private sealed class TestSerializer : ISerializer
     {
-        public void Serialize<T>(T value, IBufferWriter<byte> output) => throw new NotSupportedException();
+        public void Serialize<T>(T value, IBufferWriter<byte> output)
+        {
+            throw new NotSupportedException();
+        }
 
-        public void Serialize(object? value, IBufferWriter<byte> output) => throw new NotSupportedException();
+        public void Serialize(object? value, IBufferWriter<byte> output)
+        {
+            throw new NotSupportedException();
+        }
 
-        public T Deserialize<T>(ReadOnlyMemory<byte> data) => throw new NotSupportedException();
+        public T Deserialize<T>(ReadOnlyMemory<byte> data)
+        {
+            throw new NotSupportedException();
+        }
 
-        public T Deserialize<T>(in ReadOnlySequence<byte> data) => throw new NotSupportedException();
+        public T Deserialize<T>(in ReadOnlySequence<byte> data)
+        {
+            throw new NotSupportedException();
+        }
 
-        public object Deserialize(ReadOnlyMemory<byte> data, Type type) => throw new NotSupportedException();
+        public object Deserialize(ReadOnlyMemory<byte> data, Type type)
+        {
+            throw new NotSupportedException();
+        }
 
-        public object Deserialize(in ReadOnlySequence<byte> data, Type type) => throw new NotSupportedException();
+        public object Deserialize(in ReadOnlySequence<byte> data, Type type)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

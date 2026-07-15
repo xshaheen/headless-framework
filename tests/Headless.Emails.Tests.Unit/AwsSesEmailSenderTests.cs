@@ -173,12 +173,14 @@ public sealed class AwsSesEmailSenderTests : TestBase
         return () => captured!;
     }
 
-    private static SendSingleEmailRequest _Request() =>
-        new()
+    private static SendSingleEmailRequest _Request()
+    {
+        return new()
         {
             From = "from@example.com",
             Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
             Subject = "subject",
             MessageText = "body",
         };
+    }
 }

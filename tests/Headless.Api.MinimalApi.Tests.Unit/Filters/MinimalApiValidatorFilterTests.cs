@@ -411,7 +411,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
     #region Helpers
 
-    private static MinimalApiValidatorFilter<TRequest> _CreateFilter<TRequest>() => new();
+    private static MinimalApiValidatorFilter<TRequest> _CreateFilter<TRequest>()
+    {
+        return new();
+    }
 
     private static IValidator<ValidatorFilterTestRequest> _CreateMockValidator(ValidationResult result)
     {

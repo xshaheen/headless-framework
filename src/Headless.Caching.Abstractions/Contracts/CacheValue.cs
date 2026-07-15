@@ -65,5 +65,8 @@ public readonly struct CacheValue<T>
     /// <summary>A miss result (absent from cache). <see cref="HasValue"/> is <see langword="false"/>.</summary>
     public static CacheValue<T> NoValue { get; } = new(default, hasValue: false);
 
-    public override string ToString() => Value?.ToString() ?? "<null>";
+    public override string ToString()
+    {
+        return Value?.ToString() ?? "<null>";
+    }
 }

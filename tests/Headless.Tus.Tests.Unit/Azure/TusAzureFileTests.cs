@@ -277,7 +277,10 @@ public sealed class TusAzureFileTests : TestBase
 
     #region Helpers
 
-    private static Dictionary<string, string> _EmptyMetadata() => [];
+    private static Dictionary<string, string> _EmptyMetadata()
+    {
+        return [];
+    }
 
     private static ITusFile _CreateWrapper(string fileId, IDictionary<string, string>? metadata = null)
     {

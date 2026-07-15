@@ -35,7 +35,10 @@ public sealed class InMemorySetPagingBenchmarks : IDisposable
     }
 
     [GlobalCleanup]
-    public void GlobalCleanup() => Dispose();
+    public void GlobalCleanup()
+    {
+        Dispose();
+    }
 
     public void Dispose()
     {

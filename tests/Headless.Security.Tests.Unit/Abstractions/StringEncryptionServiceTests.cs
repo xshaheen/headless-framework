@@ -8,13 +8,15 @@ namespace Tests.Abstractions;
 
 public sealed class StringEncryptionServiceTests
 {
-    private static StringEncryptionOptions _CreateValidOptions() =>
-        new()
+    private static StringEncryptionOptions _CreateValidOptions()
+    {
+        return new()
         {
             DefaultPassPhrase = "TestPassPhrase123456",
             DefaultSalt = "TestSalt12345678"u8.ToArray(),
             KeySize = 256,
         };
+    }
 
     [Fact]
     public void should_return_null_when_plain_text_is_null()

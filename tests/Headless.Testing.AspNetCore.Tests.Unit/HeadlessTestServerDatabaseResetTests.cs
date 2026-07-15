@@ -366,17 +366,20 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
         capturedToken.Should().Be(AbortToken);
     }
 
-    private static string _CreateSharedDatabaseConnectionString() =>
-        new SqliteConnectionStringBuilder
+    private static string _CreateSharedDatabaseConnectionString()
+    {
+        return new SqliteConnectionStringBuilder
         {
             DataSource = $"headless-reset-{Guid.NewGuid():N}",
             Mode = SqliteOpenMode.Memory,
             Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 1,
         }.ToString();
+    }
 
-    private static Exception _CreateTransientException(string exceptionKind) =>
-        exceptionKind switch
+    private static Exception _CreateTransientException(string exceptionKind)
+    {
+        return exceptionKind switch
         {
             "database" => Substitute.For<DbException>(),
             "io" => new IOException("Transport interrupted."),
@@ -387,6 +390,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(exceptionKind), exceptionKind, null),
         };
+    }
 
     private static async Task<SqliteConnection> _CreateSharedDatabaseAsync(string connectionString)
     {

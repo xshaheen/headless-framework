@@ -33,8 +33,9 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     };
 
     /// <summary>A real lock over in-memory storage. Two calls sharing one storage instance simulate two nodes.</summary>
-    private static IDistributedLock _CreateLock(InMemoryDistributedLockStorage storage) =>
-        new DistributedLock(
+    private static IDistributedLock _CreateLock(InMemoryDistributedLockStorage storage)
+    {
+        return new DistributedLock(
             storage,
             outboxBus: null, // lock-released notifications are not needed for these guard tests
             new DistributedLockOptions(),
@@ -42,6 +43,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
             TimeProvider.System,
             NullLogger<DistributedLock>.Instance
         );
+    }
 
     // ----------------------------------------------------------------------------------------------------------------
     // Cron-seed migration guard (U2)
@@ -244,10 +246,10 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     // Dead-node reclaim (intentionally unguarded — bridge-retry contract, #267)
     // ----------------------------------------------------------------------------------------------------------------
 
-    private static JobsDeadOwnerReclaimer _CreateReclaimer(
-        IInternalJobManager manager,
-        SchedulerOptionsBuilder options
-    ) => new(manager, options);
+    private static JobsDeadOwnerReclaimer _CreateReclaimer(IInternalJobManager manager, SchedulerOptionsBuilder options)
+    {
+        return new(manager, options);
+    }
 
     [Fact]
     public async Task reclaim_processes_every_owner_in_the_batch()

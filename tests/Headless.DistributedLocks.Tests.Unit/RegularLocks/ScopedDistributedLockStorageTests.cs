@@ -10,7 +10,10 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     private const string _Prefix = "distributed-lock:";
     private readonly IDistributedLockStorage _inner = Substitute.For<IDistributedLockStorage>();
 
-    private ScopedDistributedLockStorage _CreateStorage() => new(_inner, _Prefix);
+    private ScopedDistributedLockStorage _CreateStorage()
+    {
+        return new(_inner, _Prefix);
+    }
 
     [Fact]
     public void should_reject_null_inner_and_empty_prefix_when_constructor()

@@ -19,8 +19,9 @@ public sealed class JobsQueryPredicateTests
         string? ownerId,
         DateTime? lockedUntil = null,
         NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Status = status,
@@ -28,14 +29,16 @@ public sealed class JobsQueryPredicateTests
             LockedUntil = lockedUntil,
             OnNodeDeath = onNodeDeath,
         };
+    }
 
     private static CronJobOccurrenceEntity<FakeCronJob> _Occurrence(
         JobStatus status,
         string? ownerId,
         DateTime? lockedUntil = null,
         NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Status = status,
@@ -43,6 +46,7 @@ public sealed class JobsQueryPredicateTests
             LockedUntil = lockedUntil,
             OnNodeDeath = onNodeDeath,
         };
+    }
 
     [Fact]
     public void where_owned_by_selects_non_terminal_rows_owned_by_the_dead_incarnation()

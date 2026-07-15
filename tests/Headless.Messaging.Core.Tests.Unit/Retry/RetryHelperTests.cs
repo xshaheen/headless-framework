@@ -411,8 +411,9 @@ public sealed class RetryHelperTests : TestBase
         return policy;
     }
 
-    private static FailedInfo _FailedInfo() =>
-        new()
+    private static FailedInfo _FailedInfo()
+    {
+        return new()
         {
             Message = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             MessageType = MessageType.Subscribe,
@@ -422,13 +423,23 @@ public sealed class RetryHelperTests : TestBase
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
+    }
 
-    private static Guid _Guid(byte last) => _Guid(0, last);
+    private static Guid _Guid(byte last)
+    {
+        return _Guid(0, last);
+    }
 
-    private static Guid _Guid(byte penultimate, byte last) => new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
+    private static Guid _Guid(byte penultimate, byte last)
+    {
+        return new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        public override DateTimeOffset GetUtcNow()
+        {
+            return now;
+        }
     }
 }
