@@ -167,7 +167,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             );
 
         using var stopped = new PublishActivityCollector();
-        var metrics = new List<(string Name, long Value)>();
+        var metrics = new ConcurrentBag<(string Name, long Value)>();
         using var meters = _StartMeterListener(metrics);
         var sender = _CreateSender(storage, serializer, busTransport, new MessagingOptions());
 
@@ -222,7 +222,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             );
 
         using var stopped = new PublishActivityCollector();
-        var metrics = new List<(string Name, long Value)>();
+        var metrics = new ConcurrentBag<(string Name, long Value)>();
         using var meters = _StartMeterListener(metrics);
         var sender = _CreateSender(
             storage,
@@ -307,7 +307,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         return new TransportMessage(headers, new byte[] { 1, 2, 3 });
     }
 
-    private static MeterListener _StartMeterListener(List<(string Name, long Value)> captured)
+    private static MeterListener _StartMeterListener(ConcurrentBag<(string Name, long Value)> captured)
     {
         var listener = new MeterListener
         {
