@@ -28,7 +28,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
 - `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `JitterMaxDuration`, `EagerRefreshThreshold`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, `LockTimeout`, `UseDistributedFactoryLock`, and `Tags`.
 - `CacheFactoryContext<T>` / `CacheFactoryResult<T>` - conditional-factory contract (the HTTP-304 pattern): the factory sees the last-known value and its validators (`ETag`, `LastModifiedAt`) and returns `NotModified()` or `Modified(value, eTag, lastModifiedAt)`; it may also replace `Options` and `Tags` before returning (adaptive caching).
-- `CacheOptions` - base provider options carrying `KeyPrefix`, `DefaultEntryOptions`, and `CacheName` (the instance name surfaced on the `headless.cache.name` telemetry dimension; also used by the hybrid provider as its cross-node invalidation-routing identity).
+- `CacheOptions` - base provider options carrying `KeyPrefix`, `DefaultEntryOptions`, and `CacheName` (the instance name surfaced on the `headless.cache.name` telemetry dimension; instrumentation metadata only, set automatically for named instances).
 - `CacheDefaultEntryExtensions` - option-less `GetOrAddAsync` overloads that apply the cache instance's `DefaultEntryOptions` and throw `InvalidOperationException` when none is configured.
 - `CacheFactoryTimeoutException` - `TimeoutException` subtype thrown when a hard factory timeout fires without a stale fallback.
 

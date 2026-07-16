@@ -50,10 +50,15 @@ public sealed partial class HybridCache(
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly string? _cacheName = cacheOptions.CacheName;
 
-    // Non-null cache name for the headless.cache.name telemetry dimension (the nullable _cacheName above is used
-    // for invalidation routing and must stay null for the default instance).
+    // Framework-owned cross-node invalidation-routing identity (HybridCacheOptions.InvalidationRoutingName), set
+    // by named-instance registration and null for the default instance. Distinct from the public CacheName below,
+    // which only feeds telemetry and cannot affect routing (a user override in setupAction is applied before
+    // registration stamps InvalidationRoutingName, so it never wins here).
+    private readonly string? _invalidationRoutingName = cacheOptions.InvalidationRoutingName;
+
+    // Non-null cache name for the headless.cache.name telemetry dimension (the nullable _invalidationRoutingName
+    // above is used for invalidation routing and must stay null for the default instance).
     private readonly string _metricCacheName = string.IsNullOrEmpty(cacheOptions.CacheName)
         ? CachingDiagnostics.DefaultCacheName
         : cacheOptions.CacheName;
@@ -289,9 +294,9 @@ public sealed partial class HybridCache(
             message = message with { Timestamp = _timeProvider.GetUtcNow() };
         }
 
-        if (!string.Equals(message.CacheName, _cacheName, StringComparison.Ordinal))
+        if (!string.Equals(message.CacheName, _invalidationRoutingName, StringComparison.Ordinal))
         {
-            message = message with { CacheName = _cacheName };
+            message = message with { CacheName = _invalidationRoutingName };
         }
 
         try

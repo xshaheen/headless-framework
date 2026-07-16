@@ -20,11 +20,7 @@ public class CacheOptions
     /// <summary>
     /// The registered cache-instance name surfaced on the <c>headless.cache.name</c> telemetry dimension. Set at
     /// registration for named instances; <see langword="null"/> for the unkeyed default (which reports as
-    /// <c>"default"</c>). For most providers this is instrumentation metadata only, but the hybrid provider also
-    /// uses it as its cross-node invalidation-routing identity: it is stamped onto every
-    /// <c>CacheInvalidationMessage.CacheName</c> the instance publishes, and receivers route strictly by that name.
-    /// Named-instance registration sets it automatically; it must stay <see langword="null"/>/unset for the default
-    /// hybrid instance, and setting it manually on a hybrid instance changes invalidation routing.
+    /// <c>"default"</c>). Instrumentation metadata only — it does not affect cache behavior.
     /// </summary>
     public string? CacheName { get; set; }
 

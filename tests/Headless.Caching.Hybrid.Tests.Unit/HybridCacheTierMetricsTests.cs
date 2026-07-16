@@ -100,6 +100,56 @@ public sealed class HybridCacheTierMetricsTests : TestBase
             .Be(1);
     }
 
+    // Issue #693: the public CacheName (telemetry-only) and the framework-owned invalidation-routing identity
+    // are separate. A default (unkeyed) hybrid never gets an InvalidationRoutingName, even when the user sets
+    // CacheName for telemetry purposes — so outgoing invalidations must route with a null CacheName while the
+    // telemetry dimension still reports the user-set name.
+    [Fact]
+    public async Task should_publish_null_routing_name_and_report_user_cache_name_in_telemetry_when_default_hybrid()
+    {
+        // given — a default (unkeyed) hybrid where the user sets the public CacheName for telemetry purposes only
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cacheName = "orders-" + Guid.NewGuid().ToString("N");
+        var hybridOptions = new HybridCacheOptions { CacheName = cacheName };
+        var cache = new HybridCache(l1, l2, publisher, hybridOptions, timeProvider: _timeProvider);
+        _disposables.Add(cache);
+        _disposables.Add(l1);
+        _disposables.Add(l2Backing);
+
+        using var metrics = new MetricCollector();
+
+        // when
+        await cache.ClearAsync(AbortToken);
+
+        // then — the wire message carries the framework-owned routing identity (null for the default instance),
+        // never the user-set public CacheName
+        await publisher
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == null && message.Clear),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+
+        // and — the telemetry dimension still reports the user-set public CacheName
+        metrics
+            .Count(
+                "headless.cache.invalidations",
+                ("headless.cache.name", cacheName),
+                ("headless.cache.invalidation_kind", "clear"),
+                ("headless.cache.direction", "publish")
+            )
+            .Should()
+            .Be(1);
+    }
+
     // Collects long-valued caching measurements (counters) with their tags for the Headless.Caching meter.
     private sealed class MetricCollector : IDisposable
     {
