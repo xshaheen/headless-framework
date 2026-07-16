@@ -1,18 +1,18 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>Entity Framework messaging integration for Headless ORM-backed applications.</Description>
-    <PackageTags>headless;orm;entity-framework;messaging;dotnet</PackageTags>
+    <Description>Messaging integration for Headless Entity Framework applications.</Description>
+    <PackageTags>headless;entity-framework;ef-core;messaging;outbox;dotnet</PackageTags>
     <RootNamespace>Headless.EntityFramework</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Messaging.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Messaging.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.EntityFramework.Messaging.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.EntityFramework.Messaging.Tests.Integration" />
   </ItemGroup>
 </Project>

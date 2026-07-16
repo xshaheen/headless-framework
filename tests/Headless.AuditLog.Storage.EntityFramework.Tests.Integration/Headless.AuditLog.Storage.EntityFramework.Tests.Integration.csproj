@@ -11,7 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

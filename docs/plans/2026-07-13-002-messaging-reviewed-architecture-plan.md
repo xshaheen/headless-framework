@@ -504,7 +504,7 @@ No product-level question remains open. Implementation may choose internal type 
 - Update `src/Headless.Messaging.Core/Internal/Bus.cs`, `Queue.cs`, `DirectPublisherCore.cs`, `OutboxMessageWriter.cs`, and remove `OutboxBus.cs`/`OutboxQueue.cs`.
 - Update outbound/inbound header and option contracts in Messaging Abstractions/Core so outbound values are captured immutably and inbound headers remain read-only.
 - Update service wiring in `src/Headless.Messaging.Core/Setup.cs` and `Internal/IBootstrapper.Default.cs`.
-- Migrate direct callers in `src/Headless.Orm.EntityFramework.Messaging/`, `src/Headless.DistributedLocks.Core/`, and `src/Headless.Messaging.Testing/MessagingTestHarness.cs` before removing the old interfaces.
+- Migrate direct callers in `src/Headless.EntityFramework.Messaging/`, `src/Headless.DistributedLocks.Core/`, and `src/Headless.Messaging.Testing/MessagingTestHarness.cs` before removing the old interfaces.
 - Update tests in `tests/Headless.Messaging.Core.Tests.Unit/BusTests.cs`, add the symmetric Queue facade tests, and update `Internal/CommitCoordinatorOutboxTests.cs`, `Internal/ScheduledMediumMessageQueueTests.cs`, and `TypeSafePublishApiTests.cs`.
 
 **Approach:** Normalize and validate options before user middleware, resolve delivery mode once, and freeze lane/mode/schedule before envelope persistence or transport send. Reuse the existing direct publisher and outbox writer rather than creating parallel pipelines. Migrate every `IOutbox*` consumer first; delete the interfaces and implementations only after the affected project graph compiles.
@@ -695,7 +695,7 @@ No product-level question remains open. Implementation may choose internal type 
 
 - Finalize `CONCEPTS.md` and this plan against the implemented API.
 - Update `docs/llms/messaging.md`, `docs/llms/index.md`, and cross-domain docs whose examples use Messaging.
-- Update affected package READMEs under `src/Headless.Messaging.*/` and `src/Headless.Orm.EntityFramework.Messaging/README.md`.
+- Update affected package READMEs under `src/Headless.Messaging.*/` and `src/Headless.EntityFramework.Messaging/README.md`.
 - Update Messaging demo READMEs and issue descriptions/links after focused verification.
 
 **Approach:** Follow `docs/authoring/AUTHORING.md`: domain docs and package READMEs mirror current code, retain required section order, and include the design trade-offs an agent needs to choose Bus/Queue and delivery mode correctly. Do not copy roadmap-only advanced features into current API docs.

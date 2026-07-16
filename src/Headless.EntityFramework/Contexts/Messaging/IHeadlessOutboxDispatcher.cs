@@ -16,7 +16,7 @@ namespace Headless.EntityFramework;
 /// and discarded on rollback. Implementations MUST NOT perform non-transactional external broker publishes
 /// from these methods. (A custom implementation that needs the raw transaction handle can read
 /// <c>DbContext.Database.CurrentTransaction</c>.) The real implementation ships in the
-/// <c>Headless.Orm.EntityFramework.Messaging</c> bridge package; register it with
+/// <c>Headless.EntityFramework.Messaging</c> bridge package; register it with
 /// <c>AddHeadlessDbContextServices(...).AddIntegrationEventOutbox()</c>.
 /// </remarks>
 [PublicAPI]

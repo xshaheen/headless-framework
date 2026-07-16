@@ -271,8 +271,8 @@ Bridges EF Core's transaction commit/rollback edges to commit coordination, so w
 
 - `EntityFrameworkCommitSignalSource`.
 - DI extension `AddEntityFrameworkCommitCoordination()`.
-- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` and `HeadlessIdentityDbContext` (any `IHeadlessDbContext`) have a scope-free overload in `Headless.Orm.EntityFramework`.
-- Auto-attach of DI-registered interceptors to a consumer's own `DbContext` options via `IDbContextOptionsConfiguration<TContext>` (EF Core 9+). The public helper `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` (in `Headless.Orm.EntityFramework`, namespace `Headless.EntityFramework`) registers a configuration that runs against every `DbContext<TContext>` options build — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. `options.AddDiRegisteredInterceptors(sp)` remains the explicit per-options-action form.
+- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` and `HeadlessIdentityDbContext` (any `IHeadlessDbContext`) have a scope-free overload in `Headless.EntityFramework`.
+- Auto-attach of DI-registered interceptors to a consumer's own `DbContext` options via `IDbContextOptionsConfiguration<TContext>` (EF Core 9+). The public helper `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` (in `Headless.EntityFramework`, namespace `Headless.EntityFramework`) registers a configuration that runs against every `DbContext<TContext>` options build — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. `options.AddDiRegisteredInterceptors(sp)` remains the explicit per-options-action form.
 - Startup gate `CommitInterceptorStartupGate<TContext>` with `CommitProbeMode` (`Disabled` / `Warn` / `Strict`, default `Warn`) configured through `CommitInterceptorProbeOptions`.
 
 ### Design Notes
@@ -299,7 +299,7 @@ services.AddEntityFrameworkCommitCoordination();
 // A plain AddDbContext must attach the commit interceptor to its options — EF Core does NOT auto-discover
 // IInterceptor registrations, so without it the commit edge is never observed and coordinated work silently
 // drains as rollback. Two equivalent ways: the inline AddDiRegisteredInterceptors(sp) shown here, or a one-time
-// services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.Orm.EntityFramework).
+// services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.EntityFramework).
 // AddHeadlessDbContext / AddHeadlessIdentityDbContext and the messaging EF storage path do this for you.
 services.AddDbContext<MyDbContext>(
     (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp)

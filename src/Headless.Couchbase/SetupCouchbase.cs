@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Couchbase;
 
 /// <summary>
-/// Registration extensions for the Headless Couchbase ORM integration.
+/// Registration extensions for the Headless Couchbase integration.
 /// </summary>
 [PublicAPI]
 public static class SetupCouchbase

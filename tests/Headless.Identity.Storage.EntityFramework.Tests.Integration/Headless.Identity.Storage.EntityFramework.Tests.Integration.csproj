@@ -13,7 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
-    <ProjectReference Include="..\Headless.Orm.Tests.Harness\Headless.Orm.Tests.Harness.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
