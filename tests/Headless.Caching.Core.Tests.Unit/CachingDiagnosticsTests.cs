@@ -69,6 +69,113 @@ public sealed class CachingDiagnosticsTests : TestBase
         metrics.AllTagValues().Should().NotContain(key);
     }
 
+    // Fail-safe enabled + stale reserve + factory exceeding its soft timeout -> failsafe.activations
+    // {trigger=factory_timeout} increments by 1 and the caller is served the stale value while the factory
+    // transfers to background completion.
+#pragma warning disable CA2025 // The started task is fully awaited before the listener collectors are disposed.
+    [Fact]
+    public async Task should_record_failsafe_activation_with_factory_timeout_trigger_when_soft_timeout_elapses()
+    {
+        // given
+        var cacheName = _UniqueName();
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        using var metrics = new MetricCollector();
+        var coordinator = _CreateCoordinator(cacheName);
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            // Fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await resultTask;
+        factoryGate.SetResult("fresh");
+        await backgroundFinished.Task;
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+
+        metrics
+            .Count(
+                "headless.cache.failsafe.activations",
+                ("headless.cache.name", cacheName),
+                ("headless.cache.trigger", "factory_timeout")
+            )
+            .Should()
+            .Be(1);
+    }
+#pragma warning restore CA2025
+
+    // Fail-safe enabled + stale reserve + throwing distributed-lock acquire (backend down, not held-elsewhere)
+    // -> failsafe.activations{trigger=lock_acquire_failed} increments by 1 and the stale value is served
+    // without running the factory.
+    [Fact]
+    public async Task should_record_failsafe_activation_with_lock_acquire_failed_trigger_when_lock_backend_throws()
+    {
+        // given
+        var cacheName = _UniqueName();
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        var lockProvider = new FakeCacheFactoryLockProvider
+        {
+            AcquireFault = () => new InvalidOperationException("lock backend down"),
+        };
+
+        using var metrics = new MetricCollector();
+        var coordinator = _CreateCoordinator(cacheName, lockProvider: lockProvider);
+        var factoryCalls = 0;
+
+        // when
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ =>
+            {
+                Interlocked.Increment(ref factoryCalls);
+                return ValueTask.FromResult<string?>("fresh");
+            },
+            _CreateOptions(isFailSafeEnabled: true, useDistributedFactoryLock: true),
+            AbortToken
+        );
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        factoryCalls.Should().Be(0);
+
+        metrics
+            .Count(
+                "headless.cache.failsafe.activations",
+                ("headless.cache.name", cacheName),
+                ("headless.cache.trigger", "lock_acquire_failed")
+            )
+            .Should()
+            .Be(1);
+    }
+
     // AE3: hard timeout with no fail-safe reserve -> factory.executions{outcome=timeout} increments, the
     // cache.get_or_add span status is Error, and CacheFactoryTimeoutException propagates.
 #pragma warning disable CA2025 // The started task is fully awaited before the listener collectors are disposed.
@@ -195,12 +302,16 @@ public sealed class CachingDiagnosticsTests : TestBase
         span.GetTagItem("headless.cache.key").Should().Be(key);
     }
 
-    private FactoryCacheCoordinator _CreateCoordinator(string cacheName = "test-cache", bool includeKeyInTraces = false)
+    private FactoryCacheCoordinator _CreateCoordinator(
+        string cacheName = "test-cache",
+        bool includeKeyInTraces = false,
+        ICacheFactoryLockProvider? lockProvider = null
+    )
     {
         var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
             NullLogger<FactoryCacheCoordinator>.Instance,
-            factoryLockProvider: null,
+            lockProvider,
             cacheName,
             "l1",
             includeKeyInTraces
@@ -223,7 +334,13 @@ public sealed class CachingDiagnosticsTests : TestBase
         return tcs.Task;
     }
 
-    private static CacheEntryOptions _CreateOptions(bool isFailSafeEnabled = false, TimeSpan? factoryHardTimeout = null)
+    private static CacheEntryOptions _CreateOptions(
+        bool isFailSafeEnabled = false,
+        TimeSpan? factoryHardTimeout = null,
+        TimeSpan? factorySoftTimeout = null,
+        TimeSpan? backgroundFactoryCeiling = null,
+        bool useDistributedFactoryLock = false
+    )
     {
         return new CacheEntryOptions
         {
@@ -231,10 +348,11 @@ public sealed class CachingDiagnosticsTests : TestBase
             IsFailSafeEnabled = isFailSafeEnabled,
             FailSafeMaxDuration = TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(10),
-            FactorySoftTimeout = Timeout.InfiniteTimeSpan,
+            FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
             FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
-            BackgroundFactoryCeiling = Timeout.InfiniteTimeSpan,
+            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
             LockTimeout = Timeout.InfiniteTimeSpan,
+            UseDistributedFactoryLock = useDistributedFactoryLock,
         };
     }
 

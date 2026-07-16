@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.Core;
+using Tests.Helpers;
 
 namespace Tests.Diagnostics;
 
@@ -176,6 +177,67 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
 
+        published.Should().NotBeNull();
+        stopped.All.Should().Contain(published);
+        published!.Status.Should().Be(ActivityStatusCode.Error);
+        metrics.Should().Contain(m => string.Equals(m.Name, "messaging.publish.errors", StringComparison.Ordinal));
+    }
+
+    // (b, companion) The non-throwing failure shape: transport.SendAsync RETURNING a failed OperateResult (no
+    // exception) routes through _TracingError at the bottom of the send path — the span must still be stopped
+    // with Error status and messaging.publish.errors recorded, exactly like the throwing-transport case above.
+    [Fact]
+    public async Task should_record_publish_error_and_mark_span_error_when_transport_returns_failed_result()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var transportMessage = _CreateTransportMessage("test.messageName");
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        Activity? published = null;
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(_Broker);
+        busTransport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(
+                (Func<CallInfo, Task<OperateResult>>)(
+                    _ =>
+                    {
+                        published = Activity.Current;
+                        return Task.FromResult(OperateResult.Failed(new TimeoutException("broker unavailable")));
+                    }
+                )
+            );
+
+        using var stopped = new PublishActivityCollector();
+        var metrics = new List<(string Name, long Value)>();
+        using var meters = _StartMeterListener(metrics);
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            busTransport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(1), MaxPersistedRetries = 0 },
+            }
+        );
+
+        // when — the failed result is classified through the retry pipeline, not thrown to the caller.
+        await sender.SendAsync(_CreateMediumMessage());
+
+        // then
         published.Should().NotBeNull();
         stopped.All.Should().Contain(published);
         published!.Status.Should().Be(ActivityStatusCode.Error);
