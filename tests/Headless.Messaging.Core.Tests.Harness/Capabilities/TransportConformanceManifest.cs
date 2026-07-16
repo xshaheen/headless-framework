@@ -11,6 +11,7 @@ public enum TransportConformanceScenario
     HeaderRoundTrip,
     CommitSettlement,
     RejectRedelivery,
+    ConsumerPauseRecovery,
     BrokerInterruptionRecovery,
     StaleSettlement,
     HandlerFailureRedelivery,
@@ -70,7 +71,15 @@ public static class TransportConformanceManifest
     public static IReadOnlyDictionary<string, TransportConformanceProfile> Providers { get; } =
         new Dictionary<string, TransportConformanceProfile>(StringComparer.Ordinal)
         {
-            ["NATS"] = TransportConformanceProfile.CreateDisabled("NATS"),
+            ["NATS"] = TransportConformanceProfile
+                .CreateDisabled("NATS")
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile.CreateDisabled("RabbitMQ"),
             ["AWS/LocalStack"] = TransportConformanceProfile.CreateDisabled("AWS/LocalStack"),
             ["Kafka"] = TransportConformanceProfile

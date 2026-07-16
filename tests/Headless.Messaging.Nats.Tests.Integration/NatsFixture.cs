@@ -1,6 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+using Headless.Messaging.Nats;
 using Headless.Testing.Testcontainers;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -96,6 +101,64 @@ public sealed class NatsFixture : HeadlessNatsFixture
         }
 
         throw new InvalidOperationException("NATS connection attempts were exhausted.");
+    }
+
+    public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var streamName = $"conf-{Guid.NewGuid():N}"[..29];
+        var destination = $"{streamName}.probe";
+        var group = $"group-{Guid.NewGuid():N}"[..30];
+        await EnsureStreamAsync(streamName, $"{streamName}.>");
+
+        var services = new ServiceCollection().BuildServiceProvider();
+        var options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = ConnectionString,
+                EnableSubscriberClientStreamAndSubjectCreation = false,
+                ConsumerOptions = config =>
+                {
+                    config.AckWait = TimeSpan.FromSeconds(1);
+                    config.MaxDeliver = 5;
+                },
+            }
+        );
+#pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
+        var pool = new Headless.Messaging.Nats.NatsConnectionPool(
+            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
+            options
+        );
+        var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool);
+        var consumer = new NatsConsumerClient(group, 1, options, services, intentType: IntentType.Queue);
+#pragma warning restore CA2000
+
+        try
+        {
+            await consumer.ConnectAsync(cancellationToken);
+            var topics = await consumer.FetchMessageNamesAsync([destination], cancellationToken);
+            await consumer.SubscribeAsync(topics, cancellationToken);
+
+            return new TransportConsumerConformanceSession(
+                destination,
+                producer,
+                consumer,
+                TimeSpan.FromMilliseconds(2_500),
+                async () =>
+                {
+                    await pool.DisposeAsync();
+                    await services.DisposeAsync();
+                }
+            );
+        }
+        catch
+        {
+            await consumer.DisposeAsync();
+            await pool.DisposeAsync();
+            await services.DisposeAsync();
+            throw;
+        }
     }
 
     protected override async ValueTask DisposeAsyncCore()

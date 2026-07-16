@@ -12,6 +12,8 @@ This harness enables consistent integration testing across all messaging provide
 |-------|---------|
 | `TransportTestsBase` | Tests for `ITransport` implementations (sending messages) |
 | `ConsumerClientTestsBase` | Tests for `IConsumerClient` implementations (receiving messages) |
+| `TransportConsumerConformanceTestsBase` | Broker-observed round trip and real settlement invariants |
+| `BrokerFaultTestsBase` | Optional, manifest-driven recovery and fault invariants |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle tests with DI setup |
 
@@ -53,6 +55,19 @@ These flags describe producer or client API behavior only. Broker-observed round
 - `NotApplicable`: the provider topology or protocol makes the scenario inapplicable, with a rationale.
 
 An enabled real-broker leaf must support every mandatory baseline cell. Fabricated callback values and producer-side message inspection are not settlement or broker-delivery evidence.
+
+## Broker Conformance Sessions
+
+Provider leaves create an isolated `TransportConsumerConformanceSession` with a unique destination, real producer, real consumer, bounded no-redelivery window, and provider cleanup callback. The shared base:
+
+- waits for `IConsumerClient.WaitUntilReadyAsync` before publishing;
+- captures the broker-delivered body, headers, and opaque settlement value;
+- passes that exact value to `CommitAsync` or `RejectAsync`;
+- observes redelivery or its absence beyond the provider's configured settlement boundary;
+- bounds startup, receive, shutdown, and negative-observation windows;
+- includes consumer diagnostics when a delivery times out.
+
+NATS is the reference implementation. Its test leaf uses queue intent, a unique memory-backed JetStream stream and durable, and a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
 
 ### DataStorageCapabilities
 

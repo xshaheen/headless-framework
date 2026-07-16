@@ -1,0 +1,356 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Threading.Channels;
+using Headless.Messaging;
+using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
+using Tests.Capabilities;
+using MessagingHeaders = Headless.Messaging.Headers;
+
+namespace Tests;
+
+/// <summary>A broker-delivered message and the provider's opaque settlement value.</summary>
+[PublicAPI]
+public sealed record TransportConformanceDelivery(TransportMessage Message, object? SettlementValue);
+
+/// <summary>Owns one isolated producer/consumer pair used by broker-backed conformance tests.</summary>
+[PublicAPI]
+public sealed class TransportConsumerConformanceSession(
+    string destination,
+    ITransport producer,
+    IConsumerClient consumer,
+    TimeSpan noRedeliveryWindow,
+    Func<ValueTask>? disposeProviderResources = null
+) : IAsyncDisposable
+{
+    private readonly Channel<TransportConformanceDelivery> _deliveries =
+        Channel.CreateUnbounded<TransportConformanceDelivery>(
+            new UnboundedChannelOptions { SingleWriter = false, SingleReader = false }
+        );
+    private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
+    private readonly ITransport _producer = producer;
+    private readonly Func<ValueTask>? _disposeProviderResources = disposeProviderResources;
+    private CancellationTokenSource? _listeningCts;
+    private Task? _listeningTask;
+    private int _stopped;
+    private int _disposed;
+
+    public string Destination { get; } = destination;
+
+    public TimeSpan NoRedeliveryWindow { get; } = noRedeliveryWindow;
+
+    public IConsumerClient Consumer { get; } = consumer;
+
+    public async Task StartAsync(
+        Func<TransportConformanceDelivery, Task>? onDelivery = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (_listeningTask is not null)
+        {
+            throw new InvalidOperationException("The conformance session has already started.");
+        }
+
+        Consumer.OnMessageCallback = async (message, settlementValue) =>
+        {
+            var delivery = new TransportConformanceDelivery(message, settlementValue);
+            await _deliveries.Writer.WriteAsync(delivery, CancellationToken.None).ConfigureAwait(false);
+
+            if (onDelivery is not null)
+            {
+                await onDelivery(delivery).ConfigureAwait(false);
+            }
+        };
+        Consumer.OnLogCallback = _logs.Enqueue;
+
+        _listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _listeningTask = Consumer.ListeningAsync(TimeSpan.FromSeconds(2), _listeningCts.Token).AsTask();
+
+        using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readinessCts.CancelAfter(TimeSpan.FromSeconds(10));
+        await Consumer.WaitUntilReadyAsync(readinessCts.Token).ConfigureAwait(false);
+    }
+
+    public Task<OperateResult> PublishAsync(TransportMessage message, CancellationToken cancellationToken = default)
+    {
+        return _producer.SendAsync(message, cancellationToken);
+    }
+
+    public async Task<TransportConformanceDelivery> ReceiveAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+        try
+        {
+            return await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            var diagnostics = string.Join(Environment.NewLine, _logs.Select(log => $"{log.LogType}: {log.Reason}"));
+            throw new TimeoutException(
+                $"No broker delivery arrived within {timeout}. Consumer diagnostics:{Environment.NewLine}{diagnostics}"
+            );
+        }
+    }
+
+    public async Task<bool> RemainsEmptyAsync(TimeSpan window, CancellationToken cancellationToken = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(window);
+
+        try
+        {
+            _ = await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
+            return false;
+        }
+        catch (OperationCanceledException)
+            when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return true;
+        }
+    }
+
+    public async Task StopAsync(TimeSpan timeout)
+    {
+        if (Interlocked.Exchange(ref _stopped, 1) != 0)
+        {
+            return;
+        }
+
+        if (_listeningCts is not null)
+        {
+            await _listeningCts.CancelAsync().ConfigureAwait(false);
+        }
+
+        await Consumer
+            .ShutdownAsync(timeout, CancellationToken.None)
+            .AsTask()
+            .WaitAsync(timeout + TimeSpan.FromSeconds(1))
+            .ConfigureAwait(false);
+
+        if (_listeningTask is not null)
+        {
+            try
+            {
+                await _listeningTask.WaitAsync(timeout + TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_listeningCts?.IsCancellationRequested == true)
+            {
+                // Expected when this session stops its listener.
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await StopAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        await Consumer.DisposeAsync().ConfigureAwait(false);
+        await _producer.DisposeAsync().ConfigureAwait(false);
+
+        if (_disposeProviderResources is not null)
+        {
+            await _disposeProviderResources().ConfigureAwait(false);
+        }
+
+        _listeningCts?.Dispose();
+    }
+}
+
+/// <summary>Shared broker-observed transport, delivery, and settlement invariants.</summary>
+[PublicAPI]
+public abstract class TransportConsumerConformanceTestsBase : TestBase
+{
+    protected abstract string ProviderName { get; }
+
+    protected abstract ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        CancellationToken cancellationToken
+    );
+
+    public virtual async Task should_round_trip_queue_message_body_and_headers()
+    {
+        _RequireSupport(TransportConformanceScenario.QueueRoundTrip);
+        _RequireSupport(TransportConformanceScenario.HeaderRoundTrip);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var expectedId = Guid.NewGuid().ToString("N");
+        var expectedBody = "broker-observed-body"u8.ToArray();
+        var message = _CreateMessage(session.Destination, expectedId, expectedBody);
+
+        var result = await session.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.Message.Body.ToArray().Should().Equal(expectedBody);
+        delivery.Message.Id.Should().Be(expectedId);
+        delivery.Message.Name.Should().Be(session.Destination);
+        delivery.Message.Headers["x-headless-conformance"].Should().Be("round-trip");
+        delivery.SettlementValue.Should().NotBeNull();
+
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+    }
+
+    public virtual async Task should_commit_real_delivery_and_prevent_redelivery()
+    {
+        _RequireSupport(TransportConformanceScenario.CommitSettlement);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var message = _CreateMessage(
+            session.Destination,
+            Guid.NewGuid().ToString("N"),
+            "commit-conformance"u8.ToArray()
+        );
+        var result = await session.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.SettlementValue.Should().NotBeNull();
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+
+        var remainedSettled = await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken);
+        remainedSettled.Should().BeTrue("a committed broker delivery must not be redelivered");
+    }
+
+    public virtual async Task should_reject_real_delivery_and_observe_redelivery()
+    {
+        _RequireSupport(TransportConformanceScenario.RejectRedelivery);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var expectedId = Guid.NewGuid().ToString("N");
+        var message = _CreateMessage(session.Destination, expectedId, "reject-conformance"u8.ToArray());
+        var result = await session.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var first = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        first.SettlementValue.Should().NotBeNull();
+        await session.Consumer.RejectAsync(first.SettlementValue, AbortToken);
+
+        var redelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        redelivery.Message.Id.Should().Be(expectedId);
+        redelivery.SettlementValue.Should().NotBeNull();
+        ReferenceEquals(first.SettlementValue, redelivery.SettlementValue).Should().BeFalse();
+        await session.Consumer.CommitAsync(redelivery.SettlementValue, AbortToken);
+    }
+
+    public virtual async Task should_isolate_unique_destinations()
+    {
+        _RequireSupport(TransportConformanceScenario.QueueRoundTrip);
+
+        await using var firstSession = await CreateSessionAsync(AbortToken);
+        await using var secondSession = await CreateSessionAsync(AbortToken);
+        await firstSession.StartAsync(cancellationToken: AbortToken);
+        await secondSession.StartAsync(cancellationToken: AbortToken);
+
+        var message = _CreateMessage(
+            firstSession.Destination,
+            Guid.NewGuid().ToString("N"),
+            "isolated-destination"u8.ToArray()
+        );
+        var result = await firstSession.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var delivery = await firstSession.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await firstSession.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+
+        var secondStayedEmpty = await secondSession.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken);
+        secondStayedEmpty.Should().BeTrue("providers must isolate independently provisioned destinations");
+    }
+
+    public virtual async Task should_shutdown_idle_consumer_within_bound()
+    {
+        _RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+        var stopwatch = Stopwatch.StartNew();
+
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    public virtual async Task should_bound_shutdown_while_handler_is_active()
+    {
+        _RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await session.StartAsync(
+            async _ =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.ConfigureAwait(false);
+            },
+            AbortToken
+        );
+
+        var message = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "active-shutdown"u8.ToArray());
+        var result = await session.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await session.StopAsync(TimeSpan.FromMilliseconds(500));
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+        }
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+    }
+
+    protected void RequireSupport(TransportConformanceScenario scenario)
+    {
+        _RequireSupport(scenario);
+    }
+
+    private void _RequireSupport(TransportConformanceScenario scenario)
+    {
+        if (!TransportConformanceManifest.Providers.TryGetValue(ProviderName, out var profile))
+        {
+            throw new InvalidOperationException($"{ProviderName} is not registered in the conformance manifest.");
+        }
+
+        var support = profile.Scenarios[scenario];
+        if (support.Status == ConformanceStatus.Supported)
+        {
+            return;
+        }
+
+        var evidence = support.IssueUrl is null ? support.Rationale : $"{support.Rationale} {support.IssueUrl}";
+        Assert.Skip($"{ProviderName} {scenario}: {support.Status}. {evidence}");
+    }
+
+    private static TransportMessage _CreateMessage(string destination, string messageId, ReadOnlyMemory<byte> body)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.MessageId] = messageId,
+            [MessagingHeaders.MessageName] = destination,
+            ["x-headless-conformance"] = "round-trip",
+        };
+
+        return new TransportMessage(headers, body);
+    }
+}
