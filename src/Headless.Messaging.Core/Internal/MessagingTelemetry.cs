@@ -35,7 +35,8 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     public Activity? PersistStart(Message message, string operation, IntentType intentType, long startTimestampMs)
     {
-        var parentContext = _Extract(message.Headers).ActivityContext;
+        var extracted = _Extract(message.Headers);
+        var parentContext = extracted.ActivityContext;
 
         if (parentContext == default)
         {
@@ -45,6 +46,12 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         var activity = MessagingDiagnostics.Start("message.persist", ActivityKind.Internal, parentContext);
         if (activity is null)
         {
+            // Pass-through relay (K4): the caller gate guarantees telemetry is enabled, but no span was started —
+            // metrics-only config, or the sampler dropped it. Still stamp the stored message headers with the
+            // upstream/ambient parent so the durable row carries traceparent for a later publish/consume to
+            // continue the trace. Never fabricate a root: relay only when a parent actually exists.
+            _RelayParentContext(extracted, message.Headers);
+
             return null;
         }
 
@@ -116,14 +123,19 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         long startTimestampMs
     )
     {
-        var parentContext = _Extract(message.Headers).ActivityContext;
+        var extracted = _Extract(message.Headers);
 
         // Message size is a metric regardless of whether a span is sampled (subscribing to the meter is the toggle).
         MessagingMetrics.RecordMessageSize(message.Body.Length, message.Name);
 
-        var activity = MessagingDiagnostics.Start("message.publish", ActivityKind.Producer, parentContext);
+        var activity = MessagingDiagnostics.Start("message.publish", ActivityKind.Producer, extracted.ActivityContext);
         if (activity is null)
         {
+            // Pass-through relay (K4): the caller gate guarantees telemetry is enabled, but no span was started —
+            // metrics-only config, or the sampler dropped it. Forward the incoming/ambient parent context verbatim
+            // so a non-tracing service still continues the trace instead of silently dropping traceparent/baggage.
+            _RelayParentContext(extracted, message.Headers);
+
             return null;
         }
 
@@ -210,6 +222,14 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
     {
         var parentContext = _Extract(message.Headers);
         Baggage.Current = parentContext.Baggage;
+
+        // Stash the incoming context so a handler's outgoing publish can relay it when no span is started
+        // (metrics-only, or sampled out). The AsyncLocal flows down into the subscriber handler; it is never
+        // cleared — callee-side writes do not flow back to the dispatch loop, so it cannot leak across messages.
+        if (parentContext != default)
+        {
+            MessagingAmbientContext.Current = parentContext;
+        }
 
         var activity = MessagingDiagnostics.Start(
             "message.consume",
@@ -312,6 +332,10 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         {
             context = propagatedContext.ActivityContext;
             Baggage.Current = propagatedContext.Baggage;
+
+            // Stash the incoming context so this handler's outgoing publish can relay it when no span is started
+            // (metrics-only, or sampled out). Flows down into the handler via AsyncLocal; never cleared.
+            MessagingAmbientContext.Current = propagatedContext;
         }
 
         var activity = MessagingDiagnostics.Start("subscriber.invoke", ActivityKind.Internal, context);
@@ -436,11 +460,52 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     private static void _Inject(ActivityContext context, IDictionary<string, string?> headers)
     {
+        _Inject(new PropagationContext(context, Baggage.Current), headers);
+    }
+
+    private static void _Inject(PropagationContext context, IDictionary<string, string?> headers)
+    {
         Propagators.DefaultTextMapPropagator.Inject(
-            new PropagationContext(context, Baggage.Current),
+            context,
             headers,
             static (carrier, key, value) => carrier[key] = value
         );
+    }
+
+    /// <summary>
+    /// Forwards the resolved upstream/ambient parent context (and its baggage) into <paramref name="headers"/>
+    /// when a usable parent exists — never fabricating a root. Used by the publish/persist relay when no span was
+    /// started (K4 pass-through) so a non-tracing service still continues the incoming trace.
+    /// </summary>
+    private static void _RelayParentContext(PropagationContext extracted, IDictionary<string, string?> headers)
+    {
+        var relay = _ResolveRelayContext(extracted);
+
+        if (relay.ActivityContext != default)
+        {
+            _Inject(relay, headers);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the parent context to relay when no span is started. Preference order: the context extracted from
+    /// the message headers, then the ambient <see cref="Activity.Current"/>, then the consume-scope context stashed
+    /// by <see cref="ConsumeStart"/> / <see cref="SubscriberInvokeStart"/> (which flows down into a subscriber
+    /// handler). Baggage is relayed verbatim from whichever source wins.
+    /// </summary>
+    private static PropagationContext _ResolveRelayContext(PropagationContext extracted)
+    {
+        if (extracted.ActivityContext != default)
+        {
+            return extracted;
+        }
+
+        if (Activity.Current is { } current)
+        {
+            return new PropagationContext(current.Context, Baggage.Current);
+        }
+
+        return MessagingAmbientContext.Current;
     }
 
     private static MessagingEnrichmentContext _BuildEnrichmentContext(
