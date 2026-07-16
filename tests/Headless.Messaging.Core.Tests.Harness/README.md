@@ -71,6 +71,8 @@ NATS is the reference implementation. Its test leaf uses queue intent, a unique 
 
 RabbitMQ uses unique exchanges and queues; ACK absence is observed beyond the provider window, reject proves broker requeue, and pause/resume proves a single recovered delivery. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
 
+Kafka is queue/consumer-group only in the current provider contract. Pulsar proves both bus fan-out and queue competition; its negative-ack redelivery delay is shortened only in the test fixture, and broker-restart recovery remains a linked gap. Azure Service Bus runs against a dedicated real namespace using `HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING`. The credential must grant entity-management rights because the fixture creates and deletes only its uniquely named queues, topics, and subscriptions. Missing credentials produce precise local skips; the protected `Azure Service Bus Conformance` workflow fails preflight unless the secret exists and verifies that real tests—not only the credential marker—executed.
+
 ### DataStorageCapabilities
 
 ```csharp

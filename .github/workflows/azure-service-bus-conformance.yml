@@ -1,0 +1,116 @@
+name: Azure Service Bus Conformance
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  HUSKY: 0
+
+jobs:
+  azure-service-bus-conformance:
+    name: "Azure Service Bus conformance"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: read
+
+    environment:
+      name: "Azure Service Bus Conformance"
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Setup NuGet cache"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Require protected namespace credential"
+        env:
+          SERVICE_BUS_CONNECTION_STRING: ${{ secrets.HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING }}
+        run: |
+          if [[ -z "$SERVICE_BUS_CONNECTION_STRING" ]]; then
+            echo "::error::The protected Azure Service Bus namespace credential is missing."
+            exit 1
+          fi
+
+      - name: "Restore"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+
+      - name: "Build"
+        run: make build-project-no-restore PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+
+      - name: "Run real-service conformance suite"
+        env:
+          HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING: ${{ secrets.HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING }}
+        run: >-
+          dotnet test
+          --project tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --results-directory artifacts/test-results/azure-service-bus
+          --report-trx
+
+      - name: "Require executed real-service tests"
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          results = list(Path("artifacts/test-results/azure-service-bus").glob("*.trx"))
+          passed = 0
+          for result in results:
+              root = ET.parse(result).getroot()
+              for element in root.iter():
+                  if not element.tag.endswith("UnitTestResult"):
+                      continue
+                  if element.attrib.get("outcome") != "Passed":
+                      continue
+                  if "AzureServiceBusCredentialGateTests" in element.attrib.get("testName", ""):
+                      continue
+                  passed += 1
+
+          if passed == 0:
+              print("No real Azure Service Bus conformance test executed.", file=sys.stderr)
+              raise SystemExit(1)
+
+          print(f"Validated {passed} executed real-service conformance tests.")
+          PY
+
+      - name: "Upload conformance results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: azure-service-bus-conformance-results
+          path: artifacts/test-results/azure-service-bus
+          if-no-files-found: error
+          retention-days: 14
