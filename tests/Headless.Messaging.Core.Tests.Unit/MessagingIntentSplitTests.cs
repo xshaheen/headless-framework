@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Abstractions;
@@ -299,7 +300,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
 
         await using var transport = new CapturingBusTransport();
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = _CreatePublishActivityListener(activities);
         var bus = _CreateBus(transport, publishRequestFactory);
 
@@ -349,7 +350,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
 
         await using var transport = new CapturingQueueTransport();
-        var activities = new List<Activity>();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = _CreatePublishActivityListener(activities);
         var queue = _CreateQueue(transport, publishRequestFactory);
 
@@ -617,7 +618,9 @@ public sealed class MessagingIntentSplitTests : TestBase
         }
     }
 
-    private static ActivityListener _CreatePublishActivityListener(List<Activity> captured)
+    // The listener is process-global and parallel tests' activities all land in `captured`, so the collection
+    // must be thread-safe — a plain List.Add here races and can drop this test's own activity.
+    private static ActivityListener _CreatePublishActivityListener(ConcurrentBag<Activity> captured)
     {
         var listener = new ActivityListener
         {
