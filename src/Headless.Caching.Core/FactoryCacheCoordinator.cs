@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Threading;
@@ -129,38 +128,30 @@ public sealed partial class FactoryCacheCoordinator(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Zero-overhead when unobserved: no listener means no span, no StrongBox, no outcome recording.
+        // Zero-overhead when unobserved: no listener means no span and no outcome recording.
         if (!CachingDiagnostics.IsEnabled)
         {
-            return await _RunGetOrAddAsync(
-                    store,
-                    key,
-                    factory,
-                    options,
-                    activity: null,
-                    reachedFactory: null,
-                    cancellationToken
-                )
+            var result = await _RunGetOrAddAsync(store, key, factory, options, activity: null, cancellationToken)
                 .ConfigureAwait(false);
+
+            return result.Value;
         }
 
         using var activity = _StartGetOrAddActivity(key);
-        var reachedFactory = new StrongBox<bool>();
 
         try
         {
-            var value = await _RunGetOrAddAsync(
+            var (value, reachedFactory) = await _RunGetOrAddAsync(
                     store,
                     key,
                     factory,
                     options,
                     activity,
-                    reachedFactory,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            var outcome = _ResolveGetOrAddOutcome(value, reachedFactory.Value);
+            var outcome = _ResolveGetOrAddOutcome(value, reachedFactory);
             CachingMetrics.RecordRequest(_cacheName, CachingMetrics.OperationGetOrAdd, outcome, _cacheTier);
             activity?.SetTag(CachingMetrics.TagOutcome, outcome);
 
@@ -175,19 +166,23 @@ public sealed partial class FactoryCacheCoordinator(
         }
     }
 
-    // Core get-or-add engine. `reachedFactory` (when non-null) is set to true once the operation commits to running
-    // the factory, so the wrapper can distinguish a fresh store hit (never ran the factory) from a factory-computed
-    // miss. `activity` is the parent cache.get_or_add span, used to attach fail-safe span events.
-    private async ValueTask<CacheValue<T>> _RunGetOrAddAsync<T>(
+    // Core get-or-add engine. Returns the caller-facing value paired with ReachedFactory: true once the operation
+    // commits to running the factory, so the wrapper can distinguish a fresh store hit (never ran the factory) from
+    // a factory-computed miss. `activity` is the parent cache.get_or_add span, used to attach fail-safe span events.
+    private async ValueTask<(CacheValue<T> Value, bool ReachedFactory)> _RunGetOrAddAsync<T>(
         IFactoryCacheStore store,
         string key,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         Activity? activity,
-        StrongBox<bool>? reachedFactory,
         CancellationToken cancellationToken
     )
     {
+        // Tracks whether this call commits to running the factory (surfaced as the ReachedFactory tuple field): a
+        // fresh store hit stays false, a factory-computed miss becomes true. Read only on the wrapper's normal-return
+        // path, so exception exits never observe it.
+        var reachedFactory = false;
+
         // Per-tier read control: skip reading L1 and/or L2 on a multi-tier (hybrid) store. Setting both is a miss,
         // matching SkipCacheRead; single-tier providers ignore the flags. Derived once and threaded through every
         // store read of this operation (pre-lock, under-lock, post-distributed-lock, and eager-refresh double-check)
@@ -207,12 +202,12 @@ public sealed partial class FactoryCacheCoordinator(
         {
             await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
             _MaybeStartEagerRefresh(store, key, factory, options, entry, now);
-            return _ToCacheValue(entry, isStale: false);
+            return (_ToCacheValue(entry, isStale: false), reachedFactory);
         }
 
         if (_ShouldServeStaleImmediately(options, entry, now))
         {
-            return _ToCacheValue(entry, isStale: true);
+            return (_ToCacheValue(entry, isStale: true), reachedFactory);
         }
 
         var staleCandidate = _IsStaleCandidate(entry, now) ? entry : CacheStoreEntry<T>.NotFound;
@@ -226,7 +221,7 @@ public sealed partial class FactoryCacheCoordinator(
             // With a stale reserve the wait is the soft timeout and we serve stale; without one it is LockTimeout
             // and _ToCacheValue(NotFound) degrades to a miss (NoValue).
             _logger.LogCacheFactoryTimedOut(key, staleCandidate.Found ? "lock-soft" : "lock-timeout", lockTimeout);
-            return _ToCacheValue(staleCandidate, isStale: true);
+            return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
         }
 
         var ownsReleaser = true;
@@ -244,12 +239,12 @@ public sealed partial class FactoryCacheCoordinator(
                 if (entry.IsFresh(now))
                 {
                     await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
-                    return _ToCacheValue(entry, isStale: false);
+                    return (_ToCacheValue(entry, isStale: false), reachedFactory);
                 }
 
                 if (_ShouldServeStaleImmediately(options, entry, now))
                 {
-                    return _ToCacheValue(entry, isStale: true);
+                    return (_ToCacheValue(entry, isStale: true), reachedFactory);
                 }
 
                 if (_IsStaleCandidate(entry, now))
@@ -292,7 +287,7 @@ public sealed partial class FactoryCacheCoordinator(
 
                     _logger.LogCacheFactoryLockAcquireFailed(exception, key, exception.GetType().Name);
                     _RecordFailSafe(activity, CachingMetrics.TriggerLockAcquireFailed);
-                    return _ToCacheValue(staleCandidate, isStale: true);
+                    return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
                 catch
                 {
@@ -312,7 +307,7 @@ public sealed partial class FactoryCacheCoordinator(
                         distributedLockTimeout
                     );
 
-                    return _ToCacheValue(staleCandidate, isStale: true);
+                    return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
 
                 // The previous lock owner on another node may have just written a fresh value to the shared store;
@@ -328,12 +323,12 @@ public sealed partial class FactoryCacheCoordinator(
                     if (entry.IsFresh(now))
                     {
                         await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
-                        return _ToCacheValue(entry, isStale: false);
+                        return (_ToCacheValue(entry, isStale: false), reachedFactory);
                     }
 
                     if (_ShouldServeStaleImmediately(options, entry, now))
                     {
-                        return _ToCacheValue(entry, isStale: true);
+                        return (_ToCacheValue(entry, isStale: true), reachedFactory);
                     }
 
                     if (_IsStaleCandidate(entry, now))
@@ -345,7 +340,7 @@ public sealed partial class FactoryCacheCoordinator(
 
             // Committed to running the factory: this call is a miss (unless fail-safe serves a stale reserve),
             // never a fresh hit — flag it so the wrapper reports the get-or-add outcome correctly.
-            reachedFactory?.Value = true;
+            reachedFactory = true;
 
             // One context per factory execution, built from the current physically-present entry so the factory
             // can see the last-known-good value and its validators (conditional refresh) and mutate the options
@@ -388,7 +383,7 @@ public sealed partial class FactoryCacheCoordinator(
 
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
                 _RecordFailSafe(activity, CachingMetrics.TriggerFactoryError);
-                return _ToCacheValue(staleCandidate, isStale: true);
+                return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
             }
             catch
             {
@@ -427,7 +422,7 @@ public sealed partial class FactoryCacheCoordinator(
 
                     ownsReleaser = false;
                     _RecordFailSafe(activity, CachingMetrics.TriggerFactoryTimeout);
-                    return _ToCacheValue(staleCandidate, isStale: true);
+                    return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
 
                 _ObserveFaultedTask(factoryResult.RunningTask, key);
@@ -445,7 +440,7 @@ public sealed partial class FactoryCacheCoordinator(
 
                     _logger.LogFailSafeActivated(key, nameof(CacheFactoryTimeoutException));
                     _RecordFailSafe(activity, CachingMetrics.TriggerFactoryTimeout);
-                    return _ToCacheValue(staleCandidate, isStale: true);
+                    return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
 
                 throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout);
@@ -454,7 +449,7 @@ public sealed partial class FactoryCacheCoordinator(
             _RecordFactoryOutcome(factoryActivity, factoryStart, CachingMetrics.OutcomeSuccess);
             factoryActivity?.Dispose();
 
-            return await _WriteFactoryResultAsync(
+            var written = await _WriteFactoryResultAsync(
                     store,
                     key,
                     context,
@@ -463,6 +458,8 @@ public sealed partial class FactoryCacheCoordinator(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            return (written, reachedFactory);
         }
         finally
         {
