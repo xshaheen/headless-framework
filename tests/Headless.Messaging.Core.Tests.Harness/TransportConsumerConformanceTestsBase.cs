@@ -211,6 +211,22 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
     }
 
+    public virtual async Task should_dispatch_empty_message_body()
+    {
+        _RequireSupport(TransportConformanceScenario.EmptyBodyDispatch);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var message = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), ReadOnlyMemory<byte>.Empty);
+        var result = await session.PublishAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.Message.Body.Length.Should().Be(0);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+    }
+
     public virtual async Task should_commit_real_delivery_and_prevent_redelivery()
     {
         _RequireSupport(TransportConformanceScenario.CommitSettlement);

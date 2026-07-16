@@ -1,0 +1,102 @@
+name: Messaging Transport Conformance
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  HUSKY: 0
+
+jobs:
+  docker-conformance:
+    name: "${{ matrix.name }} conformance"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - key: nats
+            name: NATS
+            project: tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj
+          - key: rabbitmq
+            name: RabbitMQ
+            project: tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj
+          - key: aws-localstack
+            name: AWS LocalStack
+            project: tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj
+          - key: kafka
+            name: Kafka
+            project: tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj
+          - key: pulsar
+            name: Pulsar
+            project: tests/Headless.Messaging.Pulsar.Tests.Integration/Headless.Messaging.Pulsar.Tests.Integration.csproj
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Setup NuGet cache"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore provider project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEST_PROJECT: ${{ matrix.project }}
+        run: make restore-project PROJECT="$TEST_PROJECT"
+
+      - name: "Build provider project"
+        env:
+          TEST_PROJECT: ${{ matrix.project }}
+        run: make build-project-no-restore PROJECT="$TEST_PROJECT"
+
+      - name: "Run provider conformance"
+        env:
+          RESULT_KEY: ${{ matrix.key }}
+          TEST_PROJECT: ${{ matrix.project }}
+        run: >-
+          dotnet test
+          --project "$TEST_PROJECT"
+          --configuration Release
+          --no-build
+          --no-restore
+          --results-directory "artifacts/test-results/$RESULT_KEY"
+          --report-trx
+
+      - name: "Upload provider results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: messaging-${{ matrix.key }}-conformance-results
+          path: artifacts/test-results/${{ matrix.key }}
+          if-no-files-found: error
+          retention-days: 14

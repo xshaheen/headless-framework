@@ -34,6 +34,12 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
+    public override Task should_dispatch_empty_message_body()
+    {
+        return base.should_dispatch_empty_message_body();
+    }
+
+    [Fact]
     public override Task should_commit_real_delivery_and_prevent_redelivery()
     {
         return base.should_commit_real_delivery_and_prevent_redelivery();

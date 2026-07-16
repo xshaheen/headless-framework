@@ -93,4 +93,35 @@ public sealed class TransportConformanceManifestTests : TestBase
     {
         TransportConformanceManifest.GetValidationErrors().Should().BeEmpty();
     }
+
+    [Fact]
+    public void should_keep_readme_matrix_aligned_with_manifest_roster()
+    {
+        var readme = File.ReadAllText(
+            Path.Combine(_FindRepositoryRoot(), "tests", "Headless.Messaging.Core.Tests.Harness", "README.md")
+        );
+
+        foreach (var provider in TransportConformanceManifest.Providers.Keys)
+        {
+            readme.Should().Contain($"| {provider} ");
+        }
+
+        foreach (var scenario in Enum.GetValues<TransportConformanceScenario>())
+        {
+            readme.Should().Contain($"| `{scenario}` |");
+        }
+    }
+
+    private static string _FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "headless-framework.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate repository root from test output directory.");
+    }
 }

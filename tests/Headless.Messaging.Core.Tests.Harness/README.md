@@ -73,6 +73,32 @@ RabbitMQ uses unique exchanges and queues; ACK absence is observed beyond the pr
 
 Kafka is queue/consumer-group only in the current provider contract. Pulsar proves both bus fan-out and queue competition; its negative-ack redelivery delay is shortened only in the test fixture, and broker-restart recovery remains a linked gap. Azure Service Bus runs against a dedicated real namespace using `HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING`. The credential must grant entity-management rights because the fixture creates and deletes only its uniquely named queues, topics, and subscriptions. Missing credentials produce precise local skips; the protected `Azure Service Bus Conformance` workflow fails preflight unless the secret exists and verifies that real tests—not only the credential marker—executed.
 
+## Transport Conformance Matrix
+
+`S` means the manifest cell is `Supported` and names an executable broker-backed assertion. `U` means `Unsupported` with the manifest's [tracked gap](https://github.com/xshaheen/headless-framework/issues/359). `N/A` means `NotApplicable` with a topology or protocol rationale. `S†` is executable real-service evidence that still requires the protected Azure credential; a local skip-only run is not completion evidence.
+
+| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus |
+|---|---:|---:|---:|---:|---:|---:|
+| `QueueRoundTrip` | S | S | S | S | S | S† |
+| `BusRoundTrip` | U | U | U | N/A | S | S† |
+| `HeaderRoundTrip` | S | S | S | S | S | S† |
+| `EmptyBodyDispatch` | S | S | N/A | U | U | U |
+| `CommitSettlement` | S | S | S | S | S | S† |
+| `RejectRedelivery` | S | S | S | S | S | S† |
+| `ConsumerPauseRecovery` | S | S | U | S | S | S† |
+| `BrokerInterruptionRecovery` | U | U | U | U | U | U |
+| `StaleSettlement` | U | U | U | U | U | U |
+| `HandlerFailureRedelivery` | U | U | U | U | U | U |
+| `BoundedGracefulShutdown` | S | S | S | S | S | S† |
+
+Evidence anchors:
+
+- Queue/body/header, commit, reject, isolation, and shutdown: `TransportConsumerConformanceTestsBase` provider overrides.
+- Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
+- Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
+- Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
+- AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
+
 ### DataStorageCapabilities
 
 ```csharp
