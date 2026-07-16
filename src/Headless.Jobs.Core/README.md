@@ -160,7 +160,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ## Observability
 
-Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs`, exposed as `JobsDiagnostics.SourceName`. Opt in by calling `AddOpenTelemetryInstrumentation()` on the jobs options builder (replaces the default logger-based `IJobsInstrumentation` with the activity-emitting one), then subscribe the tracing pipeline with `TracerProviderBuilder.AddJobsInstrumentation()` (typed helper, `OpenTelemetry.Api` only — no SDK dependency) or `AddSource(JobsDiagnostics.SourceName)`. Spans cover job execution, enqueue, completion, failure, cancellation, skip, and data seeding; framework tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments (`headless.job.retry_count`, `headless.job.parent_id`, ...). See [docs/llms/jobs.md](../../docs/llms/jobs.md) for the full tag table.
+Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs`, exposed as `JobsDiagnostics.SourceName`. The default `IJobsInstrumentation` emits natively — subscribing the tracing pipeline with `TracerProviderBuilder.AddJobsInstrumentation()` (typed helper, `OpenTelemetry.Api` only — no SDK dependency) or `AddSource(JobsDiagnostics.SourceName)` is the single opt-in; without a listener the activities short-circuit and only the structured log events remain. Spans cover job execution, enqueue, completion, failure, cancellation, skip, and data seeding; framework tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments (`headless.job.retry_count`, `headless.job.parent_id`, ...). See [docs/llms/jobs.md](../../docs/llms/jobs.md) for the full tag table.
 
 ## Dependencies
 

@@ -695,17 +695,16 @@ OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs.C
 
 ### Problem Solved
 
-Provides distributed tracing (OpenTelemetry activities/spans) and structured log events for every Jobs job execution without modifying job code. Replaces the default `LoggerInstrumentation` with a full `ActivitySource`-based implementation.
+Provides distributed tracing (OpenTelemetry activities/spans) and structured log events for every Jobs job execution without modifying job code. The default `IJobsInstrumentation` emits activities natively — subscribing the tracing pipeline is the single opt-in, matching Caching/DistributedLocks/Messaging (no implementation swap step).
 
 ### Quick Start
 
 ```csharp
 using OpenTelemetry.Trace;
 
-// 1. Add Jobs with OpenTelemetry instrumentation
-builder.Services.AddHeadlessJobs().AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
+builder.Services.AddHeadlessJobs(); // instrumentation is built in — no extra call
 
-// 2. Subscribe the tracing pipeline to the Jobs ActivitySource
+// Subscribe the tracing pipeline to the Jobs ActivitySource; subscribing IS the opt-in.
 builder
     .Services.AddOpenTelemetry()
     .WithTracing(tracing =>
@@ -718,7 +717,7 @@ builder
 
 ### Configuration
 
-`AddOpenTelemetryInstrumentation()` takes no options — it replaces the default `LoggerInstrumentation` singleton with `OpenTelemetryInstrumentation`. The `ActivitySource` name is `JobsDiagnostics.SourceName` (`"Headless.Jobs"`, a `public const` so dashboards and wiring reference the symbol). Subscribe with `AddJobsInstrumentation()` or `AddSource(JobsDiagnostics.SourceName)`.
+No activation switch exists — the default instrumentation starts activities only when a listener is subscribed (`ActivitySource` short-circuits to null otherwise), so an unobserved host pays effectively nothing and keeps identical log output. The `ActivitySource` name is `JobsDiagnostics.SourceName` (`"Headless.Jobs"`, a `public const` so dashboards and wiring reference the symbol). Subscribe with `AddJobsInstrumentation()` or `AddSource(JobsDiagnostics.SourceName)`. Custom instrumentation remains possible by registering your own `IJobsInstrumentation` after `AddHeadlessJobs()`. (Breaking vs earlier previews: `AddOpenTelemetryInstrumentation()` was removed — delete the call; spans now flow from the subscription alone.)
 
 Span names: the per-execution root activity (display name = the job function name), plus `job.enqueue`, `job.complete`, `job.fail`, `job.cancel`, `job.skip`, `job.deserialize.fail`, `seeding.start`, `seeding.complete`.
 

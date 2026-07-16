@@ -16,8 +16,9 @@ public static class HeadlessJobsTracingExtensions
 {
     /// <summary>
     /// Enables Jobs tracing by subscribing to the <see cref="JobsDiagnostics.SourceName"/> activity
-    /// source. Pair with <c>AddOpenTelemetryInstrumentation()</c> on the jobs options builder, which
-    /// swaps the logger-based instrumentation for the activity-emitting one.
+    /// source. This is the single opt-in: the default <c>IJobsInstrumentation</c> already emits
+    /// <see cref="System.Diagnostics.Activity"/> spans, gated on listener presence, so no additional
+    /// registration step is needed.
     /// </summary>
     /// <param name="builder">The <see cref="TracerProviderBuilder"/> being configured.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
