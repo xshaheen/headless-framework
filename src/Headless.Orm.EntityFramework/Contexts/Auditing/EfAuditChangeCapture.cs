@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.AuditLog;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -23,22 +23,6 @@ internal sealed class EfAuditChangeCapture(
     // HeadlessSaveChangesPipeline): callers wiring this capture by hand — tests, minimal hosts — need not
     // register ILogger<T>. Defaults to NullLogger rather than forcing an AddLogging() dependency.
     private readonly ILogger<EfAuditChangeCapture> _logger = logger ?? NullLogger<EfAuditChangeCapture>.Instance;
-
-    private static readonly ConditionalWeakTable<
-        Type,
-        ConcurrentDictionary<string, AuditPropertyMetadata>
-    > _PropertyCache = [];
-
-    private static readonly ConditionalWeakTable<
-        Type,
-        ConcurrentDictionary<string, AuditPropertyMetadata>
-    >.CreateValueCallback _CreatePropertyInner = static _ => new ConcurrentDictionary<string, AuditPropertyMetadata>(
-        StringComparer.Ordinal
-    );
-
-    // Static cache because the result is a pure function of (Type, AuditByDefault).
-    // Survives across scoped capture instances and across requests.
-    private static readonly ConcurrentDictionary<(Type Type, bool AuditByDefault), bool> _IsAuditableCache = new();
 
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
     private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
@@ -149,46 +133,38 @@ internal sealed class EfAuditChangeCapture(
 
     private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
     {
-        var clrType = entry.Metadata.ClrType;
+        var policyEntityType = _GetPolicyEntityType(entry.Metadata);
+        var policy = _FindEntityAuditPolicy(policyEntityType);
 
-        // Owned entities inherit auditability from their owner
-        if (entry.Metadata.IsOwned())
-        {
-            var ownerType = entry.Metadata.FindOwnership()!.PrincipalEntityType.ClrType;
-            return _IsAuditable(ownerType, opts);
-        }
-
-        return _IsAuditable(clrType, opts);
-    }
-
-    private bool _IsAuditable(Type clrType, AuditLogOptions opts)
-    {
-        // The attribute/interface gate is a pure function of (Type, AuditByDefault) — cache it
-        // process-wide. The opts-instance-bound filter is cached separately on the instance.
-        if (!_IsAuditableByAttributes(clrType, opts.AuditByDefault))
+        if (!(policy ?? opts.AuditByDefault))
         {
             return false;
         }
 
-        return !_ShouldExcludeEntity(clrType, opts);
+        return !_ShouldExcludeEntity(policyEntityType.ClrType, opts);
     }
 
-    private static bool _IsAuditableByAttributes(Type clrType, bool auditByDefault)
+    private static IEntityType _GetPolicyEntityType(IEntityType entityType)
     {
-        return _IsAuditableCache.GetOrAdd(
-            (clrType, auditByDefault),
-            static key =>
+        while (entityType.IsOwned())
+        {
+            entityType = entityType.FindOwnership()!.PrincipalEntityType;
+        }
+
+        return entityType;
+    }
+
+    private static bool? _FindEntityAuditPolicy(IEntityType entityType)
+    {
+        for (var current = entityType; current is not null; current = current.BaseType)
+        {
+            if (current.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited) is { Value: bool isAudited })
             {
-                var (type, byDefault) = key;
-
-                if (byDefault)
-                {
-                    return !Attribute.IsDefined(type, typeof(AuditIgnoreAttribute));
-                }
-
-                return typeof(IAuditTracked).IsAssignableFrom(type);
+                return isAudited;
             }
-        );
+        }
+
+        return null;
     }
 
     private bool _ShouldExcludeEntity(Type clrType, AuditLogOptions opts)
@@ -261,10 +237,7 @@ internal sealed class EfAuditChangeCapture(
                 continue;
             }
 
-            var meta = _GetPropertyMetadata(property.Metadata.PropertyInfo);
-
-            // [AuditIgnore] — skip entirely
-            if (meta.IsIgnored)
+            if (property.Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded) is { Value: true })
             {
                 continue;
             }
@@ -277,10 +250,9 @@ internal sealed class EfAuditChangeCapture(
 
             _CaptureActionFlags(actionContext, propertyName, property);
 
-            // [AuditSensitive] — apply strategy
-            if (meta.IsSensitive)
+            if (property.Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive) is { Value: true })
             {
-                var strategy = meta.SensitiveStrategy ?? opts.SensitiveDataStrategy;
+                var strategy = _GetSensitiveDataStrategy(property.Metadata) ?? opts.SensitiveDataStrategy;
                 _ApplySensitiveValues(
                     changeType.Value,
                     strategy,
@@ -579,33 +551,12 @@ internal sealed class EfAuditChangeCapture(
         return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
     }
 
-    private static AuditPropertyMetadata _GetPropertyMetadata(PropertyInfo propInfo)
+    private static SensitiveDataStrategy? _GetSensitiveDataStrategy(IProperty property)
     {
-        var ownerType = propInfo.DeclaringType ?? propInfo.ReflectedType ?? typeof(object);
-        var inner = _PropertyCache.GetValue(ownerType, _CreatePropertyInner);
-
-        return inner.GetOrAdd(
-            propInfo.Name,
-            static (_, pi) =>
-            {
-                var ignore = pi.GetCustomAttribute<AuditIgnoreAttribute>();
-                var sensitive = pi.GetCustomAttribute<AuditSensitiveAttribute>();
-
-                return new AuditPropertyMetadata(
-                    IsIgnored: ignore is not null,
-                    IsSensitive: sensitive is not null,
-                    SensitiveStrategy: sensitive?.Strategy
-                );
-            },
-            propInfo
-        );
+        return property.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy) is { Value: int value }
+            ? (SensitiveDataStrategy)value
+            : null;
     }
-
-    private sealed record AuditPropertyMetadata(
-        bool IsIgnored,
-        bool IsSensitive,
-        SensitiveDataStrategy? SensitiveStrategy
-    );
 
     private sealed record DeferredEntryResolution(
         EntityEntry Entry,

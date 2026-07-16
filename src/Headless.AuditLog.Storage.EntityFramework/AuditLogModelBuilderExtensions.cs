@@ -20,13 +20,18 @@ public static class AuditLogModelBuilderExtensions
     /// </remarks>
     public static ModelBuilder AddHeadlessAuditLog(this ModelBuilder modelBuilder, AuditLogStorageOptions options)
     {
-        // Idempotent: skip if already configured
-        if (modelBuilder.Model.FindEntityType(typeof(AuditLogEntry)) is not null)
+        if (modelBuilder.Model.FindAnnotation(AuditLogStorageModelAnnotations.IsConfigured)?.Value is true)
         {
             return modelBuilder;
         }
 
         modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(options));
+        modelBuilder.Model.SetAnnotation(AuditLogStorageModelAnnotations.IsConfigured, true);
         return modelBuilder;
     }
+}
+
+internal static class AuditLogStorageModelAnnotations
+{
+    internal const string IsConfigured = "Headless:AuditLog:Storage:IsConfigured";
 }
