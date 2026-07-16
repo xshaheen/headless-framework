@@ -18,6 +18,8 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 
 These fields are the durable representation. Runtime retry predicates, delays, and observation are configured with Polly.Core directly by `Headless.Jobs.Core`; Polly objects and delegates are never serialized into job rows.
+- **Dashboard provider projection**: `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync` returns
+  date/status counts plus the exact inclusive graph boundaries without requiring occurrence entities for empty dates.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
 - **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` for defining parent–child–grandchild job chains up to 3 levels / 5 siblings per level.
@@ -127,6 +129,11 @@ await timeJobManager.AddAsync(
 ## Configuration
 
 None at the abstractions layer. All configuration is done in `Headless.Jobs.Core` via `AddHeadlessJobs(options => ...)`.
+
+`GetCronOccurrenceGraphStatusCountsAsync` is an additive persistence-provider SPI method. Its default implementation
+preserves third-party provider compatibility by reducing the existing occurrence-list result in memory. Durable
+providers should override it to select distinct UTC dates and aggregate status counts in storage; boundary entries
+have `IsRangeBoundary = true`, a zero count, and a status value that callers must ignore.
 
 ## Dependencies
 

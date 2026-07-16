@@ -522,86 +522,31 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        const int maxTotalDays = 14;
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
 
-        // Single DB query — split into past/today/future in memory
-        var allOccurrences = await _persistenceProvider
-            .GetAllCronJobOccurrencesAsync(x => x.CronJobId == guid, cancellationToken)
+        var statusCounts = await _persistenceProvider
+            .GetCronOccurrenceGraphStatusCountsAsync(guid, today, cancellationToken)
             .ConfigureAwait(false);
-
-        var grouped = allOccurrences
-            .GroupBy(x => x.ExecutionTime.Date)
-            .Select(group => new CronOccurrenceJobGraphData
-            {
-                Date = group.Key,
-                Results =
-                [
-                    .. group
-                        .GroupBy(x => x.Status)
-                        .Select(statusGroup => Tuple.Create((int)statusGroup.Key, statusGroup.Count())),
-                ],
-            })
-            .ToList();
-
-        var pastData = grouped.Where(d => d.Date < today).OrderBy(d => d.Date).ToList();
-        var todayData =
-            grouped.FirstOrDefault(d => d.Date == today)
-            ?? new CronOccurrenceJobGraphData { Date = today, Results = [] };
-        var futureData = grouped.Where(d => d.Date > today).OrderBy(d => d.Date).ToList();
-
-        var pastDaysWithData = pastData.Count;
-        var futureDaysWithData = futureData.Count;
-
-        const int remainingSlots = maxTotalDays - 1; // Exclude today
-        var emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
-        var emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
-
-        List<CronOccurrenceJobGraphData> emptyPastDays = [];
-        if (emptyPastSlots > 0)
-        {
-            var firstPastDate = pastData.FirstOrDefault()?.Date ?? today.AddDays(-1);
-            for (var i = 1; i <= emptyPastSlots; i++)
-            {
-                emptyPastDays.Add(new CronOccurrenceJobGraphData { Date = firstPastDate.AddDays(-i), Results = [] });
-            }
-        }
-
-        List<CronOccurrenceJobGraphData> emptyFutureDays = [];
-        if (emptyFutureSlots > 0)
-        {
-            var lastFutureDate = futureData.LastOrDefault()?.Date ?? today.AddDays(1);
-            for (var i = 1; i <= emptyFutureSlots; i++)
-            {
-                emptyFutureDays.Add(new CronOccurrenceJobGraphData { Date = lastFutureDate.AddDays(i), Results = [] });
-            }
-        }
-
-        var completeData = emptyPastDays
-            .Concat(pastData)
-            .Append(todayData)
-            .Concat(futureData)
-            .Concat(emptyFutureDays)
-            .OrderBy(d => d.Date)
-            .Take(maxTotalDays)
-            .ToList();
-
-        if (completeData.Count == 0)
-        {
-            return completeData;
-        }
-
-        var startDate = completeData[0].Date;
-        var endDate = completeData[^1].Date;
+        var boundaries = statusCounts.Where(x => x.IsRangeBoundary).Select(x => x.Date).ToArray();
+        var startDate = boundaries.Min();
+        var endDate = boundaries.Max();
+        var groupedData = statusCounts
+            .Where(x => !x.IsRangeBoundary)
+            .GroupBy(x => x.Date)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => Tuple.Create((int)x.Status, x.Count)).ToArray()
+            );
         var allDates = Enumerable
             .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
-        var finalData = allDates.ConvertAll(date =>
-            completeData.FirstOrDefault(d => d.Date == date)
-            ?? new CronOccurrenceJobGraphData { Date = date, Results = [] }
-        );
+        var finalData = allDates.ConvertAll(date => new CronOccurrenceJobGraphData
+        {
+            Date = date,
+            Results = groupedData.GetValueOrDefault(date, []),
+        });
 
         return finalData;
     }

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Data.Common;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -7,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -444,6 +447,168 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-bounded-a", "jobs");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var executionTime = DateTime.UtcNow.AddMinutes(-5);
+            var visibleRoots = Enumerable
+                .Range(0, 101)
+                .Select(index => _CreateJobTree(executionTime.AddMilliseconds(index)))
+                .ToArray();
+            var hiddenRoot = _CreateJobTree(executionTime.AddSeconds(-1));
+            hiddenRoot.Function = FilteredJobsDbContext.HiddenFunction;
+            await persistence.AddTimeJobsAsync([hiddenRoot, .. visibleRoots], ct);
+
+            var firstSweep = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+            var secondSweep = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+            var thirdSweep = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+            firstSweep.Should().HaveCount(100); // Matches the native and compatibility strategy batch ceiling.
+            firstSweep.Select(x => x.Id).Should().Equal(visibleRoots.Take(100).Select(x => x.Id));
+            secondSweep.Should().ContainSingle().Which.Id.Should().Be(visibleRoots[^1].Id);
+            thirdSweep.Should().BeEmpty();
+            (await fixture.ReadTimeJobDetailAsync(hiddenRoot.Id, ct)).OwnerId.Should().BeNull();
+            var (_, claimedOwner, claimedLease, _, _) = await fixture.ReadTimeJobDetailAsync(visibleRoots[0].Id, ct);
+            foreach (var descendant in visibleRoots[0].Children.SelectMany(x => x.Children.Prepend(x)))
+            {
+                var (_, descendantOwner, descendantLease, _, _) = await fixture.ReadTimeJobDetailAsync(
+                    descendant.Id,
+                    ct
+                );
+                descendantOwner.Should().Be(claimedOwner);
+                descendantLease.Should().Be(claimedLease);
+            }
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "cas-bounded-cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+            var occurrenceIds = new List<Guid>(101);
+            foreach (var index in Enumerable.Range(0, 101))
+            {
+                var occurrenceId = Guid.NewGuid();
+                occurrenceIds.Add(occurrenceId);
+                await fixture.SeedCronOccurrenceAsync(
+                    occurrenceId,
+                    cronId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime.AddMilliseconds(index),
+                    ct
+                );
+            }
+
+            var firstCronSweep = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+            var secondCronSweep = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+            var thirdCronSweep = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+
+            firstCronSweep.Should().HaveCount(100);
+            firstCronSweep.Select(x => x.Id).Should().Equal(occurrenceIds.Take(100));
+            secondCronSweep.Should().ContainSingle().Which.Id.Should().Be(occurrenceIds[^1]);
+            thirdCronSweep.Should().BeEmpty();
+
+            var cancellableRoots = new[]
+            {
+                _CreateJobTree(executionTime.AddMinutes(-2)),
+                _CreateJobTree(executionTime.AddMinutes(-1)),
+            };
+            await persistence.AddTimeJobsAsync(cancellableRoots, ct);
+            using var cancellation = new CancellationTokenSource();
+            await using (
+                var enumerator = persistence.QueueTimedOutTimeJobsAsync(cancellation.Token).GetAsyncEnumerator()
+            )
+            {
+                (await enumerator.MoveNextAsync()).Should().BeTrue();
+                await cancellation.CancelAsync();
+                Func<Task> moveNext = async () =>
+                {
+                    await enumerator.MoveNextAsync();
+                };
+                await moveNext.Should().ThrowAsync<OperationCanceledException>();
+            }
+
+            var afterCancellation = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+            afterCancellation.Should().ContainSingle().Which.Id.Should().Be(cancellableRoots[^1].Id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task cron_graph_projection_uses_distinct_dates_and_storage_side_status_aggregation()
+    {
+        var ct = AbortToken;
+        var capture = new DashboardSqlCapture();
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildInterceptedHost("dashboard-projection-a", capture, TimeSpan.FromMinutes(5));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            var today = DateTime.UtcNow.Date;
+            await fixture.SeedCronJobAsync(cronId, "dashboard", "* * * * *", NodeDeathPolicy.Retry, ct);
+            await fixture.SeedCronOccurrenceAsync(
+                Guid.NewGuid(),
+                cronId,
+                (int)JobStatus.Succeeded,
+                null,
+                NodeDeathPolicy.Retry,
+                null,
+                today.AddDays(-20),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                Guid.NewGuid(),
+                cronId,
+                (int)JobStatus.Succeeded,
+                null,
+                NodeDeathPolicy.Retry,
+                null,
+                today.AddHours(1),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                Guid.NewGuid(),
+                cronId,
+                (int)JobStatus.Failed,
+                null,
+                NodeDeathPolicy.Retry,
+                null,
+                today,
+                ct
+            );
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            capture.Clear();
+
+            var projection = await persistence.GetCronOccurrenceGraphStatusCountsAsync(cronId, today, ct);
+
+            projection.Where(x => !x.IsRangeBoundary).Sum(x => x.Count).Should().Be(3);
+            var statements = capture.Statements;
+            statements.Should().HaveCount(2);
+            statements.Should().Contain(sql => sql.Contains("DISTINCT", StringComparison.OrdinalIgnoreCase));
+            statements.Should().Contain(sql => sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase));
+            statements.Should().Contain(sql => sql.Contains("COUNT", StringComparison.OrdinalIgnoreCase));
+            statements.Should().NotContain(sql => sql.Contains(" JOIN ", StringComparison.OrdinalIgnoreCase));
+            statements.Should().NotContain(sql => sql.Contains("request", StringComparison.OrdinalIgnoreCase));
+            statements.Should().NotContain(sql => sql.Contains("exception", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task concurrent_missing_cron_occurrence_creation_is_deduplicated()
     {
         var ct = AbortToken;
@@ -549,6 +714,39 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<TimeJobEntity>().HasQueryFilter(x => x.Function != HiddenFunction);
+        }
+    }
+
+    private sealed class DashboardSqlCapture : DbCommandInterceptor
+    {
+        private readonly ConcurrentQueue<string> _statements = new();
+
+        public string[] Statements => _statements.ToArray();
+
+        public void Clear()
+        {
+            while (_statements.TryDequeue(out _)) { }
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result
+        )
+        {
+            _statements.Enqueue(command.CommandText);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _statements.Enqueue(command.CommandText);
+            return ValueTask.FromResult(result);
         }
     }
 

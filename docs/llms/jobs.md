@@ -537,12 +537,20 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
+- **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
+  the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
 
 ### Design Notes
 
 The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
+
+Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
+distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`
+is additive and has a compatibility implementation for third-party providers. A custom durable provider should
+override it so distinct-date selection and date/status aggregation happen in storage; otherwise the default
+implementation preserves behavior by projecting through the existing occurrence-list API.
 
 ### Installation
 
@@ -782,6 +790,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
 - **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
+- **Bounded compatibility recovery**: EF CAS fallback orders overdue roots by execution time and ID and processes at
+  most 100 candidates per sweep, matching the native provider claim ceiling while retaining each row's CAS fence.
 - **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
