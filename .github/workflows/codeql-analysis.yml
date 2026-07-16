@@ -1,10 +1,10 @@
 name: "CodeQL"
 
 on:
-  pull_request:
+  push:
     branches: [ main ]
   schedule:
-    # Weekly full scan covers everything outside the pull request gate.
+    # Weekly rescan picks up improvements to CodeQL queries even without a push.
     - cron: "0 8 * * 4"
   workflow_dispatch:
 
@@ -23,6 +23,8 @@ env:
 jobs:
   analyze:
     name: Analyze
+    # GitHub allows manual dispatch from any ref; keep every analysis on main.
+    if: github.ref == 'refs/heads/main'
     permissions:
       actions: read
       contents: read
