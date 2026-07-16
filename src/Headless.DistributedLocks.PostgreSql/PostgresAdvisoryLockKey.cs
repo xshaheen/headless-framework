@@ -174,7 +174,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// <inheritdoc/>
     public override int GetHashCode()
     {
-        return (_key, HasSingleKey).GetHashCode();
+        return HashCode.Combine(_key, HasSingleKey);
     }
 
     /// <summary>
