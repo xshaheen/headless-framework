@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
+packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
 ---
 
 # Jobs (Background Jobs)
@@ -50,7 +50,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.Jobs.OpenTelemetry](#headlessjobsopentelemetry)
+- [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
     - [Installation](#installation-4)
@@ -95,7 +95,7 @@ Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.So
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
-- `Jobs.OpenTelemetry` — distributed tracing and structured logging
+- OpenTelemetry tracing ships inside `Jobs.Core` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
 - `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs.Core`; install directly only when building a library on top
 
 Minimum wiring (in-memory storage, no persistence):
@@ -538,7 +538,7 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
-- **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
+- **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
 
 ### Design Notes
 
@@ -689,76 +689,60 @@ Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
 
 ---
 
-## Headless.Jobs.OpenTelemetry
+## OpenTelemetry Instrumentation
 
-OpenTelemetry instrumentation for `Headless.Jobs` — activity tracing for the full job execution lifecycle plus structured logging.
+OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs.Core` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs.Core` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Problem Solved
 
-Provides distributed tracing (OpenTelemetry activities/spans), structured log events, and execution metrics for every Jobs job execution without modifying job code. Replaces the default `LoggerInstrumentation` with a full `ActivitySource`-based implementation.
-
-### Key Features
-
-- **Activity tracing**: spans for job execution, enqueue, completion, failure, cancellation, skip, and data seeding.
-- **Retry tracking**: activity tags for `current_attempt` and `final_retry_count`.
-- **Error telemetry**: `error_type`, `error_message`, `error_stack_trace` tags on failed spans.
-- **Caller information**: `enqueued_from` tag captures the call site where the job was enqueued.
-- **Parent–child trace linking**: `parent_id` tag links child job spans to their parent.
-- **Structured log events**: correlated with trace context for Serilog, NLog, and any `ILogger`-backed sink.
-
-### Installation
-
-```bash
-dotnet add package Headless.Jobs.OpenTelemetry
-```
+Provides distributed tracing (OpenTelemetry activities/spans) and structured log events for every Jobs job execution without modifying job code. The default `IJobsInstrumentation` emits activities natively — subscribing the tracing pipeline is the single opt-in, matching Caching/DistributedLocks/Messaging (no implementation swap step).
 
 ### Quick Start
 
 ```csharp
 using OpenTelemetry.Trace;
 
-// 1. Add Jobs with OpenTelemetry instrumentation
-builder.Services.AddHeadlessJobs().AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
+builder.Services.AddHeadlessJobs(); // instrumentation is built in — no extra call
 
-// 2. Configure the OpenTelemetry pipeline to include the Jobs ActivitySource
+// Subscribe the tracing pipeline to the Jobs ActivitySource; subscribing IS the opt-in.
 builder
     .Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         tracing
-            .AddSource("Headless.Jobs") // the Jobs ActivitySource name
+            .AddJobsInstrumentation() // typed helper; equivalent to AddSource(JobsDiagnostics.SourceName)
             .AddConsoleExporter(); // or Jaeger, OTLP, Azure Monitor, etc.
     });
 ```
 
 ### Configuration
 
-`AddOpenTelemetryInstrumentation()` takes no options — it replaces the default `LoggerInstrumentation` singleton with `OpenTelemetryInstrumentation`. The `ActivitySource` name is `"Headless.Jobs"`. Add it to your tracing pipeline's `AddSource(...)` call to activate spans.
+No activation switch exists — the default instrumentation starts activities only when a listener is subscribed (`ActivitySource` short-circuits to null otherwise), so an unobserved host pays effectively nothing and keeps identical log output. The `ActivitySource` name is `JobsDiagnostics.SourceName` (`"Headless.Jobs"`, a `public const` so dashboards and wiring reference the symbol). Subscribe with `AddJobsInstrumentation()` or `AddSource(JobsDiagnostics.SourceName)`. Custom instrumentation remains possible by registering your own `IJobsInstrumentation` after `AddHeadlessJobs()`. (Breaking vs earlier previews: `AddOpenTelemetryInstrumentation()` was removed — delete the call; spans now flow from the subscription alone.)
 
-Activity tag reference:
+Span names: the per-execution root activity (display name = the job function name), plus `job.enqueue`, `job.complete`, `job.fail`, `job.cancel`, `job.skip`, `job.deserialize.fail`, `seeding.start`, `seeding.complete`.
+
+Activity tag reference (framework-owned tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments; exception tags follow the OTel `exception.*` convention):
 
 | Tag | Example |
 |-----|---------|
-| `headless.jobs.job.id` | `123e4567-…` |
-| `headless.jobs.job.type` | `TimeJob`, `CronJob` |
-| `headless.jobs.job.function` | `ProcessOrder` |
-| `headless.jobs.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
-| `headless.jobs.job.machine` | `web-01` |
-| `headless.jobs.job.parent_id` | parent job GUID |
-| `headless.jobs.job.enqueued_from` | `OrderController.Create (Program.cs:42)` |
-| `headless.jobs.job.retries` | `3` |
-| `headless.jobs.job.current_attempt` | `2` |
-| `headless.jobs.job.final_status` | `Succeeded`, `Failed`, `Cancelled`, `Skipped` |
-| `headless.jobs.job.execution_time_ms` | `1250` |
-| `headless.jobs.job.error_type` | `SqlException` |
-| `headless.jobs.job.error_message` | `Connection timeout` |
-
-Note: `headless.jobs.job.final_status` emits `Succeeded` (not the former `Done` value). Update dashboards or alerts that matched the literal `Done`.
-
-### Dependencies
-
-- `Headless.Jobs.Abstractions`
-- `OpenTelemetry` (≥ 1.7.0 recommended)
+| `headless.job.id` | `123e4567-…` |
+| `headless.job.type` | `TimeJob`, `CronJob` |
+| `headless.job.function` | `ProcessOrder` |
+| `headless.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
+| `headless.job.machine` | `web-01` |
+| `headless.job.parent_id` | parent job GUID |
+| `headless.job.run_condition` | child-job run condition (child time jobs only) |
+| `headless.job.enqueued_from` | `OrderController.Create (Program.cs:42)` |
+| `headless.job.retry_count` | `3` |
+| `headless.job.duration_ms` | `1250` |
+| `headless.job.success` | `true` / `false` |
+| `headless.job.cancellation_reason` | cancel reason on `job.cancel` spans |
+| `headless.job.skip_reason` | skip reason on `job.skip` spans |
+| `headless.seeding.type` | seeding data type on `seeding.*` spans |
+| `headless.seeding.environment` | instance identifier on `seeding.*` spans |
+| `exception.type` | `SqlException` |
+| `exception.message` | `Connection timeout` |
+| `exception.stacktrace` | stack trace on `job.fail` spans |
 
 ### Side Effects
 

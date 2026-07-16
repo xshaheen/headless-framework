@@ -300,6 +300,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -473,6 +474,12 @@
         "requested": "[10.0.3, )",
         "resolved": "10.0.3",
         "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w=="
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.16.0, )",
+        "resolved": "1.16.0",
+        "contentHash": "WZP8Eb6vZTeNqeV+fjBitc7iefBoTHIhaWorqg/h/YiQBlcQJu0bICuTqKV0XRyjiE0eWs80yLlnUtHAFSkFWA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

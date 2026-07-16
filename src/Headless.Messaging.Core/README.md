@@ -157,7 +157,7 @@ setup.ForMessage<OrderPlaced>(message =>
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.
 - a persisted row whose `IntentType` has no registered transport is marked terminal `Failed` with no next retry; the drainer logs the unsupported intent and continues processing later rows.
-- direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
+- direct publish, outbox publish, and runtime delegates emit OpenTelemetry spans and metrics natively (the former DiagnosticSource bridge was replaced; instrument, span, and attribute names are unchanged, and the EventCounter names used by the dashboard are preserved). See Observability below.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
 - callbacks are fire-and-forget async chaining, not request/reply. Set `PublishOptions.CallbackName` on the request and call `context.SetResponse<TResponse>(value)` inside the consumer to publish a typed response body through the durable bus path. No `SetResponse` keeps the callback headers-only; `SetResponse` without `CallbackName` is dropped. Callback delivery is at-least-once — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root).
 - `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.
@@ -588,6 +588,10 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 | --- | --- | --- |
 | No Coordination membership (`NullNodeMembership`) | `LockedUntil` floor only; the bridge is a benign no-op. | EventId 88 Information |
 | Real Coordination membership | Always-on dead-owner reclaim: `NodeLeft` watch + `DeadNodeReconcileInterval` reconcile, dead-only. | None on success; bridge EventIds 1–3 on failure |
+
+## Observability
+
+Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Instrument names and dimensions follow the OTel messaging semantic conventions (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation`/`messaging.system`/`messaging.consumer.group`/`error.type`); framework-specific span attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`; tenant-id/intent/retry-count built-ins are suppressible there. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
 
 ## Dependencies
 

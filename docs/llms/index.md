@@ -385,7 +385,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Core` — Outbox runtime, retries, delayed delivery, consumer orchestration.
 - `Headless.Messaging.Dashboard` — Web UI for monitoring messages, failures, retries.
 - `Headless.Messaging.Dashboard.K8s` — Kubernetes node auto-discovery for the dashboard.
-- `Headless.Messaging.OpenTelemetry` — Tracing, metrics, context propagation.
 - `Headless.Messaging.RabbitMq` — RabbitMQ (AMQP) transport.
 - `Headless.Messaging.Kafka` — Apache Kafka transport.
 - `Headless.Messaging.Aws` — AWS SQS + SNS transport.
@@ -478,7 +477,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.Core` — Reliable distributed job scheduling (cron, delayed execution, monitoring).
 - `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[JobFunction]`-marked methods.
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
-- `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
 - `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
 - `Headless.Jobs.EntityFramework.PostgreSql` — PostgreSQL atomic claims using `FOR UPDATE SKIP LOCKED`.
 - `Headless.Jobs.EntityFramework.SqlServer` — SQL Server atomic claims using `UPDLOCK`, `READPAST`, and `ROWLOCK`.
