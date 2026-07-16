@@ -18,8 +18,10 @@ namespace Headless.DistributedLocks;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IReleaseSignal
 {
-    private readonly ConcurrentDictionary<string, TaskCompletionSource> _signals = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SignalEntry> _signals = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    internal int ActiveResourceCount => _signals.Count;
 
     /// <summary>
     /// Waits until either the resource is signalled via <see cref="PublishAsync"/> or the polling
@@ -35,25 +37,41 @@ public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IR
         CancellationToken cancellationToken = default
     )
     {
-        var signal = _signals.GetOrAdd(
-            resource,
-            static _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
-        );
+        var signal = _Register(resource);
 
-        var delay = _timeProvider.Delay(pollingFallback, cancellationToken);
-        var completed = await Task.WhenAny(signal.Task, delay).ConfigureAwait(false);
-
-        if (completed == signal.Task)
+        try
         {
-            // Remove only if this is still our own signal. A blind TryRemove(resource) could drop a fresh TCS
-            // that a concurrent waiter registered under the same key after our publisher already removed ours,
-            // silently demoting that waiter's push wake-up to the polling fallback.
-            ((ICollection<KeyValuePair<string, TaskCompletionSource>>)_signals).Remove(
-                new KeyValuePair<string, TaskCompletionSource>(resource, signal)
-            );
-        }
+            using var delayCancellation = cancellationToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : new CancellationTokenSource();
+            var delay = _timeProvider.Delay(pollingFallback, delayCancellation.Token);
+            var completed = await Task.WhenAny(signal.Task, delay).ConfigureAwait(false);
 
-        await completed.ConfigureAwait(false);
+            if (completed == signal.Task)
+            {
+                await delayCancellation.CancelAsync().ConfigureAwait(false);
+
+                try
+                {
+                    await delay.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (delayCancellation.IsCancellationRequested)
+                {
+                    // The signal won. Drain the cancelled fallback so its timer registration cannot outlive this wait.
+                }
+            }
+            else
+            {
+                await delay.ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (signal.Release())
+            {
+                _Remove(resource, signal);
+            }
+        }
     }
 
     /// <summary>
@@ -70,9 +88,118 @@ public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IR
 
         if (_signals.TryRemove(resource, out var signal))
         {
-            signal.TrySetResult();
+            signal.RetireAndSignal();
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private SignalEntry _Register(string resource)
+    {
+        while (true)
+        {
+            var signal = _signals.GetOrAdd(resource, static _ => new SignalEntry());
+
+            if (signal.TryRegister())
+            {
+                return signal;
+            }
+
+            // The entry retired between lookup and registration. Remove only that exact instance; a publisher
+            // may already have installed a fresh entry for later waiters under the same resource key.
+            _Remove(resource, signal);
+        }
+    }
+
+    private void _Remove(string resource, SignalEntry signal)
+    {
+        ((ICollection<KeyValuePair<string, SignalEntry>>)_signals).Remove(
+            new KeyValuePair<string, SignalEntry>(resource, signal)
+        );
+    }
+
+    private sealed class SignalEntry
+    {
+        private const int _RetiredMask = int.MinValue;
+        private const int _WaiterCountMask = int.MaxValue;
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _state;
+
+        public Task Task => _completion.Task;
+
+        public bool TryRegister()
+        {
+            while (true)
+            {
+                var state = Volatile.Read(ref _state);
+
+                if ((state & _RetiredMask) != 0)
+                {
+                    return false;
+                }
+
+                var waiterCount = state & _WaiterCountMask;
+
+                if (waiterCount == _WaiterCountMask)
+                {
+                    throw new InvalidOperationException("The release signal has too many concurrent waiters.");
+                }
+
+                if (Interlocked.CompareExchange(ref _state, state + 1, state) == state)
+                {
+                    return true;
+                }
+            }
+        }
+
+        public bool Release()
+        {
+            while (true)
+            {
+                var state = Volatile.Read(ref _state);
+                var waiterCount = state & _WaiterCountMask;
+
+                if (waiterCount == 0)
+                {
+                    throw new InvalidOperationException("The release signal has no registered waiter.");
+                }
+
+                var updated = (state & _RetiredMask) | (waiterCount - 1);
+
+                if (Interlocked.CompareExchange(ref _state, updated, state) != state)
+                {
+                    continue;
+                }
+
+                if (updated != 0)
+                {
+                    return false;
+                }
+
+                // Registration may win between the decrement and retirement. In that case the new waiter owns
+                // the live entry and will attempt retirement when it departs.
+                return Interlocked.CompareExchange(ref _state, _RetiredMask, 0) == 0;
+            }
+        }
+
+        public void RetireAndSignal()
+        {
+            while (true)
+            {
+                var state = Volatile.Read(ref _state);
+
+                if ((state & _RetiredMask) != 0)
+                {
+                    break;
+                }
+
+                if (Interlocked.CompareExchange(ref _state, state | _RetiredMask, state) == state)
+                {
+                    break;
+                }
+            }
+
+            _completion.TrySetResult();
+        }
     }
 }
