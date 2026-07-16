@@ -1023,6 +1023,53 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         return opts;
     }
 
+    [Theory]
+    [InlineData(4, 4)]
+    [InlineData(4, 5)]
+    public async Task should_preserve_fingerprint_and_rewind_across_request_buffer_threshold(
+        int bufferThreshold,
+        int bodyLength
+    )
+    {
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(
+            new IdempotencyOptions { MaxBodySizeForHashing = 16, RequestBodyBufferThreshold = bufferThreshold }
+        );
+        var cache = Substitute.For<ICache>();
+        IdempotencyRecord? insertedMarker = null;
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Do<IdempotencyRecord>(record => insertedMarker = record),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
+        var body = Enumerable.Range(1, bodyLength).Select(static value => (byte)value).ToArray();
+        var middleware = CreateMiddleware(options: options, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+        byte[]? handlerBody = null;
+
+        await middleware.InvokeAsync(
+            context,
+            async ctx =>
+            {
+                ctx.Request.Body.Position.Should().Be(0);
+                using var buffer = new MemoryStream();
+                await ctx.Request.Body.CopyToAsync(buffer, AbortToken);
+                handlerBody = buffer.ToArray();
+            }
+        );
+
+        insertedMarker.Should().NotBeNull();
+        insertedMarker!.Fingerprint.Should().Equal(SHA256.HashData(body));
+        handlerBody.Should().Equal(body);
+    }
+
     [Fact]
     public async Task should_reject_with_413_when_body_exceeds_cap_and_behavior_is_reject()
     {

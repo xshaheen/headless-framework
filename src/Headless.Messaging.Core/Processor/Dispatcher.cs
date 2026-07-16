@@ -166,7 +166,7 @@ internal sealed class Dispatcher : IDispatcher
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
         var changed = await _storage
-            .ChangePublishStateAsync(message, statusName, transaction, cancellationToken: CancellationToken.None)
+            .ChangePublishStateAsync(message, statusName, transaction, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!changed)

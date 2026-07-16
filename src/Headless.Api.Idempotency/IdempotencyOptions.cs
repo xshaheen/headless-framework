@@ -71,6 +71,13 @@ public sealed class IdempotencyOptions
     /// <summary>Maximum body size in bytes eligible for fingerprinting. Defaults to 1 MiB. Capped at 64 MiB.</summary>
     public int MaxBodySizeForHashing { get; set; } = 1 * 1024 * 1024;
 
+    /// <summary>
+    /// Number of request-body bytes retained in memory before buffering spills to a temporary
+    /// file. Defaults to 64 KiB. This controls memory use only; <see cref="MaxBodySizeForHashing"/>
+    /// remains the independent fingerprinting limit.
+    /// </summary>
+    public int RequestBodyBufferThreshold { get; set; } = 64 * 1024;
+
     /// <summary>How requests whose body exceeds <see cref="MaxBodySizeForHashing"/> are handled.</summary>
     public OversizeBehavior OversizeBehavior { get; set; } = OversizeBehavior.Reject;
 
@@ -186,6 +193,7 @@ public sealed class IdempotencyOptions
             InFlightLockTimeout = InFlightLockTimeout,
             WinnerLockLease = WinnerLockLease,
             MaxBodySizeForHashing = MaxBodySizeForHashing,
+            RequestBodyBufferThreshold = RequestBodyBufferThreshold,
             OversizeBehavior = OversizeBehavior,
             OnCacheError = OnCacheError,
             RequireUserIdentity = RequireUserIdentity,
@@ -202,6 +210,7 @@ public sealed class IdempotencyOptions
 internal sealed class IdempotencyOptionsValidator : AbstractValidator<IdempotencyOptions>
 {
     private const int _MaxBodySizeForHashingCap = 64 * 1024 * 1024; // 64 MiB
+    private const int _MaxRequestBodyBufferThreshold = _MaxBodySizeForHashingCap + 1;
 
     private static readonly HashSet<string> _ValidMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -222,6 +231,12 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
             .GreaterThan(0)
             .LessThanOrEqualTo(_MaxBodySizeForHashingCap)
             .WithMessage($"MaxBodySizeForHashing must be <= {_MaxBodySizeForHashingCap} bytes (64 MiB).");
+        RuleFor(x => x.RequestBodyBufferThreshold)
+            .GreaterThan(0)
+            .LessThanOrEqualTo(_MaxRequestBodyBufferThreshold)
+            .WithMessage(
+                $"RequestBodyBufferThreshold must be <= {_MaxRequestBodyBufferThreshold} bytes (64 MiB + 1 byte)."
+            );
         RuleFor(x => x.InFlightLockTimeout).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.HeaderName).NotEmpty();
         RuleFor(x => x.Methods).NotEmpty();

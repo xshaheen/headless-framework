@@ -401,6 +401,149 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_pass_scheduler_cancellation_token_to_non_terminal_storage_write()
+    {
+        var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
+        using var hostCts = new CancellationTokenSource();
+        using var operationCts = new CancellationTokenSource();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Delayed,
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: operationCts.Token
+            )
+            .Returns(new ValueTask<bool>(true));
+
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(hostCts.Token);
+
+        await dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(),
+            DateTimeOffset.UtcNow.AddMinutes(2),
+            cancellationToken: operationCts.Token
+        );
+
+        await _storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Delayed,
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: operationCts.Token
+            );
+    }
+
+    [Fact]
+    public async Task should_cancel_blocked_non_terminal_scheduler_storage_write()
+    {
+        var writeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(callInfo =>
+            {
+                writeStarted.TrySetResult();
+                return new ValueTask<bool>(_WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(6)));
+            });
+        using var operationCts = new CancellationTokenSource();
+        using var hostCts = new CancellationTokenSource();
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(hostCts.Token);
+
+        var enqueue = dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(),
+            DateTimeOffset.UtcNow.AddMinutes(2),
+            cancellationToken: operationCts.Token
+        );
+        await writeStarted.Task.WaitAsync(AbortToken);
+        await operationCts.CancelAsync();
+        var act = async () => await enqueue;
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await dispatcher.DisposeAsync();
+
+        static async Task<bool> _WaitForCancellationAsync(CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+    }
+
+    [Fact]
+    public async Task should_queue_only_after_non_terminal_scheduler_storage_write_succeeds()
+    {
+        var writeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commitWrite = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Queued,
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                writeStarted.TrySetResult();
+                return new ValueTask<bool>(commitWrite.Task);
+            });
+        using var hostCts = new CancellationTokenSource();
+        var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(hostCts.Token);
+
+        var enqueue = dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(_StorageGuid(1)),
+            DateTimeOffset.UtcNow.AddSeconds(50),
+            cancellationToken: AbortToken
+        );
+        await writeStarted.Task.WaitAsync(AbortToken);
+        enqueue.IsCompleted.Should().BeFalse();
+
+        commitWrite.TrySetResult(true);
+        await enqueue;
+        await dispatcher.DisposeAsync();
+
+        await _storage
+            .Received(1)
+            .ChangePublishStateToDelayedAsync(
+                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == _StorageGuid(1)),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_use_configured_batch_size_when_specified()
     {
         // given

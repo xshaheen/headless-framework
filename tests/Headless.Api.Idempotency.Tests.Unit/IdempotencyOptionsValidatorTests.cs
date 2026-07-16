@@ -84,6 +84,50 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
+    public void should_fail_when_request_body_buffer_threshold_is_zero()
+    {
+        var options = _CreateValidOptions();
+        options.RequestBodyBufferThreshold = 0;
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.RequestBodyBufferThreshold);
+    }
+
+    [Fact]
+    public void should_fail_when_request_body_buffer_threshold_exceeds_64_mib_plus_one_byte()
+    {
+        var options = _CreateValidOptions();
+        options.RequestBodyBufferThreshold = (64 * 1024 * 1024) + 2;
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.RequestBodyBufferThreshold);
+    }
+
+    [Fact]
+    public void should_pass_when_request_body_buffer_threshold_is_64_mib_plus_one_byte()
+    {
+        var options = _CreateValidOptions();
+        options.RequestBodyBufferThreshold = (64 * 1024 * 1024) + 1;
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.RequestBodyBufferThreshold);
+    }
+
+    [Fact]
+    public void should_copy_request_body_buffer_threshold_when_cloned_for_endpoint_options()
+    {
+        var options = _CreateValidOptions();
+        options.RequestBodyBufferThreshold = 64 * 1024;
+
+        var clone = options.Clone();
+
+        clone.RequestBodyBufferThreshold.Should().Be(options.RequestBodyBufferThreshold);
+    }
+
+    [Fact]
     public void should_fail_when_in_flight_lock_timeout_is_zero()
     {
         var options = _CreateValidOptions();
