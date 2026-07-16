@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Testcontainers.Pulsar;
-using Xunit;
+using Testcontainers.Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -11,26 +11,25 @@ namespace Headless.Testing.Testcontainers;
 /// collection-scoped baseline broker.
 /// </remarks>
 [PublicAPI]
-public class HeadlessPulsarFixture : IAsyncLifetime
+public class HeadlessPulsarFixture()
+    : ContainerFixture<PulsarBuilder, PulsarContainer>(TestContextMessageSink.Instance),
+        IAsyncDisposable
 {
-    public HeadlessPulsarFixture()
+    protected override PulsarBuilder Configure()
     {
-        Container = new PulsarBuilder(TestImages.Pulsar).Build();
+        return base.Configure().WithImage(TestImages.Pulsar);
     }
-
-    /// <summary>Gets the owned Pulsar container for derived test fixtures.</summary>
-    protected PulsarContainer Container { get; }
 
     /// <summary>Gets the Pulsar binary-protocol service URL.</summary>
     public string ConnectionString => Container.GetBrokerAddress().TrimEnd('/');
 
-    /// <summary>Starts the Pulsar container.</summary>
-    public async ValueTask InitializeAsync()
+    /// <summary>Starts the Pulsar container for fixtures that own an isolated broker lifecycle.</summary>
+    public new ValueTask InitializeAsync()
     {
-        await Container.StartAsync().ConfigureAwait(false);
+        return base.InitializeAsync();
     }
 
-    /// <summary>Disposes the Pulsar container.</summary>
+    /// <summary>Disposes the Pulsar container for fixtures that own an isolated broker lifecycle.</summary>
     public async ValueTask DisposeAsync()
     {
         await Container.DisposeAsync().ConfigureAwait(false);

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
+
 namespace Tests.Capabilities;
 
 /// <summary>Broker-observed scenarios tracked for every messaging transport provider.</summary>
@@ -24,7 +26,7 @@ public enum TransportConformanceScenario
 public sealed record TransportConformanceProfile(
     string Provider,
     bool IsRealBrokerLeafEnabled,
-    IReadOnlyDictionary<TransportConformanceScenario, ConformanceSupport> Scenarios
+    FrozenDictionary<TransportConformanceScenario, ConformanceSupport> Scenarios
 )
 {
     private const string _GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/359";
@@ -41,7 +43,7 @@ public sealed record TransportConformanceProfile(
                     )
             );
 
-        return new TransportConformanceProfile(provider, false, scenarios);
+        return new TransportConformanceProfile(provider, false, scenarios.ToFrozenDictionary());
     }
 
     public TransportConformanceProfile EnableRealBrokerLeaf()
@@ -53,7 +55,7 @@ public sealed record TransportConformanceProfile(
     {
         var scenarios = Scenarios.ToDictionary();
         scenarios[scenario] = support;
-        return this with { Scenarios = scenarios };
+        return this with { Scenarios = scenarios.ToFrozenDictionary() };
     }
 }
 
@@ -69,7 +71,7 @@ public static class TransportConformanceManifest
         TransportConformanceScenario.RejectRedelivery,
     ];
 
-    public static IReadOnlyDictionary<string, TransportConformanceProfile> Providers { get; } =
+    public static FrozenDictionary<string, TransportConformanceProfile> Providers { get; } =
         new Dictionary<string, TransportConformanceProfile>(StringComparer.Ordinal)
         {
             ["NATS"] = TransportConformanceProfile
@@ -141,7 +143,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
-        };
+        }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static IReadOnlyList<string> GetValidationErrors()
     {

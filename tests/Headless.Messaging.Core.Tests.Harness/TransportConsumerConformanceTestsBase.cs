@@ -23,8 +23,7 @@ public sealed class TransportConsumerConformanceSession(
     IConsumerClient consumer,
     TimeSpan noRedeliveryWindow,
     Func<ValueTask>? disposeProviderResources = null,
-    TimeSpan? listeningTimeout = null,
-    bool runListenerOnThreadPool = false
+    TimeSpan? listeningTimeout = null
 ) : IAsyncDisposable
 {
     private readonly Channel<TransportConformanceDelivery> _deliveries =
@@ -35,7 +34,6 @@ public sealed class TransportConsumerConformanceSession(
     private readonly ITransport _producer = producer;
     private readonly Func<ValueTask>? _disposeProviderResources = disposeProviderResources;
     private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
-    private readonly bool _runListenerOnThreadPool = runListenerOnThreadPool;
     private CancellationTokenSource? _listeningCts;
     private Task? _listeningTask;
     private int _stopped;
@@ -70,15 +68,12 @@ public sealed class TransportConsumerConformanceSession(
         Consumer.OnLogCallback = _logs.Enqueue;
 
         _listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _listeningTask = _runListenerOnThreadPool
-            ? Task.Run(
-                async () => await Consumer.ListeningAsync(_listeningTimeout, _listeningCts.Token),
-                CancellationToken.None
-            )
-            : Consumer.ListeningAsync(_listeningTimeout, _listeningCts.Token).AsTask();
+        _listeningTask = Task.Run(
+            async () => await Consumer.ListeningAsync(_listeningTimeout, _listeningCts.Token),
+            CancellationToken.None
+        );
 
-        using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        readinessCts.CancelAfter(TimeSpan.FromSeconds(10));
+        using var readinessCts = TimeSpan.FromSeconds(10).ToCancellationTokenSource(cancellationToken);
         await Consumer.WaitUntilReadyAsync(readinessCts.Token).ConfigureAwait(false);
     }
 
@@ -92,8 +87,7 @@ public sealed class TransportConsumerConformanceSession(
         CancellationToken cancellationToken = default
     )
     {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(timeout);
+        using var cts = timeout.ToCancellationTokenSource(cancellationToken);
         try
         {
             return await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
@@ -110,8 +104,7 @@ public sealed class TransportConsumerConformanceSession(
 
     public async Task<bool> RemainsEmptyAsync(TimeSpan window, CancellationToken cancellationToken = default)
     {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(window);
+        using var cts = window.ToCancellationTokenSource(cancellationToken);
 
         try
         {
@@ -163,16 +156,38 @@ public sealed class TransportConsumerConformanceSession(
             return;
         }
 
-        await StopAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-        await Consumer.DisposeAsync().ConfigureAwait(false);
-        await _producer.DisposeAsync().ConfigureAwait(false);
-
-        if (_disposeProviderResources is not null)
+        try
         {
-            await _disposeProviderResources().ConfigureAwait(false);
+            await StopAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
-
-        _listeningCts?.Dispose();
+        finally
+        {
+            try
+            {
+                await Consumer.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    await _producer.DisposeAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    try
+                    {
+                        if (_disposeProviderResources is not null)
+                        {
+                            await _disposeProviderResources().ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _listeningCts?.Dispose();
+                    }
+                }
+            }
+        }
     }
 }
 

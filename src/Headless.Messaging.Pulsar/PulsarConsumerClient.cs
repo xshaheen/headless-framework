@@ -24,7 +24,7 @@ internal sealed class PulsarConsumerClient(
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
-    private CancellationTokenSource _receiveCts = new();
+    private CancellationTokenSource? _receiveCts = new();
     private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
 
@@ -103,104 +103,127 @@ internal sealed class PulsarConsumerClient(
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         var retryDelay = TimeSpan.FromMilliseconds(200);
+        CancellationTokenSource? linkedReceiveCts = null;
+        var receiveToken = CancellationToken.None;
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            Message<byte[]> consumerResult;
-            var receiveToken = CancellationToken.None;
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-                lock (_receiveLock)
+                Message<byte[]> consumerResult;
+                try
                 {
-                    receiveToken = _receiveCts.Token;
-                }
+                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+                    CancellationToken currentReceiveToken;
+                    lock (_receiveLock)
+                    {
+                        if (_receiveCts is null)
+                        {
+                            break;
+                        }
 
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, receiveToken);
-                consumerResult = await _consumerClient!.ReceiveAsync(linkedCts.Token).ConfigureAwait(false);
-                retryDelay = TimeSpan.FromMilliseconds(200);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
-            {
-                if (Volatile.Read(ref _disposed) != 0)
+                        currentReceiveToken = _receiveCts.Token;
+                    }
+
+                    if (currentReceiveToken != receiveToken)
+                    {
+                        linkedReceiveCts?.Dispose();
+                        linkedReceiveCts = CancellationTokenSource.CreateLinkedTokenSource(
+                            cancellationToken,
+                            currentReceiveToken
+                        );
+                        receiveToken = currentReceiveToken;
+                    }
+
+                    consumerResult = await _consumerClient!.ReceiveAsync(linkedReceiveCts!.Token).ConfigureAwait(false);
+                    retryDelay = TimeSpan.FromMilliseconds(200);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
-
-                continue;
-            }
-            catch (Exception e)
-            {
-                OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
-                retryDelay = _NextBackoff(retryDelay);
-                await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
-                continue;
-            }
-
-            if (groupConcurrent > 0)
-            {
-                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                _ObserveBackgroundHandler(
-                    Task.Run(
-                        async () =>
-                        {
-                            try
-                            {
-                                await consumeAsync(consumerResult).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                _ReleaseSemaphore();
-                            }
-                        },
-                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                    )
-                );
-            }
-            else
-            {
-                await consumeAsync(consumerResult).ConfigureAwait(false);
-            }
-
-            async Task consumeAsync(Message<byte[]> currentMessage)
-            {
-                TransportMessage message;
-                try
+                catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
                 {
-                    var headers = new Dictionary<string, string?>(
-                        currentMessage.Properties.Count,
-                        StringComparer.Ordinal
-                    );
-                    foreach (var header in currentMessage.Properties)
+                    if (Volatile.Read(ref _disposed) != 0)
                     {
-                        headers.Add(header.Key, header.Value);
+                        break;
                     }
 
-                    headers[Headers.Group] = groupName;
-
-                    message = new TransportMessage(headers, currentMessage.Data);
+                    continue;
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    OnLogCallback!(
-                        new LogMessageEventArgs
-                        {
-                            LogType = MqLogType.ConsumeError,
-                            Reason = $"Failed to build transport message, nacking: {ex}",
-                        }
-                    );
-
-                    // Settlement is must-complete: nack the malformed message regardless of shutdown.
-                    await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
-                    return;
+                    OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+                    retryDelay = _NextBackoff(retryDelay);
+                    await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
 
-                await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
+                if (groupConcurrent > 0)
+                {
+                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    _ObserveBackgroundHandler(
+                        Task.Run(
+                            async () =>
+                            {
+                                try
+                                {
+                                    await consumeAsync(consumerResult).ConfigureAwait(false);
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+                        )
+                    );
+                }
+                else
+                {
+                    await consumeAsync(consumerResult).ConfigureAwait(false);
+                }
+
+                async Task consumeAsync(Message<byte[]> currentMessage)
+                {
+                    TransportMessage message;
+                    try
+                    {
+                        var headers = new Dictionary<string, string?>(
+                            currentMessage.Properties.Count,
+                            StringComparer.Ordinal
+                        );
+                        foreach (var header in currentMessage.Properties)
+                        {
+                            headers.Add(header.Key, header.Value);
+                        }
+
+                        headers[Headers.Group] = groupName;
+
+                        message = new TransportMessage(headers, currentMessage.Data);
+                    }
+                    catch (Exception ex)
+                    {
+                        OnLogCallback!(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConsumeError,
+                                Reason = $"Failed to build transport message, nacking: {ex}",
+                            }
+                        );
+
+                        // Settlement is must-complete: nack the malformed message regardless of shutdown.
+                        await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
+                        return;
+                    }
+
+                    await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
+                }
             }
+        }
+        finally
+        {
+            linkedReceiveCts?.Dispose();
         }
     }
 
@@ -274,13 +297,17 @@ internal sealed class PulsarConsumerClient(
             return;
         }
 
-        CancellationTokenSource receiveCts;
         lock (_receiveLock)
         {
-            receiveCts = _receiveCts;
-        }
+            if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+            {
+                return;
+            }
 
-        await receiveCts.CancelAsync().ConfigureAwait(false);
+#pragma warning disable CA1849, VSTHRD103 // Cancellation must stay under the lock so disposal cannot win the race.
+            _receiveCts.Cancel();
+#pragma warning restore CA1849, VSTHRD103
+        }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -293,6 +320,11 @@ internal sealed class PulsarConsumerClient(
         CancellationTokenSource previousReceiveCts;
         lock (_receiveLock)
         {
+            if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+            {
+                return;
+            }
+
             previousReceiveCts = _receiveCts;
             _receiveCts = new CancellationTokenSource();
         }
@@ -310,14 +342,17 @@ internal sealed class PulsarConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled();
-        CancellationTokenSource receiveCts;
+        CancellationTokenSource? receiveCts;
         lock (_receiveLock)
         {
             receiveCts = _receiveCts;
+            _receiveCts = null;
+#pragma warning disable CA1849, VSTHRD103 // Cancellation must stay under the lock so no pause operation observes a disposed source.
+            receiveCts?.Cancel();
+#pragma warning restore CA1849, VSTHRD103
         }
 
-        await receiveCts.CancelAsync().ConfigureAwait(false);
-        receiveCts.Dispose();
+        receiveCts?.Dispose();
         _semaphore.Dispose();
         if (_consumerClient is not null)
         {

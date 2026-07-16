@@ -5,7 +5,6 @@ using Headless.Messaging;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
-using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
@@ -58,18 +57,6 @@ public sealed class PulsarBrokerFaultTests(PulsarFixture fixture) : BrokerFaultT
         afterDelivery.Message.Id.Should().Be(afterRestart.Id);
         await session.Consumer.CommitAsync(afterDelivery.SettlementValue, AbortToken);
         (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken)).Should().BeTrue();
-    }
-
-    protected override TransportMessage CreateFaultProbe(string destination)
-    {
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [MessagingHeaders.MessageId] = Guid.NewGuid().ToString("N"),
-            [MessagingHeaders.MessageName] = destination,
-            ["x-headless-conformance"] = "consumer-pause-recovery",
-        };
-
-        return new TransportMessage(headers, "post-pause-probe"u8.ToArray());
     }
 }
 

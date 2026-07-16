@@ -52,8 +52,7 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
                     pool.Dispose();
                     await services.DisposeAsync();
                 },
-                listeningTimeout: TimeSpan.FromSeconds(1),
-                runListenerOnThreadPool: true
+                listeningTimeout: TimeSpan.FromSeconds(1)
             );
         }
         catch

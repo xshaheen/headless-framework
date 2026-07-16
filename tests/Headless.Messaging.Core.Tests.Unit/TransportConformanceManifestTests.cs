@@ -101,14 +101,26 @@ public sealed class TransportConformanceManifestTests : TestBase
             Path.Combine(_FindRepositoryRoot(), "tests", "Headless.Messaging.Core.Tests.Harness", "README.md")
         );
 
-        foreach (var provider in TransportConformanceManifest.Providers.Keys)
-        {
-            readme.Should().Contain($"| {provider} ");
-        }
+        var providerHeader =
+            $"| Manifest scenario | {string.Join(" | ", TransportConformanceManifest.Providers.Keys)} |";
+        readme.Should().Contain(providerHeader);
 
         foreach (var scenario in Enum.GetValues<TransportConformanceScenario>())
         {
-            readme.Should().Contain($"| `{scenario}` |");
+            var cells = TransportConformanceManifest.Providers.Values.Select(profile =>
+            {
+                var support = profile.Scenarios[scenario];
+                return support.Status switch
+                {
+                    ConformanceStatus.Supported when profile.Provider == "Azure Service Bus" => "S†",
+                    ConformanceStatus.Supported => "S",
+                    ConformanceStatus.Unsupported => "U",
+                    ConformanceStatus.NotApplicable => "N/A",
+                    _ => throw new ArgumentOutOfRangeException(nameof(support.Status), support.Status, null),
+                };
+            });
+
+            readme.Should().Contain($"| `{scenario}` | {string.Join(" | ", cells)} |");
         }
     }
 

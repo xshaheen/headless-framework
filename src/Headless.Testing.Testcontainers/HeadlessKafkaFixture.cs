@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Testcontainers.Kafka;
-using Xunit;
+using Testcontainers.Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -12,28 +12,13 @@ namespace Headless.Testing.Testcontainers;
 /// restarted broker accepts connections, leaving clients connected to a stopped or partially started broker.
 /// </remarks>
 [PublicAPI]
-public class HeadlessKafkaFixture : IAsyncLifetime
+public class HeadlessKafkaFixture() : ContainerFixture<KafkaBuilder, KafkaContainer>(TestContextMessageSink.Instance)
 {
-    private readonly KafkaContainer _container;
-
-    public HeadlessKafkaFixture()
+    protected override KafkaBuilder Configure()
     {
-        _container = new KafkaBuilder(TestImages.Kafka).Build();
+        return base.Configure().WithImage(TestImages.Kafka);
     }
 
     /// <summary>Gets the Kafka bootstrap server address.</summary>
-    public string ConnectionString => _container.GetBootstrapAddress();
-
-    /// <summary>Starts the Kafka container.</summary>
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync().ConfigureAwait(false);
-    }
-
-    /// <summary>Disposes the Kafka container.</summary>
-    public async ValueTask DisposeAsync()
-    {
-        await _container.DisposeAsync().ConfigureAwait(false);
-        GC.SuppressFinalize(this);
-    }
+    public string ConnectionString => Container.GetBootstrapAddress();
 }

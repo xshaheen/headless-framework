@@ -32,5 +32,15 @@ public abstract class BrokerFaultTestsBase : TransportConsumerConformanceTestsBa
         receivedOnce.Should().BeTrue("resume must not register a duplicate callback or redeliver the committed probe");
     }
 
-    protected abstract TransportMessage CreateFaultProbe(string destination);
+    protected virtual TransportMessage CreateFaultProbe(string destination)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+            [Headers.MessageName] = destination,
+            ["x-headless-conformance"] = "consumer-pause-recovery",
+        };
+
+        return new TransportMessage(headers, "post-pause-probe"u8.ToArray());
+    }
 }
