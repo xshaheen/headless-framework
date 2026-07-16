@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
@@ -9,16 +8,11 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>
 /// Shared send-and-trace kernel for direct publishers (<see cref="Bus"/> and <see cref="Queue"/>).
-/// Handles serialization, transport send, and the three diagnostic listener events
-/// (BeforePublish, AfterPublish, ErrorPublish / ErrorPublishMessageStore) so neither publisher
-/// duplicates the pattern.
+/// Handles serialization, transport send, and native <c>message.publish</c> span + metric emission so neither
+/// publisher duplicates the pattern.
 /// </summary>
 internal static class DirectPublisherCore
 {
-    private static readonly DiagnosticListener _DiagnosticListener = new(
-        MessageDiagnosticListenerNames.DiagnosticListenerName
-    );
-
     internal static async Task SendAsync(
         Message message,
         IntentType intentType,
@@ -26,62 +20,40 @@ internal static class DirectPublisherCore
         BrokerAddress brokerAddress,
         Func<TransportMessage, CancellationToken, Task<OperateResult>> sendTransport,
         Func<long> nowMs,
+        MessagingTelemetry telemetry,
         CancellationToken cancellationToken
     )
     {
-        TransportMessage transportMsg;
+        var transportMsg = await serializer
+            .SerializeToTransportMessageAsync(message, cancellationToken)
+            .ConfigureAwait(false);
+
+        var traceHandle = _TracingBeforeSend(transportMsg, intentType, brokerAddress, nowMs, telemetry);
         try
         {
-            transportMsg = await serializer
-                .SerializeToTransportMessageAsync(message, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception e)
-        {
-            _TracingErrorSerialization(message, intentType, e, nowMs, cancellationToken);
-            throw;
-        }
-
-        long? tracingTimestamp = null;
-        try
-        {
-            tracingTimestamp = _TracingBeforeSend(transportMsg, intentType, brokerAddress, nowMs, cancellationToken);
-
             var result = await sendTransport(transportMsg, cancellationToken).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {
-                _TracingErrorSend(
-                    tracingTimestamp,
-                    transportMsg,
-                    intentType,
-                    brokerAddress,
-                    result,
-                    nowMs,
-                    cancellationToken
-                );
-                throw new PublisherSentFailedException(result.ToString(), result.Exception);
+                var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
+                _TracingErrorSend(traceHandle, transportMsg, brokerAddress, ex);
+                throw ex;
             }
 
-            _TracingAfterSend(tracingTimestamp, transportMsg, intentType, brokerAddress, nowMs, cancellationToken);
+            _TracingAfterSend(traceHandle, transportMsg, brokerAddress, nowMs);
         }
         catch (OperationCanceledException)
         {
+            // Cancellation is not a send failure: stop (export) the span without an error status so the
+            // started activity never leaks into Activity.Current past this frame.
+            traceHandle.Activity?.Dispose();
             throw;
         }
         catch (Exception e) when (e is not PublisherSentFailedException)
         {
             try
             {
-                _TracingErrorSend(
-                    tracingTimestamp,
-                    transportMsg,
-                    intentType,
-                    brokerAddress,
-                    e,
-                    nowMs,
-                    cancellationToken
-                );
+                _TracingErrorSend(traceHandle, transportMsg, brokerAddress, e);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -94,147 +66,60 @@ internal static class DirectPublisherCore
         }
     }
 
-    private static long? _TracingBeforeSend(
+    private static MessagingTraceHandle _TracingBeforeSend(
         TransportMessage message,
         IntentType intentType,
         BrokerAddress brokerAddress,
         Func<long> nowMs,
-        CancellationToken cancellationToken
+        MessagingTelemetry telemetry
     )
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublish))
+        if (!MessagingDiagnostics.IsEnabled)
         {
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = nowMs(),
-                Operation = message.Name,
-                BrokerAddress = brokerAddress,
-                TransportMessage = message,
-                IntentType = intentType,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublish, eventData);
-
-            return eventData.OperationTimestamp;
+            return default;
         }
 
-        return null;
+        var now = nowMs();
+        var activity = telemetry.PublishStart(message, intentType, brokerAddress, now);
+
+        return new MessagingTraceHandle(activity, now);
     }
 
     private static void _TracingAfterSend(
-        long? tracingTimestamp,
+        MessagingTraceHandle traceHandle,
         TransportMessage message,
-        IntentType intentType,
         BrokerAddress brokerAddress,
-        Func<long> nowMs,
-        CancellationToken cancellationToken
+        Func<long> nowMs
     )
     {
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
+        if (!traceHandle.IsRecording)
         {
-            var now = nowMs();
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = brokerAddress,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublish, eventData);
+            return;
         }
+
+        MessagingTelemetry.PublishStop(
+            traceHandle.Activity,
+            message,
+            brokerAddress,
+            traceHandle.StartTimestampMs!.Value,
+            nowMs()
+        );
     }
 
     private static void _TracingErrorSend(
-        long? tracingTimestamp,
+        MessagingTraceHandle traceHandle,
         TransportMessage message,
-        IntentType intentType,
         BrokerAddress brokerAddress,
-        OperateResult result,
-        Func<long> nowMs,
-        CancellationToken cancellationToken
+        Exception exception
     )
     {
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
+        if (!traceHandle.IsRecording)
         {
-            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-            var now = nowMs();
-
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = brokerAddress,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                Exception = ex,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
+            return;
         }
-    }
 
-    private static void _TracingErrorSend(
-        long? tracingTimestamp,
-        TransportMessage message,
-        IntentType intentType,
-        BrokerAddress brokerAddress,
-        Exception exception,
-        Func<long> nowMs,
-        CancellationToken cancellationToken
-    )
-    {
-        // Guard on IsEnabled regardless of tracingTimestamp: if the listener is interested in
-        // errors, we emit even when BeforePublish was not active (e.g., listener enabled mid-flight).
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
-        {
-            var now = nowMs();
-
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = brokerAddress,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = tracingTimestamp.HasValue ? now - tracingTimestamp.Value : null,
-                Exception = exception,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
-        }
-    }
-
-    private static void _TracingErrorSerialization(
-        Message message,
-        IntentType intentType,
-        Exception exception,
-        Func<long> nowMs,
-        CancellationToken cancellationToken
-    )
-    {
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore))
-        {
-            var eventData = new MessageEventDataPubStore
-            {
-                OperationTimestamp = nowMs(),
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                Exception = exception,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
-        }
+        MessagingTelemetry.PublishError(traceHandle.Activity, message, brokerAddress, exception);
     }
 }

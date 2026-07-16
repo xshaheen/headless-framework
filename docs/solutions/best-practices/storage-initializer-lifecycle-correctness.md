@@ -279,14 +279,14 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 | SqlServer initializer + applock | `src/Headless.AuditLog.Storage.SqlServer/SqlServerAuditLogStorageInitializer.cs` |
 | Settings raw PG initializer | `src/Headless.Settings.Storage.PostgreSql/PostgreSqlSettingsStorageInitializer.cs` |
 | Features raw PG initializer | `src/Headless.Features.Storage.PostgreSql/PostgreSqlFeaturesStorageInitializer.cs` |
-| Dispose path | `src/Headless.Orm.EntityFramework/Contexts/HeadlessDbContext.cs` |
-| Factory + scope ownership | `src/Headless.Orm.EntityFramework/Contexts/HeadlessDbContextFactory.cs` |
+| Dispose path | `src/Headless.EntityFramework/Contexts/HeadlessDbContext.cs` |
+| Factory + scope ownership | `src/Headless.EntityFramework/Contexts/HeadlessDbContextFactory.cs` |
 | Ambient transaction abstraction | `src/Headless.AuditLog.Abstractions/IAmbientDbTransactionAccessor.cs` |
 | Provider-mismatch dedup | `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogStore.cs` |
 | Field-limit hoist | `src/Headless.AuditLog.Abstractions/AuditLogFieldLimits.cs` |
 | Failure-mode + race tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogFailureModesTests.cs` |
 | Atomicity + provider-mismatch tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogAtomicityTests.cs` |
-| Factory + ctor-throws tests | `tests/Headless.Orm.EntityFramework.Tests.Integration/HeadlessDbContextFactoryTests.cs` |
+| Factory + ctor-throws tests | `tests/Headless.EntityFramework.Tests.Integration/HeadlessDbContextFactoryTests.cs` |
 | EF startup validation gate | `src/Headless.Settings.Storage.EntityFramework/Internal/SettingsEntityValidationStartupGate.cs`, `src/Headless.AuditLog.Storage.EntityFramework/Internal/AuditLogEntityValidationStartupGate.cs` |
 
 ## Related

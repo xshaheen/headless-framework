@@ -878,6 +878,39 @@
           "Headless.Hosting": "[1.0.0, )"
         }
       },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "EFCore.CheckConstraints": "[10.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.entityframework.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.4.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "Headless.Testing.Testcontainers": "[1.0.0, )",
+          "Microsoft.NET.Test.Sdk": "[18.7.0, )",
+          "NSubstitute": "[5.3.0, )",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.2, )",
+          "xunit.v3.assert": "[3.2.2, )",
+          "xunit.v3.extensibility.core": "[3.2.2, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -922,7 +955,7 @@
       "headless.identity.storage.entityframework": {
         "type": "Project",
         "dependencies": {
-          "Headless.Orm.EntityFramework": "[1.0.0, )",
+          "Headless.EntityFramework": "[1.0.0, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.9, )"
         }
       },
@@ -932,39 +965,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.orm.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "EFCore.CheckConstraints": "[10.0.0, )",
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Domain": "[1.0.0, )",
-          "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.orm.tests.harness": {
-        "type": "Project",
-        "dependencies": {
-          "AwesomeAssertions": "[9.4.0, )",
-          "AwesomeAssertions.Json": "[9.0.0, )",
-          "Bogus": "[35.6.5, )",
-          "DeepCloner": "[0.10.4, )",
-          "Headless.Orm.EntityFramework": "[1.0.0, )",
-          "Headless.Testing": "[1.0.0, )",
-          "Headless.Testing.Testcontainers": "[1.0.0, )",
-          "Microsoft.NET.Test.Sdk": "[18.7.0, )",
-          "NSubstitute": "[5.3.0, )",
-          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.2, )",
-          "xunit.v3.assert": "[3.2.2, )",
-          "xunit.v3.extensibility.core": "[3.2.2, )"
         }
       },
       "headless.primitives": {

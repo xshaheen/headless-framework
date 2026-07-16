@@ -12,7 +12,7 @@ namespace Tests;
 /// EF Core/SQLite leaf fixture for the coordinated-transaction conformance suite. Wraps the plain
 /// <c>DbContext.ExecuteCoordinatedTransactionAsync</c> helper. The interceptor is wired EXPLICITLY via
 /// <c>AddInterceptors</c> so this fixture isolates the helper contract from the Headless ORM wiring
-/// (which has its own regression test in Headless.Orm.EntityFramework.Tests.Integration).
+/// (which has its own regression test in Headless.EntityFramework.Tests.Integration).
 /// </summary>
 [UsedImplicitly]
 public sealed class EfCoordinatedTransactionFixture : ICoordinatedTransactionFixture, IAsyncLifetime

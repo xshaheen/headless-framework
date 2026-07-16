@@ -319,7 +319,7 @@ This controls the **app clock** only -- the authority for "when did this happen?
 
 #### Auto-Applied EF Query Filters in Tests
 
-`HeadlessEntityModelProcessor` (from `Headless.Orm.EntityFramework`) auto-applies global query filters for three interfaces. They apply in integration tests exactly as in production:
+`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for three interfaces. They apply in integration tests exactly as in production:
 
 | Interface | Filter predicate | Effect |
 |-----------|------------------|--------|

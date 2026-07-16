@@ -787,7 +787,8 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
+          "OpenTelemetry.Api": "[1.16.0, )"
         }
       },
       "headless.caching.redis": {
@@ -876,6 +877,7 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.7.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -896,6 +898,22 @@
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "EFCore.CheckConstraints": "[10.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
         }
       },
       "headless.extensions": {
@@ -967,6 +985,7 @@
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.9, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -995,22 +1014,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.orm.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "EFCore.CheckConstraints": "[10.0.0, )",
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Domain": "[1.0.0, )",
-          "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
         }
       },
@@ -1072,7 +1075,7 @@
       "headless.settings.storage.entityframework": {
         "type": "Project",
         "dependencies": {
-          "Headless.Orm.EntityFramework": "[1.0.0, )",
+          "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )"
         }
       },
@@ -1442,6 +1445,12 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.16.0, )",
+        "resolved": "1.16.0",
+        "contentHash": "WZP8Eb6vZTeNqeV+fjBitc7iefBoTHIhaWorqg/h/YiQBlcQJu0bICuTqKV0XRyjiE0eWs80yLlnUtHAFSkFWA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

@@ -175,6 +175,11 @@ public sealed partial class FactoryCacheCoordinator
                     )
                     .ConfigureAwait(false);
                 _logger.LogCacheBackgroundCompletionSucceeded(key);
+                CachingMetrics.RecordRefresh(
+                    _cacheName,
+                    CachingMetrics.RefreshBackground,
+                    CachingMetrics.OutcomeSuccess
+                );
             }
         }
         // Genuine failures only. When internalCts fired this OperationCanceledException is OUR deliberate ceiling
@@ -184,6 +189,7 @@ public sealed partial class FactoryCacheCoordinator
             when (exception is not OperationCanceledException || !internalCts.IsCancellationRequested)
         {
             _logger.LogCacheBackgroundCompletionFailed(exception, key, exception.GetType().Name);
+            CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshBackground, CachingMetrics.OutcomeError);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
 #pragma warning restore VSTHRD003

@@ -13,7 +13,6 @@
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.SqlServer" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.Tests.Harness" />
-    <InternalsVisibleTo Include="Headless.Jobs.OpenTelemetry" />
     <!-- Lets NSubstitute proxy internal types. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
