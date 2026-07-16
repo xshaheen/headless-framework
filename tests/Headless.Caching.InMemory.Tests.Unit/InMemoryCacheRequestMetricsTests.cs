@@ -130,7 +130,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
         (hitCount + missCount).Should().Be(3);
 
         // Exactly two adds per call (skip an add when its count is 0) — never per-key "get" records.
-        metrics.Measurements("headless.cache.requests").Should().HaveCount(2);
+        metrics.Measurements("headless.cache.requests", ("headless.cache.name", cacheName)).Should().HaveCount(2);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
         await cache.GetAllAsync<string>([key], AbortToken);
 
         // then — only the hit add fired.
-        metrics.Measurements("headless.cache.requests").Should().ContainSingle();
+        metrics.Measurements("headless.cache.requests", ("headless.cache.name", cacheName)).Should().ContainSingle();
 
         metrics
             .Count(
@@ -262,7 +262,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
 
         // then
         removed.Should().BeFalse();
-        metrics.Measurements("headless.cache.writes").Should().BeEmpty();
+        metrics.Measurements("headless.cache.writes", ("headless.cache.name", cacheName)).Should().BeEmpty();
     }
 
     [Fact]
@@ -457,23 +457,26 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
 
         public long Count(string instrumentName, params (string Key, string Value)[] requiredTags)
         {
-            return Measurements(instrumentName)
-                .Where(m =>
-                    requiredTags.All(rt =>
+            return Measurements(instrumentName, requiredTags).Sum(m => m.Value);
+        }
+
+        public IReadOnlyList<(string Name, long Value, KeyValuePair<string, object?>[] Tags)> Measurements(
+            string instrumentName,
+            params (string Key, string Value)[] requiredTags
+        )
+        {
+            return
+            [
+                .. _measurements.Where(m =>
+                    string.Equals(m.Name, instrumentName, StringComparison.Ordinal)
+                    && requiredTags.All(rt =>
                         m.Tags.Any(t =>
                             string.Equals(t.Key, rt.Key, StringComparison.Ordinal)
                             && string.Equals(t.Value as string, rt.Value, StringComparison.Ordinal)
                         )
                     )
-                )
-                .Sum(m => m.Value);
-        }
-
-        public IReadOnlyList<(string Name, long Value, KeyValuePair<string, object?>[] Tags)> Measurements(
-            string instrumentName
-        )
-        {
-            return [.. _measurements.Where(m => string.Equals(m.Name, instrumentName, StringComparison.Ordinal))];
+                ),
+            ];
         }
 
         public void Dispose()
