@@ -23,7 +23,8 @@ public sealed class TransportConsumerConformanceSession(
     IConsumerClient consumer,
     TimeSpan noRedeliveryWindow,
     Func<ValueTask>? disposeProviderResources = null,
-    TimeSpan? listeningTimeout = null
+    TimeSpan? listeningTimeout = null,
+    Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null
 ) : IAsyncDisposable
 {
     private readonly Channel<TransportConformanceDelivery> _deliveries =
@@ -33,6 +34,10 @@ public sealed class TransportConsumerConformanceSession(
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
     private readonly ITransport _producer = producer;
     private readonly Func<ValueTask>? _disposeProviderResources = disposeProviderResources;
+    private readonly Func<
+        CancellationToken,
+        ValueTask<TransportConsumerConformanceSession>
+    >? _createReplacementSession = createReplacementSession;
     private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _listeningCts;
     private Task? _listeningTask;
@@ -80,6 +85,15 @@ public sealed class TransportConsumerConformanceSession(
     public Task<OperateResult> PublishAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         return _producer.SendAsync(message, cancellationToken);
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateReplacementAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _createReplacementSession is not null
+            ? _createReplacementSession(cancellationToken)
+            : throw new InvalidOperationException("The conformance session does not provide a replacement consumer.");
     }
 
     public async Task<TransportConformanceDelivery> ReceiveAsync(
@@ -261,8 +275,25 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         delivery.SettlementValue.Should().NotBeNull();
         await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
 
-        var remainedSettled = await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken);
-        remainedSettled.Should().BeTrue("a committed broker delivery must not be redelivered");
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+
+        await using var replacement = await session.CreateReplacementAsync(AbortToken);
+        await replacement.StartAsync(cancellationToken: AbortToken);
+
+        var remainedSettled = await replacement.RemainsEmptyAsync(replacement.NoRedeliveryWindow, AbortToken);
+        remainedSettled.Should().BeTrue("a replacement consumer must not receive a committed broker delivery");
+
+        var replacementProbe = _CreateMessage(
+            replacement.Destination,
+            Guid.NewGuid().ToString("N"),
+            "replacement-consumer-live"u8.ToArray()
+        );
+        var probeResult = await replacement.PublishAsync(replacementProbe, AbortToken);
+        probeResult.Succeeded.Should().BeTrue();
+
+        var probeDelivery = await replacement.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        probeDelivery.Message.Id.Should().Be(replacementProbe.Id);
+        await replacement.Consumer.CommitAsync(probeDelivery.SettlementValue, AbortToken);
     }
 
     public virtual async Task should_reject_real_delivery_and_observe_redelivery()

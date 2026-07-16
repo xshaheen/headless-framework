@@ -79,32 +79,22 @@ jobs:
           --results-directory artifacts/test-results/azure-service-bus
           --report-trx
 
-      - name: "Require executed real-service tests"
+      - name: "Verify exact real-service conformance evidence"
+        env:
+          EXPECTED_CONFORMANCE_TESTS: |
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_round_trip_queue_message_body_and_headers
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_commit_real_delivery_and_prevent_redelivery
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_reject_real_delivery_and_observe_redelivery
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_isolate_unique_destinations
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound
+            Tests.AzureServiceBusConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active
+            Tests.AzureServiceBusBrokerFaultTests.should_resume_delivery_once_after_consumer_pause
+            Tests.AzureServiceBusTransportTests.should_fan_out_bus_delivery_to_distinct_subscriptions
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import sys
-          import xml.etree.ElementTree as ET
-
-          results = list(Path("artifacts/test-results/azure-service-bus").glob("*.trx"))
-          passed = 0
-          for result in results:
-              root = ET.parse(result).getroot()
-              for element in root.iter():
-                  if not element.tag.endswith("UnitTestResult"):
-                      continue
-                  if element.attrib.get("outcome") != "Passed":
-                      continue
-                  if "AzureServiceBusCredentialGateTests" in element.attrib.get("testName", ""):
-                      continue
-                  passed += 1
-
-          if passed == 0:
-              print("No real Azure Service Bus conformance test executed.", file=sys.stderr)
-              raise SystemExit(1)
-
-          print(f"Validated {passed} executed real-service conformance tests.")
-          PY
+          python3 eng/verify_messaging_conformance.py \
+            --provider "Azure Service Bus" \
+            --results-directory artifacts/test-results/azure-service-bus \
+            --expected-tests "$EXPECTED_CONFORMANCE_TESTS"
 
       - name: "Upload conformance results"
         if: always()

@@ -14,7 +14,8 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
     public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
         CancellationToken cancellationToken,
         string? destination = null,
-        string? group = null
+        string? group = null,
+        bool createReplacement = true
     )
     {
         destination ??= $"conf-{Guid.NewGuid():N}";
@@ -52,7 +53,11 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
                     pool.Dispose();
                     await services.DisposeAsync();
                 },
-                listeningTimeout: TimeSpan.FromSeconds(1)
+                listeningTimeout: TimeSpan.FromSeconds(1),
+                createReplacementSession: createReplacement
+                    ? replacementToken =>
+                        CreateConformanceSessionAsync(replacementToken, destination, group, createReplacement: false)
+                    : null
             );
         }
         catch

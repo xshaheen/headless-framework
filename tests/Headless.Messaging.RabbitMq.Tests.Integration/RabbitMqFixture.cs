@@ -57,10 +57,14 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     }
 
     public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? destination = null,
+        string? group = null,
+        bool createReplacement = true
     )
     {
-        var destination = $"conf-{Guid.NewGuid():N}";
+        destination ??= $"conf-{Guid.NewGuid():N}";
+        group ??= $"group-{Guid.NewGuid():N}";
         var services = new ServiceCollection().BuildServiceProvider();
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var rabbitOptions = Options.Create(
@@ -82,7 +86,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         );
         var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool);
         var consumer = new RabbitMqConsumerClient(
-            $"group-{Guid.NewGuid():N}",
+            group,
             1,
             pool,
             rabbitOptions,
@@ -104,7 +108,11 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 {
                     await pool.DisposeAsync();
                     await services.DisposeAsync();
-                }
+                },
+                createReplacementSession: createReplacement
+                    ? replacementToken =>
+                        CreateConformanceSessionAsync(replacementToken, destination, group, createReplacement: false)
+                    : null
             );
         }
         catch

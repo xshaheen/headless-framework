@@ -20,10 +20,14 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
     public string ConnectionString => Container.GetConnectionString();
 
     public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? destination = null,
+        string? group = null,
+        bool ownsQueue = true
     )
     {
-        var destination = $"conf-{Guid.NewGuid():N}";
+        destination ??= $"conf-{Guid.NewGuid():N}";
+        group ??= $"group-{Guid.NewGuid():N}";
         var options = Options.Create(
             new AmazonSqsMessagingOptions
             {
@@ -37,7 +41,7 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var producer = new AmazonSqsQueueTransport(NullLogger<AmazonSqsQueueTransport>.Instance, options);
         var consumer = new AmazonSqsConsumerClient(
-            $"group-{Guid.NewGuid():N}",
+            group,
             1,
             options,
             NullLogger<AmazonSqsConsumerClient>.Instance,
@@ -51,23 +55,38 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             var queueUrls = await consumer.FetchMessageNamesAsync([destination], cancellationToken);
             await consumer.SubscribeAsync(queueUrls, cancellationToken);
             var queueUrl = queueUrls.Single();
+            if (ownsQueue)
+            {
+                await cleanupClient.SetQueueAttributesAsync(
+                    queueUrl,
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["VisibilityTimeout"] = "2" },
+                    cancellationToken
+                );
+            }
 
             return new TransportConsumerConformanceSession(
                 destination,
                 producer,
                 consumer,
-                TimeSpan.FromSeconds(7),
+                TimeSpan.FromSeconds(5),
                 async () =>
                 {
                     try
                     {
-                        await cleanupClient.DeleteQueueAsync(queueUrl, CancellationToken.None);
+                        if (ownsQueue)
+                        {
+                            await cleanupClient.DeleteQueueAsync(queueUrl, CancellationToken.None);
+                        }
                     }
                     finally
                     {
                         cleanupClient.Dispose();
                     }
-                }
+                },
+                createReplacementSession: ownsQueue
+                    ? replacementToken =>
+                        CreateConformanceSessionAsync(replacementToken, destination, group, ownsQueue: false)
+                    : null
             );
         }
         catch

@@ -12,10 +12,19 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
 {
     public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
         CancellationToken cancellationToken,
-        string? destination = null
+        string? destination = null,
+        string? group = null,
+        bool createReplacement = true
     )
     {
-        return CreateSessionAsync(ConnectionString, IntentType.Queue, cancellationToken, destination);
+        return CreateSessionAsync(
+            ConnectionString,
+            IntentType.Queue,
+            cancellationToken,
+            destination,
+            group,
+            createReplacement
+        );
     }
 
     public ValueTask<TransportConsumerConformanceSession> CreateBusSessionAsync(
@@ -32,7 +41,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         IntentType intent,
         CancellationToken cancellationToken,
         string? destination = null,
-        string? group = null
+        string? group = null,
+        bool createReplacement = true
     )
     {
         destination ??= $"persistent://public/default/conf-{Guid.NewGuid():N}";
@@ -70,7 +80,18 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                     producer,
                     consumer,
                     TimeSpan.FromSeconds(3),
-                    serviceProvider.DisposeAsync
+                    serviceProvider.DisposeAsync,
+                    createReplacementSession: createReplacement
+                        ? replacementToken =>
+                            CreateSessionAsync(
+                                connectionString,
+                                intent,
+                                replacementToken,
+                                destination,
+                                group,
+                                createReplacement: false
+                            )
+                        : null
                 );
             }
             catch

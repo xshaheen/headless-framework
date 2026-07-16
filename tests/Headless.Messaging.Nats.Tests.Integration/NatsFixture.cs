@@ -104,12 +104,16 @@ public sealed class NatsFixture : HeadlessNatsFixture
     }
 
     public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? streamName = null,
+        string? destination = null,
+        string? group = null,
+        bool createReplacement = true
     )
     {
-        var streamName = $"conf-{Guid.NewGuid():N}"[..29];
-        var destination = $"{streamName}.probe";
-        var group = $"group-{Guid.NewGuid():N}"[..30];
+        streamName ??= $"conf-{Guid.NewGuid():N}"[..29];
+        destination ??= $"{streamName}.probe";
+        group ??= $"group-{Guid.NewGuid():N}"[..30];
         await EnsureStreamAsync(streamName, $"{streamName}.>");
 
         var services = new ServiceCollection().BuildServiceProvider();
@@ -149,7 +153,17 @@ public sealed class NatsFixture : HeadlessNatsFixture
                 {
                     await pool.DisposeAsync();
                     await services.DisposeAsync();
-                }
+                },
+                createReplacementSession: createReplacement
+                    ? replacementToken =>
+                        CreateConformanceSessionAsync(
+                            replacementToken,
+                            streamName,
+                            destination,
+                            group,
+                            createReplacement: false
+                        )
+                    : null
             );
         }
         catch

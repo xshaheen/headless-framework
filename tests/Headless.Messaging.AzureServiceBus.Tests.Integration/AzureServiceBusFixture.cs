@@ -37,6 +37,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     )
     {
         var queueName = _UniqueName("queue");
+        var group = $"group-{Guid.NewGuid():N}";
         await _CreateQueueAsync(queueName, cancellationToken);
 
         try
@@ -44,10 +45,20 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             return await _CreateSessionAsync(
                 IntentType.Queue,
                 queueName,
-                $"group-{Guid.NewGuid():N}",
+                group,
                 AzureServiceBusMessagingOptions.DefaultTopicPath,
                 async () => await _DeleteQueueAsync(queueName, CancellationToken.None),
-                cancellationToken
+                cancellationToken,
+                replacementToken =>
+                    _CreateSessionAsync(
+                        IntentType.Queue,
+                        queueName,
+                        group,
+                        AzureServiceBusMessagingOptions.DefaultTopicPath,
+                        disposeEntity: null,
+                        cancellationToken: replacementToken,
+                        createReplacementSession: null
+                    )
             );
         }
         catch
@@ -93,17 +104,25 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var queueName in _queues.Keys)
-        {
-            await _DeleteQueueAsync(queueName, CancellationToken.None);
-        }
-
-        foreach (var topicName in _topics.Keys)
-        {
-            await _DeleteTopicAsync(topicName, CancellationToken.None);
-        }
+        var operations = _queues
+            .Keys.Select(queueName =>
+                (
+                    Resource: $"Azure Service Bus queue '{queueName}'",
+                    Delete: (Func<ValueTask>)(() => _DeleteQueueAsync(queueName, CancellationToken.None))
+                )
+            )
+            .Concat(
+                _topics.Keys.Select(topicName =>
+                    (
+                        Resource: $"Azure Service Bus topic '{topicName}'",
+                        Delete: (Func<ValueTask>)(() => _DeleteTopicAsync(topicName, CancellationToken.None))
+                    )
+                )
+            )
+            .ToArray();
 
         GC.SuppressFinalize(this);
+        await AzureServiceBusResourceCleanup.DeleteAllAsync(operations);
     }
 
     private async ValueTask<TransportConsumerConformanceSession> _CreateSessionAsync(
@@ -112,7 +131,8 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         string group,
         string topicPath,
         Func<ValueTask>? disposeEntity,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null
     )
     {
         var connectionString = _RequireConnectionString();
@@ -153,7 +173,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                     destination,
                     producer,
                     consumer,
-                    TimeSpan.FromSeconds(3),
+                    TimeSpan.FromSeconds(8),
                     async () =>
                     {
                         try
@@ -167,7 +187,8 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                                 await disposeEntity();
                             }
                         }
-                    }
+                    },
+                    createReplacementSession: createReplacementSession
                 );
             }
             catch
@@ -196,30 +217,34 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
     private async ValueTask _DeleteQueueAsync(string queueName, CancellationToken cancellationToken)
     {
-        if (!_queues.TryRemove(queueName, out _) || _administrationClient is null)
+        if (_administrationClient is null)
         {
             return;
         }
 
-        try
-        {
-            await _administrationClient.DeleteQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
-        }
-        catch (RequestFailedException exception) when (exception.Status == 404) { }
+        await AzureServiceBusResourceCleanup.DeleteTrackedAsync(
+            _queues,
+            queueName,
+            async token => await _administrationClient.DeleteQueueAsync(queueName, token).ConfigureAwait(false),
+            exception => exception is RequestFailedException { Status: 404 },
+            cancellationToken
+        );
     }
 
     private async ValueTask _DeleteTopicAsync(string topicName, CancellationToken cancellationToken)
     {
-        if (!_topics.TryRemove(topicName, out _) || _administrationClient is null)
+        if (_administrationClient is null)
         {
             return;
         }
 
-        try
-        {
-            await _administrationClient.DeleteTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
-        }
-        catch (RequestFailedException exception) when (exception.Status == 404) { }
+        await AzureServiceBusResourceCleanup.DeleteTrackedAsync(
+            _topics,
+            topicName,
+            async token => await _administrationClient.DeleteTopicAsync(topicName, token).ConfigureAwait(false),
+            exception => exception is RequestFailedException { Status: 404 },
+            cancellationToken
+        );
     }
 
     private string _RequireConnectionString()

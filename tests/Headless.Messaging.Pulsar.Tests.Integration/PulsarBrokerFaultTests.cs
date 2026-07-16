@@ -32,7 +32,7 @@ public sealed class PulsarBrokerFaultTests(PulsarFixture fixture) : BrokerFaultT
         RequireSupport(TransportConformanceScenario.BrokerInterruptionRecovery);
 
         await using var broker = new IsolatedPulsarFixture();
-        await broker.InitializeAsync();
+        await broker.StartAsync();
         await using var session = await PulsarFixture.CreateSessionAsync(
             broker.ConnectionString,
             IntentType.Queue,
@@ -67,7 +67,7 @@ public sealed class PulsarOutageTests : TestBase
     public async Task should_bound_shutdown_during_broker_outage()
     {
         await using var broker = new IsolatedPulsarFixture();
-        await broker.InitializeAsync();
+        await broker.StartAsync();
         await using var session = await PulsarFixture.CreateSessionAsync(
             broker.ConnectionString,
             IntentType.Queue,
@@ -88,6 +88,11 @@ public sealed class PulsarOutageCollection;
 
 internal sealed class IsolatedPulsarFixture : HeadlessPulsarFixture
 {
+    public ValueTask StartAsync()
+    {
+        return base.InitializeAsync();
+    }
+
     public Task StopAsync(CancellationToken cancellationToken)
     {
         return Container.StopAsync(cancellationToken);

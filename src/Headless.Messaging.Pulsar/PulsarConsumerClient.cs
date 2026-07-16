@@ -20,6 +20,9 @@ internal sealed class PulsarConsumerClient(
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+#pragma warning disable CA2213 // Disposing a transition gate can race queued pause/resume callers during shutdown.
+    private readonly SemaphoreSlim _pauseResumeLock = new(1, 1);
+#pragma warning restore CA2213
     private readonly Lock _receiveLock = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -292,45 +295,61 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || !await _pauseGate.PauseAsync().ConfigureAwait(false))
+        await _pauseResumeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
-        }
-
-        lock (_receiveLock)
-        {
-            if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+            if (Volatile.Read(ref _disposed) != 0 || !await _pauseGate.PauseAsync().ConfigureAwait(false))
             {
                 return;
             }
 
+            lock (_receiveLock)
+            {
+                if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+                {
+                    return;
+                }
+
 #pragma warning disable CA1849, VSTHRD103 // Cancellation must stay under the lock so disposal cannot win the race.
-            _receiveCts.Cancel();
+                _receiveCts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
+            }
+        }
+        finally
+        {
+            _pauseResumeLock.Release();
         }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused)
+        await _pauseResumeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
-        }
-
-        CancellationTokenSource previousReceiveCts;
-        lock (_receiveLock)
-        {
-            if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+            if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused)
             {
                 return;
             }
 
-            previousReceiveCts = _receiveCts;
-            _receiveCts = new CancellationTokenSource();
-        }
+            CancellationTokenSource previousReceiveCts;
+            lock (_receiveLock)
+            {
+                if (Volatile.Read(ref _disposed) != 0 || _receiveCts is null)
+                {
+                    return;
+                }
 
-        previousReceiveCts.Dispose();
-        await _pauseGate.ResumeAsync().ConfigureAwait(false);
+                previousReceiveCts = _receiveCts;
+                _receiveCts = new CancellationTokenSource();
+            }
+
+            previousReceiveCts.Dispose();
+            await _pauseGate.ResumeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _pauseResumeLock.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
