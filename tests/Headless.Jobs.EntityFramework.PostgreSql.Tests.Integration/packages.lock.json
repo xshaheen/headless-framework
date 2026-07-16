@@ -1113,10 +1113,12 @@
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Testcontainers": "[4.13.0, )",
           "Testcontainers.Azurite": "[4.13.0, )",
+          "Testcontainers.Kafka": "[4.13.0, )",
           "Testcontainers.LocalStack": "[4.13.0, )",
           "Testcontainers.MsSql": "[4.13.0, )",
           "Testcontainers.Nats": "[4.13.0, )",
           "Testcontainers.PostgreSql": "[4.13.0, )",
+          "Testcontainers.Pulsar": "[4.13.0, )",
           "Testcontainers.RabbitMq": "[4.13.0, )",
           "Testcontainers.Redis": "[4.13.0, )",
           "Testcontainers.XunitV3": "[4.13.0, )",
@@ -1454,6 +1456,15 @@
           "Testcontainers": "4.13.0"
         }
       },
+      "Testcontainers.Kafka": {
+        "type": "CentralTransitive",
+        "requested": "[4.13.0, )",
+        "resolved": "4.13.0",
+        "contentHash": "4gONml9wnzCkVAROkumLwMYAo8H+eplAAnlcaRFps496oSkADcqe/lVIDgxHnSyWnUFUAdxwTHG9TbTT3vhdUg==",
+        "dependencies": {
+          "Testcontainers": "4.13.0"
+        }
+      },
       "Testcontainers.LocalStack": {
         "type": "CentralTransitive",
         "requested": "[4.13.0, )",
@@ -1477,6 +1488,15 @@
         "requested": "[4.13.0, )",
         "resolved": "4.13.0",
         "contentHash": "FyzKtHxES60A+4rEco5nvNcMhfe0yUYHU7OtP30pgN1Kw0ejDmsCQASchTS3Y+SP+BcECOsV97YCqNkg86dyzw==",
+        "dependencies": {
+          "Testcontainers": "4.13.0"
+        }
+      },
+      "Testcontainers.Pulsar": {
+        "type": "CentralTransitive",
+        "requested": "[4.13.0, )",
+        "resolved": "4.13.0",
+        "contentHash": "EiGE2dwL06fZXjSKEVuBQ4ELA068UlS9cqKj/eti1pvFjZlY7LdNJ03VhkjCweQYCGDDhMW9Q2q1NhnEJeUh6w==",
         "dependencies": {
           "Testcontainers": "4.13.0"
         }
