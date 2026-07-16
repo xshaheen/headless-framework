@@ -1,4 +1,4 @@
-# Headless.Orm.EntityFramework
+# Headless.EntityFramework
 
 Entity Framework Core integration with framework conventions, global filters, auditing, and DDD event dispatch.
 
@@ -17,7 +17,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
 - Optional tenant write guard for `IMultiTenant` save protection (`CrossTenantWriteException`, `MissingTenantContextException`)
-- Two-tier event dispatch: domain events via `ILocalEventBus` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.Orm.EntityFramework.Messaging`)
+- Two-tier event dispatch: domain events via `ILocalEventBus` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination)
@@ -37,7 +37,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 ## Installation
 
 ```bash
-dotnet add package Headless.Orm.EntityFramework
+dotnet add package Headless.EntityFramework
 ```
 
 ## Quick Start
@@ -67,7 +67,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 // Opt in to event tiers — chain off IHeadlessDbContextBuilder:
 builder.Services.AddHeadlessDbContextServices()
     .AddDomainEvents()             // ILocalEventBus for in-process domain events
-    .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher (from Headless.Orm.EntityFramework.Messaging)
+    .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher (from Headless.EntityFramework.Messaging)
 ```
 
 ## Configuration
@@ -176,7 +176,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`)
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline
 - Registers `EntityFrameworkCommitCoordination` (EF interceptor + ambient commit coordinator)
-- `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
+- `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant`

@@ -9,6 +9,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

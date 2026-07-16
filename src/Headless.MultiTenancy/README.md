@@ -2,7 +2,7 @@
 
 ## Problem Solved
 
-Provides one composition surface for tenant posture across Headless packages while keeping each package in charge of its own behavior. It owns the root builder, shared manifest, and validator contracts only — it does not resolve tenants, enforce HTTP authorization, propagate messages, or guard EF writes. Seam packages (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.Orm.EntityFramework`) contribute their own fluent extensions on top of this builder.
+Provides one composition surface for tenant posture across Headless packages while keeping each package in charge of its own behavior. It owns the root builder, shared manifest, and validator contracts only — it does not resolve tenants, enforce HTTP authorization, propagate messages, or guard EF writes. Seam packages (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`) contribute their own fluent extensions on top of this builder.
 
 ## Key Features
 
@@ -24,7 +24,7 @@ Provides one composition surface for tenant posture across Headless packages whi
 dotnet add package Headless.MultiTenancy
 ```
 
-Most applications receive this package transitively through the seam packages that contribute tenancy extensions (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.Orm.EntityFramework`). Add it directly only when authoring a custom `IHeadlessTenancyValidator` or a custom seam without pulling in one of those packages.
+Most applications receive this package transitively through the seam packages that contribute tenancy extensions (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`). Add it directly only when authoring a custom `IHeadlessTenancyValidator` or a custom seam without pulling in one of those packages.
 
 ## Quick Start
 

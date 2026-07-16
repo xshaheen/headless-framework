@@ -230,7 +230,7 @@ The scope is transferred to the context's `OwnedScope` property and disposed alo
 
 ### 8. Raw stores enrolled in the consumer's DbContext transaction
 
-`IAmbientDbTransactionAccessor` lives in `Headless.AuditLog.Abstractions` with a BCL-only signature returning `(DbConnection?, DbTransaction?)`. The EF implementation lives in `Headless.Orm.EntityFramework` and is registered by `AddHeadlessDbContextServices`. Raw writers accept optional `NpgsqlConnection`/`SqlConnection` + transaction; when the accessor resolves a same-provider ambient connection, the store reuses it for true atomicity with the consumer's `SaveChanges`. On provider mismatch the store falls back to its own connection and emits a deduplicated warning (see Doc B for the dedup discipline).
+`IAmbientDbTransactionAccessor` lives in `Headless.AuditLog.Abstractions` with a BCL-only signature returning `(DbConnection?, DbTransaction?)`. The EF implementation lives in `Headless.EntityFramework` and is registered by `AddHeadlessDbContextServices`. Raw writers accept optional `NpgsqlConnection`/`SqlConnection` + transaction; when the accessor resolves a same-provider ambient connection, the store reuses it for true atomicity with the consumer's `SaveChanges`. On provider mismatch the store falls back to its own connection and emits a deduplicated warning (see Doc B for the dedup discipline).
 
 ### 9. Raw provider packages do not depend on EF
 

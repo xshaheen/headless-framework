@@ -1,10 +1,10 @@
-# Headless.Orm.EntityFramework.Messaging
+# Headless.EntityFramework.Messaging
 
 Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration events emitted during EF saves are written to the messaging outbox atomically with the business data.
 
 ## Problem Solved
 
-`Headless.Orm.EntityFramework` defines the `IHeadlessOutboxDispatcher` seam but ships no implementation, so it carries no messaging dependency. This package supplies the implementation: integration events emitted by entities during an EF `SaveChanges` are written to the messaging outbox atomically with the business data and delivered to the broker after commit — without the core ORM package depending on messaging.
+`Headless.EntityFramework` defines the `IHeadlessOutboxDispatcher` seam but ships no implementation, so it carries no messaging dependency. This package supplies the implementation: integration events emitted by entities during an EF `SaveChanges` are written to the messaging outbox atomically with the business data and delivered to the broker after commit — without the core Entity Framework package depending on messaging.
 
 ## Key Features
 
@@ -17,13 +17,13 @@ Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration ev
 
 - **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher publishes each integration event; the outbox writer buffers the rows inside the transaction — not sent to the broker in-band. The registered `IDbTransactionInterceptor` drains the buffered dispatch on commit and discards it on rollback. Outbox rows commit atomically with the business data.
 - **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
-- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. `Headless.Orm.EntityFramework` depends on `Headless.CommitCoordination.EntityFramework` (generic, datastore-agnostic — not messaging) to own the coordinated save scope. The messaging dependency is isolated to this bridge.
+- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. `Headless.EntityFramework` depends on `Headless.CommitCoordination.EntityFramework` (generic, datastore-agnostic — not messaging) to own the coordinated save scope. The messaging dependency is isolated to this bridge.
 - **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Orm.EntityFramework.Messaging
+dotnet add package Headless.EntityFramework.Messaging
 ```
 
 ## Quick Start
@@ -51,7 +51,7 @@ None. (Configured via `AddHeadlessMessaging`.)
 
 ## Dependencies
 
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Headless.Domain`
 - `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Abstractions`

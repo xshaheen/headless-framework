@@ -98,7 +98,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
     private const string _MissingOutboxDispatcherMessage =
         "Headless EF collected integration events to enqueue, but no IHeadlessOutboxDispatcher is registered. "
-        + "Reference the Headless.Orm.EntityFramework.Messaging package and call "
+        + "Reference the Headless.EntityFramework.Messaging package and call "
         + "AddHeadlessDbContextServices(...).AddIntegrationEventOutbox().";
 
     private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(

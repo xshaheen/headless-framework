@@ -536,7 +536,7 @@ Identifier names are validated using cross-provider rules (SQL Server superset) 
 ### Dependencies
 
 - `Headless.Permissions.Core`
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ### Side Effects

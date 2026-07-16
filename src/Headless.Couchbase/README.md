@@ -1,10 +1,10 @@
-# Headless.Orm.Couchbase
+# Headless.Couchbase
 
 Couchbase integration with bucket context, document set operations, cluster management, and transaction support.
 
 ## Problem Solved
 
-Provides a typed context model over Couchbase buckets with helper APIs for document operations (KV, LookupIn, MutateIn, scan, N1QL queries, transactions) and schema bootstrap (scope/collection/index lifecycle), following the same context-provider pattern as `Headless.Orm.EntityFramework` but for the document model.
+Provides a typed context model over Couchbase buckets with helper APIs for document operations (KV, LookupIn, MutateIn, scan, N1QL queries, transactions) and schema bootstrap (scope/collection/index lifecycle), following the same context-provider pattern as `Headless.EntityFramework` but for the document model.
 
 ## Key Features
 
@@ -21,7 +21,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 ## Installation
 
 ```bash
-dotnet add package Headless.Orm.Couchbase
+dotnet add package Headless.Couchbase
 ```
 
 ## Quick Start

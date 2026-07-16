@@ -398,9 +398,9 @@ Database access utilities for Entity Framework Core and Couchbase — convention
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Orm.EntityFramework](src/Headless.Orm.EntityFramework/README.md) | Entity Framework Core utilities |
-| [Headless.Orm.EntityFramework.Messaging](src/Headless.Orm.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
-| [Headless.Orm.Couchbase](src/Headless.Orm.Couchbase/README.md) | Couchbase ORM utilities |
+| [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
+| [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 
 ### Payments
 
