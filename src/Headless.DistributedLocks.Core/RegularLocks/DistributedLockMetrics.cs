@@ -9,8 +9,10 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// Typed metric instruments for the distributed-lock and distributed-semaphore providers.
 /// All instruments are registered against <see cref="DistributedLocksDiagnostics.Meter"/>
-/// and use the <c>reason</c> dimension to distinguish contended vs. stalled failure outcomes
-/// (see <see cref="DistributedLockFailureReasons"/>).
+/// and use the <c>headless.lock.reason</c> / <c>headless.semaphore.reason</c> dimension to
+/// distinguish contended vs. stalled failure outcomes (see <see cref="DistributedLockFailureReasons"/>).
+/// Framework-owned dimensions are namespaced <c>headless.*</c> per the OTel conventions
+/// (docs/solutions/conventions/opentelemetry-instrumentation-conventions.md).
 /// </summary>
 internal static partial class DistributedLockMetrics
 {
@@ -39,13 +41,13 @@ internal static partial class DistributedLockMetrics
 
     private static partial class Instruments
     {
-        [Counter<int>("reason", Name = "headless.lock.failed")]
+        [Counter<int>("headless.lock.reason", Name = "headless.lock.failed")]
         internal static partial LockFailedCounter CreateLockFailedCounter(Meter meter);
 
         [Histogram<double>(Name = "headless.lock.wait.time")]
         internal static partial LockWaitTimeHistogram CreateLockWaitTimeHistogram(Meter meter);
 
-        [Counter<int>("reason", Name = "headless.semaphore.failed")]
+        [Counter<int>("headless.semaphore.reason", Name = "headless.semaphore.failed")]
         internal static partial SemaphoreFailedCounter CreateSemaphoreFailedCounter(Meter meter);
 
         [Histogram<double>(Name = "headless.semaphore.wait.time")]

@@ -313,6 +313,16 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
         services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
+
+        // Native OpenTelemetry emitter: the enricher snapshot (built-ins gated by the Suppress* toggles plus any
+        // custom enrichers) is captured once here from the setup-time instrumentation config. Instruments and the
+        // ActivitySource are near-free until an exporter subscribes to the Headless.Messaging scope.
+        var messagingEnrichers = setup.Instrumentation.BuildEnrichers();
+        services.TryAddSingleton(sp => new MessagingTelemetry(
+            messagingEnrichers,
+            sp.GetService<ILogger<MessagingTelemetry>>()
+        ));
+
         services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();

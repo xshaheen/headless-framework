@@ -174,6 +174,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 ## Documentation
 
 - `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
+- `CONCEPTS.md` (repo root) — shared domain vocabulary (entities, named processes, status concepts with project-specific meaning); relevant when orienting to the codebase or discussing domain concepts.
 - Two agent-facing doc surfaces must stay in lockstep: `docs/llms/<domain>.md` and `src/Headless.<Package>/README.md`. Authoring rules, templates, and lifecycle workflows live in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) — **read it before editing either surface**. Docs are not pure API reference; they must explain core concepts, trade-offs, and provider decisions.
 - **Sync trigger** — a code change in `src/Headless.*` requires a docs update when any of these are true: public API surface changes, package added/renamed/removed, consumer-visible behavior changes (defaults, ordering, retry, cancellation, threading), or configuration options added/removed. Internal refactors, perf-only, test-only, and formatting changes do **not** require doc updates. When triggered, follow the drift checks in `docs/authoring/AUTHORING.md`.
 

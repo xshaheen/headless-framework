@@ -299,6 +299,7 @@ public sealed partial class FactoryCacheCoordinator
                     )
                     .ConfigureAwait(false);
                 _logger.LogEagerRefreshSucceeded(key);
+                CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshEager, CachingMetrics.OutcomeSuccess);
             }
         }
         // Genuine failures only. When internalCts fired this OperationCanceledException is OUR deliberate ceiling
@@ -310,6 +311,7 @@ public sealed partial class FactoryCacheCoordinator
             // The entry is still fresh; failure only means the proactive refresh is lost. Natural expiry and
             // fail-safe (when enabled) take over from here, so log and move on without touching the entry.
             _logger.LogEagerRefreshFailed(exception, key, exception.GetType().Name);
+            CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshEager, CachingMetrics.OutcomeError);
         }
 #pragma warning restore VSTHRD003
     }

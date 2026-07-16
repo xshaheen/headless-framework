@@ -1067,6 +1067,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationTag,
+            CachingMetrics.DirectionPublish
+        );
 
         // L2 marker bump is best-effort under the circuit breaker. When the L2 supports timestamped marker writes
         // (ISeedableTagMarkerCache) and auto-recovery is enabled, a skipped/failed bump is queued and replayed at
@@ -1108,6 +1113,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationClear,
+            CachingMetrics.DirectionPublish
+        );
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteClearMarkerAsync(invalidatedAt, ct),
@@ -1268,6 +1278,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationFlush,
+            CachingMetrics.DirectionPublish
+        );
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),

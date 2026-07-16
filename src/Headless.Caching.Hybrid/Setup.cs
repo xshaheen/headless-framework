@@ -200,7 +200,8 @@ public static class SetupHybridCache
             options,
             provider.GetService<ILogger<HybridCache>>(),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetService<ICacheFactoryLockProvider>()
+            provider.GetService<ICacheFactoryLockProvider>(),
+            provider.GetService<CacheInstrumentationConfig>()
         );
     }
 
@@ -265,7 +266,17 @@ public static class SetupHybridCacheNamed
             instance.RegisterProvider(services =>
             {
                 services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                services.Configure<HybridCacheOptions>(
+                    name,
+                    options =>
+                    {
+                        options.CacheName = name;
+
+                        // Framework-owned routing identity: applied after setupAction (registered above), so a
+                        // user attempt to override CacheName in setupAction never wins the routing decision.
+                        options.InvalidationRoutingName = name;
+                    }
+                );
                 SetupHybridCache.AddNamedCacheCore(services, name);
             });
 
@@ -287,7 +298,17 @@ public static class SetupHybridCacheNamed
             instance.RegisterProvider(services =>
             {
                 services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                services.Configure<HybridCacheOptions>(
+                    name,
+                    options =>
+                    {
+                        options.CacheName = name;
+
+                        // Framework-owned routing identity: applied after setupAction (registered above), so a
+                        // user attempt to override CacheName in setupAction never wins the routing decision.
+                        options.InvalidationRoutingName = name;
+                    }
+                );
                 SetupHybridCache.AddNamedCacheCore(services, name);
             });
 
@@ -309,7 +330,17 @@ public static class SetupHybridCacheNamed
             instance.RegisterProvider(services =>
             {
                 services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration, name);
-                services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
+                services.Configure<HybridCacheOptions>(
+                    name,
+                    options =>
+                    {
+                        options.CacheName = name;
+
+                        // Framework-owned routing identity: applied after setupAction (registered above), so a
+                        // user attempt to override CacheName in setupAction never wins the routing decision.
+                        options.InvalidationRoutingName = name;
+                    }
+                );
                 SetupHybridCache.AddNamedCacheCore(services, name);
             });
 

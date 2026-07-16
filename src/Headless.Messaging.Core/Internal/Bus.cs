@@ -9,9 +9,12 @@ internal sealed class Bus(
     IBusTransport transport,
     IMessagePublishRequestFactory publishRequestFactory,
     IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    MessagingTelemetry? telemetry = null
 ) : IBus
 {
+    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
+
     public Task PublishAsync<T>(
         T? contentObj,
         PublishOptions? options = null,
@@ -39,6 +42,7 @@ internal sealed class Bus(
                     transport.BrokerAddress,
                     transport.SendAsync,
                     _NowUnixTimeMilliseconds,
+                    _telemetry,
                     ct
                 );
             },

@@ -61,7 +61,7 @@ That shape keeps provider decisions at the composition root:
 | API contracts and host defaults | `Headless.Api.Abstractions` | `Headless.Api.Core` or `Headless.Api.ServiceDefaults` for runnable API hosts |
 | Cache contracts | `Headless.Caching.Abstractions` | `Headless.Caching.Core` plus one default provider: in-memory, Redis, or hybrid; add named caches when a service needs multiple stores |
 | Blob storage contracts | `Headless.Blobs.Abstractions` | `Headless.Blobs.Core` plus Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
-| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, OpenTelemetry, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
+| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
 | Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
 | Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
 | Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus EF Core, PostgreSQL, SQL Server, in-memory, or durable-work package |
@@ -72,7 +72,7 @@ That shape keeps provider decisions at the composition root:
 | Email contracts | `Headless.Emails.Abstractions` | `Headless.Emails.Core` plus AWS SES, Azure Communication Services, MailKit SMTP, or dev provider |
 | SMS contracts | `Headless.Sms.Abstractions` | `Headless.Sms.Core` plus AWS, Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone, or dev provider |
 | Push notification contracts | `Headless.PushNotifications.Abstractions` | `Headless.PushNotifications.Core` plus Firebase or dev provider |
-| Messaging contracts | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`, bus/queue abstractions, one transport, one durable storage provider when needed, dashboard, testing, and OpenTelemetry packages |
+| Messaging contracts | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`, bus/queue abstractions, one transport, one durable storage provider when needed, dashboard, and testing packages |
 | Test-only infrastructure | Domain abstraction package | In-memory provider, dev provider, or testing package for that domain |
 
 ## Quick Start
@@ -345,7 +345,6 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 | [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI for monitoring messages, failures, and system health |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | Kubernetes node auto-discovery for the dashboard |
-| [Headless.Messaging.OpenTelemetry](src/Headless.Messaging.OpenTelemetry/README.md) | Tracing, metrics, and context propagation |
 | [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | In-process test harness for asserting on published/consumed/faulted messages |
 
 **Transports:**
@@ -379,7 +378,6 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | Job engine: cron, delays, retries, monitoring |
 | [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code gen for `[Jobs]`-marked jobs |
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
-| [Headless.Jobs.OpenTelemetry](src/Headless.Jobs.OpenTelemetry/README.md) | Tracing and metrics for job execution |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
 | [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | SQL Server atomic claims with `UPDLOCK`, `READPAST`, and `ROWLOCK` |
