@@ -193,7 +193,8 @@ jobs:
     name: "Push GitHub Packages"
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    # Publishing a GitHub Release is the explicit package-release gate.
+    if: github.event_name == 'release'
 
     permissions:
       contents: read

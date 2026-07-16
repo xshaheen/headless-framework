@@ -180,6 +180,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- Workflow trigger changes must stay synchronized with `main` branch protection: removing the CodeQL `pull_request` trigger while `Analyze (csharp)` remains required leaves PRs permanently waiting. Package publication is gated by a published GitHub Release; Release Drafter updates drafts but does not publish them. (2026-07-16)
 - Messaging retry ceilings require an atomic durable attempt reservation before transport or consumer invocation; persisting progress only after failure lets a crash reset an inline burst. Recovery of a consumed reservation advances Messaging-owned persisted state without applying domain exception classification. (2026-07-10)
 - Jobs retry recovery depends on carrying `RetryCount` through every EF and in-memory pickup projection and persisting it before Polly waits; omitting it from a projection silently restores a fresh retry budget after process restart. (2026-07-10)
 - `[JsonExtensionData]` properties must be `{ get; set; }` (never `init`) and every source-gen `JsonSerializerContext` whose models carry extension data needs `[JsonSerializable(typeof(object))]` + `[JsonSerializable(typeof(JsonElement))]`. `init` binding throws on EVERY deserialization; missing object metadata throws on any unknown response field — both at runtime only, build stays green. Found via Paymob CashOut/CashIn unit tests. (2026-07-07)
