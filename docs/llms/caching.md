@@ -310,7 +310,7 @@ Consumers do not feature-detect by hand: `BufferCacheExtensions.TryGetToOrFallba
 
 ## Observability
 
-The caching subsystem emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.Caching` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `CachingDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddCachingInstrumentation()` and `metrics.AddCachingInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(CachingDiagnostics.SourceName)` / `AddSource(CachingDiagnostics.SourceName)`; both paths are first-class. When no listener is attached the instrumentation short-circuits (`CachingDiagnostics.IsEnabled` gates span creation and `TagList` building), so an unobserved cache pays no per-operation instrumentation cost.
+The caching subsystem emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.Caching` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `CachingDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddCachingInstrumentation()` and `metrics.AddCachingInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(CachingDiagnostics.SourceName)` / `AddSource(CachingDiagnostics.SourceName)`; both paths are first-class. When no listener is attached the instrumentation short-circuits (`CachingDiagnostics.IsEnabled` gates span creation and `TagList` building), so an unobserved cache pays no per-operation instrumentation cost. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 Every instrument carries a `headless.cache.name` dimension — the registered instance name, or `default` for the unkeyed default cache. Framework-owned attribute keys are `headless.cache.*`-namespaced. **The raw cache key is never a metric dimension** (cardinality + privacy) and appears on spans only when the opt-in `IncludeKeyInTraces` flag is set on the caching setup builder (default off) — `AddHeadlessCaching(setup => setup.IncludeKeyInTraces = true)`; because keys routinely carry tenant/user identifiers, the default keeps them out of trace backends.
 
@@ -372,7 +372,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
 - `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `EagerRefreshThreshold`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, `LockTimeout`, `UseDistributedFactoryLock`, and `Tags`.
 - `CacheFactoryContext<T>` / `CacheFactoryResult<T>` - conditional-factory contract (the HTTP-304 pattern): the factory sees the last-known value and its validators (`ETag`, `LastModifiedAt`) and returns `NotModified()` or `Modified(value, eTag, lastModifiedAt)`; it may also replace `Options` and `Tags` before returning (adaptive caching).
-- `CacheOptions` - base provider options carrying `KeyPrefix` and `DefaultEntryOptions`.
+- `CacheOptions` - base provider options carrying `KeyPrefix`, `DefaultEntryOptions`, and `CacheName` (the instance name surfaced on the `headless.cache.name` telemetry dimension; also used by the hybrid provider as its cross-node invalidation-routing identity).
 - `CacheDefaultEntryExtensions` - option-less `GetOrAddAsync` overloads that apply the cache instance's `DefaultEntryOptions` and throw `InvalidOperationException` when none is configured.
 - `CacheFactoryTimeoutException` - `TimeoutException` subtype thrown when a hard factory timeout fires without a stale fallback.
 
@@ -518,7 +518,7 @@ await cache.ClearAsync(ct);
 
 ### Configuration
 
-No configuration required. This is an abstractions-only package; `CacheOptions.KeyPrefix` and `CacheOptions.DefaultEntryOptions` are configured on the provider packages.
+No configuration required. This is an abstractions-only package; `CacheOptions.KeyPrefix`, `CacheOptions.DefaultEntryOptions`, and `CacheOptions.CacheName` are configured on the provider packages.
 
 ### Dependencies
 

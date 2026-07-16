@@ -209,7 +209,7 @@ TCP keepalive remains complementary, not redundant. Keepalive (`PostgresDistribu
 
 ### Observability
 
-The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `DistributedLocksDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(DistributedLocksDiagnostics.SourceName)` / `AddSource(DistributedLocksDiagnostics.SourceName)`; both paths are first-class.
+The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `DistributedLocksDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(DistributedLocksDiagnostics.SourceName)` / `AddSource(DistributedLocksDiagnostics.SourceName)`; both paths are first-class. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 | Instrument | Kind | Unit | Meaning |
 | --- | --- | --- | --- |

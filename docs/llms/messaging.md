@@ -1061,7 +1061,7 @@ Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 
 ### Problem Solved
 
-Spans and metrics for messaging publish, persist, consume, and subscriber-invoke flows are emitted **natively** from `Headless.Messaging.Core` via BCL `System.Diagnostics` `ActivitySource`/`Meter` primitives. There is **no** separate `Headless.Messaging.OpenTelemetry` satellite package (removed) and no `DiagnosticSource` bridge — Core references only the 80 KB, dependency-free `OpenTelemetry.Api` (for W3C context propagation and the typed provider-builder helpers), never the SDK. Any consumer subscribes: an OpenTelemetry exporter, a raw `ActivityListener`/`MeterListener`, Application Insights, or `dotnet-counters`.
+Spans and metrics for messaging publish, persist, consume, and subscriber-invoke flows are emitted **natively** from `Headless.Messaging.Core` via BCL `System.Diagnostics` `ActivitySource`/`Meter` primitives. There is **no** separate `Headless.Messaging.OpenTelemetry` satellite package (removed) and no `DiagnosticSource` bridge — Core references only the 80 KB, dependency-free `OpenTelemetry.Api` (for W3C context propagation and the typed provider-builder helpers), never the SDK. Any consumer subscribes: an OpenTelemetry exporter, a raw `ActivityListener`/`MeterListener`, Application Insights, or `dotnet-counters`. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Key Features
 

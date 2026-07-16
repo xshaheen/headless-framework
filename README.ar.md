@@ -73,7 +73,7 @@ Headless.<Feature>.Testing       -> أدوات اختبار عند الحاجة
 | تجهيزات API والمضيف | `Headless.Api.Abstractions` | `Headless.Api.Core` أو `Headless.Api.ServiceDefaults` لو عايز تشغيل API كامل |
 | التخزين المؤقت | `Headless.Caching.Abstractions` | `Headless.Caching.Core` مع InMemory أو Redis أو Hybrid cache |
 | تخزين الملفات | `Headless.Blobs.Abstractions` | `Headless.Blobs.Core` مع Azure أو AWS أو Cloudflare R2 أو FileSystem أو Redis أو SFTP |
-| المهام الخلفية | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, Dashboard، OpenTelemetry، أو تخزين دائم عبر EF Core |
+| المهام الخلفية | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, Dashboard، أو تخزين دائم عبر EF Core |
 | الأقفال الموزّعة | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` مع InMemory أو Redis أو PostgreSQL أو SQL Server |
 | عضوية العُقد وحالتها | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` مع Redis أو PostgreSQL أو SQL Server |
 | ربط الآثار الجانبية بالمعاملة | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` مع EF Core أو PostgreSQL أو SQL Server أو InMemory أو Durable Work |
@@ -84,7 +84,7 @@ Headless.<Feature>.Testing       -> أدوات اختبار عند الحاجة
 | البريد الإلكتروني | `Headless.Emails.Abstractions` | `Headless.Emails.Core` مع AWS SES أو Azure Communication Services أو MailKit SMTP أو مزوّد تطوير |
 | الرسائل النصية SMS | `Headless.Sms.Abstractions` | `Headless.Sms.Core` مع AWS أو Cequens أو Connekio أو Infobip أو Twilio أو VictoryLink أو Vodafone أو مزوّد تطوير |
 | الإشعارات الفورية | `Headless.PushNotifications.Abstractions` | `Headless.PushNotifications.Core` مع Firebase أو مزوّد تطوير |
-| الرسائل بين الخدمات | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`، عقود bus/queue، broker، تخزين دائم، Dashboard، أدوات اختبار، و OpenTelemetry |
+| الرسائل بين الخدمات | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`، عقود bus/queue، broker، تخزين دائم، Dashboard، وأدوات اختبار |
 | الاختبارات فقط | حزمة Abstractions الخاصة بالمجال | InMemory provider أو Dev provider أو حزمة Testing |
 
 ## البدء السريع

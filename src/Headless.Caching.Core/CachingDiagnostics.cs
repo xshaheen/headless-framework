@@ -28,8 +28,11 @@ namespace Headless.Caching;
 /// fail-safe, and refresh signals for every provider. Its store reads go through
 /// <see cref="IFactoryCacheStore.TryGetEntryAsync{T}"/>, which single-tier providers do <em>not</em> instrument
 /// (that would double-count the coordinator's reads). Direct <see cref="ICache"/> operations that bypass the
-/// coordinator are metered thinly at each provider (tier <c>l1</c>/<c>l2</c>). The hybrid cache instruments its
-/// own per-tier store layer deliberately — that is the source of the <c>headless.cache.tier</c> attribution.
+/// coordinator are metered thinly at each provider for writes and evictions only (tier <c>l1</c>/<c>l2</c>);
+/// direct reads (<c>GetAsync</c>, <c>GetAllAsync</c>, <c>ExistsAsync</c>) record nothing and are not counted in
+/// <c>headless.cache.requests</c> — only the coordinator's get-or-add reads and hybrid tier reads are. The hybrid
+/// cache instruments its own per-tier store layer deliberately — that is the source of the
+/// <c>headless.cache.tier</c> attribution.
 /// </para>
 /// </remarks>
 [PublicAPI]
