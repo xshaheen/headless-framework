@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Reflection;
@@ -103,7 +104,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         var message = _CreateMediumMessage();
         var descriptor = _CreateDescriptor();
 
-        var spans = new List<Activity>();
+        var spans = new ConcurrentBag<Activity>();
         using var activityListener = _StartActivityListener(spans);
         var measurements = new List<string>();
         using var meterListener = _StartMeterListener(measurements);
@@ -165,7 +166,8 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         };
     }
 
-    private static ActivityListener _StartActivityListener(List<Activity> captured)
+    // Process-global callback: parallel tests' activities all land here — the collection must be thread-safe.
+    private static ActivityListener _StartActivityListener(ConcurrentBag<Activity> captured)
     {
         var listener = new ActivityListener
         {

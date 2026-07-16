@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Reflection;
@@ -95,7 +96,7 @@ public sealed class MessagingTelemetryTests : TestBase
     [Fact]
     public void should_record_expected_instrument_names_when_full_flow()
     {
-        var measurements = new List<(string Name, string[] TagKeys)>();
+        var measurements = new ConcurrentBag<(string Name, string[] TagKeys)>();
         using var listener = _StartMeterListener(measurements);
         var telemetry = MessagingTelemetry.Default;
 
@@ -251,7 +252,8 @@ public sealed class MessagingTelemetryTests : TestBase
 
     private static void _SampleHandler() { }
 
-    private static ActivityListener _StartActivityListener(List<Activity> captured)
+    // Process-global callback: parallel tests' activities all land here — the collection must be thread-safe.
+    private static ActivityListener _StartActivityListener(ConcurrentBag<Activity> captured)
     {
         var listener = new ActivityListener
         {
@@ -266,7 +268,7 @@ public sealed class MessagingTelemetryTests : TestBase
         return listener;
     }
 
-    private static MeterListener _StartMeterListener(List<(string Name, string[] TagKeys)> captured)
+    private static MeterListener _StartMeterListener(ConcurrentBag<(string Name, string[] TagKeys)> captured)
     {
         var listener = new MeterListener
         {

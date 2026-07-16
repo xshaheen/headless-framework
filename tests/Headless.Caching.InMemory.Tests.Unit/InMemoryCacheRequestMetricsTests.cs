@@ -129,8 +129,17 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
         missCount.Should().Be(1);
         (hitCount + missCount).Should().Be(3);
 
-        // Exactly two adds per call (skip an add when its count is 0) — never per-key "get" records.
-        metrics.Measurements("headless.cache.requests").Should().HaveCount(2);
+        // Exactly two adds per call (skip an add when its count is 0) — never per-key "get" records. Scoped to
+        // THIS cache name: the meter is process-global and parallel tests' requests land in the same collector.
+        metrics
+            .Measurements("headless.cache.requests")
+            .Where(m =>
+                m.Tags.Any(t =>
+                    string.Equals(t.Key, "headless.cache.name", StringComparison.Ordinal) && Equals(t.Value, cacheName)
+                )
+            )
+            .Should()
+            .HaveCount(2);
     }
 
     [Fact]
@@ -147,8 +156,16 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
         // when
         await cache.GetAllAsync<string>([key], AbortToken);
 
-        // then — only the hit add fired.
-        metrics.Measurements("headless.cache.requests").Should().ContainSingle();
+        // then — only the hit add fired (scoped to THIS cache name; the meter is process-global).
+        metrics
+            .Measurements("headless.cache.requests")
+            .Where(m =>
+                m.Tags.Any(t =>
+                    string.Equals(t.Key, "headless.cache.name", StringComparison.Ordinal) && Equals(t.Value, cacheName)
+                )
+            )
+            .Should()
+            .ContainSingle();
 
         metrics
             .Count(
@@ -262,7 +279,10 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
 
         // then
         removed.Should().BeFalse();
-        metrics.Measurements("headless.cache.writes").Should().BeEmpty();
+
+        // Scope to THIS test's cache name: the meter is process-global, so parallel tests' writes (e.g. an
+        // upsert on the "default" instance) land in the same collector and must not fail this assertion.
+        metrics.Count("headless.cache.writes", ("headless.cache.name", cacheName)).Should().Be(0);
     }
 
     [Fact]
