@@ -327,7 +327,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task audit_ignore_property_excluded_from_all_dictionaries()
+    public async Task property_exclusion_metadata_omits_property_from_all_dictionaries()
     {
         // given
         var (db, conn) = _CreateDb();
@@ -477,7 +477,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task non_audit_tracked_entity_skipped_in_opt_in_mode()
+    public async Task unconfigured_entity_skipped_when_audit_by_default_is_disabled()
     {
         // given - Product has no explicit audit policy
         var (db, conn) = _CreateDb();
@@ -520,7 +520,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task audit_ignore_class_excluded_in_all_entities_mode()
+    public async Task entity_exclusion_metadata_wins_when_audit_by_default_is_enabled()
     {
         // given - InternalLog has explicit exclusion metadata
         var (db, conn) = _CreateDb();
@@ -731,7 +731,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task owned_entity_update_captured_when_owner_is_audit_tracked()
+    public async Task owned_entity_update_captured_when_root_owner_has_audit_metadata()
     {
         // given - Customer is explicitly audited; modifying Address should emit an audit entry.
         var (db, conn) = _CreateDb();
@@ -1367,7 +1367,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task updated_entity_with_only_ignored_property_change_produces_no_entry()
+    public async Task updated_entity_with_only_excluded_property_change_produces_no_entry()
     {
         // given - LastComputedAt is excluded in model metadata and is the only modified property
         var (db, conn) = _CreateDb();
