@@ -9,6 +9,7 @@ public enum TransportConformanceScenario
     QueueRoundTrip,
     BusRoundTrip,
     HeaderRoundTrip,
+    EmptyBodyDispatch,
     CommitSettlement,
     RejectRedelivery,
     ConsumerPauseRecovery,
@@ -75,13 +76,36 @@ public static class TransportConformanceManifest
                 .CreateDisabled("NATS")
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
-            ["RabbitMQ"] = TransportConformanceProfile.CreateDisabled("RabbitMQ"),
-            ["AWS/LocalStack"] = TransportConformanceProfile.CreateDisabled("AWS/LocalStack"),
+            ["RabbitMQ"] = TransportConformanceProfile
+                .CreateDisabled("RabbitMQ")
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
+            ["AWS/LocalStack"] = TransportConformanceProfile
+                .CreateDisabled("AWS/LocalStack")
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.EmptyBodyDispatch,
+                    ConformanceSupport.NotApplicable(
+                        "Amazon SNS rejects empty message bodies at the protocol boundary."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
                 .WithScenario(

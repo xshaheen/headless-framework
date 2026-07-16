@@ -1,6 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.RabbitMq;
 using Headless.Testing.Testcontainers;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using Testcontainers.RabbitMq;
 
@@ -48,6 +54,66 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
 
         _connection = await factory.CreateConnectionAsync();
         return _connection;
+    }
+
+    public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var destination = $"conf-{Guid.NewGuid():N}";
+        var services = new ServiceCollection().BuildServiceProvider();
+        var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
+        var rabbitOptions = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = HostName,
+                Port = Port,
+                UserName = UserName,
+                Password = Password,
+                ExchangeName = $"conf-{Guid.NewGuid():N}",
+            }
+        );
+
+#pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
+        var pool = new ConnectionChannelPool(
+            NullLogger<ConnectionChannelPool>.Instance,
+            messagingOptions,
+            rabbitOptions
+        );
+        var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool);
+        var consumer = new RabbitMqConsumerClient(
+            $"group-{Guid.NewGuid():N}",
+            1,
+            pool,
+            rabbitOptions,
+            services,
+            intentType: IntentType.Queue
+        );
+#pragma warning restore CA2000
+
+        try
+        {
+            await consumer.SubscribeAsync([destination], cancellationToken);
+
+            return new TransportConsumerConformanceSession(
+                destination,
+                producer,
+                consumer,
+                TimeSpan.FromMilliseconds(1_500),
+                async () =>
+                {
+                    await pool.DisposeAsync();
+                    await services.DisposeAsync();
+                }
+            );
+        }
+        catch
+        {
+            await consumer.DisposeAsync();
+            await pool.DisposeAsync();
+            await services.DisposeAsync();
+            throw;
+        }
     }
 
     protected override async ValueTask DisposeAsyncCore()

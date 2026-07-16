@@ -62,22 +62,6 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
         return base.should_receive_messages_via_listen_callback();
     }
 
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "SQS commit requires a real receipt handle and initialized queue state.")]
-#pragma warning restore xUnit1004
-    public override Task should_delegate_commit_callback_value()
-    {
-        return Task.CompletedTask;
-    }
-
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "SQS reject requires a real receipt handle and initialized queue state.")]
-#pragma warning restore xUnit1004
-    public override Task should_delegate_reject_callback_value()
-    {
-        return Task.CompletedTask;
-    }
-
     [Fact]
     public override Task should_fetch_topics()
     {

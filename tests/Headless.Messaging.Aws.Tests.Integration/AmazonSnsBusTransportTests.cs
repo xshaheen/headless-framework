@@ -110,13 +110,20 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
         return base.should_send_multiple_messages_individually();
     }
 
-#pragma warning disable xUnit1004 // AWS SNS rejects empty message bodies; this inherited contract is not applicable.
-    [Fact(Skip = "AWS SNS does not support empty message bodies")]
+    [Fact]
     public override Task should_handle_empty_message_body()
     {
+        var support = TransportConformanceManifest.Providers["AWS/LocalStack"].Scenarios[
+            TransportConformanceScenario.EmptyBodyDispatch
+        ];
+
+        if (support.Status != ConformanceStatus.Supported)
+        {
+            Assert.Skip($"AWS/LocalStack EmptyBodyDispatch: {support.Status}. {support.Rationale}");
+        }
+
         return base.should_handle_empty_message_body();
     }
-#pragma warning restore xUnit1004
 
     [Fact]
     public override Task should_handle_large_message_body()

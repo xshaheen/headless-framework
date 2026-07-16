@@ -69,6 +69,8 @@ Provider leaves create an isolated `TransportConsumerConformanceSession` with a 
 
 NATS is the reference implementation. Its test leaf uses queue intent, a unique memory-backed JetStream stream and durable, and a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
 
+RabbitMQ uses unique exchanges and queues; ACK absence is observed beyond the provider window, reject proves broker requeue, and pause/resume proves a single recovered delivery. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
+
 ### DataStorageCapabilities
 
 ```csharp
