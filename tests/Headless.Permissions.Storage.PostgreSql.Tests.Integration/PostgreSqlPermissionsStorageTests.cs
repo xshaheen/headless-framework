@@ -72,6 +72,111 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(100)]
+    [InlineData(101)]
+    public async Task should_batch_permission_grants_from_single_use_enumerable(int count)
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        await _CreateInsertCommandCounterAsync();
+        var records = Enumerable
+            .Range(0, count)
+            .Select(index => new PermissionGrantRecord(
+                Guid.NewGuid(),
+                $"Bulk.Permission.{index}",
+                "Role",
+                "bulk-admin",
+                isGranted: true
+            ))
+            .ToArray();
+        var enumerationCount = 0;
+
+        IEnumerable<PermissionGrantRecord> enumerateOnce()
+        {
+            enumerationCount++;
+
+            foreach (var record in records)
+            {
+                yield return record;
+            }
+        }
+
+        // when
+        await grantRepository.InsertManyAsync(enumerateOnce(), AbortToken);
+        var stored = await grantRepository.GetListAsync("Role", "bulk-admin", AbortToken);
+
+        // then
+        enumerationCount.Should().Be(1);
+        stored.Should().HaveCount(count);
+        (await _InsertCommandCountAsync()).Should().Be((count + 99) / 100);
+    }
+
+    [Fact]
+    public async Task should_roll_back_all_permission_grants_when_later_batch_conflicts()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var records = Enumerable
+            .Range(0, 100)
+            .Select(index => new PermissionGrantRecord(
+                Guid.NewGuid(),
+                $"Atomic.Permission.{index}",
+                "Role",
+                "atomic-admin",
+                isGranted: true
+            ))
+            .Append(
+                new PermissionGrantRecord(
+                    Guid.NewGuid(),
+                    "Atomic.Permission.0",
+                    "Role",
+                    "atomic-admin",
+                    isGranted: false
+                )
+            )
+            .ToArray();
+
+        // when
+        var act = () => grantRepository.InsertManyAsync(records, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
+        (await grantRepository.GetListAsync("Role", "atomic-admin", AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_enumerate_permission_grants_when_insertion_is_already_cancelled()
+    {
+        // given
+        using var host = _CreateHost();
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var enumerated = false;
+
+        IEnumerable<PermissionGrantRecord> records()
+        {
+            enumerated = true;
+            yield return new PermissionGrantRecord(Guid.NewGuid(), "Cancelled", "Role", "admin", isGranted: true);
+        }
+
+        // when
+        var act = () => grantRepository.InsertManyAsync(records(), cancellation.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        enumerated.Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_scope_permission_grant_reads_to_current_tenant()
     {
@@ -196,6 +301,46 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("index", indexName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private async Task _CreateInsertCommandCounterAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            CREATE TABLE "{_Schema}"."PermissionGrantInsertCommandCounter" ("Count" integer NOT NULL);
+            INSERT INTO "{_Schema}"."PermissionGrantInsertCommandCounter" ("Count") VALUES (0);
+
+            CREATE FUNCTION "{_Schema}"."CountPermissionGrantInsertCommand"() RETURNS trigger
+            LANGUAGE plpgsql
+            AS $function$
+            BEGIN
+                UPDATE "{_Schema}"."PermissionGrantInsertCommandCounter" SET "Count" = "Count" + 1;
+                RETURN NULL;
+            END;
+            $function$;
+
+            CREATE TRIGGER "TR_PermissionGrant_InsertCommandCounter"
+            AFTER INSERT ON "{_Schema}"."PermissionGrants"
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION "{_Schema}"."CountPermissionGrantInsertCommand"();
+            """,
+            connection
+        );
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task<int> _InsertCommandCountAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            $"""SELECT "Count" FROM "{_Schema}"."PermissionGrantInsertCommandCounter";""",
+            connection
+        );
+
+        return (int)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
