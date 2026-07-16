@@ -22,7 +22,9 @@ public sealed class TransportConsumerConformanceSession(
     ITransport producer,
     IConsumerClient consumer,
     TimeSpan noRedeliveryWindow,
-    Func<ValueTask>? disposeProviderResources = null
+    Func<ValueTask>? disposeProviderResources = null,
+    TimeSpan? listeningTimeout = null,
+    bool runListenerOnThreadPool = false
 ) : IAsyncDisposable
 {
     private readonly Channel<TransportConformanceDelivery> _deliveries =
@@ -32,6 +34,8 @@ public sealed class TransportConsumerConformanceSession(
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
     private readonly ITransport _producer = producer;
     private readonly Func<ValueTask>? _disposeProviderResources = disposeProviderResources;
+    private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
+    private readonly bool _runListenerOnThreadPool = runListenerOnThreadPool;
     private CancellationTokenSource? _listeningCts;
     private Task? _listeningTask;
     private int _stopped;
@@ -66,7 +70,12 @@ public sealed class TransportConsumerConformanceSession(
         Consumer.OnLogCallback = _logs.Enqueue;
 
         _listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _listeningTask = Consumer.ListeningAsync(TimeSpan.FromSeconds(2), _listeningCts.Token).AsTask();
+        _listeningTask = _runListenerOnThreadPool
+            ? Task.Run(
+                async () => await Consumer.ListeningAsync(_listeningTimeout, _listeningCts.Token),
+                CancellationToken.None
+            )
+            : Consumer.ListeningAsync(_listeningTimeout, _listeningCts.Token).AsTask();
 
         using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         readinessCts.CancelAfter(TimeSpan.FromSeconds(10));

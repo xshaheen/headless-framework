@@ -108,12 +108,19 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BusRoundTrip,
                     ConformanceSupport.NotApplicable(
                         "The current Kafka transport contract is queue/consumer-group based and has no fanout bus topology."
                     )
-                ),
+                )
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile.CreateDisabled("Pulsar"),
             ["Azure Service Bus"] = TransportConformanceProfile.CreateDisabled("Azure Service Bus"),
         };

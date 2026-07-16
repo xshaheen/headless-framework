@@ -137,6 +137,15 @@
           "Testcontainers": "4.13.0"
         }
       },
+      "Testcontainers.Kafka": {
+        "type": "Direct",
+        "requested": "[4.13.0, )",
+        "resolved": "4.13.0",
+        "contentHash": "4gONml9wnzCkVAROkumLwMYAo8H+eplAAnlcaRFps496oSkADcqe/lVIDgxHnSyWnUFUAdxwTHG9TbTT3vhdUg==",
+        "dependencies": {
+          "Testcontainers": "4.13.0"
+        }
+      },
       "Testcontainers.LocalStack": {
         "type": "Direct",
         "requested": "[4.13.0, )",

@@ -160,7 +160,13 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 lock (_lock)
                 {
-                    consumerResult = _consumerClient!.Consume(timeout);
+                    var consumerClient = _consumerClient;
+                    if (consumerClient is null)
+                    {
+                        return;
+                    }
+
+                    consumerResult = consumerClient.Consume(timeout);
                 }
 
                 if (!readyReported)

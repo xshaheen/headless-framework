@@ -19,6 +19,9 @@ public static class TestImages
     /// <summary>NATS image tag.</summary>
     public const string Nats = "nats:2-alpine";
 
+    /// <summary>Confluent Kafka image tag.</summary>
+    public const string Kafka = "confluentinc/cp-kafka:7.5.12";
+
     /// <summary>RabbitMQ image tag.</summary>
     public const string RabbitMq = "rabbitmq:3-alpine";
 
