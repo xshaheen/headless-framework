@@ -683,6 +683,11 @@ internal sealed class ConsumerRegister(
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
             MessagingTraceHandle traceHandle = default;
+
+            // Exactly one consume outcome (success or error) may be recorded per message: the trace handle is an
+            // immutable struct, so this flag is what keeps the subscriber-not-found path (error emitted inline,
+            // then routed to the poison store) from also emitting the success outcome on the same handle.
+            var consumeOutcomeRecorded = false;
             try
             {
                 if (_circuitBreakerStateManager is not null)
@@ -724,6 +729,7 @@ internal sealed class ConsumerRegister(
                         var ex = new SubscriberNotFoundException(error);
 
                         _TracingError(traceHandle, transportMessage, client.BrokerAddress, ex);
+                        consumeOutcomeRecorded = true;
 
                         throw ex;
                     }
@@ -855,7 +861,17 @@ internal sealed class ConsumerRegister(
 
                     _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
 
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    if (consumeOutcomeRecorded)
+                    {
+                        // The span + consume outcome were already finalized as an error (subscriber-not-found);
+                        // only the legacy EventCounter fires here so its counts match the pre-native bridge.
+                        MessageEventCounterSource.Log.WriteConsumeMetrics();
+                    }
+                    else
+                    {
+                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                        consumeOutcomeRecorded = true;
+                    }
                 }
                 else
                 {
@@ -876,6 +892,7 @@ internal sealed class ConsumerRegister(
                     mediumMessage.Origin = message;
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    consumeOutcomeRecorded = true;
 
                     await _dispatcher
                         .EnqueueToExecute(mediumMessage, executor, CancellationToken.None)
@@ -893,7 +910,16 @@ internal sealed class ConsumerRegister(
                 // Settlement is must-complete: never abandon a reject on host shutdown.
                 await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
-                _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
+                if (e is OperationCanceledException)
+                {
+                    // Benign cancellation (host shutdown) is not a consume failure: stop (export) the span
+                    // without an error status, matching the publish/subscriber-invoke emission sites.
+                    traceHandle.Activity?.Dispose();
+                }
+                else if (!consumeOutcomeRecorded)
+                {
+                    _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
+                }
             }
             finally
             {

@@ -394,13 +394,28 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             return;
         }
 
-        var parts = endpoint.Split(':');
-        if (parts.Length > 0)
+        // Manual first/second-colon slicing instead of Split: this runs per sampled span, and Split allocates
+        // a string[] plus a port substring for a value that is parsed straight into an int.
+        var separatorIndex = endpoint.IndexOf(':', StringComparison.Ordinal);
+
+        if (separatorIndex < 0)
         {
-            activity.SetTag("server.address", parts[0]);
+            activity.SetTag("server.address", endpoint);
+
+            return;
         }
 
-        if (parts.Length > 1 && int.TryParse(parts[1], CultureInfo.InvariantCulture, out var port))
+        activity.SetTag("server.address", endpoint[..separatorIndex]);
+
+        var portSpan = endpoint.AsSpan(separatorIndex + 1);
+        var portEnd = portSpan.IndexOf(':');
+
+        if (portEnd >= 0)
+        {
+            portSpan = portSpan[..portEnd];
+        }
+
+        if (int.TryParse(portSpan, CultureInfo.InvariantCulture, out var port))
         {
             activity.SetTag("server.port", port);
         }

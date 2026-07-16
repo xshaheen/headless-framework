@@ -180,6 +180,13 @@ internal sealed class OutboxMessageWriter(
                 await dispatcher.EnqueueToPublish(immediateMessage, cancellationToken).ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Benign cancellation (caller/shutdown) is not a persist failure: stop (export) the span without
+            // an error status, matching the publish/subscriber-invoke emission sites. Rethrow unchanged.
+            traceHandle.Activity?.Dispose();
+            throw;
+        }
         catch (Exception e)
         {
             _TracingError(traceHandle, e);

@@ -172,7 +172,18 @@ internal sealed class MessageSender : IMessageSender
 
         if (result.Succeeded)
         {
-            await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The transport send succeeded but the success-state write failed: stop (export) the span
+                // without an error status so it is never orphaned; the storage exception propagates unchanged
+                // and the retry machinery owns the failure classification.
+                traceHandle.Activity?.Dispose();
+                throw;
+            }
 
             _TracingAfter(traceHandle, transportMsg, brokerAddress);
 
