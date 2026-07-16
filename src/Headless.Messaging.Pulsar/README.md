@@ -43,6 +43,7 @@ options.UsePulsar(pulsar =>
 {
     pulsar.ServiceUrl = "pulsar://localhost:6650";
     pulsar.EnableClientLog = false;
+    pulsar.NegativeAckRedeliveryDelay = TimeSpan.FromMinutes(1);
     // pulsar.TlsOptions = new PulsarTlsOptions { ... }; // optional TLS settings
     // Tenant and namespace are encoded into the broker topic name (e.g.,
     // "persistent://public/default/orders.events"), not surfaced as options here.
@@ -55,6 +56,7 @@ options.UsePulsar(pulsar =>
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit acknowledges the message.
 - Reject sends a negative acknowledgment so Pulsar can redeliver under subscription policy.
+- `NegativeAckRedeliveryDelay` controls how soon rejected messages become eligible for redelivery.
 - Consumer startup subscribes the group name to the configured topics in the tenant and namespace.
 - Topic creation and retention still follow broker configuration for that tenant and namespace.
 - Shared subscriptions favor throughput over strict ordering. Single-threaded consumption gives the most stable order.

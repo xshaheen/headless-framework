@@ -38,6 +38,14 @@ public sealed class PulsarMessagingOptionsTests : TestBase
     }
 
     [Fact]
+    public void should_default_negative_ack_redelivery_delay_to_client_default()
+    {
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" };
+
+        options.NegativeAckRedeliveryDelay.Should().Be(TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
     public void should_support_tls_options()
     {
         // given

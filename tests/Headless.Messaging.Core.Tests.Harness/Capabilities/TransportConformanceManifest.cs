@@ -121,7 +121,16 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
-            ["Pulsar"] = TransportConformanceProfile.CreateDisabled("Pulsar"),
+            ["Pulsar"] = TransportConformanceProfile
+                .CreateDisabled("Pulsar")
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile.CreateDisabled("Azure Service Bus"),
         };
 

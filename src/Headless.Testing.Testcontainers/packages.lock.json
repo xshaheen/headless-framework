@@ -182,6 +182,15 @@
           "Testcontainers": "4.13.0"
         }
       },
+      "Testcontainers.Pulsar": {
+        "type": "Direct",
+        "requested": "[4.13.0, )",
+        "resolved": "4.13.0",
+        "contentHash": "EiGE2dwL06fZXjSKEVuBQ4ELA068UlS9cqKj/eti1pvFjZlY7LdNJ03VhkjCweQYCGDDhMW9Q2q1NhnEJeUh6w==",
+        "dependencies": {
+          "Testcontainers": "4.13.0"
+        }
+      },
       "Testcontainers.RabbitMq": {
         "type": "Direct",
         "requested": "[4.13.0, )",

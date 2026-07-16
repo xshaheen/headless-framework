@@ -20,9 +20,11 @@ internal sealed class PulsarConsumerClient(
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly Lock _receiveLock = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
+    private CancellationTokenSource _receiveCts = new();
     private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
 
@@ -48,6 +50,7 @@ internal sealed class PulsarConsumerClient(
             .SubscriptionName(GetSubscriptionName(groupName, intentType))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
+            .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay)
             .SubscribeAsync();
 
         try
@@ -104,15 +107,31 @@ internal sealed class PulsarConsumerClient(
         while (!cancellationToken.IsCancellationRequested)
         {
             Message<byte[]> consumerResult;
+            var receiveToken = CancellationToken.None;
             try
             {
                 await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-                consumerResult = await _consumerClient!.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+                lock (_receiveLock)
+                {
+                    receiveToken = _receiveCts.Token;
+                }
+
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, receiveToken);
+                consumerResult = await _consumerClient!.ReceiveAsync(linkedCts.Token).ConfigureAwait(false);
                 retryDelay = TimeSpan.FromMilliseconds(200);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
+            {
+                if (Volatile.Read(ref _disposed) != 0)
+                {
+                    break;
+                }
+
+                continue;
             }
             catch (Exception e)
             {
@@ -222,6 +241,10 @@ internal sealed class PulsarConsumerClient(
             {
                 // Defensive: ignore over-release
             }
+            catch (ObjectDisposedException)
+            {
+                // Shutdown in progress — semaphore already disposed.
+            }
         }
     }
 
@@ -246,24 +269,59 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        await _pauseGate.PauseAsync().ConfigureAwait(false);
+        if (Volatile.Read(ref _disposed) != 0 || !await _pauseGate.PauseAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        CancellationTokenSource receiveCts;
+        lock (_receiveLock)
+        {
+            receiveCts = _receiveCts;
+        }
+
+        await receiveCts.CancelAsync().ConfigureAwait(false);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused)
+        {
+            return;
+        }
+
+        CancellationTokenSource previousReceiveCts;
+        lock (_receiveLock)
+        {
+            previousReceiveCts = _receiveCts;
+            _receiveCts = new CancellationTokenSource();
+        }
+
+        previousReceiveCts.Dispose();
         await _pauseGate.ResumeAsync().ConfigureAwait(false);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _pauseGate.Release();
         _ready.TrySetCanceled();
+        CancellationTokenSource receiveCts;
+        lock (_receiveLock)
+        {
+            receiveCts = _receiveCts;
+        }
+
+        await receiveCts.CancelAsync().ConfigureAwait(false);
+        receiveCts.Dispose();
         _semaphore.Dispose();
-        return _consumerClient?.DisposeAsync() ?? ValueTask.CompletedTask;
+        if (_consumerClient is not null)
+        {
+            await _consumerClient.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

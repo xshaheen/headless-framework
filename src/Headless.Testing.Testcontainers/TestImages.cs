@@ -22,6 +22,9 @@ public static class TestImages
     /// <summary>Confluent Kafka image tag.</summary>
     public const string Kafka = "confluentinc/cp-kafka:7.5.12";
 
+    /// <summary>Apache Pulsar image tag.</summary>
+    public const string Pulsar = "apachepulsar/pulsar:3.0.9";
+
     /// <summary>RabbitMQ image tag.</summary>
     public const string RabbitMq = "rabbitmq:3-alpine";
 
