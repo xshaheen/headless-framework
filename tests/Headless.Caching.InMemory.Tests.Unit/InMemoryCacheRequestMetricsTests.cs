@@ -477,26 +477,23 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
 
         public long Count(string instrumentName, params (string Key, string Value)[] requiredTags)
         {
-            return Measurements(instrumentName, requiredTags).Sum(m => m.Value);
-        }
-
-        public IReadOnlyList<(string Name, long Value, KeyValuePair<string, object?>[] Tags)> Measurements(
-            string instrumentName,
-            params (string Key, string Value)[] requiredTags
-        )
-        {
-            return
-            [
-                .. _measurements.Where(m =>
-                    string.Equals(m.Name, instrumentName, StringComparison.Ordinal)
-                    && requiredTags.All(rt =>
+            return Measurements(instrumentName)
+                .Where(m =>
+                    requiredTags.All(rt =>
                         m.Tags.Any(t =>
                             string.Equals(t.Key, rt.Key, StringComparison.Ordinal)
                             && string.Equals(t.Value as string, rt.Value, StringComparison.Ordinal)
                         )
                     )
-                ),
-            ];
+                )
+                .Sum(m => m.Value);
+        }
+
+        public IReadOnlyList<(string Name, long Value, KeyValuePair<string, object?>[] Tags)> Measurements(
+            string instrumentName
+        )
+        {
+            return [.. _measurements.Where(m => string.Equals(m.Name, instrumentName, StringComparison.Ordinal))];
         }
 
         public void Dispose()
