@@ -92,11 +92,17 @@ public abstract class AuditedBaseEntity
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
+    public OwnedAuditDetails? Details { get; set; }
 }
 
 public sealed class InheritedAuditEntity : AuditedBaseEntity { }
 
 public sealed class ExcludedDerivedAuditEntity : AuditedBaseEntity { }
+
+public sealed class OwnedAuditDetails
+{
+    public string Value { get; set; } = "";
+}
 
 // ---------------------------------------------------------------------------
 // Test DbContext
@@ -147,6 +153,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
 
         modelBuilder.Entity<AuditedBaseEntity>().IsAudited();
         modelBuilder.Entity<AuditedBaseEntity>().Property(e => e.Id).ValueGeneratedNever();
+        modelBuilder.Entity<AuditedBaseEntity>().OwnsOne(e => e.Details);
         modelBuilder.Entity<InheritedAuditEntity>();
         modelBuilder.Entity<ExcludedDerivedAuditEntity>().ExcludeFromAudit();
 
@@ -206,7 +213,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         return new EfAuditChangeCapture(Options.Create(opts), logger);
     }
 
-    private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
+    private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, DbContext db)
     {
         var entries = db.ChangeTracker.Entries().Cast<object>();
         return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
@@ -590,6 +597,53 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
+    public async Task owned_entry_uses_derived_owner_policy_override()
+    {
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.ExcludedDerivedAuditEntities.Add(
+                new ExcludedDerivedAuditEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "excluded",
+                    Details = new OwnedAuditDetails { Value = "private" },
+                }
+            );
+
+            var result = _Capture(_CreateSut(), db);
+
+            result.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task owned_entry_entity_filter_uses_derived_owner_type()
+    {
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.InheritedAuditEntities.Add(
+                new InheritedAuditEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "filtered",
+                    Details = new OwnedAuditDetails { Value = "private" },
+                }
+            );
+
+            var result = _Capture(
+                _CreateSut(opts => opts.EntityFilter = type => type == typeof(InheritedAuditEntity)),
+                db
+            );
+
+            result.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task entity_filter_excludes_entity_type()
     {
         // given - filter excludes Order
@@ -896,14 +950,19 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task audit_log_entry_class_not_captured_in_all_entities_mode()
     {
-        // given - this context-level surrogate carries the same explicit exclusion policy
-        // that the storage entry configuration applies in its own model.
-        var (db, conn) = _CreateDb();
+        // given - use the real storage entity and its finalized model configuration.
+        var (db, conn) = AuditStoreDbContext.Create();
         await using (conn)
         await using (db)
         {
-            var log = new InternalLog { Id = Guid.NewGuid(), Message = "audit log entry" };
-            db.InternalLogs.Add(log);
+            db.Add(
+                new AuditLogEntry
+                {
+                    Id = 1,
+                    CreatedAt = _Timestamp.UtcDateTime,
+                    Action = "audit.created",
+                }
+            );
 
             var sut = _CreateSut(opts => opts.AuditByDefault = true);
 

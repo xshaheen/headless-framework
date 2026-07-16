@@ -30,8 +30,3 @@ public static class AuditLogModelBuilderExtensions
         return modelBuilder;
     }
 }
-
-internal static class AuditLogStorageModelAnnotations
-{
-    internal const string IsConfigured = "Headless:AuditLog:Storage:IsConfigured";
-}

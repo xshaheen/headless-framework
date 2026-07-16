@@ -6,6 +6,7 @@ using Headless.AuditLog;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -133,7 +134,7 @@ internal sealed class EfAuditChangeCapture(
 
     private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
     {
-        var policyEntityType = _GetPolicyEntityType(entry.Metadata);
+        var policyEntityType = _GetPolicyEntityType(entry);
         var policy = _FindEntityAuditPolicy(policyEntityType);
 
         if (!(policy ?? opts.AuditByDefault))
@@ -144,7 +145,38 @@ internal sealed class EfAuditChangeCapture(
         return !_ShouldExcludeEntity(policyEntityType.ClrType, opts);
     }
 
-    private static IEntityType _GetPolicyEntityType(IEntityType entityType)
+    private static IEntityType _GetPolicyEntityType(EntityEntry entry)
+    {
+        if (!entry.Metadata.IsOwned())
+        {
+            return entry.Metadata;
+        }
+
+#pragma warning disable EF1001 // Internal EF Core API usage.
+        // EF metadata points to the declared base principal; StateManager is required to recover
+        // the tracked runtime principal so owned entries use the same derived policy and filter as their root.
+        var stateManager = entry.Context.GetDependencies().StateManager;
+        var internalEntry = stateManager.TryGetEntry(entry.Entity, throwOnNonUniqueness: false);
+
+        while (entry.Metadata.IsOwned())
+        {
+            var ownership = entry.Metadata.FindOwnership()!;
+            var principal = internalEntry is null ? null : stateManager.FindPrincipal(internalEntry, ownership);
+
+            if (principal is null)
+            {
+                return _GetPolicyEntityTypeFromMetadata(entry.Metadata);
+            }
+
+            entry = principal.ToEntityEntry();
+            internalEntry = principal;
+        }
+#pragma warning restore EF1001
+
+        return entry.Metadata;
+    }
+
+    private static IEntityType _GetPolicyEntityTypeFromMetadata(IEntityType entityType)
     {
         while (entityType.IsOwned())
         {
