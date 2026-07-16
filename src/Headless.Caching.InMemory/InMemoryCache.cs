@@ -960,55 +960,19 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
+        var result = _GetCore<T>(key);
 
-        if (!_memory.TryGetValue(key, out var existingEntry))
-        {
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGet,
+            result.HasValue ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1
+        );
 
-        // Fetch the clock once for the whole hit path (expiry, logical expiry, sliding re-arm) instead of three
-        // virtual TimeProvider dispatches. Misses above never reach here, so a miss still pays zero clock reads.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-
-        if (existingEntry.IsExpiredAt(now))
-        {
-            _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        if (existingEntry.IsLogicallyExpiredAt(now))
-        {
-            if (existingEntry.SlidingExpiration.HasValue)
-            {
-                _TryRemoveExpiredEntry(key, existingEntry);
-            }
-
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
-        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
-        if (_IsTagInvalidated(existingEntry))
-        {
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        try
-        {
-            var value = existingEntry.GetValue<T>();
-            _TryRearmSlidingEntry(key, existingEntry, now);
-
-            return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
-        }
-        catch (Exception ex) when (!_shouldThrowOnSerializationError)
-        {
-            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
+        return new ValueTask<CacheValue<T>>(result);
     }
 
-    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     )
@@ -1018,13 +982,96 @@ public sealed class InMemoryCache
         cancellationToken.ThrowIfCancellationRequested();
 
         var map = new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
+        long hits = 0;
+        long misses = 0;
 
         foreach (var key in cacheKeys)
         {
-            map[key] = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var value = _GetCore<T>(key);
+            map[key] = value;
+
+            if (value.HasValue)
+            {
+                hits++;
+            }
+            else
+            {
+                misses++;
+            }
         }
 
-        return map;
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeHit,
+            CachingMetrics.TierL1,
+            hits
+        );
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1,
+            misses
+        );
+
+        return new ValueTask<IDictionary<string, CacheValue<T>>>(map);
+    }
+
+    // Shared, uninstrumented read core for the single-key hit path (expiry, logical expiry, Family-2 tag/clear
+    // invalidation, sliding re-arm). GetAsync and GetAllAsync both funnel through this so GetAllAsync can record
+    // one aggregated hit/miss pair (operation get_all) instead of N per-key "get" records.
+    private CacheValue<T> _GetCore<T>(string key)
+    {
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return CacheValue<T>.NoValue;
+        }
+
+        // Fetch the clock once for the whole hit path (expiry, logical expiry, sliding re-arm) instead of three
+        // virtual TimeProvider dispatches. Misses above never reach here, so a miss still pays zero clock reads.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (existingEntry.IsExpiredAt(now))
+        {
+            _TryRemoveExpiredEntry(key, existingEntry);
+            return CacheValue<T>.NoValue;
+        }
+
+        if (existingEntry.IsLogicallyExpiredAt(now))
+        {
+            if (existingEntry.SlidingExpiration.HasValue)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
+            return CacheValue<T>.NoValue;
+        }
+
+        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
+        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
+        if (_IsTagInvalidated(existingEntry))
+        {
+            return CacheValue<T>.NoValue;
+        }
+
+        try
+        {
+            var value = existingEntry.GetValue<T>();
+            _TryRearmSlidingEntry(key, existingEntry, now);
+
+            return new CacheValue<T>(value, hasValue: true);
+        }
+        catch (Exception ex) when (!_shouldThrowOnSerializationError)
+        {
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
+            return CacheValue<T>.NoValue;
+        }
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
@@ -1054,19 +1101,30 @@ public sealed class InMemoryCache
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
+        bool exists;
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(result: false);
+            exists = false;
+        }
+        else
+        {
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+            exists =
+                !existingEntry.IsExpiredAt(now)
+                && !existingEntry.IsLogicallyExpiredAt(now)
+                && !_IsTagInvalidated(existingEntry);
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-
-        return new ValueTask<bool>(
-            !existingEntry.IsExpiredAt(now)
-                && !existingEntry.IsLogicallyExpiredAt(now)
-                && !_IsTagInvalidated(existingEntry)
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationExists,
+            exists ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1
         );
+
+        return new ValueTask<bool>(exists);
     }
 
     /// <summary>
@@ -1366,6 +1424,7 @@ public sealed class InMemoryCache
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
         CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictRemoved, CachingMetrics.TierL1);
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1);
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
@@ -1477,6 +1536,8 @@ public sealed class InMemoryCache
             }
         }
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1, removed);
+
         return new ValueTask<int>(removed);
     }
 
@@ -1501,6 +1562,8 @@ public sealed class InMemoryCache
             }
         }
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL1, removed);
+
         return new ValueTask<int>(removed);
     }
 
@@ -1515,6 +1578,10 @@ public sealed class InMemoryCache
         // entry's CreatedAt against this marker; physically present reserves survive for fail-safe serving.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _tagMarkers.AddOrUpdate(tag, now, (_, existing) => now > existing ? now : existing);
+
+        // Member count is not cheaply known (no enumeration by design), so record a single logical remove-by-tag
+        // write rather than trying to count affected entries.
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByTag, CachingMetrics.TierL1);
 
         return ValueTask.CompletedTask;
     }

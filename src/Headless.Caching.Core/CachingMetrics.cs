@@ -159,9 +159,9 @@ internal static class CachingMetrics
 
     // --- Record helpers ---------------------------------------------------------------------------------------
 
-    internal static void RecordRequest(string cacheName, string operation, string outcome, string tier)
+    internal static void RecordRequest(string cacheName, string operation, string outcome, string tier, long count = 1)
     {
-        if (!_Requests.Enabled)
+        if (count <= 0 || !_Requests.Enabled)
         {
             return;
         }
@@ -174,12 +174,12 @@ internal static class CachingMetrics
             { TagTier, tier },
         };
 
-        _Requests.Add(1, tags);
+        _Requests.Add(count, tags);
     }
 
-    internal static void RecordWrite(string cacheName, string operation, string tier)
+    internal static void RecordWrite(string cacheName, string operation, string tier, long count = 1)
     {
-        if (!_Writes.Enabled)
+        if (count <= 0 || !_Writes.Enabled)
         {
             return;
         }
@@ -191,7 +191,7 @@ internal static class CachingMetrics
             { TagTier, tier },
         };
 
-        _Writes.Add(1, tags);
+        _Writes.Add(count, tags);
     }
 
     internal static void RecordEviction(string cacheName, string evictReason, string tier, long count = 1)

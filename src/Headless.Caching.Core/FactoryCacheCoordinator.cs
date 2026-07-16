@@ -131,10 +131,10 @@ public sealed partial class FactoryCacheCoordinator(
         // Zero-overhead when unobserved: no listener means no span and no outcome recording.
         if (!CachingDiagnostics.IsEnabled)
         {
-            var result = await _RunGetOrAddAsync(store, key, factory, options, activity: null, cancellationToken)
+            var (value, _) = await _RunGetOrAddAsync(store, key, factory, options, activity: null, cancellationToken)
                 .ConfigureAwait(false);
 
-            return result.Value;
+            return value;
         }
 
         using var activity = _StartGetOrAddActivity(key);
