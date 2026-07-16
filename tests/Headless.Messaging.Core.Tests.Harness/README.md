@@ -17,7 +17,7 @@ This harness enables consistent integration testing across all messaging provide
 
 ## Capability Flags
 
-Each base class uses capability flags to skip tests that don't apply to a specific provider.
+Each base class uses explicit capability flags to skip tests that don't apply to a specific provider. All messaging capability flags default to `false`; provider leaves must opt in so new tests cannot silently advertise unproven coverage.
 
 ### TransportCapabilities
 
@@ -28,8 +28,9 @@ protected override TransportCapabilities Capabilities => new()
     SupportsDeadLetter = true,    // Dead letter queue support
     SupportsPriority = false,     // Message priority levels
     SupportsDelayedDelivery = false, // Scheduled/delayed messages
-    SupportsBatchSend = true,     // Batch message publishing (default: true)
-    SupportsHeaders = true,       // Custom message headers (default: true)
+    SupportsBusTransport = true,  // Publish/fanout intent
+    SupportsQueueTransport = true, // Queue/competing-consumer intent
+    SupportsHeaders = true,       // Producer accepts custom message headers
 };
 ```
 
@@ -38,12 +39,20 @@ protected override TransportCapabilities Capabilities => new()
 ```csharp
 protected override ConsumerClientCapabilities Capabilities => new()
 {
-    SupportsFetchTopics = true,        // Can fetch topic metadata (default: true)
-    SupportsConcurrentProcessing = true, // Concurrent message handling (default: true)
-    SupportsReject = true,             // Reject/nack messages (default: true)
-    SupportsGracefulShutdown = true,   // Clean shutdown support (default: true)
+    SupportsFetchTopics = true,        // Can fetch topic metadata
+    SupportsConcurrentProcessing = true, // Concurrent message handling
+    SupportsReject = true,             // Exposes reject/nack wiring
+    SupportsGracefulShutdown = true,   // Clean shutdown support
 };
 ```
+
+These flags describe producer or client API behavior only. Broker-observed round trip, header fidelity, commit, reject/redelivery, and fault behavior are tracked separately by `TransportConformanceManifest`. Its three states are:
+
+- `Supported`: an executable broker-backed assertion exists;
+- `Unsupported`: the gap has a rationale and linked issue;
+- `NotApplicable`: the provider topology or protocol makes the scenario inapplicable, with a rationale.
+
+An enabled real-broker leaf must support every mandatory baseline cell. Fabricated callback values and producer-side message inspection are not settlement or broker-delivery evidence.
 
 ### DataStorageCapabilities
 
@@ -141,7 +150,8 @@ public sealed class <Provider>TransportTests(<Provider>Fixture fixture) : Transp
     public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
 
     [Fact]
-    public override Task should_include_headers_in_sent_message() => base.should_include_headers_in_sent_message();
+    public override Task should_accept_message_with_application_headers() =>
+        base.should_accept_message_with_application_headers();
 
     // ... expose all relevant base tests
 }

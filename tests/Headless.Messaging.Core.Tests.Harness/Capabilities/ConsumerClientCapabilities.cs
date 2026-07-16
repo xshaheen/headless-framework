@@ -9,14 +9,14 @@ public sealed class ConsumerClientCapabilities
     public static ConsumerClientCapabilities Default { get; } = new();
 
     /// <summary>Whether the consumer supports fetching topic metadata.</summary>
-    public bool SupportsFetchTopics { get; init; } = true;
+    public bool SupportsFetchTopics { get; init; }
 
     /// <summary>Whether the consumer supports concurrent message processing.</summary>
-    public bool SupportsConcurrentProcessing { get; init; } = true;
+    public bool SupportsConcurrentProcessing { get; init; }
 
     /// <summary>Whether the consumer supports message rejection with requeue.</summary>
-    public bool SupportsReject { get; init; } = true;
+    public bool SupportsReject { get; init; }
 
     /// <summary>Whether the consumer supports graceful shutdown.</summary>
-    public bool SupportsGracefulShutdown { get; init; } = true;
+    public bool SupportsGracefulShutdown { get; init; }
 }

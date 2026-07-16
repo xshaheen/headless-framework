@@ -94,8 +94,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
     }
 
-    public virtual async Task should_commit_message_successfully()
+    public virtual async Task should_delegate_commit_callback_value()
     {
+        // Wiring-only test. Broker-observed commit semantics require a real callback value and live in conformance tests.
         // given
         await using var consumer = await GetConsumerClientAsync();
         var mockSender = new object();
@@ -107,8 +108,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
-    public virtual async Task should_reject_message_successfully()
+    public virtual async Task should_delegate_reject_callback_value()
     {
+        // Wiring-only test. Broker-observed reject semantics require a real callback value and live in conformance tests.
         // Skip if consumer doesn't support rejection
         if (!Capabilities.SupportsReject)
         {

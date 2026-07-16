@@ -27,7 +27,8 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
             SupportsDeadLetter = true,
             SupportsPriority = false,
             SupportsDelayedDelivery = true,
-            SupportsBatchSend = true,
+            SupportsBusTransport = true,
+            SupportsQueueTransport = false,
             SupportsHeaders = true,
         };
 
@@ -98,15 +99,15 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     }
 
     [Fact]
-    public override Task should_include_headers_in_sent_message()
+    public override Task should_accept_message_with_application_headers()
     {
-        return base.should_include_headers_in_sent_message();
+        return base.should_accept_message_with_application_headers();
     }
 
     [Fact]
-    public override Task should_send_batch_of_messages()
+    public override Task should_send_multiple_messages_individually()
     {
-        return base.should_send_batch_of_messages();
+        return base.should_send_multiple_messages_individually();
     }
 
 #pragma warning disable xUnit1004 // AWS SNS rejects empty message bodies; this inherited contract is not applicable.
@@ -136,15 +137,15 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     }
 
     [Fact]
-    public override Task should_include_message_id_in_headers()
+    public override Task should_accept_message_with_id()
     {
-        return base.should_include_message_id_in_headers();
+        return base.should_accept_message_with_id();
     }
 
     [Fact]
-    public override Task should_include_message_name_in_headers()
+    public override Task should_accept_message_with_name()
     {
-        return base.should_include_message_name_in_headers();
+        return base.should_accept_message_with_name();
     }
 
     [Fact]
