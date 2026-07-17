@@ -509,8 +509,9 @@ public interface IDataStorage
 /// <para>
 /// Implementations must select no more than the configured scheduler batch size, transition each
 /// winner to <see cref="StatusName.Queued"/>, and stamp an ownership lease from the same authoritative
-/// store clock used to test lease expiry. The returned messages must reflect the committed durable
-/// <c>LockedUntil</c> and <c>Owner</c> values.
+/// store clock used to test lease expiry. For a future schedule, the lease must extend from the later
+/// of that clock or the message expiration time so it remains valid until the first dispatch attempt.
+/// The returned messages must reflect the committed durable <c>LockedUntil</c> and <c>Owner</c> values.
 /// </para>
 /// <para>
 /// Providers that do not implement this capability continue through

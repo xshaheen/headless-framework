@@ -67,6 +67,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     /// <inheritdoc />
+    protected override bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = dispatchTimeout;
+        return true;
+    }
+
+    /// <inheritdoc />
     protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -323,6 +331,18 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_claim_delayed_messages_atomically_when_capability_supported()
     {
         return base.should_claim_delayed_messages_atomically_when_capability_supported();
+    }
+
+    [Fact]
+    public override Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        return base.should_keep_early_delayed_claim_lease_alive_until_dispatch();
+    }
+
+    [Fact]
+    public override Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        return base.should_return_disjoint_winners_to_concurrent_delayed_claimers();
     }
 
     [Fact]

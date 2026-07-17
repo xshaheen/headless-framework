@@ -928,7 +928,8 @@ internal sealed class PostgreSqlDataStorage(
             )
             UPDATE {_publishedTable} AS message
             SET "StatusName"=@QueuedStatusName,
-                "LockedUntil"=claim_clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "LockedUntil"=GREATEST(claim_clock.now, message."ExpiresAt")
+                    + (@LeaseSeconds * INTERVAL '1 second'),
                 "Owner"=@Owner
             FROM candidates, claim_clock
             WHERE message."Id"=candidates."Id"

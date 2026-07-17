@@ -66,6 +66,30 @@ public sealed class MessageDelayedProcessorTests : TestBase
     }
 
     [Fact]
+    public async Task should_drain_committed_claim_winners_when_cancellation_arrives_after_commit()
+    {
+        var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();
+        var claimStorage = (IDelayedMessageClaimStorage)storage;
+        var dispatcher = Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>();
+        var committedDispatcher = (ICommittedDelayedMessageDispatcher)dispatcher;
+        var messages = new[] { _CreateDelayedMessage(), _CreateDelayedMessage() };
+        var cancellationToken = new CancellationToken(canceled: true);
+        claimStorage
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>(messages));
+        using var context = _CreateContext(storage);
+        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellationToken);
+        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+
+        foreach (var message in messages)
+        {
+            committedDispatcher.Received(1).EnqueueCommittedDelayedMessage(message);
+        }
+    }
+
+    [Fact]
     public async Task should_preserve_callback_path_when_custom_dispatcher_lacks_committed_enqueue_capability()
     {
         var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();

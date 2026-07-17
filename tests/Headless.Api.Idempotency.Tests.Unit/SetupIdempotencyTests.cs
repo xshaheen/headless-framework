@@ -54,7 +54,7 @@ public sealed class SetupIdempotencyTests
     }
 
     [Fact]
-    public void should_default_request_body_buffer_threshold_to_64_kib()
+    public void should_default_request_body_buffer_threshold_to_1_mib_plus_1_byte()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -62,7 +62,7 @@ public sealed class SetupIdempotencyTests
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
 
-        resolved.RequestBodyBufferThreshold.Should().Be(64 * 1024);
+        resolved.RequestBodyBufferThreshold.Should().Be((1 * 1024 * 1024) + 1);
         resolved.MaxBodySizeForHashing.Should().Be(1024 * 1024);
     }
 

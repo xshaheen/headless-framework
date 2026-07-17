@@ -26,6 +26,8 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
 
+Storage providers that implement `IDelayedMessageClaimStorage` must stamp each winner's `LockedUntil` as `max(authoritative store now, ExpiresAt) + DispatchTimeout`, using the same store-clock snapshot that tests lease eligibility, and return only after the claim commits. Extending a future message's lease from its schedule time keeps the ownership grant alive until the first dispatch attempt.
+
 Consumer providers implement trailing optional cancellation tokens on both `IConsumerClientFactory.CreateAsync(...)` contract shapes and on `IConsumerClient.FetchMessageNamesAsync(...)` / `SubscribeAsync(...)`. Core passes the host-stopping token through metadata startup and a linked group token through worker creation and subscription. Providers preserve `OperationCanceledException` so shutdown is not reported as a broker connection failure.
 
 ## Installation

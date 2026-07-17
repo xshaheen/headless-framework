@@ -53,6 +53,12 @@ public abstract class DataStorageTestsBase : TestBase
         return null;
     }
 
+    /// <summary>Overrides the dispatch timeout when the provider exposes mutable test options.</summary>
+    protected virtual bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        return false;
+    }
+
     /// <summary>Reads the provider's current database UTC time for relational clock conformance.</summary>
     protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
     {
@@ -757,6 +763,92 @@ public abstract class DataStorageTestsBase : TestBase
         (await claimStorage.ClaimDelayedMessagesAsync(AbortToken))
             .Should()
             .BeEmpty("the live claim lease must fence an immediate re-poll");
+    }
+
+    public virtual async Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        var dispatchTimeout = TimeSpan.FromSeconds(1);
+        if (!TrySetDispatchTimeout(dispatchTimeout))
+        {
+            Assert.Skip("Storage does not expose mutable dispatch-timeout options");
+            return;
+        }
+
+        var expiresAt = TimeProvider.GetUtcNow().AddSeconds(30);
+        var stored = await storage.StoreMessageAsync(
+            "delayed-claim-short-timeout",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = expiresAt,
+            },
+            cancellationToken: AbortToken
+        );
+        stored.ExpiresAt = expiresAt;
+        (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+
+        var winner = claimed.Should().ContainSingle().Subject;
+        winner.StorageId.Should().Be(stored.StorageId);
+        winner.LockedUntil.Should().NotBeNull();
+        winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout));
+    }
+
+    public virtual async Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        const int messageCount = 8;
+        var now = TimeProvider.GetUtcNow();
+        var storageIds = new HashSet<Guid>();
+        for (var index = 0; index < messageCount; index++)
+        {
+            var expiresAt = now.AddSeconds(10 + index);
+            var stored = await storage.StoreMessageAsync(
+                $"concurrent-delayed-claim-{index}",
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = CreateMessage(),
+                    Content = string.Empty,
+                    IntentType = IntentType.Bus,
+                    ExpiresAt = expiresAt,
+                },
+                cancellationToken: AbortToken
+            );
+            stored.ExpiresAt = expiresAt;
+            (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+                .Should()
+                .BeTrue();
+            storageIds.Add(stored.StorageId);
+        }
+
+        var claims = await Task.WhenAll(
+            claimStorage.ClaimDelayedMessagesAsync(AbortToken).AsTask(),
+            claimStorage.ClaimDelayedMessagesAsync(AbortToken).AsTask()
+        );
+        var claimedIds = claims.SelectMany(messages => messages).Select(message => message.StorageId).ToArray();
+
+        claimedIds.Should().HaveCount(messageCount).And.OnlyHaveUniqueItems();
+        claimedIds.Should().BeEquivalentTo(storageIds);
     }
 
     public virtual async Task should_store_message_with_transaction()

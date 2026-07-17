@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -466,6 +468,58 @@ public sealed class JobsTaskSchedulerTests : TestBase
         scheduler.ActiveWorkers.Should().Be(0);
     }
 
+    [Fact]
+    public async Task infrastructure_fault_restart_is_logged_and_rate_limited()
+    {
+        var timeProvider = new ToggleThrowingTimeProvider { ThrowOnGetUtcNow = true };
+        var logger = Substitute.For<ILogger<JobsTaskScheduler>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var faultTimestamps = new ConcurrentQueue<long>();
+        logger
+            .When(log =>
+                log.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(call =>
+            {
+                if (call.Arg<EventId>().Id == 3300)
+                {
+                    faultTimestamps.Enqueue(Stopwatch.GetTimestamp());
+                }
+            });
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 1,
+            timeProvider: timeProvider,
+            logger: logger
+        );
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                completed.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        await _WaitUntilAsync(() => faultTimestamps.Count >= 2, TimeSpan.FromSeconds(10));
+        var timestamps = faultTimestamps.ToArray();
+        Stopwatch
+            .GetElapsedTime(timestamps[0], timestamps[1])
+            .Should()
+            .BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(80));
+
+        timeProvider.ThrowOnGetUtcNow = false;
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
     private static void _SetMaxObserved(ref int target, int value)
     {
         int current;
@@ -519,6 +573,27 @@ public sealed class JobsTaskSchedulerTests : TestBase
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
+        }
+    }
+
+    private sealed class ToggleThrowingTimeProvider : TimeProvider
+    {
+        private int _throwOnGetUtcNow;
+
+        public bool ThrowOnGetUtcNow
+        {
+            get => Volatile.Read(ref _throwOnGetUtcNow) != 0;
+            set => Volatile.Write(ref _throwOnGetUtcNow, value ? 1 : 0);
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (ThrowOnGetUtcNow)
+            {
+                throw new InvalidOperationException("Expected test clock failure.");
+            }
+
+            return base.GetUtcNow();
         }
     }
 }

@@ -3,6 +3,8 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Jobs.Enums;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Jobs.JobsThreadPool;
 
@@ -15,6 +17,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeSpan _idleWorkerTimeout;
     private readonly int _maxCapacityPerWorker;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<JobsTaskScheduler> _logger;
+    private static readonly TimeSpan _WorkerFaultRestartDelay = TimeSpan.FromMilliseconds(100);
 
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
@@ -39,7 +43,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         int maxConcurrency,
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ILogger<JobsTaskScheduler>? logger = null
     )
     {
         _maxConcurrency = Argument.IsPositive(maxConcurrency);
@@ -47,6 +52,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _logger = logger ?? NullLogger<JobsTaskScheduler>.Instance;
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
@@ -228,10 +234,18 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
         // ERP022/RCS1075: A scheduler fault must retire this slot without becoming unobserved.
 #pragma warning disable ERP022, RCS1075
-        catch (Exception)
+        catch (Exception ex)
         {
-            // User work is isolated in _ExecuteWorkAsync. This guard observes infrastructure faults so a slot can
-            // retire and queued work can be picked up by another worker.
+            _logger.WorkerLoopFaulted(ex, workerId);
+
+            try
+            {
+                await Task.Delay(_WorkerFaultRestartDelay, _shutdownCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
+            {
+                // Shutdown cancels the fixed restart backoff; the finally block retires the slot without restarting.
+            }
         }
 #pragma warning restore ERP022, RCS1075
         finally
@@ -261,7 +275,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         var localQueue = _workerQueues[workerId];
         var consecutiveStealFailures = 0;
 
-        while (!_shutdownCts.Token.IsCancellationRequested && !_disposed)
+        while (!_disposed && !_shutdownCts.Token.IsCancellationRequested)
         {
             var foundWork = false;
 
@@ -682,4 +696,15 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             };
         }
     }
+}
+
+internal static partial class JobsTaskSchedulerLog
+{
+    [LoggerMessage(
+        EventId = 3300,
+        EventName = "JobsWorkerLoopFaulted",
+        Level = LogLevel.Error,
+        Message = "Jobs worker slot {WorkerId} faulted outside user work; restart is rate-limited."
+    )]
+    public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
 }

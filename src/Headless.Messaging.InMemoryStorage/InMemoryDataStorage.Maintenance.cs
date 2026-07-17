@@ -182,7 +182,6 @@ internal sealed partial class InMemoryDataStorage
         var now = timeProvider.GetUtcNow();
         var delayedBefore = now.AddMinutes(2);
         var queuedBefore = now.AddMinutes(-1);
-        var leaseDeadline = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var owner = nodeMembership.GetOwnerTag();
         var version = messagingOptions.Value.Version;
         var batchSize = messagingOptions.Value.SchedulerBatchSize;
@@ -202,7 +201,16 @@ internal sealed partial class InMemoryDataStorage
 
         foreach (var candidate in candidates)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (claimed.Count == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                break;
+            }
+
             if (claimed.Count == batchSize)
             {
                 break;
@@ -223,8 +231,9 @@ internal sealed partial class InMemoryDataStorage
                     continue;
                 }
 
+                var leaseStart = candidate.ExpiresAt > now ? candidate.ExpiresAt.Value : now;
                 candidate.StatusName = StatusName.Queued;
-                candidate.LockedUntil = leaseDeadline;
+                candidate.LockedUntil = leaseStart.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
                 candidate.Owner = owner;
                 claimed.Add(_ToSnapshot(candidate));
             }

@@ -73,10 +73,10 @@ public sealed class IdempotencyOptions
 
     /// <summary>
     /// Number of request-body bytes retained in memory before buffering spills to a temporary
-    /// file. Defaults to 64 KiB. This controls memory use only; <see cref="MaxBodySizeForHashing"/>
+    /// file. Defaults to 1 MiB + 1 byte. This controls memory use only; <see cref="MaxBodySizeForHashing"/>
     /// remains the independent fingerprinting limit.
     /// </summary>
-    public int RequestBodyBufferThreshold { get; set; } = 64 * 1024;
+    public int RequestBodyBufferThreshold { get; set; } = (1 * 1024 * 1024) + 1;
 
     /// <summary>How requests whose body exceeds <see cref="MaxBodySizeForHashing"/> are handled.</summary>
     public OversizeBehavior OversizeBehavior { get; set; } = OversizeBehavior.Reject;

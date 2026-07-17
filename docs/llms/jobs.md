@@ -367,18 +367,18 @@ None.
 
 ## Headless.Jobs.Core
 
-Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, custom thread pool, and the `AddHeadlessJobs` DI extension.
+Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, bounded task scheduler, and the `AddHeadlessJobs` DI extension.
 
 ### Problem Solved
 
-Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and an in-process thread pool without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
+Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and bounded in-process execution without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
 
 ### Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
+- **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. Only `LongRunning` work receives a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
@@ -518,7 +518,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
-- Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
+- Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
 
 ---

@@ -41,7 +41,6 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
 
                 foreach (var message in messages)
                 {
-                    context.CancellationToken.ThrowIfCancellationRequested();
                     committedDispatcher.EnqueueCommittedDelayedMessage(message);
                 }
 

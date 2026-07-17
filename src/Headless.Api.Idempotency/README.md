@@ -34,7 +34,7 @@ The middleware uses lock-before-insert ordering under `WaitAndReplay`: the winne
 
 Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 
-`RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The 64 KiB default was selected from 30/64/128 KiB candidates at concurrency 1/32/128: it stayed within the 10% latency tolerance versus the previous approximately 1 MiB threshold while bounding per-request in-memory buffering. Tune it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
+`RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The default remains 1 MiB + 1 byte: corrected non-seekable request-body benchmarks showed that 30/64/128 KiB thresholds reduced managed allocations but missed the latency gate at concurrency 1/32/128. Lower it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
 
 ## Installation
 
@@ -88,7 +88,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. Validator-capped at 1 minute. |
 | `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must be >= `InFlightLockTimeout`. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
-| `RequestBodyBufferThreshold` | 64 KiB | Request bytes retained in memory before buffering spills to a temporary file. Capped at 64 MiB + 1 byte. |
+| `RequestBodyBufferThreshold` | 1 MiB + 1 byte | Request bytes retained in memory before buffering spills to a temporary file. Capped at 64 MiB + 1 byte. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
 | `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for pre-handler cache failures; post-handler finalize failures remove the marker and preserve the handler response. `Throw` propagates the exception as 5xx. |
 | `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through. Set `false` for webhook receivers / OAuth callbacks. |

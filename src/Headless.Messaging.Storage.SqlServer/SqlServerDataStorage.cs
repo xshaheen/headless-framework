@@ -978,7 +978,15 @@ internal sealed class SqlServerDataStorage(
             )
             UPDATE target
             SET StatusName=@QueuedStatusName,
-                LockedUntil=DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
+                LockedUntil=DATEADD(
+                    nanosecond,
+                    @LeaseNanoseconds,
+                    DATEADD(
+                        second,
+                        @LeaseWholeSeconds,
+                        CASE WHEN target.ExpiresAt > @ClaimNow THEN target.ExpiresAt ELSE @ClaimNow END
+                    )
+                ),
                 Owner=@Owner
             OUTPUT inserted.Id,inserted.Content,inserted.IntentType,inserted.Retries,
                    inserted.InlineAttempts,inserted.Added,inserted.ExpiresAt,
