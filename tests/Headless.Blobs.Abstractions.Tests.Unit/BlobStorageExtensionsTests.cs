@@ -498,7 +498,147 @@ public sealed class BlobStorageExtensionsTests : TestBase
         result.Value.Should().Be(123);
     }
 
+    [Fact]
+    public async Task should_stream_reflection_json_from_non_seekable_blob_and_dispose_download()
+    {
+        var location = new BlobLocation("bucket", "streamed.json");
+        var stream = new TrackingNonSeekableStream("""{"Name":"Streamed","Value":17}"""u8.ToArray());
+        var downloadResult = new BlobDownloadResult(stream, "streamed.json");
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+
+        var result = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
+
+        result.Should().BeEquivalentTo(new TestData { Name = "Streamed", Value = 17 });
+        stream.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_stream_source_generated_json_and_dispose_download()
+    {
+        var location = new BlobLocation("bucket", "generated.json");
+        var stream = new TrackingNonSeekableStream("""{"Name":"Generated","Value":23}"""u8.ToArray());
+        var downloadResult = new BlobDownloadResult(stream, "generated.json");
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+
+        var result = await _storage.GetBlobContentAsync(location, TestDataJsonContext.Default.TestData, AbortToken);
+
+        result.Should().BeEquivalentTo(new TestData { Name = "Generated", Value = 23 });
+        stream.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_apply_custom_options_while_streaming_json()
+    {
+        var location = new BlobLocation("bucket", "custom.json");
+        var stream = new TrackingNonSeekableStream("""{"name":"Custom","value":31}"""u8.ToArray());
+        var downloadResult = new BlobDownloadResult(stream, "custom.json");
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        var result = await _storage.GetBlobContentAsync<TestData>(location, options, AbortToken);
+
+        result.Should().BeEquivalentTo(new TestData { Name = "Custom", Value = 31 });
+        stream.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_dispose_download_when_streamed_json_is_malformed()
+    {
+        var location = new BlobLocation("bucket", "malformed.json");
+        var stream = new TrackingNonSeekableStream("{"u8.ToArray());
+        var downloadResult = new BlobDownloadResult(stream, "malformed.json");
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+
+        Func<Task> read = () =>
+            _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken).AsTask();
+
+        await read.Should().ThrowAsync<JsonException>();
+        stream.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation_and_dispose_download_while_streaming_json()
+    {
+        var location = new BlobLocation("bucket", "cancelled.json");
+        var stream = new CancellationOnlyStream();
+        var downloadResult = new BlobDownloadResult(stream, "cancelled.json");
+        using var cancellationSource = new CancellationTokenSource();
+        _storage.OpenReadStreamAsync(location, cancellationSource.Token).Returns(downloadResult);
+
+        var readTask = _storage
+            .GetBlobContentAsync<TestData>(location, cancellationToken: cancellationSource.Token)
+            .AsTask();
+        Func<Task> read = () => readTask;
+        await cancellationSource.CancelAsync();
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+        stream.IsDisposed.Should().BeTrue();
+    }
+
     #endregion
+}
+
+file sealed class TrackingNonSeekableStream(byte[] bytes) : MemoryStream(bytes)
+{
+    public bool IsDisposed { get; private set; }
+
+    public override bool CanSeek => false;
+
+    protected override void Dispose(bool disposing)
+    {
+        IsDisposed = true;
+        base.Dispose(disposing);
+    }
+}
+
+file sealed class CancellationOnlyStream : Stream
+{
+    public bool IsDisposed { get; private set; }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+
+    public override long Position
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    public override void Flush() { }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return 0;
+    }
+
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override void SetLength(long value)
+    {
+        throw new NotSupportedException();
+    }
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        throw new NotSupportedException();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        IsDisposed = true;
+        base.Dispose(disposing);
+    }
 }
 
 /// <summary>Minimal in-memory <see cref="IBlobStorage"/> used to prove content/JSON helpers round-trip end to end.</summary>

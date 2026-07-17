@@ -312,17 +312,19 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var content = await storage.GetBlobContentAsync(location, cancellationToken).ConfigureAwait(false);
+            await using var result = await storage
+                .OpenReadStreamAsync(location, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (content is null)
+            if (result is null)
             {
                 return default;
             }
 
             options ??= JsonConstants.DefaultInternalJsonOptions;
-            var result = JsonSerializer.Deserialize<T>(content, options);
-
-            return result;
+            return await JsonSerializer
+                .DeserializeAsync<T>(result.Stream, options, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -340,14 +342,18 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var content = await storage.GetBlobContentAsync(location, cancellationToken).ConfigureAwait(false);
+            await using var result = await storage
+                .OpenReadStreamAsync(location, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (content is null)
+            if (result is null)
             {
                 return default;
             }
 
-            return JsonSerializer.Deserialize(content, jsonTypeInfo);
+            return await JsonSerializer
+                .DeserializeAsync(result.Stream, jsonTypeInfo, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

@@ -40,11 +40,7 @@ public static class JobsHelper
         if (data is byte[] existingBytes)
         {
             // If compression is enabled and data already has the GZip signature, assume it is in the final format
-            if (
-                UseGZipCompression
-                && existingBytes.Length >= _GZipSignature.Length
-                && existingBytes.TakeLast(_GZipSignature.Length).SequenceEqual(_GZipSignature)
-            )
+            if (UseGZipCompression && _HasGZipSentinel(existingBytes))
             {
                 return existingBytes;
             }
@@ -89,15 +85,23 @@ public static class JobsHelper
     /// </summary>
     /// <typeparam name="T">The expected request type.</typeparam>
     /// <param name="gzipBytes">The raw bytes from the persistence layer.</param>
-    /// <returns>The deserialized value, or <see langword="default"/> when the JSON is null/empty.</returns>
+    /// <returns>The deserialized value, or <see langword="default"/> when the JSON value is <see langword="null"/>.</returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
     /// </exception>
+    /// <exception cref="InvalidDataException">The compressed payload is truncated or otherwise invalid.</exception>
+    /// <exception cref="JsonException">The JSON payload is empty, malformed, or incompatible with <typeparamref name="T"/>.</exception>
     public static T? ReadJobRequest<T>(byte[] gzipBytes)
     {
-        var serializedObject = ReadJobRequestAsString(gzipBytes);
+        if (!UseGZipCompression)
+        {
+            return JsonSerializer.Deserialize<T>(gzipBytes, RequestJsonSerializerOptions);
+        }
 
-        return JsonSerializer.Deserialize<T>(serializedObject, RequestJsonSerializerOptions);
+        using var memoryStream = _OpenCompressedPayload(gzipBytes);
+        using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
+
+        return JsonSerializer.Deserialize<T>(gzipStream, RequestJsonSerializerOptions);
     }
 
     /// <summary>
@@ -108,6 +112,7 @@ public static class JobsHelper
     /// <exception cref="InvalidOperationException">
     /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
     /// </exception>
+    /// <exception cref="InvalidDataException">The compressed payload is truncated or otherwise invalid.</exception>
     public static string ReadJobRequestAsString(byte[] gzipBytes)
     {
         if (!UseGZipCompression)
@@ -116,19 +121,32 @@ public static class JobsHelper
             return Encoding.UTF8.GetString(gzipBytes);
         }
 
-        if (!gzipBytes.TakeLast(_GZipSignature.Length).SequenceEqual(_GZipSignature))
-        {
-            throw new InvalidOperationException("The bytes are not GZip compressed.");
-        }
-
-        var compressedBytes = gzipBytes.Take(gzipBytes.Length - _GZipSignature.Length).ToArray();
-
-        using var memoryStream = new MemoryStream(compressedBytes);
+        using var memoryStream = _OpenCompressedPayload(gzipBytes);
         using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
         using var streamReader = new StreamReader(gzipStream);
 
         var serializedObject = streamReader.ReadToEnd();
 
         return serializedObject;
+    }
+
+    private static MemoryStream _OpenCompressedPayload(byte[] gzipBytes)
+    {
+        var payloadLength = gzipBytes.Length - _GZipSignature.Length;
+
+        if (!_HasGZipSentinel(gzipBytes))
+        {
+            throw new InvalidOperationException("The bytes are not GZip compressed.");
+        }
+
+        // The sentinel is stored after the GZip member. Wrap only the member segment so typed reads can stream
+        // directly from the persistence buffer without allocating a second byte array or an intermediate string.
+        return new MemoryStream(gzipBytes, index: 0, count: payloadLength, writable: false, publiclyVisible: false);
+    }
+
+    private static bool _HasGZipSentinel(byte[] bytes)
+    {
+        return bytes.Length >= _GZipSignature.Length
+            && bytes.AsSpan(bytes.Length - _GZipSignature.Length).SequenceEqual(_GZipSignature);
     }
 }
