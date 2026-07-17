@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.AuditLog;
+using Headless.Checks;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -76,6 +77,9 @@ public static class HeadlessAuditPolicyExtensions
     /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
     /// </param>
     /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
     public static PropertyBuilder IsAuditSensitive(this PropertyBuilder builder, SensitiveDataStrategy? strategy = null)
     {
         _ConfigureSensitiveProperty(builder, strategy);
@@ -92,6 +96,9 @@ public static class HeadlessAuditPolicyExtensions
     /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
     /// </param>
     /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
     public static PropertyBuilder<TProperty> IsAuditSensitive<TProperty>(
         this PropertyBuilder<TProperty> builder,
         SensitiveDataStrategy? strategy = null
@@ -111,6 +118,7 @@ public static class HeadlessAuditPolicyExtensions
             return;
         }
 
+        Argument.IsInEnum(strategy.Value);
         builder.HasAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy, (int)strategy.Value);
     }
 }

@@ -14,7 +14,7 @@ Persists audit entries through the application's EF Core `DbContext` so they com
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, and correlation ID.
-- Startup gate validates that `AuditLogEntry` is registered in the `DbContext` model and throws with a clear message if `modelBuilder.AddHeadlessAuditLog` was omitted.
+- Startup gate validates that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
 ## Design Notes
 

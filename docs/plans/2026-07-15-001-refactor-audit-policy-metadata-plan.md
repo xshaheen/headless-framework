@@ -45,7 +45,7 @@ Automatic capture is implemented only by `EfAuditChangeCapture`; the PostgreSQL 
 
 #### API and package boundaries
 
-- R7. EF policy extensions and annotation keys live in `Headless.Orm.EntityFramework`; `Headless.AuditLog.Abstractions` remains free of EF Core types.
+- R7. EF policy extensions and annotation keys live in `Headless.EntityFramework`; `Headless.AuditLog.Abstractions` remains free of EF Core types.
 - R8. `IAuditTracked`, `AuditIgnoreAttribute`, and `AuditSensitiveAttribute` are removed without fallback or compatibility aliases.
 - R9. Reflection-based policy discovery and its process-wide CLR metadata caches are removed; runtime filter caches and deferred generated-value resolution remain.
 - R10. Raw PostgreSQL and SQL Server audit storage packages remain independent of EF Core policy metadata and continue to store captured entries unchanged.
@@ -153,15 +153,15 @@ flowchart TB
 - **Requirements:** R1-R10, R12
 - **Dependencies:** None
 - **Files:**
-  - `src/Headless.Orm.EntityFramework/Extensions/HeadlessAuditPolicyExtensions.cs`
-  - `src/Headless.Orm.EntityFramework/Contexts/Auditing/EfAuditChangeCapture.cs`
+  - `src/Headless.EntityFramework/Extensions/HeadlessAuditPolicyExtensions.cs`
+  - `src/Headless.EntityFramework/Contexts/Auditing/EfAuditChangeCapture.cs`
   - `src/Headless.AuditLog.Abstractions/AuditLogOptions.cs`
   - `src/Headless.AuditLog.Abstractions/IAuditTracked.cs`
   - `src/Headless.AuditLog.Abstractions/AuditIgnoreAttribute.cs`
   - `src/Headless.AuditLog.Abstractions/AuditSensitiveAttribute.cs`
   - `tests/Headless.AuditLog.Tests.Unit/EfAuditChangeCaptureTests.cs`
 - **Approach:** Add a dedicated EF-style public extension holder and internal annotation constants. Resolve effective entity eligibility from EF metadata, base types, and root ownership; retain option filters as vetoes. Read property annotations directly, preserve exclusion order, and remove reflection caches and obsolete public types. Convert test POCOs to annotation-free entities configured in `OnModelCreating`.
-- **Patterns to follow:** `src/Headless.Orm.EntityFramework/Extensions/HeadlessCoordinatedTransactionExtensions.cs`, generic/non-generic builder overloads in `EntityTypeBuilderExtensions.cs`, and the current capture value/error/deferred-resolution flow.
+- **Patterns to follow:** `src/Headless.EntityFramework/Extensions/HeadlessCoordinatedTransactionExtensions.cs`, generic/non-generic builder overloads in `EntityTypeBuilderExtensions.cs`, and the current capture value/error/deferred-resolution flow.
 - **Execution note:** Start with the metadata/default and precedence matrix, then replace reflection while keeping all unrelated capture tests green.
 - **Test scenarios:**
   - Covers AE1 and AE2. Explicit true, explicit false, and absent metadata produce the expected result under both `AuditByDefault` values.
@@ -211,7 +211,7 @@ flowchart TB
   - `docs/llms/orm.md`
   - `src/Headless.AuditLog.Abstractions/README.md`
   - `src/Headless.AuditLog.Storage.EntityFramework/README.md`
-  - `src/Headless.Orm.EntityFramework/README.md`
+  - `src/Headless.EntityFramework/README.md`
   - `AGENTS.md`
 - **Approach:** Update Quick Start, feature lists, configuration tables, examples, package dependencies, and side effects to place declarative policy in `OnModelCreating`. Explain precedence, owned-type inheritance, runtime filters, the unsafe later override of `AuditLogEntry`, and the absence of a provider-neutral registry. Mirror the ORM package surface in `docs/llms/orm.md` and record the settled project decision in the repository Learnings section.
 - **Patterns to follow:** `docs/authoring/AUTHORING.md`, the existing audit domain section order and table of contents, and package README mirroring rules.
@@ -224,7 +224,7 @@ flowchart TB
 
 | Gate | Applicability | Done signal |
 | --- | --- | --- |
-| `make build-project PROJECT=src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` | U1 | Public fluent API and metadata capture compile cleanly. |
+| `make build-project PROJECT=src/Headless.EntityFramework/Headless.EntityFramework.csproj` | U1 | Public fluent API and metadata capture compile cleanly. |
 | `make test-project TEST_PROJECT=tests/Headless.AuditLog.Tests.Unit/Headless.AuditLog.Tests.Unit.csproj` | U1, U2 | Metadata precedence, capture behavior, and model recursion assertions pass. |
 | `make test-project TEST_PROJECT=tests/Headless.AuditLog.Storage.EntityFramework.Tests.Integration/Headless.AuditLog.Storage.EntityFramework.Tests.Integration.csproj` | U2 | Real EF storage pipeline behavior remains green. |
 | `make format-check` | U1-U3 | Changed C# and documentation satisfy repository formatting. |
@@ -251,7 +251,7 @@ Browser verification is not applicable because this change has no web UI or brow
 
 ### Sources and Research
 
-- `src/Headless.Orm.EntityFramework/Contexts/Auditing/EfAuditChangeCapture.cs` — current automatic capture, ownership behavior, reflection caches, and runtime filter precedence.
+- `src/Headless.EntityFramework/Contexts/Auditing/EfAuditChangeCapture.cs` — current automatic capture, ownership behavior, reflection caches, and runtime filter precedence.
 - `src/Headless.AuditLog.Storage.EntityFramework/AuditLogModelBuilderExtensions.cs` — current entity-discovery idempotence seam that can skip recursion configuration.
 - `tests/Headless.AuditLog.Tests.Unit/EfAuditChangeCaptureTests.cs` — primary behavior and SQLite model harness.
 - `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` — package boundary: EF capture belongs in ORM while raw stores remain EF-free.

@@ -6,6 +6,7 @@ using Headless.AuditLog;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
@@ -153,15 +154,15 @@ internal sealed class EfAuditChangeCapture(
         }
 
 #pragma warning disable EF1001 // Internal EF Core API usage.
-        // EF metadata points to the declared base principal; StateManager is required to recover
-        // the tracked runtime principal so owned entries use the same derived policy and filter as their root.
+        // EF metadata points to the declared base principal; the exact tracked entry is required to recover
+        // the runtime principal when one CLR instance participates in multiple owned navigations.
         var stateManager = entry.Context.GetDependencies().StateManager;
-        var internalEntry = stateManager.TryGetEntry(entry.Entity, throwOnNonUniqueness: false);
+        var internalEntry = entry.GetInfrastructure();
 
         while (entry.Metadata.IsOwned())
         {
             var ownership = entry.Metadata.FindOwnership()!;
-            var principal = internalEntry is null ? null : stateManager.FindPrincipal(internalEntry, ownership);
+            var principal = stateManager.FindPrincipal(internalEntry, ownership);
 
             if (principal is null)
             {
@@ -256,9 +257,12 @@ internal sealed class EfAuditChangeCapture(
 
         foreach (var property in entry.Properties)
         {
-            if (property.Metadata.PropertyInfo is null)
+            var isSensitive =
+                property.Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive) is { Value: true };
+
+            if (property.Metadata.PropertyInfo is null && !isSensitive)
             {
-                continue; // shadow properties — skip
+                continue; // Preserve legacy behavior for unconfigured shadow and field-only properties.
             }
 
             var propertyName = property.Metadata.Name;
@@ -282,7 +286,7 @@ internal sealed class EfAuditChangeCapture(
 
             _CaptureActionFlags(actionContext, propertyName, property);
 
-            if (property.Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive) is { Value: true })
+            if (isSensitive)
             {
                 var strategy = _GetSensitiveDataStrategy(property.Metadata) ?? opts.SensitiveDataStrategy;
                 _ApplySensitiveValues(
@@ -510,6 +514,9 @@ internal sealed class EfAuditChangeCapture(
                     );
                 }
                 break;
+
+            default:
+                throw new InvalidOperationException($"Unsupported sensitive data strategy '{strategy}'.");
         }
     }
 

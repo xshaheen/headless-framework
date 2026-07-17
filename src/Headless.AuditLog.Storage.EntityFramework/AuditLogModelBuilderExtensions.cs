@@ -26,7 +26,7 @@ public static class AuditLogModelBuilderExtensions
         }
 
         modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(options));
-        modelBuilder.Model.SetAnnotation(AuditLogStorageModelAnnotations.IsConfigured, true);
+        modelBuilder.Model.SetAnnotation(AuditLogStorageModelAnnotations.IsConfigured, value: true);
         return modelBuilder;
     }
 }

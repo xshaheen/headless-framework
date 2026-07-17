@@ -76,6 +76,11 @@ public class GeneratedKeyOrder
     public string Name { get; set; } = "";
 }
 
+public class ShadowPropertyOrder
+{
+    public Guid Id { get; set; }
+}
+
 public class Address
 {
     public string Street { get; set; } = "";
@@ -93,6 +98,7 @@ public abstract class AuditedBaseEntity
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
     public OwnedAuditDetails? Details { get; set; }
+    public OwnedAuditDetails? AdditionalDetails { get; set; }
 }
 
 public sealed class InheritedAuditEntity : AuditedBaseEntity { }
@@ -118,6 +124,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<FrameworkManagedOrder> FrameworkManagedOrders => Set<FrameworkManagedOrder>();
     public DbSet<CompositeKeyOrder> CompositeKeyOrders => Set<CompositeKeyOrder>();
     public DbSet<GeneratedKeyOrder> GeneratedKeyOrders => Set<GeneratedKeyOrder>();
+    public DbSet<ShadowPropertyOrder> ShadowPropertyOrders => Set<ShadowPropertyOrder>();
     public DbSet<InheritedAuditEntity> InheritedAuditEntities => Set<InheritedAuditEntity>();
     public DbSet<ExcludedDerivedAuditEntity> ExcludedDerivedAuditEntities => Set<ExcludedDerivedAuditEntity>();
 
@@ -150,10 +157,13 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         modelBuilder.Entity<FrameworkManagedOrder>().IsAudited();
         modelBuilder.Entity<CompositeKeyOrder>().IsAudited();
         modelBuilder.Entity<GeneratedKeyOrder>().IsAudited();
+        modelBuilder.Entity<ShadowPropertyOrder>().IsAudited();
+        modelBuilder.Entity<ShadowPropertyOrder>().Property<string>("Secret").IsAuditSensitive();
 
         modelBuilder.Entity<AuditedBaseEntity>().IsAudited();
         modelBuilder.Entity<AuditedBaseEntity>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<AuditedBaseEntity>().OwnsOne(e => e.Details);
+        modelBuilder.Entity<AuditedBaseEntity>().OwnsOne(e => e.AdditionalDetails);
         modelBuilder.Entity<InheritedAuditEntity>();
         modelBuilder.Entity<ExcludedDerivedAuditEntity>().ExcludeFromAudit();
 
@@ -164,6 +174,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         modelBuilder.Entity<FrameworkManagedOrder>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<CompositeKeyOrder>().HasKey(e => new { e.TenantId, e.OrderId });
         modelBuilder.Entity<GeneratedKeyOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
+        modelBuilder.Entity<ShadowPropertyOrder>().Property(e => e.Id).ValueGeneratedNever();
     }
 }
 
@@ -171,7 +182,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
 // Tests
 // ---------------------------------------------------------------------------
 
-public sealed class EfAuditChangeCaptureTests : TestBase
+public sealed partial class EfAuditChangeCaptureTests : TestBase
 {
     private static readonly DateTimeOffset _Timestamp = new(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
     private const string _UserId = "user-1";
@@ -536,109 +547,6 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var result = _Capture(sut, db);
 
             // then
-            result.Should().BeEmpty();
-        }
-    }
-
-    [Fact]
-    public async Task finalized_model_exposes_primitive_audit_policy_annotations()
-    {
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            var order = db.Model.FindEntityType(typeof(Order));
-            var product = db.Model.FindEntityType(typeof(Product));
-            var internalLog = db.Model.FindEntityType(typeof(InternalLog));
-
-            order.Should().NotBeNull();
-            product.Should().NotBeNull();
-            internalLog.Should().NotBeNull();
-
-            order!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)?.Value.Should().Be(true);
-            product!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited).Should().BeNull();
-            internalLog!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)?.Value.Should().Be(false);
-
-            order
-                .FindProperty(nameof(Order.LastComputedAt))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded)
-                ?.Value.Should()
-                .Be(true);
-            order
-                .FindProperty(nameof(Order.Email))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive)
-                ?.Value.Should()
-                .Be(true);
-            order
-                .FindProperty(nameof(Order.Phone))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy)
-                ?.Value.Should()
-                .Be((int)SensitiveDataStrategy.Exclude);
-        }
-    }
-
-    [Fact]
-    public async Task derived_entity_inherits_nearest_base_policy_and_can_override_it()
-    {
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            db.InheritedAuditEntities.Add(new InheritedAuditEntity { Id = Guid.NewGuid(), Name = "included" });
-            db.ExcludedDerivedAuditEntities.Add(
-                new ExcludedDerivedAuditEntity { Id = Guid.NewGuid(), Name = "excluded" }
-            );
-
-            var result = _Capture(_CreateSut(), db);
-
-            result.Should().ContainSingle();
-            result[0].EntityType.Should().Be(typeof(InheritedAuditEntity).FullName);
-        }
-    }
-
-    [Fact]
-    public async Task owned_entry_uses_derived_owner_policy_override()
-    {
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            db.ExcludedDerivedAuditEntities.Add(
-                new ExcludedDerivedAuditEntity
-                {
-                    Id = Guid.NewGuid(),
-                    Name = "excluded",
-                    Details = new OwnedAuditDetails { Value = "private" },
-                }
-            );
-
-            var result = _Capture(_CreateSut(), db);
-
-            result.Should().BeEmpty();
-        }
-    }
-
-    [Fact]
-    public async Task owned_entry_entity_filter_uses_derived_owner_type()
-    {
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            db.InheritedAuditEntities.Add(
-                new InheritedAuditEntity
-                {
-                    Id = Guid.NewGuid(),
-                    Name = "filtered",
-                    Details = new OwnedAuditDetails { Value = "private" },
-                }
-            );
-
-            var result = _Capture(
-                _CreateSut(opts => opts.EntityFilter = type => type == typeof(InheritedAuditEntity)),
-                db
-            );
-
             result.Should().BeEmpty();
         }
     }

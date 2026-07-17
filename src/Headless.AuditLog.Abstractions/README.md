@@ -29,30 +29,7 @@ dotnet add package Headless.AuditLog.Abstractions
 
 ## Quick Start
 
-Keep domain entities free of audit annotations, then configure automatic capture in the EF model using `Headless.EntityFramework`:
-
-```csharp
-public sealed class Patient : AggregateRoot<Guid>
-{
-    public string Name { get; set; } = string.Empty;
-    public string NationalId { get; set; } = string.Empty;
-    public string CreditCardToken { get; set; } = string.Empty;
-    public DateTime LastComputedAt { get; set; }
-}
-
-public sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
-{
-    public void Configure(EntityTypeBuilder<Patient> builder)
-    {
-        builder.IsAudited();
-        builder.Property(x => x.NationalId).IsAuditSensitive();
-        builder.Property(x => x.CreditCardToken).IsAuditSensitive(SensitiveDataStrategy.Exclude);
-        builder.Property(x => x.LastComputedAt).ExcludeFromAudit();
-    }
-}
-```
-
-`IsAudited`, `ExcludeFromAudit`, and `IsAuditSensitive` are supplied by `Headless.EntityFramework`; this abstractions package stays EF-free.
+Automatic capture policy is configured by `Headless.EntityFramework`; see that package's Quick Start. This abstractions package stays EF-free and provides the contracts for explicit event logging and audit-history queries.
 
 Log explicit events:
 
