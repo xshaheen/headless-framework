@@ -36,6 +36,8 @@ Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. 
 
 `RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The default remains 1 MiB + 1 byte: corrected non-seekable request-body benchmarks showed that 30/64/128 KiB thresholds reduced managed allocations but missed the latency gate at concurrency 1/32/128. Lower it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
 
+> **Upgrade note.** These two options were previously coupled: the in-memory buffer threshold was derived from `MaxBodySizeForHashing`, so raising `MaxBodySizeForHashing` above the 1 MiB default also raised the memory-vs-disk spill point for free. They are now independent. A deployment that set a non-default `MaxBodySizeForHashing` will, after upgrading, spill request bodies between 1 MiB + 1 byte and its configured `MaxBodySizeForHashing` to a temporary file during buffering (previously they stayed in memory). This is a latency/temp-file characteristic change only — the fingerprint and oversize behavior are unchanged. To preserve the prior in-memory headroom, set `RequestBodyBufferThreshold` explicitly to match the old effective threshold (`MaxBodySizeForHashing` + 1).
+
 ## Installation
 
 ```bash
