@@ -29,6 +29,7 @@ public sealed class ThrowingPublishAuditTestDbContext(
 
         modelBuilder.Entity<EmittingOrder>(b =>
         {
+            b.IsAudited();
             b.HasKey(e => e.Id);
             b.Property(e => e.Id).ValueGeneratedNever();
             // GetIntegrationEvents is method-based; backing field is auto-excluded by EF.

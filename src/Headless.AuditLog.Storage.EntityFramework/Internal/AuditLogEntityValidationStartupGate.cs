@@ -13,10 +13,10 @@ internal sealed class AuditLogEntityValidationStartupGate<TContext>(IDbContextFa
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        if (context.Model.FindEntityType(typeof(AuditLogEntry)) is null)
+        if (context.Model.FindAnnotation(AuditLogStorageModelAnnotations.IsConfigured)?.Value is not true)
         {
             throw new InvalidOperationException(
-                $"Headless.AuditLog: the registered DbContext `{context.GetType().FullName}` does not contain `{nameof(AuditLogEntry)}`. "
+                $"Headless.AuditLog: the registered DbContext `{context.GetType().FullName}` has not fully configured `{nameof(AuditLogEntry)}`. "
                     + "Call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` in your `OnModelCreating`."
             );
         }

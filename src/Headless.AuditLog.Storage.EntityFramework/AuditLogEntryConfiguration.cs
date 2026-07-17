@@ -12,6 +12,9 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
 
     public void Configure(EntityTypeBuilder<AuditLogEntry> builder)
     {
+        // The storage row must never recursively produce another automatic audit row.
+        builder.ExcludeFromAudit();
+
         builder.ToTable(options.TableName, options.Schema);
 
         // Composite PK for partition-readiness (time-range partitioning by CreatedAt).

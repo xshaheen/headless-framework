@@ -1,8 +1,6 @@
-using Headless.AuditLog;
-
 namespace Tests.Fixture;
 
-public sealed class GeneratedOrderLine : IAuditTracked
+public sealed class GeneratedOrderLine
 {
     public int Id { get; set; }
 
