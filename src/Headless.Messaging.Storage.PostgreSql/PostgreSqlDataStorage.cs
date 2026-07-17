@@ -89,8 +89,12 @@ internal sealed class PostgreSqlDataStorage(
             return;
         }
 
+        // Clear the ownership lease alongside the status flip: the only caller is the graceful-shutdown flush,
+        // which owns these rows via its own claim and is releasing them for immediate re-scheduling. Leaving a
+        // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
+        // delivered up to DispatchTimeout late after restart).
         var sql =
-            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
+            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName, \"LockedUntil\"=NULL, \"Owner\"=NULL WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
 
         object[] sqlParams =
         [

@@ -807,6 +807,60 @@ public abstract class DataStorageTestsBase : TestBase
         winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout));
     }
 
+    public virtual async Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        // A long dispatch timeout makes the claim lease clearly future-dated, so a stale (un-cleared) lease would
+        // fence the row from re-claim on restart. The graceful-shutdown flush must release the lease so the row
+        // is immediately re-claimable — otherwise the delayed message is delivered up to DispatchTimeout late.
+        var dispatchTimeout = TimeSpan.FromSeconds(120);
+        if (!TrySetDispatchTimeout(dispatchTimeout))
+        {
+            Assert.Skip("Storage does not expose mutable dispatch-timeout options");
+            return;
+        }
+
+        var expiresAt = TimeProvider.GetUtcNow().AddSeconds(30);
+        var stored = await storage.StoreMessageAsync(
+            "delayed-claim-flush-clears-lease",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = expiresAt,
+            },
+            cancellationToken: AbortToken
+        );
+        stored.ExpiresAt = expiresAt;
+        (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        // Claim it — stamps a future-dated ownership lease and moves it to Queued.
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+        claimed.Should().ContainSingle().Which.StorageId.Should().Be(stored.StorageId);
+
+        // Flush it back to Delayed, exactly as the graceful-shutdown scheduler flush does.
+        await storage.ChangePublishStateToDelayedAsync([stored.StorageId], AbortToken);
+
+        // The flush must clear the lease so the row is immediately re-claimable. With a stale lease this re-poll
+        // returns empty (the message would wait out DispatchTimeout before re-dispatch).
+        var reclaimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+        reclaimed
+            .Should()
+            .ContainSingle("the graceful-shutdown flush must release the claim lease for immediate re-scheduling")
+            .Which.StorageId.Should()
+            .Be(stored.StorageId);
+    }
+
     public virtual async Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
     {
         var storage = GetStorage();

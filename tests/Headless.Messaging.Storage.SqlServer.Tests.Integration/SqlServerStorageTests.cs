@@ -328,6 +328,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        return base.should_clear_claim_lease_when_flushing_delayed_state();
+    }
+
+    [Fact]
     public override Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
     {
         return base.should_return_disjoint_winners_to_concurrent_delayed_claimers();
