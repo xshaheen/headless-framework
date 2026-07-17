@@ -7,6 +7,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Managers;
 
@@ -17,6 +18,49 @@ public sealed class InternalJobsManagerTests : TestBase
     public sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
+    public async Task request_time_job_cancellation_async_notifies_only_after_the_provider_accepts_the_transition()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+        );
+        var acceptedId = Guid.NewGuid();
+        var rejectedId = Guid.NewGuid();
+        provider.RequestTimeJobCancellationAsync(acceptedId, AbortToken).Returns(true);
+        provider.RequestTimeJobCancellationAsync(rejectedId, AbortToken).Returns(false);
+
+        (await manager.RequestTimeJobCancellationAsync(acceptedId, AbortToken)).Should().BeTrue();
+        (await manager.RequestTimeJobCancellationAsync(rejectedId, AbortToken)).Should().BeFalse();
+
+        await sender.Received(1).CanceledJobNotifyAsync(acceptedId);
+        await sender.DidNotReceive().CanceledJobNotifyAsync(rejectedId);
+    }
+
+    [Fact]
+    public async Task request_time_job_cancellation_async_remains_accepted_when_notification_fails()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+        );
+        var jobId = Guid.NewGuid();
+        provider.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
+        sender.CanceledJobNotifyAsync(jobId).Returns<Task>(_ => throw new InvalidOperationException("offline"));
+
+        (await manager.RequestTimeJobCancellationAsync(jobId, AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task set_tickers_in_progress_returns_and_notifies_only_rows_stamped_by_provider()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
@@ -25,7 +69,8 @@ public sealed class InternalJobsManagerTests : TestBase
             provider,
             TimeProvider.System,
             sender,
-            new CronScheduleCache(TimeZoneInfo.Utc)
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
         );
 
         var owned = new JobExecutionState
@@ -66,7 +111,8 @@ public sealed class InternalJobsManagerTests : TestBase
             provider,
             TimeProvider.System,
             sender,
-            new CronScheduleCache(TimeZoneInfo.Utc)
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
         );
 
         // The grandchild must keep ITS OWN RunCondition; a regression to the parent's value would

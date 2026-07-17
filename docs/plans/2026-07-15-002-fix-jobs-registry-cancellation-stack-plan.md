@@ -201,7 +201,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 ### PR and Landing Strategy
 
 - **Slice A branch:** `xshaheen/jobs-host-owned-registries`; PR base `xshaheen/issue-305-jobs-middleware`; title `fix(jobs): make runtime registries host-owned`; close focused foundation issue #686 without closing #314.
-- **Slice B branch:** `xshaheen/durable-jobs-cancellation`; branch from Slice A head; PR base `xshaheen/jobs-host-owned-registries`; title aligned with live issue #314; include `Closes #314` and a stack note naming PR A.
+- **Slice B branch:** `xshaheen/issue-314-durable-jobs-cancellation` (the shorter planned name was already attached to the read-only abandoned worktree); branch from Slice A head; PR base `xshaheen/jobs-host-owned-registries`; title aligned with live issue #314; include `Closes #314` and a stack note naming PR A.
 - **CI:** Stacked bases may not trigger pull-request workflows that filter on `main`. Manually dispatch the repository's CI and CodeQL workflows against each head, fix convergent failures, and retain the requested bases.
 - **Merge:** Neither PR is merged by this run.
 
@@ -280,7 +280,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 - **Slice:** B.
 - **Goal:** Implement job-ID-only atomic request semantics across public API, managers, in-memory, PostgreSQL, and SQL Server.
 - **Requirements:** R9-R12, R18, R21.
-- **Dependencies:** U4 is published and branch `xshaheen/durable-jobs-cancellation` has been created from the published Slice A head.
+- **Dependencies:** U4 is published and branch `xshaheen/issue-314-durable-jobs-cancellation` has been created from the published Slice A head.
 - **Files:** Slice B abstraction/manager/provider/schema/migration paths listed in file ownership, plus scheduler and Dashboard cancellation hunks.
 - **Approach:** Route public and context requests through the scheduler/manager to one provider operation. Use CAS for in-memory and conditional store-clock EF updates for relational providers. For Idle, atomically terminalize the parent and apply existing run-condition release/skip transitions to direct children and rejected descendant branches in one in-memory critical section or relational transaction; return a transition outcome so notifications/restart scheduling occur only after commit. Preserve rejected-transition audit state.
 - **Execution note:** Port only proven transition/migration ideas from the abandoned attempt after reconciling them with the Slice A registry and current #685 code.

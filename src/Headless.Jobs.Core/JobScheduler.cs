@@ -15,6 +15,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 {
     private readonly ITimeJobManager<TTimeJob> _timeJobManager;
     private readonly ICronJobManager<TCronJob> _cronJobManager;
+    private readonly IInternalJobManager _internalJobManager;
+    private readonly IJobsHostScheduler _jobsHostScheduler;
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByRequestType;
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
     private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
@@ -22,13 +24,17 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     public JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
         ICronJobManager<TCronJob> cronJobManager,
-        JobFunctionRegistry functionRegistry
+        JobFunctionRegistry functionRegistry,
+        IInternalJobManager internalJobManager,
+        IJobsHostScheduler jobsHostScheduler
     )
         : this(
             timeJobManager,
             cronJobManager,
             functionRegistry.DescriptorsByRequestType.GetValueOrDefault,
             functionRegistry.Descriptors.GetValueOrDefault,
+            internalJobManager,
+            jobsHostScheduler,
             functionRegistry.CanonicalDescriptors.GetValueOrDefault
         ) { }
 
@@ -37,14 +43,31 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         ICronJobManager<TCronJob> cronJobManager,
         Func<Type, JobFunctionDescriptor?> descriptorByRequestType,
         Func<string, JobFunctionDescriptor?> descriptorByName,
+        IInternalJobManager internalJobManager,
+        IJobsHostScheduler jobsHostScheduler,
         Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null
     )
     {
         _timeJobManager = Argument.IsNotNull(timeJobManager);
         _cronJobManager = Argument.IsNotNull(cronJobManager);
+        _internalJobManager = Argument.IsNotNull(internalJobManager);
+        _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
         _descriptorByRequestType = Argument.IsNotNull(descriptorByRequestType);
         _descriptorByName = Argument.IsNotNull(descriptorByName);
         _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
+    }
+
+    public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        var accepted = await _internalJobManager
+            .RequestTimeJobCancellationAsync(jobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (accepted)
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return accepted;
     }
 
     public Task<Guid> EnqueueAsync<TArgs>(

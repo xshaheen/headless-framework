@@ -34,7 +34,11 @@ Jobs remain `Queued` while waiting for worker and per-function concurrency capac
 
 Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
 
-Only cancellation tied to the job's cancellation token (including `context.RequestCancellation()`) is classified as `Cancelled`. A detected lease loss writes no terminal status — the row stays `InProgress` so the stalled-reclaim sweep recovers it per `OnNodeDeath`. An unrelated `OperationCanceledException` is handled as a failure and follows the configured retry policy.
+Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes that flag immediately before user code and then on `CancellationObservationInterval`, using the same owner/status fence as lease renewal.
+
+Each host owns an independent execution-cancellation registry. Durable cancellation, host shutdown, and lease loss are distinct causes tied to one opaque execution handle. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Lease loss and cooperative host shutdown leave the row `InProgress` for recovery; an uncooperative handler keeps its natural success/failure result while `CancelRequested` remains audit data. An unrelated `OperationCanceledException` remains a failure and follows retry policy.
+
+Before deploying this version with a relational Jobs store, add and apply an application migration that creates non-null `TimeJobs.CancelRequested` with a `false` default. The PostgreSQL demos contain reference migrations; SQL Server and custom-schema consumers must generate the equivalent migration in their own migration assembly.
 
 Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
@@ -120,6 +124,7 @@ var recurringId = await scheduler.ScheduleRecurringAsync(request, "0 0 * * *", c
 
 var cleanup = JobFunctionProvider.JobFunctionDescriptors["Cleanup"];
 var cleanupId = await scheduler.EnqueueAsync(cleanup, cancellationToken: ct);
+var cancellationAccepted = await scheduler.CancelAsync(delayedId, ct);
 ```
 
 `EnqueueOptions` and `RecurringJobOptions` expose only description, durable retries/intervals, and node-death policy. Execution time and cron expression are explicit method arguments. Priority remains immutable `[JobFunction]` / descriptor metadata.
@@ -168,6 +173,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1); // default: 1 min
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
+        scheduler.CancellationObservationInterval = null; // null → effective lease-renewal interval
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s; > 0, max: 5 min
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
