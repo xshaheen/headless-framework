@@ -36,7 +36,11 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 
         builder.HasOne(x => x.CronJob).WithMany().HasForeignKey(x => x.CronJobId).OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex("CronJobId", "ExecutionTime").IsUnique().HasDatabaseName("UQ_CronJobId_ExecutionTime");
+        builder
+            .HasIndex("CronJobId", "ExecutionTime")
+            .IsUnique()
+            .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')")
+            .HasDatabaseName("UQ_CronJobId_ExecutionTime");
 
         builder.ToTable("CronJobOccurrences", schema);
     }

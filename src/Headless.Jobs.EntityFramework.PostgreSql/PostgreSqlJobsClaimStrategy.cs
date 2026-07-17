@@ -424,7 +424,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
                 @elapsedTime, @retryCount, claim_clock.now, claim_clock.now
             FROM claim_clock
-            ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId}) DO NOTHING
+            ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId})
+                WHERE {mapping.Status} IN ('Idle', 'Queued', 'InProgress')
+                DO NOTHING
             RETURNING {mapping.Id};
             """;
 #pragma warning restore CA2100

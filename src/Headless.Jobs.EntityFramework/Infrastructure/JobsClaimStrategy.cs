@@ -387,10 +387,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
         var newOccurrenceIds = new List<Guid>();
@@ -428,18 +424,18 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     UpdatedAt = now,
                 };
 
-                var affected = await context
-                    .Upsert(itemToAdd)
-                    .On(x => new { x.ExecutionTime, x.CronJobId })
-                    .NoUpdate()
-                    .RunAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (affected <= 0)
+                await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
+                try
                 {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (DbUpdateException)
+                {
+                    dbContext.Entry(itemToAdd).State = EntityState.Detached;
                     continue;
                 }
 
+                dbContext.Entry(itemToAdd).State = EntityState.Detached;
                 itemToAdd.Status = JobStatus.Queued;
                 itemToAdd.OwnerId = owner;
                 itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
@@ -503,8 +499,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 )
                 .ConfigureAwait(false);
         }
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         var claimedIds = claimResults.Where(x => x is not null).Select(x => x!.Id).ToArray();
         var claimTimestamps = await context
