@@ -446,6 +446,7 @@ public sealed class JobSchedulerTests : TestBase
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
+                nameof(RecurringJobOptions.TimeZoneId),
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),
                 nameof(RecurringJobOptions.RetryIntervals),

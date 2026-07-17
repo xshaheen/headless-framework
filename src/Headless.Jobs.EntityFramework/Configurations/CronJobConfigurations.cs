@@ -16,6 +16,12 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
+        builder.Property(e => e.IsPaused).HasDefaultValue(false);
+
+        builder.Property(e => e.ScheduleRevision).HasDefaultValue(0L);
+
+        builder.Property(e => e.TimeZoneId).HasMaxLength(128);
+
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");

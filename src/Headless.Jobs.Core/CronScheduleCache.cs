@@ -31,6 +31,11 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
 
     public DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime)
     {
+        return GetNextOccurrenceOrDefault(expression, dateTime, timeZoneId: null);
+    }
+
+    public DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime, string? timeZoneId)
+    {
         // Get(...) already normalizes its argument, so passing the raw expression normalizes once instead of
         // twice (the regex replace + Trim ran an extra time on the already-normalized string).
         var parsed = Get(expression);
@@ -40,17 +45,18 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             return null;
         }
 
-        var localTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, TimeZoneInfo);
+        var timeZone = CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo);
+        var localTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, timeZone);
 
         var nextOccurrence = parsed.GetNextOccurrence(localTime);
-        var nextUtc = _ConvertScheduledLocalTimeToUtc(nextOccurrence);
+        var nextUtc = _ConvertScheduledLocalTimeToUtc(nextOccurrence, timeZone);
 
-        if (TimeZoneInfo.IsAmbiguousTime(localTime))
+        if (timeZone.IsAmbiguousTime(localTime))
         {
-            var offsets = TimeZoneInfo.GetAmbiguousTimeOffsets(localTime);
+            var offsets = timeZone.GetAmbiguousTimeOffsets(localTime);
             var overlap = offsets.Max() - offsets.Min();
             var overlapOccurrence = parsed.GetNextOccurrence(localTime.Subtract(overlap));
-            var overlapUtc = _ConvertScheduledLocalTimeToUtc(overlapOccurrence);
+            var overlapUtc = _ConvertScheduledLocalTimeToUtc(overlapOccurrence, timeZone);
 
             if (overlapUtc > dateTime && overlapUtc < nextUtc)
             {
@@ -61,29 +67,29 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return nextUtc;
     }
 
-    private DateTime _ConvertScheduledLocalTimeToUtc(DateTime localTime)
+    private static DateTime _ConvertScheduledLocalTimeToUtc(DateTime localTime, TimeZoneInfo timeZone)
     {
         localTime = DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
 
-        if (TimeZoneInfo.IsInvalidTime(localTime))
+        if (timeZone.IsInvalidTime(localTime))
         {
             // Preserve the requested wall-clock minute by shifting it through the spring-forward gap. For example,
             // 02:30 in a one-hour gap becomes 03:30 rather than collapsing every skipped occurrence to 03:00.
-            var offsetBefore = TimeZoneInfo.GetUtcOffset(localTime.AddDays(-1));
-            var offsetAfter = TimeZoneInfo.GetUtcOffset(localTime.AddDays(1));
+            var offsetBefore = timeZone.GetUtcOffset(localTime.AddDays(-1));
+            var offsetAfter = timeZone.GetUtcOffset(localTime.AddDays(1));
             var gap = offsetAfter - offsetBefore;
             localTime = localTime.Add(gap > TimeSpan.Zero ? gap : TimeSpan.FromHours(1));
         }
 
-        if (TimeZoneInfo.IsAmbiguousTime(localTime))
+        if (timeZone.IsAmbiguousTime(localTime))
         {
             // Choose the later UTC instant (normally the standard-time offset) so one wall-clock occurrence runs
             // once, after the overlap, instead of being dispatched twice.
-            var offset = TimeZoneInfo.GetAmbiguousTimeOffsets(localTime).Min();
+            var offset = timeZone.GetAmbiguousTimeOffsets(localTime).Min();
             return new DateTimeOffset(localTime, offset).UtcDateTime;
         }
 
-        return TimeZoneInfo.ConvertTimeToUtc(localTime, TimeZoneInfo);
+        return TimeZoneInfo.ConvertTimeToUtc(localTime, timeZone);
     }
 
     public bool Invalidate(string expression)

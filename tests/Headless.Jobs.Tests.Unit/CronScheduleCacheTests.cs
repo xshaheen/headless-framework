@@ -66,6 +66,58 @@ public sealed class CronScheduleCacheTests
         next.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
     }
 
+    [Fact]
+    public void get_next_occurrence_or_default_shifts_an_explicit_iana_spring_occurrence_through_the_gap()
+    {
+        var beforeGap = new DateTime(2026, 3, 8, 5, 0, 0, DateTimeKind.Utc);
+
+        var next = _cache.GetNextOccurrenceOrDefault("0 30 2 * * *", beforeGap, "America/New_York");
+
+        next.Should().Be(new DateTime(2026, 3, 8, 7, 30, 0, DateTimeKind.Utc));
+        next!.Value.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    [Fact]
+    public void get_next_occurrence_or_default_uses_the_later_utc_instant_for_an_explicit_iana_fall_occurrence()
+    {
+        var beforeOverlap = new DateTime(2026, 11, 1, 4, 0, 0, DateTimeKind.Utc);
+
+        var next = _cache.GetNextOccurrenceOrDefault("0 30 1 * * *", beforeOverlap, "America/New_York");
+
+        next.Should().Be(new DateTime(2026, 11, 1, 6, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void get_next_occurrence_or_default_remains_deterministic_when_origin_is_inside_an_explicit_iana_overlap()
+    {
+        var betweenOverlapInstants = new DateTime(2026, 11, 1, 5, 45, 0, DateTimeKind.Utc);
+
+        var next = _cache.GetNextOccurrenceOrDefault("0 30 1 * * *", betweenOverlapInstants, "America/New_York");
+
+        next.Should().Be(new DateTime(2026, 11, 1, 6, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void get_next_occurrence_or_default_uses_the_configured_global_timezone_when_definition_timezone_is_null()
+    {
+        var cache = new CronScheduleCache(TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"));
+        var origin = new DateTime(2026, 1, 1, 16, 30, 0, DateTimeKind.Utc);
+
+        var next = cache.GetNextOccurrenceOrDefault("0 0 9 * * *", origin, timeZoneId: null);
+
+        next.Should().Be(new DateTime(2026, 1, 1, 17, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Theory]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("Headless/Unknown")]
+    public void get_next_occurrence_or_default_rejects_non_iana_timezone_ids(string timeZoneId)
+    {
+        var act = () => _cache.GetNextOccurrenceOrDefault("0 0 * * * *", DateTime.UnixEpoch, timeZoneId);
+
+        act.Should().Throw<ArgumentException>().WithMessage($"*{timeZoneId}*");
+    }
+
     private static TimeZoneInfo _CreateTestTimeZone()
     {
         var daylightTransitionStart = TimeZoneInfo.TransitionTime.CreateFixedDateRule(
