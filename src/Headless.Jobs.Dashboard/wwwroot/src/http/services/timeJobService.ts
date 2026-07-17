@@ -10,7 +10,6 @@ import {
   GetTimeJobResponse,
   UpdateTimeJobRequest
 } from './types/timeJobService.types'
-import { nameof } from '@/utilities/nameof';
 import { format} from 'timeago.js';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';

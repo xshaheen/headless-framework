@@ -4,7 +4,6 @@ import { useBaseHttpService } from '../base/baseHttpService';
 import { Status } from './types/base/baseHttpResponse.types';
 import { GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse, GetCronJobOccurrenceResponse } from './types/cronJobOccurrenceService.types';
 import { format} from 'timeago.js';
-import { nameof } from '@/utilities/nameof';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
 interface PaginatedCronJobOccurrenceResponse {

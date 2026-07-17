@@ -2,7 +2,6 @@
 import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
 import { AddCronJobRequest, GetCronJobGraphDataRangeResponse, GetCronJobGraphDataResponse, GetCronJobResponse, UpdateCronJobRequest } from './types/cronJobService.types';
-import { nameof } from '@/utilities/nameof';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
