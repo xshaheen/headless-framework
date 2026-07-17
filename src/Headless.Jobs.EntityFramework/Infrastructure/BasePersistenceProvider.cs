@@ -1223,6 +1223,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Include(x => x.CronJob)
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
+            .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquireUsingDatabaseClock(owner)
             .OrderBy(x => x.ExecutionTime)
@@ -1271,17 +1272,50 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var startsExecution =
+            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress;
+        await using var transaction = startsExecution
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (startsExecution)
+        {
+            var definitionIds = await dbContext
+                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                .AsNoTracking()
+                .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+                .Select(x => x.CronJobId)
+                .Distinct()
+                .Order()
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var definitionId in definitionIds)
+            {
+                var active = await dbContext
+                    .Set<TCronJob>()
+                    .Where(x => x.Id == definitionId && !x.IsPaused)
+                    .ExecuteUpdateAsync(
+                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                if (active == 0)
+                {
+                    return [];
+                }
+            }
+        }
+
         var rowsToUpdate = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
             .WhereOwnedBy(owner);
 
-        if (
-            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
-            && functionContext.Status == JobStatus.InProgress
-        )
+        if (startsExecution)
         {
-            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued);
+            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued && !x.CronJob.IsPaused);
         }
 
         var affected = await rowsToUpdate
@@ -1291,6 +1325,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         if (affected == 0)
         {
             return [];
+        }
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         var updated = dbContext

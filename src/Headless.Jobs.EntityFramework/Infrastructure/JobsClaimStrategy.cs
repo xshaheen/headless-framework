@@ -315,10 +315,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var cronJobsToUpdate = await context
             .AsNoTracking()
+            .Where(x => !x.CronJob.IsPaused)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .OrderBy(x => x.ExecutionTime)
@@ -387,6 +387,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
@@ -396,6 +399,19 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             cancellationToken.ThrowIfCancellationRequested();
             var item = cronJobOccurrences.Items[index];
+
+            var definitionAccepted = await dbContext
+                .Set<TCronJob>()
+                .Where(x => x.Id == item.Id && !x.IsPaused && x.ScheduleRevision == item.ScheduleRevision)
+                .ExecuteUpdateAsync(
+                    setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (definitionAccepted == 0)
+            {
+                continue;
+            }
 
             if (item.NextCronOccurrence is null)
             {
@@ -487,6 +503,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 )
                 .ConfigureAwait(false);
         }
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         var claimedIds = claimResults.Where(x => x is not null).Select(x => x!.Id).ToArray();
         var claimTimestamps = await context

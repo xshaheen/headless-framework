@@ -1573,22 +1573,28 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
             {
-                // #316/U5 — cron mirror of the strict claim→start ownership recheck.
-                var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
-                var canTransitionToInProgress =
-                    functionContext.Status != JobStatus.InProgress || occurrence.Status == JobStatus.Queued;
-
-                if (!ownedNonTerminal || !canTransitionToInProgress)
+                lock (_GetCronDefinitionLock(occurrence.CronJobId))
                 {
-                    continue;
-                }
+                    // #316/U5 — cron mirror of the strict claim→start ownership recheck.
+                    var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
+                    var canTransitionToInProgress =
+                        functionContext.Status != JobStatus.InProgress || occurrence.Status == JobStatus.Queued;
+                    var definitionAllowsStart =
+                        functionContext.Status != JobStatus.InProgress
+                        || (_cronJobs.TryGetValue(occurrence.CronJobId, out var definition) && !definition.IsPaused);
 
-                var updatedOccurrence = _CloneCronOccurrence(occurrence);
-                _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+                    if (!ownedNonTerminal || !canTransitionToInProgress || !definitionAllowsStart)
+                    {
+                        continue;
+                    }
 
-                if (_cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence))
-                {
-                    updatedIds.Add(id);
+                    var updatedOccurrence = _CloneCronOccurrence(occurrence);
+                    _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+
+                    if (_cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence))
+                    {
+                        updatedIds.Add(id);
+                    }
                 }
             }
         }
@@ -2032,7 +2038,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (KTD5/#315).
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
-        return (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
+        return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
+            && !definition.IsPaused
+            && (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
             && (
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
