@@ -84,6 +84,86 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
+    public async Task queue_async_bounds_long_running_dedicated_threads()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 8, maxLongRunningConcurrency: 2);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var twoStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startedCount = 0;
+        var activeCount = 0;
+        var maxObservedActive = 0;
+
+        async Task Work(CancellationToken _)
+        {
+            var active = Interlocked.Increment(ref activeCount);
+            _SetMaxObserved(ref maxObservedActive, active);
+            var started = Interlocked.Increment(ref startedCount);
+            if (started == 2)
+            {
+                twoStarted.TrySetResult();
+            }
+            else if (started == 3)
+            {
+                allStarted.TrySetResult();
+            }
+
+            await release.Task.ConfigureAwait(false);
+            Interlocked.Decrement(ref activeCount);
+        }
+
+        await scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
+        await scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
+        await twoStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        var thirdAdmission = scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
+        await Task.Delay(100, AbortToken);
+
+        thirdAdmission.IsCompleted.Should().BeFalse();
+        startedCount.Should().Be(2);
+        maxObservedActive.Should().Be(2);
+
+        release.SetResult();
+        await thirdAdmission.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+
+        maxObservedActive.Should().BeLessThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task long_running_admission_honors_capacity_cancellation()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        using var capacityCts = new CancellationTokenSource();
+        var pendingAdmission = scheduler.QueueAsync(
+            _ => Task.CompletedTask,
+            JobPriority.LongRunning,
+            capacityCts.Token
+        );
+        await capacityCts.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => pendingAdmission);
+
+        release.SetResult();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task queue_async_dispatches_high_then_normal_then_low_priority()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);

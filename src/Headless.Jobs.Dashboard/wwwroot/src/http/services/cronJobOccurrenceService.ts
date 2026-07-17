@@ -2,7 +2,7 @@
 import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
 import { Status } from './types/base/baseHttpResponse.types';
-import { GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse, GetCronJobOccurrenceRequest, GetCronJobOccurrenceResponse } from './types/cronJobOccurrenceService.types';
+import { GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse, GetCronJobOccurrenceResponse } from './types/cronJobOccurrenceService.types';
 import { format} from 'timeago.js';
 import { nameof } from '@/utilities/nameof';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
@@ -12,56 +12,6 @@ interface PaginatedCronJobOccurrenceResponse {
     totalCount: number
     pageNumber: number
     pageSize: number
-}
-
-const getByCronJobId = () => {
-    const timeZoneStore = useTimeZoneStore();
-    const baseHttp = useBaseHttpService<GetCronJobOccurrenceRequest, GetCronJobOccurrenceResponse>('array')
-        .FixToResponseModel(GetCronJobOccurrenceResponse, response => {
-            if (!response) {
-                return response;
-            }
-            
-            // Safely set status with null check
-            if (response.status !== undefined && response.status !== null) {
-                response.status = Status[response.status as number];
-            }
-
-            if (response.executedAt != null || response.executedAt != undefined) {
-                // Ensure the datetime is treated as UTC by adding 'Z' if missing
-                const utcExecutedAt = response.executedAt.endsWith('Z') ? response.executedAt : response.executedAt + 'Z';
-                response.executedAt = `${format(utcExecutedAt)} (took ${formatTime(response.elapsedTime as number, true)})`;
-            }
-
-            const utcExecutionTime = response.executionTime.endsWith('Z') ? response.executionTime : response.executionTime + 'Z';
-            response.executionTimeFormatted = formatDate(utcExecutionTime, true, timeZoneStore.effectiveTimeZone);
-            response.lockedAt = formatDate(response.lockedAt, true, timeZoneStore.effectiveTimeZone)
-            return response;
-        })
-        .FixToHeaders((header) => {
-            if (header.key == nameof<GetCronJobOccurrenceResponse>(x => x.actions)) {
-                header.sortable = false;
-            }
-            if (nameof<GetCronJobOccurrenceResponse>(x => x.id, x => x.elapsedTime, x => x.executionTime, x => x.retryCount, x => x.exceptionMessage, x => x.skippedReason).includes(header.key)) {
-                header.visibility = false;
-            }
-            if (nameof<GetCronJobOccurrenceResponse>(x => x.executedAt) == header.key) {
-                header.title = "Executed At (Elapsed Time)"
-            }
-            if (nameof<GetCronJobOccurrenceResponse>(x => x.executionTimeFormatted) == header.key) {
-                header.title = "Execution Time"
-            }
-            return header;
-        })
-        .ReOrganizeResponse((res) => res.sort((a, b) => new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()));
-
-
-    const requestAsync = async (id: string | undefined) => (await baseHttp.sendAsync("GET", `cron-job-occurrences/${id}`));
-
-    return {
-        ...baseHttp,
-        requestAsync
-    };
 }
 
 const getByCronJobIdPaginated = () => {
@@ -149,7 +99,6 @@ const getCronJobOccurrenceGraphData = () => {
 }
 
 export const cronJobOccurrenceService = {
-    getByCronJobId,
     getByCronJobIdPaginated,
     deleteCronJobOccurrence,
     getCronJobOccurrenceGraphData

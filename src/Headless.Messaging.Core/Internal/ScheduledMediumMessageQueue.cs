@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Checks;
 using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
+internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int capacity = 1000) : IDisposable
 {
+    private readonly int _capacity = Argument.IsPositive(capacity);
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
             (a, b) =>
@@ -21,24 +23,38 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : I
     private readonly Lock _lock = new();
     private bool _isDisposed;
 
-    public void Enqueue(MediumMessage message, long sendTime)
+    public bool TryEnqueue(MediumMessage message, long sendTime)
     {
         var shouldSignal = false;
 
         lock (_lock)
         {
+            if (_queue.Contains((sendTime, message)))
+            {
+                return true;
+            }
+
+            if (_queue.Count >= _capacity)
+            {
+                return false;
+            }
+
             var previousEarliest = _queue.Count > 0 ? _queue.Min.Item1 : (long?)null;
 
-            if (_queue.Add((sendTime, message)))
+            if (!_queue.Add((sendTime, message)))
             {
-                shouldSignal = previousEarliest is null || sendTime < previousEarliest.Value;
+                return false;
             }
+
+            shouldSignal = previousEarliest is null || sendTime < previousEarliest.Value;
         }
 
         if (shouldSignal)
         {
             _changedSignal.Release();
         }
+
+        return true;
     }
 
     public int Count

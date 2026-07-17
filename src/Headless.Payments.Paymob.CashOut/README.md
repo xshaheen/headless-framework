@@ -34,6 +34,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 The CashOut authentication uses OAuth2 password grant. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
 
+`ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
+
 ## Installation
 
 ```bash

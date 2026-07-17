@@ -50,7 +50,15 @@ updates:
       timezone: "Africa/Cairo"
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/demo/Headless.Messaging.Dashboard.Jwt.Demo"
+      - "/demo/Headless.Messaging.Redis.SqlServer.Demo"
+      - "/tests/Headless.Blobs.Aws.Tests.Integration"
+      - "/tests/Headless.Blobs.Azure.Tests.Integration"
+      - "/tests/Headless.Blobs.Redis.Tests.Integration"
+      - "/tests/Headless.Blobs.SshNet.Tests.Integration"
+      - "/tests/Headless.DistributedLocks.Redis.Tests.Integration"
+      - "/tests/Headless.Tus.Azure.Tests.Integration/TestSetup"
     target-branch: "main"
     labels:
       - "maintenance"
@@ -98,6 +106,7 @@ updates:
     directories:
       - "/src/Headless.Jobs.Dashboard/wwwroot"
       - "/src/Headless.Messaging.Dashboard/wwwroot"
+      - "/demo/Headless.Tus.Demo/frontend"
     labels:
       - "maintenance"
     commit-message:

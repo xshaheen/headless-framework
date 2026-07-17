@@ -162,6 +162,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         options.PublishBatchSize = 42;
         options.CollectorCleaningInterval = 6;
         options.SchedulerBatchSize = 7;
+        options.RetryBatchSize = 8;
         options.UseStorageLock = true;
         options.TenantContextRequired = true;
         options.TransportPublishTimeout = TimeSpan.FromSeconds(17);

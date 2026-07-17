@@ -22,81 +22,6 @@ interface PaginatedTimeJobResponse {
     pageSize: number
 }
 
-const getTimeJobs = () => {
-    const functionNamesStore = useFunctionNameStore();
-    const timeZoneStore = useTimeZoneStore();
-
-    const baseHttp = useBaseHttpService<object, GetTimeJobResponse>('array')
-        .FixToResponseModel(GetTimeJobResponse, response => {
-            // Add null check to prevent "Cannot set properties of undefined" error
-            if (!response) {
-                return response;
-            }
-
-            // Recursive function to process item and its children
-            const processItem = (item: GetTimeJobResponse): GetTimeJobResponse => {
-                // Safely set status with null check
-                if (item.status !== undefined && item.status !== null) {
-                    item.status = Status[item.status as number];
-                }
-
-                if (item.executedAt != null || item.executedAt != undefined)
-                    item.executedAt = `${format(item.executedAt)} (took ${formatTime(item.elapsedTime as number, true)})`;
-
-                item.executionTimeFormatted = formatDate(item.executionTime, true, timeZoneStore.effectiveTimeZone);
-                item.requestType = functionNamesStore.getNamespaceOrNull(item.function) ?? '';
-
-                if (item.retryIntervals == null || item.retryIntervals.length == 0 && item.retries != null && (item.retries as number) > 0)
-                    item.retryIntervals = Array(1).fill(`${30}s`);
-                else
-                    item.retryIntervals = (item.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
-
-                item.lockHolder = item.lockHolder ?? '-';
-
-                // Process children recursively
-                if (item.children && Array.isArray(item.children)) {
-                    item.children = item.children.map(child => processItem(child));
-                }
-
-                return item;
-            };
-
-            return processItem(response);
-        })
-        .FixToHeaders((header) => {
-            if (nameof<GetTimeJobResponse>(x => x.actions) == header.key) {
-                header.sortable = false;
-            }
-            if (nameof<GetTimeJobResponse>(x => x.id, x => x.exceptionMessage,x => x.skippedReason, x => x.retries, x => x.lockedAt, x => x.createdAt, x => x.updatedAt, x => x.retryCount, x => x.elapsedTime, x => x.executionTime, x => x.children).includes(header.key)) {
-                header.visibility = false;
-            }
-            if (nameof<GetTimeJobResponse>(x => x.executedAt) == header.key) {
-                header.title = "Executed At (Elapsed Time)"
-            }
-            if (nameof<GetTimeJobResponse>(x => x.executionTimeFormatted) == header.key) {
-                header.title = "Execution Time"
-            }
-
-            if (nameof<GetTimeJobResponse>((x) => x.batchParent) == header.key) {
-              header.visibility = false
-            }
-
-            if (nameof<GetTimeJobResponse>((x) => x.batchRunCondition) == header.key) {
-              header.visibility = false
-            }
-
-            return header;
-        })
-        .ReOrganizeResponse((res) => res.sort((a, b) => new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()));
-
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-jobs"));
-
-    return {
-        ...baseHttp,
-        requestAsync
-    };
-}
-
 const getTimeJobsPaginated = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
@@ -257,7 +182,6 @@ const addChainJobs = () => {
 
 
 export const timeJobService = {
-    getTimeJobs,
     getTimeJobsPaginated,
     deleteTimeJob,
     deleteTimeJobsBatch,

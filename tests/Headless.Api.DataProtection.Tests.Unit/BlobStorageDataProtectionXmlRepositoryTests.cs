@@ -203,14 +203,11 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public void should_not_resolve_external_entities_in_xml()
+    public void should_reject_xml_with_a_document_type_definition()
     {
         var storage = Substitute.For<IBlobStorage>();
         _SetupStorageWithBlobs(storage, [_CreateBlobInfo("xxe.xml")]);
 
-        // XXE attack attempt - external entity declaration
-        // In .NET 5+, XElement.Load() has DTD processing disabled by default
-        // The entity reference will be included literally, not resolved
         const string xxeXml = """
             <?xml version="1.0"?>
             <!DOCTYPE key [
@@ -225,13 +222,101 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
 
         var result = sut.GetAllElements();
 
-        // Modern .NET safely ignores external entities - the key is returned
-        // but the entity reference is NOT resolved (no file contents leaked)
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_load_xml_blob_at_exact_byte_limit()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("exact.xml")]);
+        _SetupDownload(
+            storage,
+            "exact.xml",
+            _CreateXmlWithByteLength(BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes)
+        );
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var result = sut.GetAllElements();
+
         result.Should().ContainSingle();
-        var element = result.First();
-        element.Attribute("id")?.Value.Should()?.Be("malicious");
-        // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
-        element.Value.Should().NotContain("root:");
+        result.First().Name.LocalName.Should().Be("key");
+    }
+
+    [Fact]
+    public void should_fail_entire_load_when_actual_blob_bytes_exceed_limit_despite_small_listed_size()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("valid.xml"), _CreateBlobInfo("oversized.xml", size: 1)]);
+        _SetupDownload(storage, "valid.xml", "<key id=\"valid\"/>");
+        var oversizedStream = new TrackingMemoryStream(
+            Encoding.UTF8.GetBytes(
+                _CreateXmlWithByteLength(BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes + 1)
+            )
+        );
+#pragma warning disable CA2000 // Ownership is transferred to the repository and disposal is asserted below.
+        var oversizedDownload = new BlobDownloadResult(oversizedStream, "oversized.xml");
+#pragma warning restore CA2000
+        storage
+            .OpenReadStreamAsync(
+                Arg.Is<BlobLocation>(location => location.Path == "oversized.xml"),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<BlobDownloadResult?>(oversizedDownload));
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var act = sut.GetAllElements;
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*{BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes:N0}-byte limit*");
+        oversizedStream.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_fail_entire_load_when_xml_blob_count_exceeds_limit()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var blobs = Enumerable
+            .Range(0, BlobStorageDataProtectionXmlRepository.MaxXmlElementCount + 1)
+            .Select(index => _CreateBlobInfo($"key-{index}.xml"))
+            .ToArray();
+        _SetupStorageWithBlobs(storage, blobs);
+        storage
+            .OpenReadStreamAsync(Arg.Any<BlobLocation>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<BlobDownloadResult?>(null));
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var act = sut.GetAllElements;
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*{BlobStorageDataProtectionXmlRepository.MaxXmlElementCount:N0} XML blob limit*");
+    }
+
+    [Fact]
+    public void should_fail_entire_load_when_actual_aggregate_xml_bytes_exceed_limit()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var exactLimitXml = _CreateXmlWithByteLength(BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes);
+        var blobCount =
+            BlobStorageDataProtectionXmlRepository.MaxAggregateXmlBytes
+                / BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes
+            + 1;
+        var blobs = Enumerable.Range(0, blobCount).Select(index => _CreateBlobInfo($"key-{index}.xml")).ToArray();
+        _SetupStorageWithBlobs(storage, blobs);
+        storage
+            .OpenReadStreamAsync(Arg.Any<BlobLocation>(), Arg.Any<CancellationToken>())
+            .Returns(_ => _CreateDownloadResult(exactLimitXml));
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var act = sut.GetAllElements;
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"*{BlobStorageDataProtectionXmlRepository.MaxAggregateXmlBytes:N0}-byte aggregate XML limit*"
+            );
     }
 
     #endregion
@@ -733,15 +818,24 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .Returns(_ => _CreateDownloadResult(xmlContent));
     }
 
-    private static BlobInfo _CreateBlobInfo(string blobKey)
+    private static BlobInfo _CreateBlobInfo(string blobKey, long size = 100)
     {
         return new BlobInfo
         {
             BlobKey = blobKey,
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
-            Size = 100,
+            Size = size,
         };
+    }
+
+    private static string _CreateXmlWithByteLength(int byteLength)
+    {
+        const string prefix = "<key>";
+        const string suffix = "</key>";
+        var markupBytes = Encoding.UTF8.GetByteCount(prefix) + Encoding.UTF8.GetByteCount(suffix);
+
+        return $"{prefix}{new string('x', byteLength - markupBytes)}{suffix}";
     }
 
     private static ValueTask<BlobDownloadResult?> _CreateDownloadResult(string xmlContent)
@@ -753,6 +847,23 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
 #pragma warning restore CA2000
 
         return ValueTask.FromResult<BlobDownloadResult?>(blobDownloadResult);
+    }
+
+    private sealed class TrackingMemoryStream(byte[] buffer) : MemoryStream(buffer)
+    {
+        public bool IsDisposed { get; private set; }
+
+        public override ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return base.DisposeAsync();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
     }
 
     #endregion

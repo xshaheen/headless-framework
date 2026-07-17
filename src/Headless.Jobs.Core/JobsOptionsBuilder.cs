@@ -39,6 +39,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     internal bool RequestGZipCompressionEnabled { get; set; }
 
+    internal int RequestGZipMaxDecompressedBytes { get; set; } = JobsHelper.DefaultMaxDecompressedRequestBytes;
+
     /// <summary>
     /// Controls whether code-defined cron jobs are seeded on startup.
     /// Defaults to true.
@@ -136,7 +138,17 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> UseGZipCompression()
     {
+        return UseGZipCompression(JobsHelper.DefaultMaxDecompressedRequestBytes);
+    }
+
+    /// <summary>
+    /// Enables GZip compression for stored requests and limits the expanded payload accepted during reads.
+    /// </summary>
+    /// <param name="maxDecompressedBytes">Maximum expanded request size in bytes.</param>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseGZipCompression(int maxDecompressedBytes)
+    {
         RequestGZipCompressionEnabled = true;
+        RequestGZipMaxDecompressedBytes = Argument.IsPositive(maxDecompressedBytes);
         return this;
     }
 
@@ -254,6 +266,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 /// </summary>
 public sealed class SchedulerOptionsBuilder
 {
+    private int? _maxLongRunningConcurrency;
+
     /// <summary>
     /// Identifies this node on the in-memory single-process path; defaults to <see cref="Environment.MachineName"/>.
     /// The durable (Coordination) path does NOT use this value — it stamps rows with the membership
@@ -268,6 +282,16 @@ public sealed class SchedulerOptionsBuilder
     /// <see cref="Environment.ProcessorCount"/>.
     /// </summary>
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
+
+    /// <summary>
+    /// Maximum number of dedicated threads used by <see cref="Enums.JobPriority.LongRunning"/> jobs. When not set,
+    /// defaults to the smaller of <see cref="MaxConcurrency"/> and four.
+    /// </summary>
+    public int MaxLongRunningConcurrency
+    {
+        get => _maxLongRunningConcurrency ?? Math.Min(MaxConcurrency, 4);
+        set => _maxLongRunningConcurrency = value;
+    }
 
     /// <summary>
     /// How long an idle worker thread waits before terminating. Defaults to one minute.

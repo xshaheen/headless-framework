@@ -119,6 +119,8 @@ The package adds `AddStandardResilienceHandler()` to the named HTTP client autom
 
 `PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
 
+All Paymob URL options require HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so API credentials and payment tokens cannot be configured for remote plaintext transport.
+
 ### Installation
 
 ```bash
@@ -219,6 +221,8 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 | `TokenRefreshBuffer` | No | `00:55:00` | How early to refresh the auth token (must be < 60 min). |
 | `ApiBaseUrl` | No | `https://accept.paymobsolutions.com/api` | Legacy API base URL. |
 | `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | v2 Intentions endpoint. |
+| `RefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/refund` | Refund endpoint. |
+| `VoidRefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/void` | Void endpoint. |
 | `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
 ### Dependencies
@@ -269,6 +273,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 `IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `Disburse(...)` (synchronous name, async implementation) — not `DisburseAsync`. `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
 The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprietary API-key flow. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
+
+`ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
 
 ### Installation
 

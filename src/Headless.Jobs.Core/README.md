@@ -6,12 +6,14 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 
 Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and an in-process thread pool without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Headless.Jobs.EntityFramework`.
 
+Stored requests may use GZip compression through `UseGZipCompression()`. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` when an application deliberately supports a different bounded payload size.
+
 ## Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
+- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4).
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(...)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
@@ -161,6 +163,7 @@ builder.Services.AddHeadlessJobs(options =>
     {
         scheduler.NodeId = "my-node"; // in-memory path only
         scheduler.MaxConcurrency = 10; // default: processor count
+        scheduler.MaxLongRunningConcurrency = 4; // default: min(MaxConcurrency, 4)
         scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1); // default: 1 min
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3

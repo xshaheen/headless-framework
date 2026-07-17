@@ -1,160 +1,256 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
+using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Dashboard.GatewayProxy;
+using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Security;
 
-/// <summary>
-/// <para>
-/// CRITICAL SECURITY TESTS: PingServices SSRF Prevention
-/// These tests document the current SSRF vulnerability in PingServices endpoint.
-/// The endpoint accepts an 'endpoint' query parameter and makes an HTTP request to it.
-/// </para>
-/// <para>
-/// MITIGATION: The refactored endpoint validates that the endpoint matches a registered
-/// discovery node before making the request. Unregistered endpoints return 403 Forbidden.
-/// </para>
-/// <para>
-/// REMAINING VULNERABILITY: The endpoint does not validate against internal IP ranges directly.
-/// If a node is registered with an internal IP, the endpoint will allow requests to it.
-/// </para>
-/// </summary>
 public sealed class PingServicesSecurityTests : TestBase
 {
-    private static readonly MessagingDashboardOptionsBuilder _DefaultBuilder = new();
-
-    // NOTE: These tests document the SSRF vulnerability.
-    // The current implementation validates against registered discovery nodes,
-    // but does NOT reject requests to internal IP ranges if registered.
+    private static readonly Node _RegisteredNode = new()
+    {
+        Id = "node-id",
+        Name = "allowed",
+        Address = "allowed",
+        Port = 8080,
+        Tags = "messaging",
+    };
 
     [Theory]
-    [InlineData("http://10.0.0.1")]
-    [InlineData("http://10.255.255.255")]
-    [InlineData("http://10.0.0.1:8080")]
-    public void should_reject_internal_ip_10_range_when_ping_services(string endpoint)
+    [InlineData("http://allowed:8080")]
+    [InlineData("http://allowed:8080/")]
+    public async Task should_ping_exact_registered_origin(string endpoint)
     {
-        // This test documents that 10.x.x.x addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
-        _AssertInternalAddressShouldBeRejected(endpoint);
+        // given
+        using var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("OK"),
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([_RegisteredNode], factory);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync($"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        handler.Requests.Should().ContainSingle();
+        handler.Requests[0].Should().Be(new Uri("http://allowed:8080/messaging/api/health"));
+        handler.CancellationTokens.Should().ContainSingle(token => token.CanBeCanceled);
+        factory
+            .RequestedNames.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(MessagingDashboardEndpoints.PingHttpClientName);
     }
 
-    [Theory]
-    [InlineData("http://172.16.0.1")]
-    [InlineData("http://172.31.255.255")]
-    [InlineData("http://172.20.10.5:3000")]
-    public void should_reject_internal_ip_172_range_when_ping_services(string endpoint)
-    {
-        // This test documents that 172.16-31.x.x addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://192.168.0.1")]
-    [InlineData("http://192.168.255.255")]
-    [InlineData("http://192.168.1.100:443")]
-    public void should_reject_internal_ip_192_168_range_when_ping_services(string endpoint)
-    {
-        // This test documents that 192.168.x.x addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://127.0.0.1")]
-    [InlineData("http://127.0.0.1:8080")]
-    [InlineData("http://localhost")]
-    [InlineData("http://localhost:3000")]
-    [InlineData("http://[::1]")]
-    public void PingServices_should_reject_localhost(string endpoint)
-    {
-        // This test documents that localhost addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected if registered as nodes
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://169.254.169.254")]
-    [InlineData("http://169.254.169.254/latest/meta-data")]
-    [InlineData("http://169.254.169.254/latest/user-data")]
-    public void should_reject_aws_metadata_endpoint_when_ping_services(string endpoint)
-    {
-        // This test documents that AWS/cloud metadata endpoints should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected
-        // This is especially critical as it can leak cloud credentials
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://169.254.0.1")]
-    [InlineData("http://169.254.255.255")]
-    public void should_reject_link_local_addresses_when_ping_services(string endpoint)
-    {
-        // This test documents that link-local addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://0.0.0.0")]
-    [InlineData("http://0.0.0.0:8080")]
-    public void should_reject_zero_address_when_ping_services(string endpoint)
-    {
-        // This test documents that 0.0.0.0 should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    [Theory]
-    [InlineData("http://[fc00::1]")]
-    [InlineData("http://[fd00::1]")]
-    public void PingServices_should_reject_ipv6_private_addresses(string endpoint)
-    {
-        // This test documents that IPv6 private addresses should be rejected
-        // SSRF VULNERABILITY: Currently these are NOT rejected
-        _AssertInternalAddressShouldBeRejected(endpoint);
-    }
-
-    // Helper method to document the vulnerability
-    // When SSRF protection is implemented, these should actually test the rejection
-    private static void _AssertInternalAddressShouldBeRejected(string endpoint)
-    {
-        // Document that URL validation SHOULD occur
-        // The endpoint parameter comes from query string and is validated against
-        // registered discovery nodes before making HTTP requests.
-
-        // Parse the URL to show it's a valid URL that would be processed
-        var uri = new Uri(endpoint);
-
-        // The host should be validated against internal ranges
-        // Currently validation only checks against registered discovery nodes
-        uri.Host.Should().NotBeEmpty("URL is valid and would be processed without internal IP validation");
-
-        // When fixed, the _PingServices handler should:
-        // 1. Parse the endpoint URL
-        // 2. Resolve the hostname to IP address(es)
-        // 3. Check if any resolved IP is in internal/private ranges
-        // 4. Return 400 Bad Request if internal address detected
-        // 5. Include proper error message without leaking internal info
-    }
-
-    // Test to verify the current behavior
     [Fact]
-    public void ping_services_validates_endpoint_against_registered_nodes()
+    public async Task should_accept_default_https_port_for_registered_origin()
     {
-        // The _PingServices handler in MessagingDashboardEndpoints:
-        // 1. Reads 'endpoint' from query parameter
-        // 2. Checks if endpoint matches a registered discovery node address:port
-        // 3. Returns 403 Forbidden if not registered
-        // 4. Constructs health URL: endpoint + BasePath + "/api/health"
-        // 5. Calls HttpClient.GetStringAsync
+        // given
+        var node = new Node
+        {
+            Id = "node-id",
+            Name = "allowed",
+            Address = "https://allowed",
+            Port = 443,
+            Tags = "messaging",
+        };
+        using var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("OK"),
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([node], factory);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
 
-        // This is an improvement over the old code which had NO validation,
-        // but internal IP ranges are still not blocked if registered as nodes.
+        // when
+        var response = await client.GetAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString("https://allowed")}",
+            AbortToken
+        );
 
-        _ = _DefaultBuilder; // Reference the builder to suppress unused warning
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        handler.Requests.Should().ContainSingle().Which.Should().Be(new Uri("https://allowed/messaging/api/health"));
+    }
 
-        true.Should().BeTrue("This test documents the endpoint validation behavior");
+    [Theory]
+    [InlineData("http://allowed:8080@evil.test")]
+    [InlineData("http://allowed.evil.test:8080")]
+    [InlineData("http://allowed:8081")]
+    [InlineData("https://allowed:8080")]
+    [InlineData("http://allowed:8080/path")]
+    [InlineData("http://allowed:8080/?query=value")]
+    [InlineData("http://allowed:8080?")]
+    [InlineData("http://allowed:8080/#fragment")]
+    [InlineData("http://allowed:8080#")]
+    [InlineData("ftp://allowed:8080")]
+    [InlineData("not-a-uri")]
+    public async Task should_reject_non_origin_or_mismatched_endpoint_without_request(string endpoint)
+    {
+        // given
+        using var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("OK"),
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([_RegisteredNode], factory);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync($"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        handler.Requests.Should().BeEmpty();
+        factory.RequestedNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_follow_redirect_from_registered_origin()
+    {
+        // given
+        using var handler = new CapturingHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Redirect);
+            response.Headers.Location = new Uri("http://evil.test/secrets");
+            return response;
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([_RegisteredNode], factory);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString("http://allowed:8080")}",
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        handler
+            .Requests.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(new Uri("http://allowed:8080/messaging/api/health"));
+        handler.Requests.Should().NotContain(uri => uri.Host == "evil.test");
+    }
+
+    [Fact]
+    public void should_configure_ping_client_timeout_and_disable_redirects()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        new DashboardOptionsExtension(config => config.WithNoAuth()).AddServices(services);
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+        var options = provider
+            .GetRequiredService<IOptionsMonitor<HttpClientFactoryOptions>>()
+            .Get(MessagingDashboardEndpoints.PingHttpClientName);
+        var handlerBuilder = new TestHttpMessageHandlerBuilder(provider)
+        {
+            Name = MessagingDashboardEndpoints.PingHttpClientName,
+        };
+
+        // when
+        using var client = factory.CreateClient(MessagingDashboardEndpoints.PingHttpClientName);
+        foreach (var configure in options.HttpMessageHandlerBuilderActions)
+        {
+            configure(handlerBuilder);
+        }
+
+        // then
+        client.Timeout.Should().Be(TimeSpan.FromSeconds(5));
+        handlerBuilder.PrimaryHandler.Should().BeOfType<HttpClientHandler>().Which.AllowAutoRedirect.Should().BeFalse();
+    }
+
+    private static WebApplication _CreateTestApp(IList<Node> nodes, IHttpClientFactory httpClientFactory)
+    {
+        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
+        var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
+        discoveryProvider.GetNodes(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(nodes));
+
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(config);
+        builder.Services.AddSingleton(config.Auth);
+        builder.Services.AddSingleton(Substitute.For<IAuthService>());
+        builder.Services.AddSingleton(discoveryProvider);
+        builder.Services.AddSingleton(httpClientFactory);
+        builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
+        builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "current-node" });
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<GatewayProxyAgent>();
+        builder.Services.AddRouting();
+        builder.Services.AddAuthorization();
+        builder.Services.AddCors(options =>
+            options.AddPolicy("HeadlessMessagingDashboardCORS", policy => policy.AllowAnyOrigin())
+        );
+
+        var app = builder.Build();
+        app.UseRouting();
+        app.UseCors("HeadlessMessagingDashboardCORS");
+        app.UseAuthorization();
+        app.MapMessagingDashboardEndpoints(config);
+
+        return app;
+    }
+
+    private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public List<string> RequestedNames { get; } = [];
+
+        public HttpClient CreateClient(string name)
+        {
+            RequestedNames.Add(name);
+            return new HttpClient(handler, disposeHandler: false);
+        }
+    }
+
+    private sealed class CapturingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+        public List<CancellationToken> CancellationTokens { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request.RequestUri!);
+            CancellationTokens.Add(cancellationToken);
+            return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    private sealed class TestHttpMessageHandlerBuilder(IServiceProvider services) : HttpMessageHandlerBuilder
+    {
+        public override string? Name { get; set; }
+        public override HttpMessageHandler PrimaryHandler { get; set; } = new HttpClientHandler();
+        public override IList<DelegatingHandler> AdditionalHandlers { get; } = [];
+        public override IServiceProvider Services { get; } = services;
+
+        public override HttpMessageHandler Build()
+        {
+            return CreateHandlerPipeline(PrimaryHandler, AdditionalHandlers);
+        }
     }
 }

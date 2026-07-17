@@ -348,6 +348,139 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     #endregion
 
+    #region Service Mapping Tests
+
+    [Fact]
+    public void should_map_visible_service_with_label_selected_port()
+    {
+        // given
+        var service = _CreateService(
+            labels: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["headless.messaging.visibility"] = "show",
+                ["headless.messaging.portName"] = "dashboard",
+            }
+        );
+
+        // when
+        var node = _InvokeMapService(service, "team-a");
+
+        // then
+        node.Should().NotBeNull();
+        node!.Name.Should().Be("messaging-api");
+        node.Address.Should().Be("http://messaging-api.team-a");
+        node.Port.Should().Be(9090);
+    }
+
+    [Fact]
+    public void should_reject_hidden_service_when_mapping_direct_lookup()
+    {
+        // given
+        var service = _CreateService(
+            labels: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["headless.messaging.visibility"] = "hide",
+            }
+        );
+
+        // when
+        var node = _InvokeMapService(service, "team-a");
+
+        // then
+        node.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_reject_service_without_explicit_visibility_when_port_label_exists()
+    {
+        // given
+        var service = _CreateService(
+            labels: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["headless.messaging.portName"] = "dashboard",
+            }
+        );
+
+        // when
+        var node = _InvokeMapService(service, "team-a");
+
+        // then
+        node.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_map_unlabelled_service_when_show_only_is_disabled()
+    {
+        // given
+        _options.ShowOnlyExplicitVisibleNodes = false;
+        var service = _CreateService(labels: null);
+
+        // when
+        var node = _InvokeMapService(service, "team-a");
+
+        // then
+        node.Should().NotBeNull();
+        node!.Port.Should().Be(8080);
+    }
+
+    #endregion
+
+    #region Namespace Boundary Tests
+
+    [Fact]
+    public void should_default_to_configured_namespace_when_request_omits_namespace()
+    {
+        // given
+        _options.K8sClientConfig.Namespace = "team-a";
+
+        // when
+        var result = _InvokeResolveNamespace(null);
+
+        // then
+        result.Should().Be("team-a");
+    }
+
+    [Fact]
+    public void should_reject_cross_namespace_request()
+    {
+        // given
+        _options.K8sClientConfig.Namespace = "team-a";
+
+        // when
+        var result = _InvokeResolveNamespace("team-b");
+
+        // then
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_return_only_configured_namespace()
+    {
+        // given
+        _options.K8sClientConfig.Namespace = "team-a";
+
+        // when
+        var result = await _provider.GetNamespaces(AbortToken);
+
+        // then
+        result.Should().ContainSingle().Which.Should().Be("team-a");
+    }
+
+    [Fact]
+    public async Task should_fail_closed_when_namespace_is_not_configured()
+    {
+        // given
+        _options.K8sClientConfig.Namespace = null!;
+
+        // when
+        var result = await _provider.GetNamespaces(AbortToken);
+
+        // then
+        result.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region Provider Interface Tests
 
     [Fact]
@@ -412,6 +545,53 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
         );
 
         return (string)method!.Invoke(null, [tag])!;
+    }
+
+    private Node? _InvokeMapService(V1Service service, string ns)
+    {
+        var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
+            "_MapService",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(V1Service), typeof(string)],
+            null
+        );
+
+        return (Node?)method!.Invoke(_provider, [service, ns]);
+    }
+
+    private string? _InvokeResolveNamespace(string? requestedNamespace)
+    {
+        var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
+            "_ResolveNamespace",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(string)],
+            null
+        );
+
+        return (string?)method!.Invoke(_provider, [requestedNamespace]);
+    }
+
+    private static V1Service _CreateService(IDictionary<string, string>? labels)
+    {
+        return new V1Service
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "messaging-api",
+                Uid = "service-id",
+                Labels = labels,
+            },
+            Spec = new V1ServiceSpec
+            {
+                Ports =
+                [
+                    new V1ServicePort { Name = "http", Port = 8080 },
+                    new V1ServicePort { Name = "dashboard", Port = 9090 },
+                ],
+            },
+        };
     }
 
     #endregion

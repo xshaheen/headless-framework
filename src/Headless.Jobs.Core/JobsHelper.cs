@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Compression;
+using Headless.Checks;
 
 namespace Headless.Jobs;
 
@@ -10,6 +11,7 @@ namespace Headless.Jobs;
 /// </summary>
 public static class JobsHelper
 {
+    internal const int DefaultMaxDecompressedRequestBytes = 64 * 1024 * 1024;
     private static readonly byte[] _GZipSignature = [0x1f, 0x8b, 0x08, 0x00];
 
     /// <summary>
@@ -23,6 +25,9 @@ public static class JobsHelper
     /// When false (default), requests are stored as plain UTF-8 JSON bytes without compression.
     /// </summary>
     public static bool UseGZipCompression { get; set; }
+
+    /// <summary>Maximum expanded size of a compressed job request. Defaults to 64 MiB.</summary>
+    public static int MaxDecompressedRequestBytes { get; set; } = DefaultMaxDecompressedRequestBytes;
 
     /// <summary>
     /// Serializes <paramref name="data"/> to the byte array format used by the persistence layer,
@@ -121,14 +126,30 @@ public static class JobsHelper
             throw new InvalidOperationException("The bytes are not GZip compressed.");
         }
 
-        var compressedBytes = gzipBytes.Take(gzipBytes.Length - _GZipSignature.Length).ToArray();
-
-        using var memoryStream = new MemoryStream(compressedBytes);
+        using var memoryStream = new MemoryStream(gzipBytes, 0, gzipBytes.Length - _GZipSignature.Length);
         using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
-        using var streamReader = new StreamReader(gzipStream);
+        using var expandedStream = new MemoryStream();
+        var buffer = new byte[81920];
+        var maxDecompressedBytes = Argument.IsPositive(MaxDecompressedRequestBytes);
 
-        var serializedObject = streamReader.ReadToEnd();
+        while (true)
+        {
+            var read = gzipStream.Read(buffer);
+            if (read == 0)
+            {
+                break;
+            }
 
-        return serializedObject;
+            if (expandedStream.Length > maxDecompressedBytes - read)
+            {
+                throw new InvalidDataException(
+                    $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
+                );
+            }
+
+            expandedStream.Write(buffer, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(expandedStream.GetBuffer(), 0, checked((int)expandedStream.Length));
     }
 }

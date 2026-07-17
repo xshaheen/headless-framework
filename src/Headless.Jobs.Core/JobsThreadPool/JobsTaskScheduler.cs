@@ -15,6 +15,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeSpan _idleWorkerTimeout;
     private readonly int _maxCapacityPerWorker;
     private readonly TimeProvider _timeProvider;
+    private readonly SemaphoreSlim _longRunningSlots;
 
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
@@ -26,6 +27,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private volatile int _queuedHighPriority;
     private volatile int _queuedNormalPriority;
     private volatile int _queuedLowPriority;
+    private volatile int _outstandingLongRunningOperations;
+    private volatile int _longRunningSlotsDisposed;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
     private volatile int _nextQueueIndex;
@@ -49,6 +52,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     public JobsTaskScheduler(
         int maxConcurrency,
+        int? maxLongRunningConcurrency = null,
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
         TimeProvider? timeProvider = null
@@ -59,6 +63,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _longRunningSlots = new SemaphoreSlim(
+            Argument.IsPositive(maxLongRunningConcurrency ?? Math.Min(maxConcurrency, 4))
+        );
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
@@ -105,7 +112,23 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         // Handle long-running tasks specially
         if (priority == JobPriority.LongRunning)
         {
-            // Bypass pool for long-running tasks
+            using var admissionCts = CancellationTokenSource.CreateLinkedTokenSource(
+                capacityCancellationToken,
+                _shutdownCts.Token
+            );
+            Interlocked.Increment(ref _outstandingLongRunningOperations);
+            try
+            {
+                await _longRunningSlots.WaitAsync(admissionCts.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                Interlocked.Decrement(ref _outstandingLongRunningOperations);
+                _TryDisposeLongRunningSlots();
+                throw;
+            }
+
+            // Bypass the shared pool only after reserving a bounded dedicated-thread slot.
             Interlocked.Increment(ref _activeTasks);
 
             try
@@ -122,6 +145,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             catch
             {
                 Interlocked.Decrement(ref _activeTasks);
+                _longRunningSlots.Release();
+                Interlocked.Decrement(ref _outstandingLongRunningOperations);
+                _TryDisposeLongRunningSlots();
                 throw;
             }
 
@@ -423,7 +449,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 #pragma warning restore ERP022, RCS1075
         finally
         {
+            _longRunningSlots.Release();
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
             Interlocked.Decrement(ref _activeTasks);
+            _TryDisposeLongRunningSlots();
         }
     }
 
@@ -597,7 +626,21 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 
         _notifyDebounce?.Dispose();
+        _TryDisposeLongRunningSlots();
         _shutdownCts?.Dispose();
+    }
+
+    private void _TryDisposeLongRunningSlots()
+    {
+        if (!_disposed || _outstandingLongRunningOperations != 0)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _longRunningSlotsDisposed, 1) == 0)
+        {
+            _longRunningSlots.Dispose();
+        }
     }
 
     private int _GetQueuedPriorityCount(JobPriority priority)

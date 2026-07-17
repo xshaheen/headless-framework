@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Threading;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,8 +23,9 @@ internal sealed class GatewayProxyAgent(
     IHttpClientFactory httpClientFactory,
     IMemoryCache cache,
     IServiceProvider serviceProvider,
-    INodeDiscoveryProvider discoveryProvider
-)
+    INodeDiscoveryProvider discoveryProvider,
+    KeyedAsyncLock? keyedLock = null
+) : IDisposable
 {
     /// <summary>Cookie name that carries the target node's service name.</summary>
     public const string CookieNodeName = "messaging.node";
@@ -33,6 +35,8 @@ internal sealed class GatewayProxyAgent(
 
     private readonly ConsulDiscoveryOptions? _consulDiscoveryOptions =
         serviceProvider.GetService<ConsulDiscoveryOptions>();
+    private readonly KeyedAsyncLock _keyedLock = keyedLock ?? new KeyedAsyncLock();
+    private readonly bool _ownsKeyedLock = keyedLock is null;
     private readonly ILogger _logger = loggerFactory.CreateLogger<GatewayProxyAgent>();
 
     /// <summary>
@@ -64,20 +68,23 @@ internal sealed class GatewayProxyAgent(
         Node? node;
         if (_consulDiscoveryOptions == null) // it's k8s
         {
-            if (request.Cookies.TryGetValue(CookieNodeNsName, out var ns))
+            request.Cookies.TryGetValue(CookieNodeNsName, out var ns);
+            var cacheKey = $"messaging.gateway.k8s\0{requestNodeName}\0{ns}";
+            if (!cache.TryGetValue(cacheKey, out node))
             {
-                var cacheKey = $"{requestNodeName}\0{ns}";
-                if (!cache.TryGetValue(cacheKey, out node))
+                using (await _keyedLock.LockAsync(cacheKey, context.RequestAborted).ConfigureAwait(false))
                 {
-                    node = await discoveryProvider
-                        .GetNode(requestNodeName, ns, context.RequestAborted)
-                        .ConfigureAwait(false);
-                    cache.Set(cacheKey, node);
+                    if (!cache.TryGetValue(cacheKey, out node))
+                    {
+                        node = await discoveryProvider
+                            .GetNode(requestNodeName, ns, context.RequestAborted)
+                            .ConfigureAwait(false);
+                        if (node != null)
+                        {
+                            cache.Set(cacheKey, node, TimeSpan.FromSeconds(30));
+                        }
+                    }
                 }
-            }
-            else
-            {
-                return false;
             }
         }
         else
@@ -130,9 +137,21 @@ internal sealed class GatewayProxyAgent(
         else
         {
             context.Response.Cookies.Delete(CookieNodeName);
+            if (_consulDiscoveryOptions == null)
+            {
+                context.Response.Cookies.Delete(CookieNodeNsName);
+            }
         }
 
         return false;
+    }
+
+    public void Dispose()
+    {
+        if (_ownsKeyedLock)
+        {
+            _keyedLock.Dispose();
+        }
     }
 
     private static async Task _SetResponseOnHttpContext(

@@ -127,7 +127,7 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Startup Initialization
 
-`SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent, guarded by a distributed lock; retries up to 10 times with exponential back-off), then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Dependents can await `WaitForInitializationAsync()` to block until initialization completes. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
+`SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 
 ## Choosing a Provider
 
@@ -244,7 +244,7 @@ Provides the full settings management implementation including hierarchical valu
 - Built-in value providers (lowest to highest priority): `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider`
 - `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
 - `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
-- `SettingsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled
+- `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
@@ -257,7 +257,7 @@ Value providers are registered with the last-added provider having the highest r
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
-`SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
+`SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 
 ### Installation
 
