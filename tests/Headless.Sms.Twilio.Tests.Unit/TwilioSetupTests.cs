@@ -51,10 +51,12 @@ public sealed class TwilioSetupTests
         provider.GetService<IBulkSmsSender>().Should().BeNull();
     }
 
-    private static IConfiguration _Config(params (string Key, string Value)[] values) =>
-        new ConfigurationBuilder()
+    private static IConfiguration _Config(params (string Key, string Value)[] values)
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 values.Select(static item => new KeyValuePair<string, string?>(item.Key, item.Value))
             )
             .Build();
+    }
 }

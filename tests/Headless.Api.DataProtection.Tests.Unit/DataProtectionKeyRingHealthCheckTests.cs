@@ -3,7 +3,6 @@
 using Headless.Api.DataProtection;
 using Headless.Blobs;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.DependencyInjection;

@@ -66,7 +66,10 @@ public sealed class AzureServiceBusMessageConfigBuilder<TMessage>
         return this;
     }
 
-    internal AzureServiceBusMessageConfig<TMessage> Build() => new(_partitionKeySelector);
+    internal AzureServiceBusMessageConfig<TMessage> Build()
+    {
+        return new(_partitionKeySelector);
+    }
 }
 
 internal sealed class AzureServiceBusMessageConfig<TMessage>(Func<TMessage, string?>? partitionKeySelector)

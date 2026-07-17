@@ -67,5 +67,8 @@ internal sealed class MicrosoftMemoryCacheBenchmarkClient(
         return ValueTask.CompletedTask;
     }
 
-    private string _GetKey(string key) => keyPrefix + key;
+    private string _GetKey(string key)
+    {
+        return keyPrefix + key;
+    }
 }

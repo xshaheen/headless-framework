@@ -7,8 +7,10 @@ namespace Headless.Testing.AspNetCore;
 
 internal static class DatabaseResetOperation
 {
-    public static CancellationToken ResolveCancellationToken(CancellationToken cancellationToken) =>
-        cancellationToken.CanBeCanceled ? cancellationToken : TestContext.Current.CancellationToken;
+    public static CancellationToken ResolveCancellationToken(CancellationToken cancellationToken)
+    {
+        return cancellationToken.CanBeCanceled ? cancellationToken : TestContext.Current.CancellationToken;
+    }
 
     public static async Task<T> RunAsync<T>(
         DbConnection connection,
@@ -65,7 +67,9 @@ internal static class DatabaseResetOperation
         {
             // Respawn 7 has no CancellationToken overloads; closing the connection is the only
             // provider-neutral way to interrupt its active command while still observing completion.
+#pragma warning disable MA0045 // CancellationToken.Register requires a synchronous callback.
             connection.Close();
+#pragma warning restore MA0045
         }
 #pragma warning disable ERP022, RCS1075 // Cancellation must not be replaced by a provider close failure.
         catch (Exception)

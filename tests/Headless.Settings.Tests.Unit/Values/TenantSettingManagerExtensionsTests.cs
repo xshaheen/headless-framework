@@ -9,12 +9,7 @@ namespace Tests.Values;
 
 public sealed class TenantSettingManagerExtensionsTests : TestBase
 {
-    private readonly ISettingManager _settingManager;
-
-    public TenantSettingManagerExtensionsTests()
-    {
-        _settingManager = Substitute.For<ISettingManager>();
-    }
+    private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
 
     #region IsTrueForTenantAsync
 

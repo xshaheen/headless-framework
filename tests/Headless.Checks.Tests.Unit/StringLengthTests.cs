@@ -7,13 +7,13 @@ namespace Tests;
 public sealed class StringLengthTests
 {
     [Fact]
-    public void has_length_should_return_value_when_exact()
+    public void should_return_value_when_has_length_exact()
     {
         Argument.HasLength("abc", 3).Should().Be("abc");
     }
 
     [Fact]
-    public void has_length_should_throw_when_not_exact()
+    public void should_throw_when_has_length_not_exact()
     {
         const string value = "abc";
         var action = () => Argument.HasLength(value, 4);
@@ -25,21 +25,21 @@ public sealed class StringLengthTests
     }
 
     [Fact]
-    public void has_length_should_throw_argument_null_when_null()
+    public void should_throw_argument_null_when_has_length_null()
     {
         var action = () => Argument.HasLength(null, 3);
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]
-    public void has_min_length_should_return_value_when_long_enough()
+    public void should_return_value_when_has_min_length_long_enough()
     {
         Argument.HasMinLength("abc", 2).Should().Be("abc");
         Argument.HasMinLength("abc", 3).Should().Be("abc");
     }
 
     [Fact]
-    public void has_min_length_should_throw_when_too_short()
+    public void should_throw_when_has_min_length_too_short()
     {
         const string value = "a";
         var action = () => Argument.HasMinLength(value, 2);
@@ -47,14 +47,14 @@ public sealed class StringLengthTests
     }
 
     [Fact]
-    public void has_max_length_should_return_value_when_short_enough()
+    public void should_return_value_when_has_max_length_short_enough()
     {
         Argument.HasMaxLength("abc", 3).Should().Be("abc");
         Argument.HasMaxLength("abc", 5).Should().Be("abc");
     }
 
     [Fact]
-    public void has_max_length_should_throw_when_too_long()
+    public void should_throw_when_has_max_length_too_long()
     {
         const string value = "abcd";
         var action = () => Argument.HasMaxLength(value, 3);
@@ -65,7 +65,7 @@ public sealed class StringLengthTests
     [InlineData("ab")]
     [InlineData("abc")]
     [InlineData("abcd")]
-    public void has_length_between_should_return_value_when_in_range(string value)
+    public void should_return_value_when_has_length_between_in_range(string value)
     {
         Argument.HasLengthBetween(value, 2, 4).Should().Be(value);
     }
@@ -73,21 +73,21 @@ public sealed class StringLengthTests
     [Theory]
     [InlineData("a")]
     [InlineData("abcde")]
-    public void has_length_between_should_throw_when_out_of_range(string value)
+    public void should_throw_when_has_length_between_out_of_range(string value)
     {
         var action = () => Argument.HasLengthBetween(value, 2, 4);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void has_length_between_should_throw_when_bounds_inverted()
+    public void should_throw_when_has_length_between_bounds_inverted()
     {
         var action = () => Argument.HasLengthBetween("abc", 5, 2);
         action.Should().ThrowExactly<ArgumentException>();
     }
 
     [Fact]
-    public void has_length_greater_than_should_validate_exclusive_lower_bound()
+    public void should_validate_exclusive_lower_bound_when_has_length_greater_than()
     {
         Argument.HasLengthGreaterThan("abcd", 3).Should().Be("abcd");
 
@@ -105,7 +105,7 @@ public sealed class StringLengthTests
     }
 
     [Fact]
-    public void has_length_less_than_should_validate_exclusive_upper_bound()
+    public void should_validate_exclusive_upper_bound_when_has_length_less_than()
     {
         Argument.HasLengthLessThan("ab", 3).Should().Be("ab");
 
@@ -117,7 +117,7 @@ public sealed class StringLengthTests
     }
 
     [Fact]
-    public void has_length_not_equal_to_should_reject_exact_length()
+    public void should_reject_exact_length_when_has_length_not_equal_to()
     {
         Argument.HasLengthNotEqualTo("abcd", 3).Should().Be("abcd");
         Argument.HasLengthNotEqualTo("ab", 3).Should().Be("ab");
@@ -127,7 +127,7 @@ public sealed class StringLengthTests
     }
 
     [Fact]
-    public void strict_length_guards_should_throw_argument_null_when_null()
+    public void should_throw_argument_null_when_strict_length_guards_null()
     {
         ((Action)(() => Argument.HasLengthGreaterThan(null, 1))).Should().ThrowExactly<ArgumentNullException>();
         ((Action)(() => Argument.HasLengthLessThan(null, 1))).Should().ThrowExactly<ArgumentNullException>();

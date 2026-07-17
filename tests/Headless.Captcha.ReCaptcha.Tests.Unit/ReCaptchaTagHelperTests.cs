@@ -156,7 +156,10 @@ public sealed class ReCaptchaTagHelperTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    private static string _Src(TagHelperOutput output) => output.Attributes["src"].Value?.ToString() ?? "";
+    private static string _Src(TagHelperOutput output)
+    {
+        return output.Attributes["src"].Value?.ToString() ?? "";
+    }
 
     [Fact]
     public void v3_script_js_helper_emits_execute_script_with_sitekey()

@@ -74,7 +74,10 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
     internal static NatsHeaders? CreatePublishHeaders(TransportMessage message)
     {

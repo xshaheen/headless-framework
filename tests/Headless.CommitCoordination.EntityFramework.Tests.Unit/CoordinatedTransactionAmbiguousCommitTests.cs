@@ -6,7 +6,6 @@ using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -127,7 +126,10 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
         private int _armed;
         private int _thrown;
 
-        public void Arm() => Volatile.Write(ref _armed, 1);
+        public void Arm()
+        {
+            Volatile.Write(ref _armed, 1);
+        }
 
         public override Task TransactionCommittedAsync(
             DbTransaction transaction,
@@ -147,12 +149,18 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
     private sealed class OneShotRetryExecutionStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
     {
-        protected override bool ShouldRetryOn(Exception exception) => exception is TransientCommitMarkerException;
+        protected override bool ShouldRetryOn(Exception exception)
+        {
+            return exception is TransientCommitMarkerException;
+        }
     }
 
     private sealed class OneShotRetryExecutionStrategyFactory(ExecutionStrategyDependencies dependencies)
         : IExecutionStrategyFactory
     {
-        public IExecutionStrategy Create() => new OneShotRetryExecutionStrategy(dependencies);
+        public IExecutionStrategy Create()
+        {
+            return new OneShotRetryExecutionStrategy(dependencies);
+        }
     }
 }

@@ -109,5 +109,8 @@ public sealed class FeatureGroupDefinition : ICanAddChildFeature, IHasExtraPrope
     }
 
     /// <inheritdoc/>
-    public override string ToString() => $"[{nameof(FeatureGroupDefinition)} {Name}]";
+    public override string ToString()
+    {
+        return $"[{nameof(FeatureGroupDefinition)} {Name}]";
+    }
 }

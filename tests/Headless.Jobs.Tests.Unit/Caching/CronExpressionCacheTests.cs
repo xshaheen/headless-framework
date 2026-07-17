@@ -17,7 +17,7 @@ namespace Tests.Caching;
 public sealed class CronExpressionCacheTests : TestBase
 {
     [Fact]
-    public async Task GetAllCronJobExpressions_without_cache_reads_database()
+    public async Task get_all_cron_job_expressions_without_cache_reads_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("daily", "0 0 * * *"));
@@ -29,7 +29,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_skips_database_factory()
+    public async Task get_all_cron_job_expressions_cache_hit_skips_database_factory()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache
@@ -49,7 +49,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_miss_loads_database_once()
+    public async Task get_all_cron_job_expressions_cache_miss_loads_database_once()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 */2 * * *"));
@@ -64,7 +64,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_read_failure_falls_back_to_database()
+    public async Task get_all_cron_job_expressions_cache_read_failure_falls_back_to_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 12 * * *"));
@@ -78,7 +78,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_write_failure_returns_database_result()
+    public async Task get_all_cron_job_expressions_cache_write_failure_returns_database_result()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 6 * * *"));
@@ -92,7 +92,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_with_no_value_returns_empty_without_database()
+    public async Task get_all_cron_job_expressions_cache_hit_with_no_value_returns_empty_without_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 9 * * *"));
@@ -108,7 +108,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_hit_with_null_value_returns_empty_without_database()
+    public async Task get_all_cron_job_expressions_cache_hit_with_null_value_returns_empty_without_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 10 * * *"));
@@ -123,7 +123,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_factory_failure_propagates_without_fallback()
+    public async Task get_all_cron_job_expressions_factory_failure_propagates_without_fallback()
     {
         var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
         // The factory (DB load) itself throwing is a real load failure, not a cache-layer failure: factoryFailed
@@ -158,7 +158,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_foreign_token_cache_cancellation_falls_back_to_database()
+    public async Task get_all_cron_job_expressions_foreign_token_cache_cancellation_falls_back_to_database()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         await fixture.SeedCronJobsAsync(_Cron("db", "0 3 * * *"));
@@ -178,7 +178,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_caller_cancellation_propagates()
+    public async Task get_all_cron_job_expressions_caller_cancellation_propagates()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache
@@ -197,7 +197,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task Cron_job_writes_invalidate_registered_cache()
+    public async Task cron_job_writes_invalidate_registered_cache()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cronJob = _Cron("db", "0 6 * * *");
@@ -214,7 +214,7 @@ public sealed class CronExpressionCacheTests : TestBase
     }
 
     [Fact]
-    public async Task Cron_job_write_cache_invalidation_failure_is_best_effort()
+    public async Task cron_job_write_cache_invalidation_failure_is_best_effort()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache { RemoveException = new InvalidOperationException("cache remove failed") };
@@ -226,8 +226,9 @@ public sealed class CronExpressionCacheTests : TestBase
         cache.RemoveCalls.Should().Be(1);
     }
 
-    private static CronJobEntity _Cron(string function, string expression) =>
-        new()
+    private static CronJobEntity _Cron(string function, string expression)
+    {
+        return new()
         {
             Id = Guid.NewGuid(),
             Function = function,
@@ -235,6 +236,7 @@ public sealed class CronExpressionCacheTests : TestBase
             Expression = expression,
             Request = [],
         };
+    }
 
     private sealed class CronCacheFixture : IAsyncDisposable
     {
@@ -313,18 +315,27 @@ public sealed class CronExpressionCacheTests : TestBase
             await _services.DisposeAsync();
         }
 
-        private JobsDbContext _CreateDbContext() => new(_options);
+        private JobsDbContext _CreateDbContext()
+        {
+            return new(_options);
+        }
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<JobsDbContext> options)
         : IDbContextFactory<JobsDbContext>
     {
-        public JobsDbContext CreateDbContext() => new(options);
+        public JobsDbContext CreateDbContext()
+        {
+            return new(options);
+        }
     }
 
     private sealed class ThrowingDbContextFactory : IDbContextFactory<JobsDbContext>
     {
-        public JobsDbContext CreateDbContext() => throw new InvalidOperationException("database unavailable");
+        public JobsDbContext CreateDbContext()
+        {
+            throw new InvalidOperationException("database unavailable");
+        }
     }
 
     private sealed class TestOwnerIdentity : IJobsOwnerIdentity
@@ -424,7 +435,10 @@ public sealed class CronExpressionCacheTests : TestBase
             Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
         {
@@ -459,34 +473,49 @@ public sealed class CronExpressionCacheTests : TestBase
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> UpsertEntryAsync<T>(
             string key,
             T? value,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> TryInsertAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> TryReplaceAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> TryReplaceIfEqualAsync<T>(
             string key,
@@ -494,120 +523,185 @@ public sealed class CronExpressionCacheTests : TestBase
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<double> IncrementAsync(
             string key,
             double amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<long> IncrementAsync(
             string key,
             long amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<double> SetIfHigherAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<long> SetIfHigherAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<double> SetIfLowerAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<long> SetIfLowerAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<long> SetAddAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
             IEnumerable<string> cacheKeys,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
             string prefix,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
             string prefix,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw new NotSupportedException();
+        }
 
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
 
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
 
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
+
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
             string key,
             int? pageIndex = null,
             int pageSize = 100,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw new NotSupportedException();
+        }
+
+        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<bool> RemoveIfEqualAsync<T>(
             string key,
             T? expected,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<int> RemoveAllAsync(
             IEnumerable<string> cacheKeys,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+        )
+        {
             throw new NotSupportedException();
+        }
 
-        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+        {
             throw new NotSupportedException();
+        }
 
-        public ValueTask ClearAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            throw new NotSupportedException();
+        }
 
-        public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

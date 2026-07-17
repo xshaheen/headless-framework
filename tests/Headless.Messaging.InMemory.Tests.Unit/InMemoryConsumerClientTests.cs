@@ -423,7 +423,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // when
         await _client.PauseAsync(AbortToken);
@@ -433,7 +433,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // when
         await _client.ResumeAsync(AbortToken);
@@ -442,7 +442,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // when
         await _client.PauseAsync(AbortToken);
@@ -452,7 +452,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_blocks_message_delivery()
+    public async Task pause_async_blocks_message_delivery()
     {
         // given
         await _client.SubscribeAsync(["test-messageName"], AbortToken);

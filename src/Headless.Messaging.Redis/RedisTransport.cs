@@ -39,7 +39,10 @@ internal sealed class RedisTransport(
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 }
 
 internal static partial class RedisTransportLog

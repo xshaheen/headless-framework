@@ -93,8 +93,10 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return Self;
     }
 
-    void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config) =>
+    void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config)
+    {
         registration.SetProviderConfig(config);
+    }
 
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
     // the lane interface flowing through the fluent chain without duplicating the four methods.
@@ -149,7 +151,10 @@ internal sealed class MessageConsumerRegistrationBuilder(
         CircuitBreakerOverride = options;
     }
 
-    public void SetProviderConfig(object config) => _providerConfigs.Set(config);
+    public void SetProviderConfig(object config)
+    {
+        _providerConfigs.Set(config);
+    }
 
     public MessageConsumerRegistration Build(IReadOnlyDictionary<Type, object>? messageProviderConfigs = null)
     {

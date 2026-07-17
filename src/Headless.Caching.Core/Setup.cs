@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -83,6 +82,10 @@ public static class SetupCachingCore
         }
 
         services.AddSingleton(new CachingProviderRegistration(defaultRoleKey));
+
+        // Caching-wide instrumentation config (R13): resolved by every provider from DI and threaded into the
+        // coordinator / hybrid span emission. Registered once here from the setup builder's flag.
+        services.TryAddSingleton(new CacheInstrumentationConfig { IncludeKeyInTraces = setup.IncludeKeyInTraces });
 
         // Named instances only — the default and the role keys are resolvable via GetCache but excluded here.
         var registeredNames = setup.InstanceNames.ToFrozenSet(StringComparer.Ordinal);

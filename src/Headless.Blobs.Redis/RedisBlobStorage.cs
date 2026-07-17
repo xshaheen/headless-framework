@@ -1,12 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
-using System.Globalization;
-using System.Text;
-using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
-using Headless.Primitives;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -881,7 +877,10 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
     #region Dispose
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
 
     #endregion
 }

@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class NaNTests
 {
     [Fact]
-    public void IsNaN_should_throw_argument_exception_when_pass_not_NaN_value()
+    public void should_throw_argument_exception_when_is_na_n_pass_not_na_n_value()
     {
         const double zero = 0;
         Action actZero = () => Argument.IsNaN(zero);
@@ -23,7 +23,7 @@ public sealed class NaNTests
     }
 
     [Fact]
-    public void IsNaN_should_not_throw_argument_exception_when_pass_NaN_value()
+    public void should_not_throw_argument_exception_when_is_na_n_pass_na_n_value()
     {
         const double doubleNaN = double.NaN;
         Action actDoubleNaN = () => Argument.IsNaN(doubleNaN);
@@ -35,7 +35,7 @@ public sealed class NaNTests
     }
 
     [Fact]
-    public void IsNotNaN_should_throw_argument_exception_when_pass_NaN_value()
+    public void should_throw_argument_exception_when_is_not_na_n_pass_na_n_value()
     {
         const double doubleNaN = double.NaN;
         Action actDoubleNaN = () => Argument.IsNotNaN(doubleNaN);
@@ -47,7 +47,7 @@ public sealed class NaNTests
     }
 
     [Fact]
-    public void IsNotNaN_should_not_throw_argument_exception_when_pass_not_NaN_value()
+    public void should_not_throw_argument_exception_when_is_not_na_n_pass_not_na_n_value()
     {
         const double zero = 0;
         Action actZero = () => Argument.IsNotNaN(zero);

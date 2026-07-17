@@ -9,9 +9,12 @@ internal sealed class Queue(
     IQueueTransport transport,
     IMessagePublishRequestFactory publishRequestFactory,
     IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    MessagingTelemetry? telemetry = null
 ) : IQueue
 {
+    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
+
     public Task EnqueueAsync<T>(
         T? contentObj,
         EnqueueOptions? options = null,
@@ -39,6 +42,7 @@ internal sealed class Queue(
                     transport.BrokerAddress,
                     transport.SendAsync,
                     _NowUnixTimeMilliseconds,
+                    _telemetry,
                     ct
                 );
             },
@@ -47,5 +51,8 @@ internal sealed class Queue(
         );
     }
 
-    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    private long _NowUnixTimeMilliseconds()
+    {
+        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+    }
 }

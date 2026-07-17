@@ -7,7 +7,7 @@ namespace Tests.Primitives;
 public sealed class AccountIdTests
 {
     [Fact]
-    public void try_create_should_return_false_for_null_without_throwing()
+    public void should_return_false_for_null_without_throwing_when_try_create()
     {
         // when - the bug: `value.Length` NRE'd on null instead of returning false
         var success = AccountId.TryCreate(null!, out var result);
@@ -18,7 +18,7 @@ public sealed class AccountIdTests
     }
 
     [Fact]
-    public void try_create_should_return_false_with_error_message_for_null()
+    public void should_return_false_with_error_message_for_null_when_try_create()
     {
         // when
         var success = AccountId.TryCreate(null!, out var result, out var errorMessage);
@@ -30,7 +30,7 @@ public sealed class AccountIdTests
     }
 
     [Fact]
-    public void try_create_should_return_false_for_empty()
+    public void should_return_false_for_empty_when_try_create()
     {
         // when
         var success = AccountId.TryCreate("", out var result);
@@ -41,7 +41,7 @@ public sealed class AccountIdTests
     }
 
     [Fact]
-    public void try_create_should_succeed_for_non_empty()
+    public void should_succeed_for_non_empty_when_try_create()
     {
         // when
         var success = AccountId.TryCreate("user-1234", out var result);
@@ -55,7 +55,7 @@ public sealed class AccountIdTests
     [InlineData(null, false)]
     [InlineData("", false)]
     [InlineData("a", true)]
-    public void validate_should_be_null_safe(string? value, bool expectedValid)
+    public void should_be_null_safe_when_validate(string? value, bool expectedValid)
     {
         // when
         var result = AccountId.Validate(value!);
@@ -65,7 +65,7 @@ public sealed class AccountIdTests
     }
 
     [Fact]
-    public void json_round_trip_should_preserve_account_id_value()
+    public void should_preserve_account_id_value_when_json_round_trip()
     {
         // given
         var accountId = new AccountId("user-1234");
@@ -80,7 +80,7 @@ public sealed class AccountIdTests
     }
 
     [Fact]
-    public void json_deserialize_should_throw_json_exception_for_empty_account_id()
+    public void should_throw_json_exception_for_empty_account_id_when_json_deserialize()
     {
         // when - untrusted input must surface a clean JsonException, not a leaked domain exception
         var act = () => JsonSerializer.Deserialize<AccountId>("\"\"");

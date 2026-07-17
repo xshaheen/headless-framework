@@ -18,7 +18,7 @@ public sealed class InternalJobsManagerTests : TestBase
     public sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
-    public async Task RequestTimeJobCancellationAsync_notifies_only_after_the_provider_accepts_the_transition()
+    public async Task request_time_job_cancellation_async_notifies_only_after_the_provider_accepts_the_transition()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -42,7 +42,7 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Fact]
-    public async Task RequestTimeJobCancellationAsync_remains_accepted_when_notification_fails()
+    public async Task request_time_job_cancellation_async_remains_accepted_when_notification_fails()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -61,7 +61,7 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Fact]
-    public async Task SetTickersInProgress_returns_and_notifies_only_rows_stamped_by_provider()
+    public async Task set_tickers_in_progress_returns_and_notifies_only_rows_stamped_by_provider()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -103,7 +103,7 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Fact]
-    public async Task RunTimedOutTickers_projects_each_descendant_with_its_own_run_condition()
+    public async Task run_timed_out_tickers_projects_each_descendant_with_its_own_run_condition()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();

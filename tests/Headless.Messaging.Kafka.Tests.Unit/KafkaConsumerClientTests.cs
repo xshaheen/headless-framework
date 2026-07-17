@@ -46,7 +46,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_allow_setting_OnMessageCallback()
+    public async Task should_allow_setting_on_message_callback()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -59,7 +59,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_allow_setting_OnLogCallback()
+    public async Task should_allow_setting_on_log_callback()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -98,7 +98,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task FetchMessageNamesAsync_should_return_topics()
+    public async Task should_return_topics_when_fetch_message_names_async()
     {
         // given
         var options = Options.Create(
@@ -122,7 +122,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task FetchMessageNamesAsync_should_use_kafka_override_when_called_via_interface()
+    public async Task should_use_kafka_override_when_fetch_message_names_async_called_via_interface()
     {
         // given
         var adminClient = Substitute.For<IAdminClient>();
@@ -230,7 +230,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task Connect_should_be_idempotent()
+    public async Task should_be_idempotent_when_connect()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -244,7 +244,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_seek_failed_offset()
+    public async Task should_seek_failed_offset_when_reject_async()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -270,7 +270,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_ignore_offset_after_partition_is_revoked()
+    public async Task should_ignore_offset_after_partition_is_revoked_when_commit_async()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -294,7 +294,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_ignore_offset_after_partition_is_lost()
+    public async Task should_ignore_offset_after_partition_is_lost_when_reject_async()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -318,7 +318,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task Connect_should_apply_consumer_isolation_level_config()
+    public async Task should_apply_consumer_isolation_level_config_when_connect()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -345,7 +345,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_process_messages_concurrently_when_concurrency_is_requested()
+    public async Task should_process_messages_concurrently_when_listening_async_concurrency_is_requested()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -434,7 +434,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_not_commit_past_inflight_lower_offsets_when_processing_concurrently()
+    public async Task should_not_commit_past_inflight_lower_offsets_when_commit_async_processing_concurrently()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -540,7 +540,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task CommitAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    public async Task should_ignore_tracked_delivery_from_before_reassignment_when_commit_async()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -598,7 +598,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task RejectAsync_should_ignore_tracked_delivery_from_before_reassignment()
+    public async Task should_ignore_tracked_delivery_from_before_reassignment_when_reject_async()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
@@ -660,7 +660,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -673,7 +673,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -685,7 +685,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -698,7 +698,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_noop_after_disposal()
+    public async Task pause_async_is_noop_after_disposal()
     {
         // given
         var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -709,7 +709,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_after_disposal()
+    public async Task resume_async_is_noop_after_disposal()
     {
         // given
         var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
@@ -720,7 +720,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_idempotent_after_resume()
+    public async Task resume_async_is_idempotent_after_resume()
     {
         // given
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);

@@ -7,7 +7,7 @@ namespace Tests.Primitives;
 public sealed class PhoneNumberTests
 {
     [Fact]
-    public void phone_number_should_be_correctly_initialized()
+    public void should_be_correctly_initialized_when_phone_number()
     {
         // given
         const int countryCode = 20;
@@ -23,7 +23,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void normalize_should_return_correct_format()
+    public void should_return_correct_format_when_normalize()
     {
         // given
         const int countryCode = 20;
@@ -37,7 +37,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void get_region_codes_should_return_valid_region()
+    public void should_return_valid_region_when_get_region_codes()
     {
         // given
         var phoneNumber = new PhoneNumber(20, "1018541323");
@@ -53,7 +53,7 @@ public sealed class PhoneNumberTests
     [InlineData(20, "1018541323", "+201018541323")]
     [InlineData(20, "01018541323", "+201018541323")]
     [InlineData(20, "010 18541 323", "+201018541323")]
-    public void normalize_single_string_should_return_correct_format(int code, string number, string expected)
+    public void should_return_correct_format_when_normalize_single_string(int code, string number, string expected)
     {
         // when
         var normalized = PhoneNumber.Normalize(code, number);
@@ -63,7 +63,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void from_international_format_should_return_valid_phone_number()
+    public void should_return_valid_phone_number_when_from_international_format()
     {
         // given
         const string internationalNumber = "+20 101-854-1323";
@@ -78,7 +78,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void get_international_and_national_format_should_return_null_for_invalid_number()
+    public void should_return_null_for_invalid_number_when_get_international_and_national_format()
     {
         // given
         var phoneNumber = new PhoneNumber(1, "invalid-number");
@@ -93,7 +93,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void get_international_format_should_work_as_expected()
+    public void should_work_as_expected_when_get_international_format()
     {
         var phoneNumber = new PhoneNumber(20, "01018541323");
 
@@ -103,7 +103,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void get_national_format_should_work_as_expected()
+    public void should_work_as_expected_when_get_national_format()
     {
         var phoneNumber = new PhoneNumber(20, "1018541323");
 
@@ -307,7 +307,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void equality_should_ignore_formatting_differences_in_number()
+    public void should_ignore_formatting_differences_in_number_when_equality()
     {
         // given - the bug: "555-1234" used to be unequal to "5551234"
         var formatted = new PhoneNumber(1, "555-1234");
@@ -320,7 +320,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void object_initializer_should_not_bypass_country_code_validation()
+    public void should_not_bypass_country_code_validation_when_object_initializer()
     {
         // when - init accessors validate even when set via an object initializer
         var act = () => new PhoneNumber(1, "1234567890") { CountryCode = -5 };
@@ -330,7 +330,7 @@ public sealed class PhoneNumberTests
     }
 
     [Fact]
-    public void object_initializer_should_not_bypass_number_validation()
+    public void should_not_bypass_number_validation_when_object_initializer()
     {
         // when
         var act = () => new PhoneNumber(1, "1234567890") { Number = "" };

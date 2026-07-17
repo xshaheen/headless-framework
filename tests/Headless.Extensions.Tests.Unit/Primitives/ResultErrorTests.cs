@@ -104,7 +104,7 @@ public sealed class ResultErrorTests
     }
 
     [Fact]
-    public void not_found_errors_should_stay_equal_after_reading_code_and_metadata()
+    public void should_stay_equal_after_reading_code_and_metadata_when_not_found_errors()
     {
         // given - two logically-equal errors
         var a = new NotFoundError { Entity = "User", Key = "123" };
@@ -121,7 +121,7 @@ public sealed class ResultErrorTests
     }
 
     [Fact]
-    public void validation_errors_should_stay_equal_after_reading_metadata()
+    public void should_stay_equal_after_reading_metadata_when_validation_errors()
     {
         // given - two errors sharing the same FieldErrors instance, so they are logically equal
         var fieldErrors = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)

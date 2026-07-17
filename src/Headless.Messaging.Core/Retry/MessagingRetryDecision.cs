@@ -22,5 +22,8 @@ internal readonly record struct MessagingRetryDecision
 
     public static MessagingRetryDecision Exhausted { get; } = new() { Outcome = Kind.Exhausted };
 
-    public static MessagingRetryDecision Continue(TimeSpan delay) => new() { Outcome = Kind.Continue, Delay = delay };
+    public static MessagingRetryDecision Continue(TimeSpan delay)
+    {
+        return new() { Outcome = Kind.Continue, Delay = delay };
+    }
 }

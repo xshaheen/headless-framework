@@ -130,8 +130,10 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
         );
     }
 
-    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config) =>
+    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config)
+    {
         _providerConfigs.Set(config);
+    }
 
     private MessageConsumerRegistrationBuilder _AddConsumer<TConsumer>(IntentType intentType)
         where TConsumer : class, IConsume<TMessage>

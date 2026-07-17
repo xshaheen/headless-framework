@@ -132,8 +132,9 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         return builder.Build();
     }
 
-    private static AuditLogEntryData _NewEntry(string action) =>
-        new()
+    private static AuditLogEntryData _NewEntry(string action)
+    {
+        return new()
         {
             Action = action,
             ChangeType = AuditChangeType.Created,
@@ -145,6 +146,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
             ChangedFields = ["value"],
             CreatedAt = new DateTimeOffset(2026, 5, 25, 0, 0, 0, TimeSpan.Zero),
         };
+    }
 
     private async Task _DropSchemaAsync()
     {
@@ -180,8 +182,10 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         public DbConnection? Connection { get; set; }
         public DbTransaction? Transaction { get; set; }
 
-        public (DbConnection? Connection, DbTransaction? Transaction) TryResolve(object savingContext) =>
-            (Connection, Transaction);
+        public (DbConnection? Connection, DbTransaction? Transaction) TryResolve(object savingContext)
+        {
+            return (Connection, Transaction);
+        }
     }
 
     // Minimal DbConnection stub used only to exercise the provider-mismatch fallback path.
@@ -196,16 +200,27 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         public override string ServerVersion => string.Empty;
         public override System.Data.ConnectionState State => System.Data.ConnectionState.Closed;
 
-        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+        public override void ChangeDatabase(string databaseName)
+        {
+            throw new NotSupportedException();
+        }
 
         public override void Close() { }
 
-        public override void Open() => throw new NotSupportedException();
-
-        protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il) =>
+        public override void Open()
+        {
             throw new NotSupportedException();
+        }
 
-        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+        protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il)
+        {
+            throw new NotSupportedException();
+        }
+
+        protected override DbCommand CreateDbCommand()
+        {
+            throw new NotSupportedException();
+        }
     }
 
     // Companion stub paired with NonSqlConnectionStub so accessor returns a (non-null, non-null)
@@ -216,8 +231,14 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         public override System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.Unspecified;
         protected override DbConnection? DbConnection { get; } = connection;
 
-        public override void Commit() => throw new NotSupportedException();
+        public override void Commit()
+        {
+            throw new NotSupportedException();
+        }
 
-        public override void Rollback() => throw new NotSupportedException();
+        public override void Rollback()
+        {
+            throw new NotSupportedException();
+        }
     }
 }

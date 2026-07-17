@@ -4,6 +4,7 @@ using Headless.Checks;
 using Serilog.Core;
 using Serilog.Events;
 
+#pragma warning disable IDE0130 // The project intentionally shares the Headless.Logging package namespace.
 namespace Headless.Logging;
 
 /// <summary>

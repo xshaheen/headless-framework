@@ -22,7 +22,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_disposeAction_null()
+    public void should_throw_when_dispose_action_null()
     {
         // given
         Action? disposeAction = null;
@@ -35,7 +35,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanRead_to_inner_stream()
+    public void should_delegate_can_read_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -46,7 +46,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanWrite_to_inner_stream()
+    public void should_delegate_can_write_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -57,7 +57,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanSeek_to_inner_stream()
+    public void should_delegate_can_seek_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -68,7 +68,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Length_to_inner_stream()
+    public void should_delegate_length_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
@@ -79,7 +79,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Position_get_to_inner_stream()
+    public void should_delegate_position_get_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
@@ -91,7 +91,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Position_set_to_inner_stream()
+    public void should_delegate_position_set_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
@@ -105,7 +105,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Read_to_inner_stream()
+    public void should_delegate_read_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -122,7 +122,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_ReadAsync_to_inner_stream()
+    public async Task should_delegate_read_async_to_inner_stream()
     {
         // given
         byte[] data = [10, 20, 30, 40, 50];
@@ -139,7 +139,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Write_to_inner_stream()
+    public void should_delegate_write_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -154,7 +154,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_delegate_WriteAsync_to_inner_stream()
+    public async Task should_delegate_write_async_to_inner_stream()
     {
         // given
         await using var inner = new MemoryStream();
@@ -169,7 +169,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Flush_to_inner_stream()
+    public void should_delegate_flush_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -180,7 +180,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_Seek_to_inner_stream()
+    public void should_delegate_seek_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
@@ -195,7 +195,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_invoke_disposeAction_on_Dispose()
+    public void should_invoke_dispose_action_on_dispose()
     {
         // given
         var actionInvoked = false;
@@ -225,7 +225,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_not_throw_if_disposeAction_throws()
+    public void should_not_throw_if_dispose_action_throws()
     {
         // given
         var inner = new MemoryStream();
@@ -249,7 +249,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_invoke_disposeAction_exactly_once_on_public_Dispose()
+    public void should_invoke_dispose_action_exactly_once_on_public_dispose()
     {
         // given
         var invocationCount = 0;
@@ -266,7 +266,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_invoke_disposeAction_when_closed()
+    public void should_invoke_dispose_action_when_closed()
     {
         // given - Close routes through Dispose so the action must still fire
         var invocationCount = 0;
@@ -281,7 +281,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_not_invoke_disposeAction_on_finalizer_path()
+    public void should_not_invoke_dispose_action_on_finalizer_path()
     {
         // given
         var invocationCount = 0;
@@ -300,7 +300,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_CanTimeout_to_inner_stream()
+    public void should_delegate_can_timeout_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -311,7 +311,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public void should_delegate_SetLength_to_inner_stream()
+    public void should_delegate_set_length_to_inner_stream()
     {
         // given
         using var inner = new MemoryStream();
@@ -325,7 +325,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_invoke_disposeAction_on_DisposeAsync()
+    public async Task should_invoke_dispose_action_on_dispose_async()
     {
         // given
         var actionInvoked = false;
@@ -340,7 +340,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_dispose_inner_stream_on_DisposeAsync()
+    public async Task should_dispose_inner_stream_on_dispose_async()
     {
         // given
         var inner = new MemoryStream();
@@ -355,7 +355,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_invoke_disposeAction_exactly_once_across_DisposeAsync_and_Dispose()
+    public async Task should_invoke_dispose_action_exactly_once_across_dispose_async_and_dispose()
     {
         // given
         var invocationCount = 0;
@@ -374,7 +374,7 @@ public sealed class ActionableStreamTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_throw_if_disposeAction_throws_on_DisposeAsync()
+    public async Task should_not_throw_if_dispose_action_throws_on_dispose_async()
     {
         // given
         var inner = new MemoryStream();

@@ -7,7 +7,10 @@ namespace Tests;
 /// <summary>An <see cref="IServiceProvider" /> that resolves nothing — for coordinator paths that never touch DI.</summary>
 public sealed class EmptyServiceProvider : IServiceProvider
 {
-    public object? GetService(Type serviceType) => null;
+    public object? GetService(Type serviceType)
+    {
+        return null;
+    }
 }
 
 /// <summary>
@@ -19,7 +22,10 @@ public sealed class SingleThreadSynchronizationContext : SynchronizationContext
 {
     private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
 
-    public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+    public override void Post(SendOrPostCallback d, object? state)
+    {
+        _queue.Add((d, state));
+    }
 
     public static bool Run(Action action, TimeSpan timeout)
     {

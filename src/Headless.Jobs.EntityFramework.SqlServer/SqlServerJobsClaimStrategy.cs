@@ -1,17 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 
 #pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
@@ -158,9 +154,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     _leaseDuration,
                     cancellationToken,
                     _DateTimeParameter("fallbackThreshold", now.AddSeconds(-1)),
-                    new SqlParameter("idle", JobStatus.Idle.ToString()),
-                    new SqlParameter("queued", JobStatus.Queued.ToString()),
-                    new SqlParameter("retry", NodeDeathPolicy.Retry.ToString())
+                    new SqlParameter("idle", nameof(JobStatus.Idle)),
+                    new SqlParameter("queued", nameof(JobStatus.Queued)),
+                    new SqlParameter("retry", nameof(NodeDeathPolicy.Retry))
                 )
                 .ConfigureAwait(false);
 
@@ -427,7 +423,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", id));
-        command.Parameters.Add(new SqlParameter("status", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
@@ -505,10 +501,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", occurrence.Id));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
-        command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
-        command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
+        command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         _AddLeaseDurationParameters(command, lockedUntil - now);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -567,9 +563,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(_DateTimeParameter("fallbackThreshold", now.AddSeconds(-1)));
-        command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
-        command.Parameters.Add(new SqlParameter("queued", JobStatus.Queued.ToString()));
-        command.Parameters.Add(new SqlParameter("retry", NodeDeathPolicy.Retry.ToString()));
+        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
+        command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         _AddLeaseDurationParameters(command, lockedUntil - now);
 
@@ -636,7 +632,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("owner", owner));
         _AddLeaseDurationParameters(command, leaseDuration);
-        command.Parameters.Add(new SqlParameter("queuedStatus", JobStatus.Queued.ToString()));
+        command.Parameters.Add(new SqlParameter("queuedStatus", nameof(JobStatus.Queued)));
         command.Parameters.AddRange(candidateParameters);
 
         var ids = new List<Guid>();
@@ -697,7 +693,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             command.Parameters.Add(new SqlParameter(_ParameterName("rootId", index), rootIds[index]));
         }
-        command.Parameters.Add(new SqlParameter("idle", JobStatus.Idle.ToString()));
+        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("claimedAt", claimedAt));
         _AddLeaseDurationParameters(command, leaseDuration);
@@ -716,13 +712,17 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return new SqlCommand { Connection = connection, Transaction = (SqlTransaction)transaction.GetDbTransaction() };
     }
 
-    private static SqlParameter _DateTimeParameter(string name, DateTime value) =>
-        new(name, SqlDbType.DateTime2) { Value = value };
+    private static SqlParameter _DateTimeParameter(string name, DateTime value)
+    {
+        return new(name, SqlDbType.DateTime2) { Value = value };
+    }
 
-    private static string _LeaseDeadlineSql(string start) =>
-        "DATEADD(nanosecond, @leaseNanoseconds, "
-        + "DATEADD(second, @leaseWholeSeconds, "
-        + $"DATEADD(day, @leaseDays, {start})))";
+    private static string _LeaseDeadlineSql(string start)
+    {
+        return "DATEADD(nanosecond, @leaseNanoseconds, "
+            + "DATEADD(second, @leaseWholeSeconds, "
+            + $"DATEADD(day, @leaseDays, {start})))";
+    }
 
     private static void _AddLeaseDurationParameters(SqlCommand command, TimeSpan leaseDuration)
     {
@@ -736,8 +736,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("leaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds });
     }
 
-    private static string _ParameterName(string prefix, int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    private static string _ParameterName(string prefix, int index)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    }
 
     private async Task<string> _GetReadPastHintsAsync(CancellationToken cancellationToken)
     {
@@ -781,6 +783,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return GetReadPastHints(result is true);
     }
 
-    internal static string GetReadPastHints(bool readCommittedSnapshotEnabled) =>
-        readCommittedSnapshotEnabled ? "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK" : "UPDLOCK, READPAST, ROWLOCK";
+#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
+    internal static string GetReadPastHints(bool readCommittedSnapshotEnabled)
+#pragma warning restore RCS1158
+    {
+        return readCommittedSnapshotEnabled
+            ? "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK"
+            : "UPDLOCK, READPAST, ROWLOCK";
+    }
 }

@@ -36,14 +36,13 @@ internal sealed class ConsumerRegister(
 ) : IConsumerRegister
 {
     private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
-    private static readonly DiagnosticListener _DiagnosticListener = new(
-        MessageDiagnosticListenerNames.DiagnosticListenerName
-    );
 
     private readonly ConcurrentDictionary<string, GroupHandle> _groupHandles = new(StringComparer.Ordinal);
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+    private readonly MessagingTelemetry _telemetry =
+        serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
@@ -509,8 +508,10 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private static string _CreateHandleName(ConsumerGroupKey groupKey) =>
-        CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
+    private static string _CreateHandleName(ConsumerGroupKey groupKey)
+    {
+        return CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
+    }
 
     private async Task _AwaitConsumerReadyThenListenAsync(
         IConsumerClient innerClient,
@@ -681,7 +682,12 @@ internal sealed class ConsumerRegister(
         {
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
-            long? tracingTimestamp = null;
+            MessagingTraceHandle traceHandle = default;
+
+            // Exactly one consume outcome (success or error) may be recorded per message: the trace handle is an
+            // immutable struct, so this flag is what keeps the subscriber-not-found path (error emitted inline,
+            // then routed to the poison store) from also emitting the success outcome on the same handle.
+            var consumeOutcomeRecorded = false;
             try
             {
                 if (_circuitBreakerStateManager is not null)
@@ -703,7 +709,7 @@ internal sealed class ConsumerRegister(
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
-                tracingTimestamp = _TracingBefore(transportMessage, intentType, _serverAddress, hostShutdownToken);
+                traceHandle = _TracingBefore(transportMessage, intentType, _serverAddress);
 
                 var name = transportMessage.Name;
 
@@ -722,14 +728,8 @@ internal sealed class ConsumerRegister(
                             $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
-                        _TracingError(
-                            tracingTimestamp,
-                            transportMessage,
-                            intentType,
-                            client.BrokerAddress,
-                            ex,
-                            hostShutdownToken
-                        );
+                        _TracingError(traceHandle, transportMessage, client.BrokerAddress, ex);
+                        consumeOutcomeRecorded = true;
 
                         throw ex;
                     }
@@ -861,7 +861,17 @@ internal sealed class ConsumerRegister(
 
                     _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
 
-                    _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
+                    if (consumeOutcomeRecorded)
+                    {
+                        // The span + consume outcome were already finalized as an error (subscriber-not-found);
+                        // only the legacy EventCounter fires here so its counts match the pre-native bridge.
+                        MessageEventCounterSource.Log.WriteConsumeMetrics();
+                    }
+                    else
+                    {
+                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                        consumeOutcomeRecorded = true;
+                    }
                 }
                 else
                 {
@@ -881,7 +891,8 @@ internal sealed class ConsumerRegister(
                         .ConfigureAwait(false);
                     mediumMessage.Origin = message;
 
-                    _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
+                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    consumeOutcomeRecorded = true;
 
                     await _dispatcher
                         .EnqueueToExecute(mediumMessage, executor, CancellationToken.None)
@@ -899,14 +910,16 @@ internal sealed class ConsumerRegister(
                 // Settlement is must-complete: never abandon a reject on host shutdown.
                 await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
-                _TracingError(
-                    tracingTimestamp,
-                    transportMessage,
-                    intentType,
-                    client.BrokerAddress,
-                    e,
-                    hostShutdownToken
-                );
+                if (e is OperationCanceledException)
+                {
+                    // Benign cancellation (host shutdown) is not a consume failure: stop (export) the span
+                    // without an error status, matching the publish/subscriber-invoke emission sites.
+                    traceHandle.Activity?.Dispose();
+                }
+                else if (!consumeOutcomeRecorded)
+                {
+                    _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
+                }
             }
             finally
             {
@@ -1093,87 +1106,45 @@ internal sealed class ConsumerRegister(
 
     #region Tracing
 
-    private long? _TracingBefore(
-        TransportMessage message,
-        IntentType intentType,
-        BrokerAddress broker,
-        CancellationToken cancellationToken
-    )
+    private MessagingTraceHandle _TracingBefore(TransportMessage message, IntentType intentType, BrokerAddress broker)
     {
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeConsume))
+        if (!MessagingDiagnostics.IsEnabled)
         {
-            var eventData = new MessageEventDataSubStore
-            {
-                OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeConsume, eventData);
-
-            return eventData.OperationTimestamp;
+            return default;
         }
 
-        return null;
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var activity = _telemetry.ConsumeStart(message, intentType, broker, now);
+
+        return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(
-        long? tracingTimestamp,
-        TransportMessage message,
-        IntentType intentType,
-        BrokerAddress broker,
-        CancellationToken cancellationToken
-    )
+    private void _TracingAfter(MessagingTraceHandle traceHandle, TransportMessage message, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WriteConsumeMetrics();
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterConsume))
-        {
-            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var eventData = new MessageEventDataSubStore
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                CancellationToken = cancellationToken,
-            };
 
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterConsume, eventData);
+        if (!traceHandle.IsRecording)
+        {
+            return;
         }
+
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        MessagingTelemetry.ConsumeStop(traceHandle.Activity, message, broker, traceHandle.StartTimestampMs!.Value, now);
     }
 
-    private void _TracingError(
-        long? tracingTimestamp,
+    private static void _TracingError(
+        MessagingTraceHandle traceHandle,
         TransportMessage message,
-        IntentType intentType,
         BrokerAddress broker,
-        Exception ex,
-        CancellationToken cancellationToken
+        Exception ex
     )
     {
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorConsume))
+        if (!traceHandle.IsRecording)
         {
-            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-
-            var eventData = new MessageEventDataSubStore
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                Exception = ex,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorConsume, eventData);
+            return;
         }
+
+        MessagingTelemetry.ConsumeError(traceHandle.Activity, message, broker, ex);
     }
 
     #endregion

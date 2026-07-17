@@ -77,7 +77,10 @@ public sealed class RabbitMqConsumerConfigBuilder
         return this;
     }
 
-    internal RabbitMqConsumerConfig Build() => new(_prefetchCount);
+    internal RabbitMqConsumerConfig Build()
+    {
+        return new(_prefetchCount);
+    }
 }
 
 internal sealed record RabbitMqConsumerConfig(ushort? PrefetchCount);

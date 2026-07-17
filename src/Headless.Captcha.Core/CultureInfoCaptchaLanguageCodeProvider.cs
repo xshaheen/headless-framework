@@ -10,5 +10,8 @@ namespace Headless.Captcha;
 public sealed class CultureInfoCaptchaLanguageCodeProvider : ICaptchaLanguageCodeProvider
 {
     /// <inheritdoc />
-    public string GetLanguageCode() => CultureInfo.CurrentUICulture.ToString();
+    public string GetLanguageCode()
+    {
+        return CultureInfo.CurrentUICulture.ToString();
+    }
 }

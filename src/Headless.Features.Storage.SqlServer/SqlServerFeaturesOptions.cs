@@ -15,7 +15,10 @@ public sealed class SqlServerFeaturesOptions
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    internal SqlConnection CreateConnection() => new(ConnectionString);
+    internal SqlConnection CreateConnection()
+    {
+        return new(ConnectionString);
+    }
 }
 
 /// <summary>Validates <see cref="SqlServerFeaturesOptions"/>.</summary>

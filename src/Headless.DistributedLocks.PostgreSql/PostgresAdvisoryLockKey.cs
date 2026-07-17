@@ -160,13 +160,22 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// occupies the same key space (<see cref="HasSingleKey"/>).
     /// </summary>
     /// <param name="other">The key to compare against.</param>
-    public bool Equals(PostgresAdvisoryLockKey other) => (_key, HasSingleKey).Equals((other._key, other.HasSingleKey));
+    public bool Equals(PostgresAdvisoryLockKey other)
+    {
+        return (_key, HasSingleKey).Equals((other._key, other.HasSingleKey));
+    }
 
     /// <inheritdoc/>
-    public override bool Equals(object? obj) => obj is PostgresAdvisoryLockKey other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is PostgresAdvisoryLockKey other && Equals(other);
+    }
 
     /// <inheritdoc/>
-    public override int GetHashCode() => (_key, HasSingleKey).GetHashCode();
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(_key, HasSingleKey);
+    }
 
     /// <summary>
     /// Returns the canonical hex-string representation of this key: 16 hex characters for a bigint key,

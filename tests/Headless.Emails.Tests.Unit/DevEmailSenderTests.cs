@@ -58,7 +58,7 @@ public sealed class DevEmailSenderTests : TestBase
     }
 
     [Fact]
-    public async Task missing_body_should_throw()
+    public async Task should_throw_when_missing_body()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
         using var sender = new DevEmailSender(path);
@@ -72,7 +72,7 @@ public sealed class DevEmailSenderTests : TestBase
     }
 
     [Fact]
-    public void constructor_should_reject_empty_path()
+    public void should_reject_empty_path_when_constructor()
     {
         var act = () => new DevEmailSender("");
 
@@ -263,8 +263,9 @@ public sealed class DevEmailSenderTests : TestBase
         IReadOnlyList<EmailRequestAddress>? cc = null,
         IReadOnlyList<EmailRequestAddress>? bcc = null,
         IReadOnlyList<EmailRequestAttachment>? attachments = null
-    ) =>
-        new()
+    )
+    {
+        return new()
         {
             From = "from@example.com",
             Destination = new EmailRequestDestination
@@ -278,6 +279,7 @@ public sealed class DevEmailSenderTests : TestBase
             MessageHtml = html,
             Attachments = attachments ?? [],
         };
+    }
 }
 
 public sealed class NoopEmailSenderTests : TestBase

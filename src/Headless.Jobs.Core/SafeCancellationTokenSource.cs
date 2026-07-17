@@ -43,11 +43,20 @@ internal sealed class SafeCancellationTokenSource : IDisposable
         }
     }
 
-    public void Cancel(bool throwOnFirstException) => _innerCts.Cancel(throwOnFirstException);
+    public void Cancel(bool throwOnFirstException)
+    {
+        _innerCts.Cancel(throwOnFirstException);
+    }
 
-    public void CancelAfter(TimeSpan delay) => _innerCts.CancelAfter(delay);
+    public void CancelAfter(TimeSpan delay)
+    {
+        _innerCts.CancelAfter(delay);
+    }
 
-    public void CancelAfter(int millisecondsDelay) => _innerCts.CancelAfter(millisecondsDelay);
+    public void CancelAfter(int millisecondsDelay)
+    {
+        _innerCts.CancelAfter(millisecondsDelay);
+    }
 
     public void Dispose()
     {

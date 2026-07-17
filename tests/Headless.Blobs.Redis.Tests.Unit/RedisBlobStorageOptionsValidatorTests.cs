@@ -9,13 +9,15 @@ public sealed class RedisBlobStorageOptionsValidatorTests
 {
     private readonly RedisBlobStorageOptionsValidator _sut = new();
 
-    private static RedisBlobStorageOptions _CreateValidOptions() =>
-        new()
+    private static RedisBlobStorageOptions _CreateValidOptions()
+    {
+        return new()
         {
             ConnectionMultiplexer = Substitute.For<IConnectionMultiplexer>(),
             MaxBulkParallelism = 10,
             MaxBlobSizeBytes = 10 * 1024 * 1024,
         };
+    }
 
     [Fact]
     public void should_pass_for_valid_options()

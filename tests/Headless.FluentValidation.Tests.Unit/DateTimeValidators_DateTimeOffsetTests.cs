@@ -12,16 +12,21 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     private static readonly DateTimeOffset _Past = new(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset _Future = new(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static FakeTimeProvider _Clock() => new(_Now);
+    private static FakeTimeProvider _Clock()
+    {
+        return new(_Now);
+    }
 
-    private static DateTimeOffset _Resolve(string when) =>
-        when switch
+    private static DateTimeOffset _Resolve(string when)
+    {
+        return when switch
         {
             "past" => _Past,
             "now" => _Now,
             "future" => _Future,
             _ => throw new ArgumentOutOfRangeException(nameof(when)),
         };
+    }
 
     private sealed record Model(DateTimeOffset Value);
 

@@ -2,9 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
-using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -190,128 +188,214 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     #region Data Storage Tests
 
     [Fact]
-    public override Task should_initialize_schema() => base.should_initialize_schema();
+    public override Task should_initialize_schema()
+    {
+        return base.should_initialize_schema();
+    }
 
     [Fact]
-    public override Task should_get_table_names() => base.should_get_table_names();
+    public override Task should_get_table_names()
+    {
+        return base.should_get_table_names();
+    }
 
     [Fact]
-    public override Task should_store_published_message() => base.should_store_published_message();
+    public override Task should_store_published_message()
+    {
+        return base.should_store_published_message();
+    }
 
     [Fact]
-    public override Task should_store_published_message_with_non_numeric_message_id() =>
-        base.should_store_published_message_with_non_numeric_message_id();
+    public override Task should_store_published_message_with_non_numeric_message_id()
+    {
+        return base.should_store_published_message_with_non_numeric_message_id();
+    }
 
     [Fact]
-    public override Task should_store_received_message() => base.should_store_received_message();
+    public override Task should_store_received_message()
+    {
+        return base.should_store_received_message();
+    }
 
     [Fact]
-    public override Task should_store_received_exception_message() => base.should_store_received_exception_message();
+    public override Task should_store_received_exception_message()
+    {
+        return base.should_store_received_exception_message();
+    }
 
     [Fact]
-    public override Task should_change_publish_state() => base.should_change_publish_state();
+    public override Task should_change_publish_state()
+    {
+        return base.should_change_publish_state();
+    }
 
     [Fact]
-    public override Task should_change_receive_state() => base.should_change_receive_state();
+    public override Task should_change_receive_state()
+    {
+        return base.should_change_receive_state();
+    }
 
     [Fact]
-    public override Task should_change_publish_state_to_delayed() => base.should_change_publish_state_to_delayed();
+    public override Task should_change_publish_state_to_delayed()
+    {
+        return base.should_change_publish_state_to_delayed();
+    }
 
     [Fact]
-    public override Task should_not_flip_terminal_published_row_back_to_delayed() =>
-        base.should_not_flip_terminal_published_row_back_to_delayed();
+    public override Task should_not_flip_terminal_published_row_back_to_delayed()
+    {
+        return base.should_not_flip_terminal_published_row_back_to_delayed();
+    }
 
     [Fact]
-    public override Task should_ignore_unknown_storage_ids_when_flushing_delayed_state() =>
-        base.should_ignore_unknown_storage_ids_when_flushing_delayed_state();
+    public override Task should_ignore_unknown_storage_ids_when_flushing_delayed_state()
+    {
+        return base.should_ignore_unknown_storage_ids_when_flushing_delayed_state();
+    }
 
     [Fact]
-    public override Task should_get_published_messages_of_need_retry() =>
-        base.should_get_published_messages_of_need_retry();
+    public override Task should_get_published_messages_of_need_retry()
+    {
+        return base.should_get_published_messages_of_need_retry();
+    }
 
     [Fact]
-    public override Task should_get_received_messages_of_need_retry() =>
-        base.should_get_received_messages_of_need_retry();
+    public override Task should_get_received_messages_of_need_retry()
+    {
+        return base.should_get_received_messages_of_need_retry();
+    }
 
     [Fact]
-    public override Task should_delete_expired_messages() => base.should_delete_expired_messages();
+    public override Task should_delete_expired_messages()
+    {
+        return base.should_delete_expired_messages();
+    }
 
     [Fact]
-    public override Task should_not_delete_expired_failed_messages_with_pending_retry() =>
-        base.should_not_delete_expired_failed_messages_with_pending_retry();
+    public override Task should_not_delete_expired_failed_messages_with_pending_retry()
+    {
+        return base.should_not_delete_expired_failed_messages_with_pending_retry();
+    }
 
     [Fact]
-    public override Task should_delete_published_message() => base.should_delete_published_message();
+    public override Task should_delete_published_message()
+    {
+        return base.should_delete_published_message();
+    }
 
     [Fact]
-    public override Task should_delete_received_message() => base.should_delete_received_message();
+    public override Task should_delete_received_message()
+    {
+        return base.should_delete_received_message();
+    }
 
     [Fact]
-    public override Task should_get_monitoring_api() => base.should_get_monitoring_api();
+    public override Task should_get_monitoring_api()
+    {
+        return base.should_get_monitoring_api();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_storage_operations() =>
-        base.should_handle_concurrent_storage_operations();
+    public override Task should_handle_concurrent_storage_operations()
+    {
+        return base.should_handle_concurrent_storage_operations();
+    }
 
     [Fact]
-    public override Task should_schedule_messages_of_delayed() => base.should_schedule_messages_of_delayed();
+    public override Task should_schedule_messages_of_delayed()
+    {
+        return base.should_schedule_messages_of_delayed();
+    }
 
     [Fact]
-    public override Task should_store_message_with_transaction() => base.should_store_message_with_transaction();
+    public override Task should_store_message_with_transaction()
+    {
+        return base.should_store_message_with_transaction();
+    }
 
     [Fact]
-    public override Task should_handle_message_state_transitions() => base.should_handle_message_state_transitions();
+    public override Task should_handle_message_state_transitions()
+    {
+        return base.should_handle_message_state_transitions();
+    }
 
     [Fact]
-    public override Task should_handle_failed_message_state() => base.should_handle_failed_message_state();
+    public override Task should_handle_failed_message_state()
+    {
+        return base.should_handle_failed_message_state();
+    }
 
     [Fact]
-    public override Task should_not_return_published_message_with_failed_status_and_null_next_retry_at() =>
-        base.should_not_return_published_message_with_failed_status_and_null_next_retry_at();
+    public override Task should_not_return_published_message_with_failed_status_and_null_next_retry_at()
+    {
+        return base.should_not_return_published_message_with_failed_status_and_null_next_retry_at();
+    }
 
     [Fact]
-    public override Task should_seal_succeeded_published_message_against_state_change_and_retry_pickup() =>
-        base.should_seal_succeeded_published_message_against_state_change_and_retry_pickup();
+    public override Task should_seal_succeeded_published_message_against_state_change_and_retry_pickup()
+    {
+        return base.should_seal_succeeded_published_message_against_state_change_and_retry_pickup();
+    }
 
     [Fact]
-    public override Task should_not_return_published_message_with_future_next_retry_at() =>
-        base.should_not_return_published_message_with_future_next_retry_at();
+    public override Task should_not_return_published_message_with_future_next_retry_at()
+    {
+        return base.should_not_return_published_message_with_future_next_retry_at();
+    }
 
     [Fact]
-    public override Task should_not_return_received_message_with_failed_status_and_null_next_retry_at() =>
-        base.should_not_return_received_message_with_failed_status_and_null_next_retry_at();
+    public override Task should_not_return_received_message_with_failed_status_and_null_next_retry_at()
+    {
+        return base.should_not_return_received_message_with_failed_status_and_null_next_retry_at();
+    }
 
     [Fact]
-    public override Task should_not_return_received_message_with_future_next_retry_at() =>
-        base.should_not_return_received_message_with_future_next_retry_at();
+    public override Task should_not_return_received_message_with_future_next_retry_at()
+    {
+        return base.should_not_return_received_message_with_future_next_retry_at();
+    }
 
     [Fact]
-    public override Task should_not_return_leased_published_message_until_lease_expires() =>
-        base.should_not_return_leased_published_message_until_lease_expires();
+    public override Task should_not_return_leased_published_message_until_lease_expires()
+    {
+        return base.should_not_return_leased_published_message_until_lease_expires();
+    }
 
     [Fact]
-    public override Task should_use_database_clock_when_reclaiming_published_retry_lease() =>
-        base.should_use_database_clock_when_reclaiming_published_retry_lease();
+    public override Task should_use_database_clock_when_reclaiming_published_retry_lease()
+    {
+        return base.should_use_database_clock_when_reclaiming_published_retry_lease();
+    }
 
     [Fact]
-    public override Task should_use_database_clock_when_reclaiming_received_retry_lease() =>
-        base.should_use_database_clock_when_reclaiming_received_retry_lease();
+    public override Task should_use_database_clock_when_reclaiming_received_retry_lease()
+    {
+        return base.should_use_database_clock_when_reclaiming_received_retry_lease();
+    }
 
     [Fact]
-    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease() =>
-        base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+    public override Task should_use_database_clock_when_fast_forwarding_dead_owner_lease()
+    {
+        return base.should_use_database_clock_when_fast_forwarding_dead_owner_lease();
+    }
 
     [Fact]
-    public override Task should_stamp_retry_lease_from_database_clock() =>
-        base.should_stamp_retry_lease_from_database_clock();
+    public override Task should_stamp_retry_lease_from_database_clock()
+    {
+        return base.should_stamp_retry_lease_from_database_clock();
+    }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_published_retry() =>
-        base.should_use_application_clock_when_scheduling_published_retry();
+    public override Task should_use_application_clock_when_scheduling_published_retry()
+    {
+        return base.should_use_application_clock_when_scheduling_published_retry();
+    }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_received_retry() =>
-        base.should_use_application_clock_when_scheduling_received_retry();
+    public override Task should_use_application_clock_when_scheduling_received_retry()
+    {
+        return base.should_use_application_clock_when_scheduling_received_retry();
+    }
 
     [Fact]
     public async Task should_preserve_sub_second_retry_lease_precision()
@@ -345,101 +429,154 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [InlineData(false, false)]
     [InlineData(true, true)]
     [InlineData(false, true)]
-    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool publish, bool reserveAttempt) =>
-        base.should_stamp_fresh_dispatch_lease_from_database_clock(publish, reserveAttempt);
+    public override Task should_stamp_fresh_dispatch_lease_from_database_clock(bool published, bool reserveAttempt)
+    {
+        return base.should_stamp_fresh_dispatch_lease_from_database_clock(published, reserveAttempt);
+    }
 
     [Fact]
-    public override Task should_reject_mismatched_original_retries() =>
-        base.should_reject_mismatched_original_retries();
+    public override Task should_reject_mismatched_original_retries()
+    {
+        return base.should_reject_mismatched_original_retries();
+    }
 
     [Fact]
-    public override Task should_lease_and_reserve_publish_attempt_in_single_step() =>
-        base.should_lease_and_reserve_publish_attempt_in_single_step();
+    public override Task should_lease_and_reserve_publish_attempt_in_single_step()
+    {
+        return base.should_lease_and_reserve_publish_attempt_in_single_step();
+    }
 
     [Fact]
-    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token() =>
-        base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+    public override Task should_reject_lease_and_reserve_with_stale_inline_attempts_token()
+    {
+        return base.should_reject_lease_and_reserve_with_stale_inline_attempts_token();
+    }
 
     [Fact]
-    public override Task should_reject_stale_published_lease_generation_writes() =>
-        base.should_reject_stale_published_lease_generation_writes();
+    public override Task should_reject_stale_published_lease_generation_writes()
+    {
+        return base.should_reject_stale_published_lease_generation_writes();
+    }
 
     [Fact]
-    public override Task should_reject_stale_received_lease_generation_writes() =>
-        base.should_reject_stale_received_lease_generation_writes();
+    public override Task should_reject_stale_received_lease_generation_writes()
+    {
+        return base.should_reject_stale_received_lease_generation_writes();
+    }
 
     [Fact]
-    public override Task should_allow_published_fenced_writes_with_fast_application_clock() =>
-        base.should_allow_published_fenced_writes_with_fast_application_clock();
+    public override Task should_allow_published_fenced_writes_with_fast_application_clock()
+    {
+        return base.should_allow_published_fenced_writes_with_fast_application_clock();
+    }
 
     [Fact]
-    public override Task should_allow_received_fenced_writes_with_fast_application_clock() =>
-        base.should_allow_received_fenced_writes_with_fast_application_clock();
+    public override Task should_allow_received_fenced_writes_with_fast_application_clock()
+    {
+        return base.should_allow_received_fenced_writes_with_fast_application_clock();
+    }
 
     [Fact]
-    public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
-        base.should_report_false_when_received_exception_message_is_already_terminal();
+    public override Task should_report_false_when_received_exception_message_is_already_terminal()
+    {
+        return base.should_report_false_when_received_exception_message_is_already_terminal();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_redelivery_storm_on_same_message_id() =>
-        base.should_handle_concurrent_redelivery_storm_on_same_message_id();
+    public override Task should_handle_concurrent_redelivery_storm_on_same_message_id()
+    {
+        return base.should_handle_concurrent_redelivery_storm_on_same_message_id();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group() =>
-        base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
+    {
+        return base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_store_received_message_with_same_identity() =>
-        base.should_handle_concurrent_store_received_message_with_same_identity();
+    public override Task should_handle_concurrent_store_received_message_with_same_identity()
+    {
+        return base.should_handle_concurrent_store_received_message_with_same_identity();
+    }
 
     [Fact]
-    public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above() =>
-        base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
+    public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
+    {
+        return base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
+    }
 
     [Fact]
-    public override Task should_not_return_leased_received_message_until_lease_expires() =>
-        base.should_not_return_leased_received_message_until_lease_expires();
+    public override Task should_not_return_leased_received_message_until_lease_expires()
+    {
+        return base.should_not_return_leased_received_message_until_lease_expires();
+    }
 
     [Fact]
-    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease() =>
-        base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
+    public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
+    {
+        return base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
+    }
 
     [Fact]
-    public override Task should_handle_concurrent_state_updates_to_same_row() =>
-        base.should_handle_concurrent_state_updates_to_same_row();
+    public override Task should_handle_concurrent_state_updates_to_same_row()
+    {
+        return base.should_handle_concurrent_state_updates_to_same_row();
+    }
 
     [Fact]
-    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
-        base.should_reclaim_published_retry_row_owned_by_dead_node();
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node()
+    {
+        return base.should_reclaim_published_retry_row_owned_by_dead_node();
+    }
 
     [Fact]
-    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
-        base.should_reclaim_received_retry_row_owned_by_dead_node();
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node()
+    {
+        return base.should_reclaim_received_retry_row_owned_by_dead_node();
+    }
 
     [Fact]
-    public override Task should_stamp_owner_on_claim() => base.should_stamp_owner_on_claim();
+    public override Task should_stamp_owner_on_claim()
+    {
+        return base.should_stamp_owner_on_claim();
+    }
 
     [Fact]
-    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation() =>
-        base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
+    {
+        return base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+    }
 
     [Fact]
-    public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
+    public override Task should_not_reclaim_terminal_rows()
+    {
+        return base.should_not_reclaim_terminal_rows();
+    }
 
     [Fact]
-    public override Task should_be_inert_when_no_dead_owners_passed() =>
-        base.should_be_inert_when_no_dead_owners_passed();
+    public override Task should_be_inert_when_no_dead_owners_passed()
+    {
+        return base.should_be_inert_when_no_dead_owners_passed();
+    }
 
     [Fact]
-    public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();
+    public override Task should_not_reclaim_rows_with_null_owner()
+    {
+        return base.should_not_reclaim_rows_with_null_owner();
+    }
 
     [Fact]
-    public override Task should_reclaim_dead_owner_rows_idempotently() =>
-        base.should_reclaim_dead_owner_rows_idempotently();
+    public override Task should_reclaim_dead_owner_rows_idempotently()
+    {
+        return base.should_reclaim_dead_owner_rows_idempotently();
+    }
 
     [Fact]
-    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease() =>
-        base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    {
+        return base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+    }
 
     #endregion
 
@@ -983,8 +1120,9 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         StatusName statusName,
         DateTimeOffset? expiresAt,
         DateTimeOffset? nextRetryAt
-    ) =>
-        connection.ExecuteAsync(
+    )
+    {
+        return connection.ExecuteAsync(
             """
             INSERT INTO messaging.Published
                 (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
@@ -1002,6 +1140,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 MessageId = $"sql-{id:N}",
             }
         );
+    }
 
     private static Task _InsertHealthyRetryRowAsync(
         SqlConnection connection,

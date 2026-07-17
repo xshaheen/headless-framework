@@ -42,7 +42,10 @@ public sealed class SendSingleSmsRequest
 public sealed record SmsRequestDestination(int Code, string Number)
 {
     /// <summary>Returns the E.164-style number without a leading <c>+</c> (for example <c>201234567890</c>).</summary>
-    public override string ToString() => ToString(hasPlusPrefix: false);
+    public override string ToString()
+    {
+        return ToString(hasPlusPrefix: false);
+    }
 
     /// <summary>Returns the number formatted as <c>{Code}{Number}</c> or <c>+{Code}{Number}</c>.</summary>
     /// <param name="hasPlusPrefix">When <see langword="true"/>, prepends a <c>+</c> sign to produce an E.164 number.</param>

@@ -457,8 +457,7 @@ public static class DistributedLockExtensions
 
         if (
             cancellationToken.IsCancellationRequested
-            && errors is not null
-            && errors.All(static error => error is OperationCanceledException)
+            && errors?.TrueForAll(static error => error is OperationCanceledException) == true
         )
         {
             cancellationToken.ThrowIfCancellationRequested();

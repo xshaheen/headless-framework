@@ -16,5 +16,8 @@ public sealed class GlobalSettingValueProvider(ISettingValueStore store) : Store
     /// <summary>Always returns <see langword="null"/> — global settings are not scoped to a key.</summary>
     /// <param name="providerKey">Ignored.</param>
     /// <returns><see langword="null"/>.</returns>
-    protected override string? NormalizeProviderKey(string? providerKey) => null;
+    protected override string? NormalizeProviderKey(string? providerKey)
+    {
+        return null;
+    }
 }

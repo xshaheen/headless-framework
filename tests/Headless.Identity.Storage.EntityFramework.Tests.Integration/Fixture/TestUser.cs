@@ -54,13 +54,28 @@ public sealed class TestUser
     public UserId? UnsuspendedById { get; private init; }
 
     // Domain helpers to toggle flags so EF tracks modifications
-    public void MarkDeleted() => IsDeleted = true;
+    public void MarkDeleted()
+    {
+        IsDeleted = true;
+    }
 
-    public void MarkRestored() => IsDeleted = false;
+    public void MarkRestored()
+    {
+        IsDeleted = false;
+    }
 
-    public void MarkSuspended() => IsSuspended = true;
+    public void MarkSuspended()
+    {
+        IsSuspended = true;
+    }
 
-    public void MarkUnsuspended() => IsSuspended = false;
+    public void MarkUnsuspended()
+    {
+        IsSuspended = false;
+    }
 
-    public IReadOnlyList<object> GetKeys() => [Id];
+    public IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }

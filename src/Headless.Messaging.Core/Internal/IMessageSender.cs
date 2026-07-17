@@ -36,11 +36,6 @@ internal interface IMessageSender
 
 internal sealed class MessageSender : IMessageSender
 {
-    // ReSharper disable once InconsistentNaming
-    private static readonly DiagnosticListener _DiagnosticListener = new(
-        MessageDiagnosticListenerNames.DiagnosticListenerName
-    );
-
     private readonly IServiceProvider _serviceProvider;
     private readonly IDataStorage _dataStorage;
     private readonly ILogger _logger;
@@ -49,6 +44,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly IBusTransport? _busTransport;
     private readonly IQueueTransport? _queueTransport;
     private readonly TimeProvider _timeProvider;
+    private readonly MessagingTelemetry _telemetry;
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
@@ -62,6 +58,7 @@ internal sealed class MessageSender : IMessageSender
         _busTransport = serviceProvider.GetService<IBusTransport>();
         _queueTransport = serviceProvider.GetService<IQueueTransport>();
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        _telemetry = serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
         _retryPolicy = opts.RetryPolicy;
@@ -74,7 +71,10 @@ internal sealed class MessageSender : IMessageSender
             serviceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
     }
 
-    public Task<OperateResult> SendAsync(MediumMessage message) => SendAsync(message, _serviceProvider);
+    public Task<OperateResult> SendAsync(MediumMessage message)
+    {
+        return SendAsync(message, _serviceProvider);
+    }
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {
@@ -87,7 +87,7 @@ internal sealed class MessageSender : IMessageSender
         // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
         // it up on restart.
         return _retryPipeline.ExecuteAsync(
-            (inlineRetries, ct) => _SendWithoutRetryAsync(message, inlineRetries, ct),
+            (_, ct) => _SendWithoutRetryAsync(message, ct),
             (inlineRetries, exception, delay, strategyFailed, ct) =>
                 _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
             (inlineRetries, exception, ct) =>
@@ -99,7 +99,6 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<MessagingRetryAttempt> _SendWithoutRetryAsync(
         MediumMessage message,
-        int inlineRetries,
         CancellationToken cancellationToken
     )
     {
@@ -108,7 +107,7 @@ internal sealed class MessageSender : IMessageSender
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        inlineRetries = message.InlineAttempts;
+        var inlineRetries = message.InlineAttempts;
         if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
         {
             // The recovery transition still writes CAS-guarded state, which requires an active
@@ -146,22 +145,52 @@ internal sealed class MessageSender : IMessageSender
 
         var transport = selected.Transport!;
         var brokerAddress = transport.BrokerAddress;
-        var tracingTimestamp = _TracingBefore(transportMsg, message.IntentType, brokerAddress, cancellationToken);
+        var traceHandle = _TracingBefore(transportMsg, message.IntentType, brokerAddress);
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
-        var result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+        OperateResult result;
+
+        try
+        {
+            result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Publish timeout / shutdown: stop (export) the span without an error status; the retry
+            // machinery above owns the failure classification. Rethrow unchanged.
+            traceHandle.Activity?.Dispose();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // A throwing send must stop the span and record messaging.publish.errors exactly like the
+            // failed-OperateResult path below; the exception then propagates unchanged.
+            _TracingError(traceHandle, transportMsg, brokerAddress, OperateResult.Failed(ex));
+            throw;
+        }
 
         if (result.Succeeded)
         {
-            await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The transport send succeeded but the success-state write failed: stop (export) the span
+                // without an error status so it is never orphaned; the storage exception propagates unchanged
+                // and the retry machinery owns the failure classification.
+                traceHandle.Activity?.Dispose();
+                throw;
+            }
 
-            _TracingAfter(tracingTimestamp, transportMsg, message.IntentType, brokerAddress, cancellationToken);
+            _TracingAfter(traceHandle, transportMsg, brokerAddress);
 
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
-        _TracingError(tracingTimestamp, transportMsg, message.IntentType, brokerAddress, result, cancellationToken);
+        _TracingError(traceHandle, transportMsg, brokerAddress, result);
 
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
     }
@@ -493,89 +522,46 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private long? _TracingBefore(
-        TransportMessage message,
-        IntentType intentType,
-        BrokerAddress broker,
-        CancellationToken cancellationToken
-    )
+    private MessagingTraceHandle _TracingBefore(TransportMessage message, IntentType intentType, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublish))
+        if (!MessagingDiagnostics.IsEnabled)
         {
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublish, eventData);
-
-            return eventData.OperationTimestamp;
+            return default;
         }
 
-        return null;
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var activity = _telemetry.PublishStart(message, intentType, broker, now);
+
+        return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(
-        long? tracingTimestamp,
-        TransportMessage message,
-        IntentType intentType,
-        BrokerAddress broker,
-        CancellationToken cancellationToken
-    )
+    private void _TracingAfter(MessagingTraceHandle traceHandle, TransportMessage message, BrokerAddress broker)
     {
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
+        if (!traceHandle.IsRecording)
         {
-            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublish, eventData);
+            return;
         }
+
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        MessagingTelemetry.PublishStop(traceHandle.Activity, message, broker, traceHandle.StartTimestampMs!.Value, now);
     }
 
-    private void _TracingError(
-        long? tracingTimestamp,
+    private static void _TracingError(
+        MessagingTraceHandle traceHandle,
         TransportMessage message,
-        IntentType intentType,
         BrokerAddress broker,
-        OperateResult result,
-        CancellationToken cancellationToken
+        OperateResult result
     )
     {
-        if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
+        if (!traceHandle.IsRecording)
         {
-            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-
-            var eventData = new MessageEventDataPubSend
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                BrokerAddress = broker,
-                TransportMessage = message,
-                IntentType = intentType,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                Exception = ex,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
+            return;
         }
+
+        var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
+        MessagingTelemetry.PublishError(traceHandle.Activity, message, broker, ex);
     }
 
     #endregion

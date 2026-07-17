@@ -57,13 +57,19 @@ public sealed class DistributedLeaseTests
 
         public bool CanObserveLoss => LostToken.CanBeCanceled;
 
-        public Task ReleaseAsync() => Task.CompletedTask;
+        public Task ReleaseAsync()
+        {
+            return Task.CompletedTask;
+        }
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(true);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 }

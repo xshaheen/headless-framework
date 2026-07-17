@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class IsBitwiseEqualToTests
 {
     [Fact]
-    public void is_bitwise_equal_to_should_return_value_for_equal_primitives()
+    public void should_return_value_for_equal_primitives_when_is_bitwise_equal_to()
     {
         Argument.IsBitwiseEqualTo((byte)7, (byte)7).Should().Be(7);
         Argument.IsBitwiseEqualTo((short)-3, (short)-3).Should().Be(-3);
@@ -18,7 +18,7 @@ public sealed class IsBitwiseEqualToTests
     }
 
     [Fact]
-    public void is_bitwise_equal_to_should_throw_when_bytes_differ()
+    public void should_throw_when_is_bitwise_equal_to_bytes_differ()
     {
         const int value = 42;
         var action = () => Argument.IsBitwiseEqualTo(value, 43);
@@ -30,7 +30,7 @@ public sealed class IsBitwiseEqualToTests
     }
 
     [Fact]
-    public void is_bitwise_equal_to_should_distinguish_positive_and_negative_zero()
+    public void should_distinguish_positive_and_negative_zero_when_is_bitwise_equal_to()
     {
         // 0.0f == -0.0f is true, but their bit patterns differ.
         var action = () => Argument.IsBitwiseEqualTo(0.0f, -0.0f);
@@ -38,14 +38,14 @@ public sealed class IsBitwiseEqualToTests
     }
 
     [Fact]
-    public void is_bitwise_equal_to_should_treat_identical_nan_payloads_as_equal()
+    public void should_treat_identical_nan_payloads_as_equal_when_is_bitwise_equal_to()
     {
         // NaN != NaN by value, but identical bit payloads are bitwise-equal.
         Argument.IsBitwiseEqualTo(float.NaN, float.NaN).Should().Be(float.NaN);
     }
 
     [Fact]
-    public void is_bitwise_equal_to_should_handle_large_unmanaged_types()
+    public void should_handle_large_unmanaged_types_when_is_bitwise_equal_to()
     {
         var id = Guid.NewGuid();
 

@@ -97,10 +97,16 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     /// it after the <see cref="OnIncomingInvalidation"/> conflict pass: a surviving item is local intent at
     /// least as new as the incoming message, so the message must not wipe the local L1 entry.
     /// </summary>
-    internal bool Contains(string key) => _items.ContainsKey(key);
+    internal bool Contains(string key)
+    {
+        return _items.ContainsKey(key);
+    }
 
     /// <summary>Kind of the pending item for the given key, when one exists (test/diagnostic hook).</summary>
-    internal HybridCacheRecoveryKind? GetKind(string key) => _items.TryGetValue(key, out var item) ? item.Kind : null;
+    internal HybridCacheRecoveryKind? GetKind(string key)
+    {
+        return _items.TryGetValue(key, out var item) ? item.Kind : null;
+    }
 
     /// <summary>
     /// Default retention window for items without a natural expiry (removes, publishes, sets without TTL).

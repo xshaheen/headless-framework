@@ -43,17 +43,33 @@ public sealed partial class HybridCache(
     HybridCacheOptions cacheOptions,
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
-    ICacheFactoryLockProvider? factoryLockProvider = null
+    ICacheFactoryLockProvider? factoryLockProvider = null,
+    CacheInstrumentationConfig? instrumentation = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly string? _cacheName = cacheOptions.CacheName;
+
+    // Framework-owned cross-node invalidation-routing identity (HybridCacheOptions.InvalidationRoutingName), set
+    // by named-instance registration and null for the default instance. Distinct from the public CacheName below,
+    // which only feeds telemetry and cannot affect routing (a user override in setupAction is applied before
+    // registration stamps InvalidationRoutingName, so it never wins here).
+    private readonly string? _invalidationRoutingName = cacheOptions.InvalidationRoutingName;
+
+    // Non-null cache name for the headless.cache.name telemetry dimension (the nullable _invalidationRoutingName
+    // above is used for invalidation routing and must stay null for the default instance).
+    private readonly string _metricCacheName = string.IsNullOrEmpty(cacheOptions.CacheName)
+        ? CachingDiagnostics.DefaultCacheName
+        : cacheOptions.CacheName;
+
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
-        factoryLockProvider
+        factoryLockProvider,
+        string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
+        CachingMetrics.TierHybrid,
+        instrumentation?.IncludeKeyInTraces ?? false
     );
 
     private long _localCacheHits;
@@ -114,6 +130,11 @@ public sealed partial class HybridCache(
         if (message.FlushAll)
         {
             _logger.LogFlushedLocalCache();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationFlush,
+                CachingMetrics.DirectionReceive
+            );
             // Seed the L2 provider's remove-generation marker from the origin timestamp FIRST, then wipe L1. The
             // order matters: if L1 were wiped first, a concurrent read in the window before the L2 marker is seeded
             // would miss the wiped L1 and fall through to L2 (marker not yet seeded), serving the stale entry. The
@@ -134,6 +155,11 @@ public sealed partial class HybridCache(
         if (message.Clear)
         {
             var clearAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationClear,
+                CachingMetrics.DirectionReceive
+            );
 
             // Seed the L1 clear-generation marker from the ORIGINATOR's timestamp (raise-only), not via ClearAsync
             // which would stamp the receiver's own clock: under cross-node clock skew a receiver lagging the origin
@@ -168,6 +194,11 @@ public sealed partial class HybridCache(
         if (!string.IsNullOrEmpty(message.Tag))
         {
             var tagAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+            CachingMetrics.RecordInvalidation(
+                _metricCacheName,
+                CachingMetrics.InvalidationTag,
+                CachingMetrics.DirectionReceive
+            );
 
             // Seed the L1 tag marker from the ORIGINATOR's timestamp (raise-only), not via RemoveByTagAsync which
             // stamps the receiver's local clock — under clock skew a lagging receiver would record a marker older
@@ -263,9 +294,9 @@ public sealed partial class HybridCache(
             message = message with { Timestamp = _timeProvider.GetUtcNow() };
         }
 
-        if (!string.Equals(message.CacheName, _cacheName, StringComparison.Ordinal))
+        if (!string.Equals(message.CacheName, _invalidationRoutingName, StringComparison.Ordinal))
         {
-            message = message with { CacheName = _cacheName };
+            message = message with { CacheName = _invalidationRoutingName };
         }
 
         try
@@ -364,9 +395,15 @@ public sealed partial class HybridCache(
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) == 1, this);
     }
 
-    private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+    private DateTime _GetUtcNow()
+    {
+        return _timeProvider.GetUtcNow().UtcDateTime;
+    }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
     {

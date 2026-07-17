@@ -698,8 +698,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     public async Task MigrateDefinedCronJobs(
         (string, string)[] cronExpressions,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+    {
         await persistenceProvider.MigrateDefinedCronJobsAsync(cronExpressions, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default)
     {

@@ -61,7 +61,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     // ── U1 / U2: renewal is the loss detector ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task RenewTimeJobLease_advances_lease_and_returns_one_for_an_owned_running_row()
+    public async Task renew_time_job_lease_advances_lease_and_returns_one_for_an_owned_running_row()
     {
         var (provider, time) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(1));
@@ -76,7 +76,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewTimeJobLease_returns_zero_when_owner_changed()
+    public async Task renew_time_job_lease_returns_zero_when_owner_changed()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeB, _Now.AddMinutes(1)); // owned by another node
@@ -88,7 +88,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewTimeJobLease_returns_zero_when_row_terminalized()
+    public async Task renew_time_job_lease_returns_zero_when_row_terminalized()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.Succeeded, _NodeA, _Now.AddMinutes(1));
@@ -100,7 +100,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewTimeJobLease_returns_zero_for_an_owned_queued_row()
+    public async Task renew_time_job_lease_returns_zero_for_an_owned_queued_row()
     {
         // #13: renewal slides a RUNNING lease only. A Queued row hasn't started, so renewal must NOT extend it (a
         // returned 1 would read as "lease held" and suppress the cancel-on-loss signal).
@@ -112,7 +112,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewTimeJobLease_returns_zero_after_a_retry_reclaim_released_the_row()
+    public async Task renew_time_job_lease_returns_zero_after_a_retry_reclaim_released_the_row()
     {
         // #5 invariant: no reclaim arm leaves (InProgress, Owner==original) true, so renewal can never resurrect a
         // reclaimed lease. After a Retry reclaim the row is Idle + ownerless, so the original owner renews 0 rows.
@@ -125,7 +125,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task QueueTimeJobs_claims_the_job_tree_and_preserves_retry_counts()
+    public async Task queue_time_jobs_claims_the_job_tree_and_preserves_retry_counts()
     {
         var (provider, _) = _Create();
         var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
@@ -162,7 +162,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task QueueTimedOutTimeJobs_does_not_steal_a_live_main_scheduler_claim()
+    public async Task queue_timed_out_time_jobs_does_not_steal_a_live_main_scheduler_claim()
     {
         var (provider, time) = _Create();
         var job = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
@@ -188,7 +188,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     // ── U3: stalled-job reclaim (lapsed-lease InProgress, per policy) ────────────────────────────────────────
 
     [Fact]
-    public async Task QueueTimedOutTimeJobs_claims_the_job_tree()
+    public async Task queue_timed_out_time_jobs_claims_the_job_tree()
     {
         var (provider, _) = _Create();
         var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
@@ -220,7 +220,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledTimeJobs_retry_releases_lapsed_row_to_idle()
+    public async Task reclaim_stalled_time_jobs_retry_releases_lapsed_row_to_idle()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
@@ -236,7 +236,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledTimeJobs_markFailed_terminalizes_lapsed_row()
+    public async Task reclaim_stalled_time_jobs_mark_failed_terminalizes_lapsed_row()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
@@ -251,7 +251,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledTimeJobs_skip_terminalizes_lapsed_row()
+    public async Task reclaim_stalled_time_jobs_skip_terminalizes_lapsed_row()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
@@ -266,7 +266,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledTimeJobs_leaves_a_healthy_renewing_job_untouched()
+    public async Task reclaim_stalled_time_jobs_leaves_a_healthy_renewing_job_untouched()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(10)); // valid future lease
@@ -281,7 +281,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledTimeJobs_is_idempotent()
+    public async Task reclaim_stalled_time_jobs_is_idempotent()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
@@ -294,7 +294,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     // ── U4: node-death sweep defers InProgress to the lease ──────────────────────────────────────────────────
 
     [Fact]
-    public async Task DeadNodeSweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
+    public async Task dead_node_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(10)); // still-valid lease
@@ -309,7 +309,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task DeadNodeSweep_reclaims_a_lapsed_lease_inprogress_row_per_policy()
+    public async Task dead_node_sweep_reclaims_a_lapsed_lease_inprogress_row_per_policy()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
@@ -324,7 +324,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task DeadNodeSweep_reclaims_idle_and_queued_immediately_regardless_of_lease()
+    public async Task dead_node_sweep_reclaims_idle_and_queued_immediately_regardless_of_lease()
     {
         var (provider, _) = _Create();
         var idle = _TimeJob(JobStatus.Idle, _NodeA, _Now.AddMinutes(10));
@@ -341,7 +341,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     // ── U5: claim→start ownership recheck ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task UnifiedContextUpdate_does_not_stamp_a_row_reclaimed_by_another_owner()
+    public async Task unified_context_update_does_not_stamp_a_row_reclaimed_by_another_owner()
     {
         var (provider, _) = _Create(); // this node is NodeA
         var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.AddMinutes(1)); // re-claimed by NodeB before we start it
@@ -357,7 +357,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task UnifiedContextUpdate_stamps_a_still_owned_row_inprogress()
+    public async Task unified_context_update_stamps_a_still_owned_row_inprogress()
     {
         var (provider, _) = _Create(); // this node is NodeA
         var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.AddMinutes(1));
@@ -371,7 +371,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task UnifiedContextUpdate_does_not_restamp_an_already_running_row()
+    public async Task unified_context_update_does_not_restamp_an_already_running_row()
     {
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(1));
@@ -409,7 +409,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task QueueTimedOutCronJobs_does_not_steal_a_live_main_scheduler_claim()
+    public async Task queue_timed_out_cron_jobs_does_not_steal_a_live_main_scheduler_claim()
     {
         var (provider, time) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.Add(_Lease));
@@ -434,7 +434,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewCronJobOccurrenceLease_returns_zero_when_owner_changed()
+    public async Task renew_cron_job_occurrence_lease_returns_zero_when_owner_changed()
     {
         var (provider, _) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeB, _Now.AddMinutes(1));
@@ -443,7 +443,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledCronJobOccurrences_releases_lapsed_retry_to_idle()
+    public async Task reclaim_stalled_cron_job_occurrences_releases_lapsed_retry_to_idle()
     {
         var (provider, _) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1));
@@ -454,7 +454,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledCronJobOccurrences_markFailed_terminalizes_lapsed_row()
+    public async Task reclaim_stalled_cron_job_occurrences_mark_failed_terminalizes_lapsed_row()
     {
         // #23: cron mirror of the time-job MarkFailed reclaim — parity gap that had no unit coverage.
         var (provider, _) = _Create();
@@ -478,7 +478,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task ReclaimStalledCronJobOccurrences_skip_terminalizes_lapsed_row()
+    public async Task reclaim_stalled_cron_job_occurrences_skip_terminalizes_lapsed_row()
     {
         // #23: cron mirror of the time-job Skip reclaim.
         var (provider, _) = _Create();
@@ -502,7 +502,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task RenewCronJobOccurrenceLease_returns_zero_for_an_owned_queued_row()
+    public async Task renew_cron_job_occurrence_lease_returns_zero_for_an_owned_queued_row()
     {
         // #13 (cron): renewal slides a RUNNING occurrence lease only.
         var (provider, _) = _Create();
@@ -512,7 +512,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
-    public async Task QueueCronJobOccurrences_re_queue_restamps_OnNodeDeath_from_the_cron_definition()
+    public async Task queue_cron_job_occurrences_re_queue_restamps_on_node_death_from_the_cron_definition()
     {
         // #464: re-queuing an existing occurrence re-stamps OnNodeDeath from the cron def (context), not the stored
         // value, so EF and in-memory agree and a mid-flight policy edit takes effect.

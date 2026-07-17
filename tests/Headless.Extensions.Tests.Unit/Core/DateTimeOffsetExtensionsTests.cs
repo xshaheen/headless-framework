@@ -10,7 +10,7 @@ public sealed class DateTimeOffsetExtensionsTests
     private static readonly TimeSpan _Offset = TimeSpan.FromHours(3);
 
     [Fact]
-    public void to_timezone_should_convert_to_target_timezone()
+    public void should_convert_to_target_timezone_when_to_timezone()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 12, 0, 0, TimeSpan.Zero);
@@ -24,7 +24,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void clear_time_should_return_midnight()
+    public void should_return_midnight_when_clear_time()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, 123, _Offset);
@@ -37,7 +37,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_start_of_day_should_return_midnight()
+    public void should_return_midnight_when_get_start_of_day()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -53,7 +53,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_end_of_day_should_return_end_of_day()
+    public void should_return_end_of_day_when_get_end_of_day()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -70,7 +70,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_start_of_month_should_return_first_day()
+    public void should_return_first_day_when_get_start_of_month()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -88,7 +88,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_end_of_month_should_return_last_day()
+    public void should_return_last_day_when_get_end_of_month()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -106,7 +106,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_end_of_month_should_handle_offset_that_crosses_a_month_boundary()
+    public void should_handle_offset_that_crosses_a_month_boundary_when_get_end_of_month()
     {
         // given - Jan 31 23:00 UTC; a +2h offset shifts the local calendar date into February
         var dateTimeOffset = new DateTimeOffset(2021, 1, 31, 23, 0, 0, TimeSpan.Zero);
@@ -123,7 +123,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_start_of_year_should_return_jan_1()
+    public void should_return_jan_1_when_get_start_of_year()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -141,7 +141,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void get_end_of_year_should_return_dec_31()
+    public void should_return_dec_31_when_get_end_of_year()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.Zero);
@@ -159,7 +159,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void truncate_to_milliseconds_should_remove_sub_millisecond_precision()
+    public void should_remove_sub_millisecond_precision_when_truncate_to_milliseconds()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, 123, _Offset);
@@ -172,7 +172,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void truncate_to_seconds_should_remove_milliseconds()
+    public void should_remove_milliseconds_when_truncate_to_seconds()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, 123, _Offset);
@@ -185,7 +185,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void truncate_to_minutes_should_remove_seconds()
+    public void should_remove_seconds_when_truncate_to_minutes()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, 123, _Offset);
@@ -198,7 +198,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void truncate_to_hours_should_remove_minutes()
+    public void should_remove_minutes_when_truncate_to_hours()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, 123, _Offset);
@@ -230,7 +230,11 @@ public sealed class DateTimeOffsetExtensionsTests
 
     [Theory]
     [MemberData(nameof(SafeAddData))]
-    public void safe_add_should_clamp_to_boundaries(DateTimeOffset dateTime, TimeSpan timeSpan, DateTimeOffset expected)
+    public void should_clamp_to_boundaries_when_safe_add(
+        DateTimeOffset dateTime,
+        TimeSpan timeSpan,
+        DateTimeOffset expected
+    )
     {
         // when
         var result = dateTime.SafeAdd(timeSpan);
@@ -240,7 +244,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void safe_add_should_clamp_to_max_without_overflowing_for_extreme_positive_span()
+    public void should_clamp_to_max_without_overflowing_for_extreme_positive_span_when_safe_add()
     {
         // given - date.Ticks + value.Ticks overflows long before the bounds check in the old code,
         // wrapping negative and wrongly returning MinValue instead of clamping to MaxValue
@@ -254,7 +258,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void floor_should_round_down_to_interval()
+    public void should_round_down_to_interval_when_floor()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 1, 1, 12, 31, 45, 123, _Offset);
@@ -267,7 +271,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void ceiling_should_round_up_to_interval()
+    public void should_round_up_to_interval_when_ceiling()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 1, 1, 12, 31, 45, 123, _Offset);
@@ -280,7 +284,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void to_date_only_should_convert_correctly()
+    public void should_convert_correctly_when_to_date_only()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, _Offset);
@@ -293,7 +297,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void to_utc_date_only_should_convert_correctly()
+    public void should_convert_correctly_when_to_utc_date_only()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 2, 30, 45, TimeSpan.FromHours(5));
@@ -306,7 +310,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void to_time_only_should_convert_correctly()
+    public void should_convert_correctly_when_to_time_only()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, _Offset);
@@ -319,7 +323,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void to_utc_time_only_should_convert_correctly()
+    public void should_convert_correctly_when_to_utc_time_only()
     {
         // given
         var dateTimeOffset = new DateTimeOffset(2021, 6, 15, 14, 30, 45, TimeSpan.FromHours(3));
@@ -386,7 +390,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_return_zero_offset_input_unchanged()
+    public void should_return_zero_offset_input_unchanged_when_normalize_to_utc()
     {
         // given
         var utc = new DateTimeOffset(2024, 11, 27, 12, 0, 0, TimeSpan.Zero);
@@ -400,7 +404,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_zero_a_positive_offset_while_preserving_the_instant()
+    public void should_zero_a_positive_offset_while_preserving_the_instant_when_normalize_to_utc()
     {
         // given
         var withOffset = new DateTimeOffset(2024, 11, 27, 15, 0, 0, _Offset);
@@ -415,7 +419,7 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_zero_a_negative_offset_while_preserving_the_instant()
+    public void should_zero_a_negative_offset_while_preserving_the_instant_when_normalize_to_utc()
     {
         // given
         var withOffset = new DateTimeOffset(2024, 11, 27, 5, 0, 0, TimeSpan.FromHours(-4));

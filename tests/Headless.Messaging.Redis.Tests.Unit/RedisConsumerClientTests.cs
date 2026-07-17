@@ -166,7 +166,7 @@ public sealed class RedisConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
@@ -180,7 +180,7 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
@@ -193,7 +193,7 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();

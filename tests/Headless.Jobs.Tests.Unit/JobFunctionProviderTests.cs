@@ -368,11 +368,7 @@ public sealed class JobFunctionProviderTests : IDisposable
 
         var build = () => JobFunctionRegistryBuilder.Build([], [], descriptors);
 
-        build
-            .Should()
-            .Throw<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain(typeof(FirstRequest).FullName!);
+        build.Should().Throw<InvalidOperationException>().WithMessage($"*{typeof(FirstRequest).FullName}*");
     }
 
     [Fact]
@@ -386,7 +382,7 @@ public sealed class JobFunctionProviderTests : IDisposable
 
         var build = () => JobFunctionRegistryBuilder.Build([], [], descriptors);
 
-        build.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("'duplicate'");
+        build.Should().Throw<InvalidOperationException>().WithMessage("*'duplicate'*");
     }
 
     [Fact]
@@ -432,20 +428,24 @@ public sealed class JobFunctionProviderTests : IDisposable
         middlewareType.GetProperty("InvocationCount")!.GetValue(null).Should().Be(1);
     }
 
-    private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "") =>
-        new(
+    private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "")
+    {
+        return new(
             name,
             new JobFunctionRegistration
             {
                 CronExpression = cronExpression,
                 Priority = JobPriority.Normal,
-                Delegate = new JobFunctionDelegate((_, _, _) => Task.CompletedTask),
+                Delegate = (_, _, _) => Task.CompletedTask,
                 MaxConcurrency = 0,
             }
         );
+    }
 
-    private static JobFunctionDescriptor _Descriptor(string name, Type? requestType, string cronExpression = "") =>
-        new(name, requestType, cronExpression, JobPriority.Normal, 0);
+    private static JobFunctionDescriptor _Descriptor(string name, Type? requestType, string cronExpression = "")
+    {
+        return new(name, requestType, cronExpression, JobPriority.Normal, 0);
+    }
 
     private sealed record FirstRequest;
 

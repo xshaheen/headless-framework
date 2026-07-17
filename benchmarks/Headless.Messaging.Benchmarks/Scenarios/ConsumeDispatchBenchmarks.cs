@@ -54,7 +54,10 @@ public class ConsumeDispatchBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _provider.Dispose();
+    public void Cleanup()
+    {
+        _provider.Dispose();
+    }
 
     [Benchmark]
     public Task ExecuteDispatch()
@@ -96,7 +99,7 @@ public class ConsumeDispatchBenchmarks
                 Origin = origin,
                 Content = "{}",
                 IntentType = IntentType.Bus,
-                Added = DateTime.UtcNow,
+                Added = DateTimeOffset.UtcNow,
             }
         );
     }

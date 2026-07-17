@@ -11,7 +11,7 @@ namespace Tests.Internal;
 public sealed class ScheduledMediumMessageQueueTests : TestBase
 {
     [Fact]
-    public void unordered_items_should_reflect_all_enqueued_messages_without_removing_them()
+    public void should_reflect_all_enqueued_messages_without_removing_them_when_unordered_items()
     {
         // given
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
@@ -30,7 +30,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     }
 
     [Fact]
-    public async Task get_consuming_enumerable_should_yield_due_messages_in_send_time_then_storage_id_order()
+    public async Task should_yield_due_messages_in_send_time_then_storage_id_order_when_get_consuming_enumerable()
     {
         // given
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
@@ -66,7 +66,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     }
 
     [Fact]
-    public async Task get_consuming_enumerable_should_wait_until_future_message_is_due()
+    public async Task should_wait_until_future_message_is_due_when_get_consuming_enumerable()
     {
         // given
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
@@ -96,7 +96,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     }
 
     [Fact]
-    public async Task get_consuming_enumerable_should_reschedule_when_earlier_message_is_enqueued()
+    public async Task should_reschedule_when_get_consuming_enumerable_earlier_message_is_enqueued()
     {
         // given
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
@@ -146,5 +146,8 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         };
     }
 
-    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    private static Guid _StorageGuid(int value)
+    {
+        return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
 }

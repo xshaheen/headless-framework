@@ -14,7 +14,7 @@ namespace Tests;
 public sealed class SqlServerCommitDiagnosticObserverTests : TestBase
 {
     [Fact]
-    public async Task wait_for_drains_should_return_promptly_when_no_drains_are_pending()
+    public async Task should_return_promptly_when_wait_for_drains_no_drains_are_pending()
     {
         var (observer, _, _) = _CreateObserver();
 
@@ -23,7 +23,7 @@ public sealed class SqlServerCommitDiagnosticObserverTests : TestBase
     }
 
     [Fact]
-    public async Task wait_for_drains_should_log_drain_fault_and_not_propagate_a_drain_origin_cancellation()
+    public async Task should_log_drain_fault_and_not_propagate_a_drain_origin_cancellation_when_wait_for_drains()
     {
         // Pins the catch-filter behavior: an OperationCanceledException ORIGINATING FROM A DRAIN (commit callback
         // throws OCE) while the shutdown token is NOT canceled must be logged as a drain fault and swallowed —
@@ -77,7 +77,7 @@ public sealed class SqlServerCommitDiagnosticObserverTests : TestBase
     }
 
     [Fact]
-    public async Task wait_for_drains_should_throw_when_the_shutdown_token_is_canceled_during_the_wait()
+    public async Task should_throw_when_wait_for_drains_the_shutdown_token_is_canceled_during_the_wait()
     {
         var (observer, source, _) = _CreateObserver();
         await using var connection = new SqlConnection();
@@ -148,9 +148,15 @@ public sealed class SqlServerCommitDiagnosticObserverTests : TestBase
         }
 
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull
+        {
+            return null;
+        }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
 
         public void Log<TState>(
             LogLevel logLevel,

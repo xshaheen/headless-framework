@@ -88,12 +88,18 @@ public readonly struct ApiResult : IEquatable<ApiResult>
 
     /// <summary>Creates a successful result.</summary>
     /// <returns>A successful <see cref="ApiResult"/>.</returns>
-    public static ApiResult Ok() => _Success;
+    public static ApiResult Ok()
+    {
+        return _Success;
+    }
 
     /// <summary>Creates a failed result carrying the supplied error.</summary>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult"/>.</returns>
-    public static ApiResult Fail(ResultError error) => new(isSuccess: false, error);
+    public static ApiResult Fail(ResultError error)
+    {
+        return new(isSuccess: false, error);
+    }
 
     // Generic factory methods (type inference)
 
@@ -102,14 +108,20 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <param name="value">The success value.</param>
     /// <returns>A successful <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Ok<T>(T value) => ApiResult<T>.Ok(value);
+    public static ApiResult<T> Ok<T>(T value)
+    {
+        return ApiResult<T>.Ok(value);
+    }
 
     /// <summary>Creates a failed <see cref="ApiResult{T}"/> with an inferred value type.</summary>
     /// <typeparam name="T">The success value type that the result would otherwise carry.</typeparam>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Fail<T>(ResultError error) => ApiResult<T>.Fail(error);
+    public static ApiResult<T> Fail<T>(ResultError error)
+    {
+        return ApiResult<T>.Fail(error);
+    }
 
     /// <summary>Creates a failed result representing a missing entity.</summary>
     /// <param name="entity">The logical name of the entity that could not be found.</param>
@@ -154,16 +166,25 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>Determines whether this result equals <paramref name="other"/> in success state and error.</summary>
     /// <param name="other">The result to compare with.</param>
     /// <returns><see langword="true"/> if both have the same success state and error; otherwise <see langword="false"/>.</returns>
-    public bool Equals(ApiResult other) => IsSuccess == other.IsSuccess && Equals(Error, other.Error);
+    public bool Equals(ApiResult other)
+    {
+        return IsSuccess == other.IsSuccess && Equals(Error, other.Error);
+    }
 
     /// <summary>Determines whether <paramref name="obj"/> is an <see cref="ApiResult"/> equal to this instance.</summary>
     /// <param name="obj">The object to compare with.</param>
     /// <returns><see langword="true"/> if <paramref name="obj"/> is an equal <see cref="ApiResult"/>; otherwise <see langword="false"/>.</returns>
-    public override bool Equals(object? obj) => obj is ApiResult other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is ApiResult other && Equals(other);
+    }
 
     /// <summary>Returns a hash code derived from the success state and error.</summary>
     /// <returns>A hash code for this instance.</returns>
-    public override int GetHashCode() => HashCode.Combine(IsSuccess, Error);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(IsSuccess, Error);
+    }
 
     /// <summary>Determines whether two <see cref="ApiResult"/> instances are equal.</summary>
     /// <param name="left">The left operand.</param>

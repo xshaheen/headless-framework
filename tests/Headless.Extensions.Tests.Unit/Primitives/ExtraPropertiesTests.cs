@@ -14,7 +14,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void to_enum_should_parse_string_value()
+    public void should_parse_string_value_when_to_enum()
     {
         // given
         var props = new ExtraProperties { ["color"] = "Green" };
@@ -27,7 +27,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void to_enum_should_parse_string_value_case_insensitively()
+    public void should_parse_string_value_case_insensitively_when_to_enum()
     {
         // given
         var props = new ExtraProperties { ["color"] = "blue" };
@@ -40,7 +40,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void to_enum_should_return_existing_enum_value()
+    public void should_return_existing_enum_value_when_to_enum()
     {
         // given
         var props = new ExtraProperties { ["color"] = Color.Red };
@@ -53,7 +53,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void to_enum_should_return_same_value_on_repeated_reads_without_mutating_the_bag()
+    public void should_return_same_value_on_repeated_reads_without_mutating_the_bag_when_to_enum()
     {
         // given
         var props = new ExtraProperties { ["color"] = "Green" };
@@ -70,7 +70,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void has_same_items_should_be_true_for_equal_values()
+    public void should_be_true_for_equal_values_when_has_same_items()
     {
         // given
         var a = new ExtraProperties { ["n"] = 1, ["s"] = "x" };
@@ -81,7 +81,7 @@ public sealed class ExtraPropertiesTests
     }
 
     [Fact]
-    public void has_same_items_should_distinguish_int_from_its_string_representation()
+    public void should_distinguish_int_from_its_string_representation_when_has_same_items()
     {
         // given - 1 (int) and "1" (string) share a ToString() but are not equal values
         var a = new ExtraProperties { ["n"] = 1 };

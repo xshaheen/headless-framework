@@ -35,7 +35,8 @@ public sealed class RedisCache(
     RedisCacheOptions cacheOptions,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
-    ICacheFactoryLockProvider? factoryLockProvider = null
+    ICacheFactoryLockProvider? factoryLockProvider = null,
+    CacheInstrumentationConfig? instrumentation = null
 ) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
@@ -113,7 +114,18 @@ public sealed class RedisCache(
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
-    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
+    private readonly string _cacheName = string.IsNullOrEmpty(cacheOptions.CacheName)
+        ? CachingDiagnostics.DefaultCacheName
+        : cacheOptions.CacheName;
+
+    private readonly FactoryCacheCoordinator _coordinator = new(
+        timeProvider,
+        logger,
+        factoryLockProvider,
+        string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
+        CachingMetrics.TierL2,
+        instrumentation?.IncludeKeyInTraces ?? false
+    );
 
     // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
     // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
@@ -279,6 +291,7 @@ public sealed class RedisCache(
         Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL2);
         return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
     }
 
@@ -682,7 +695,16 @@ public sealed class RedisCache(
         // #580: pooled-lease read — the value buffer is rented from the ArrayPool instead of allocated per GET.
         var redisKey = _GetKey(key);
         var lease = await _database.StringGetLeaseAsync(redisKey, cacheOptions.ReadMode).ConfigureAwait(false);
-        return await _LeaseToCacheValueAsync<T>(redisKey, lease).ConfigureAwait(false);
+        var result = await _LeaseToCacheValueAsync<T>(redisKey, lease).ConfigureAwait(false);
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGet,
+            result.HasValue ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL2
+        );
+
+        return result;
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
@@ -740,6 +762,8 @@ public sealed class RedisCache(
         await _PrefetchTagMarkersAsync(decodedFrames, now).ConfigureAwait(false);
 
         var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
+        long hits = 0;
+        long misses = 0;
 
         for (var i = 0; i < originalKeys.Count; i++)
         {
@@ -747,10 +771,37 @@ public sealed class RedisCache(
 
             // Mirror the previous _LeaseToCacheValueAsync contract: a missing key surfaces as NoValue so
             // every requested key is present in the result.
-            result[originalKeys[i]] = rawValue.HasValue
+            var cacheValue = rawValue.HasValue
                 ? await _DecodedToCacheValueAsync<T>(decodedFrames[i]!.Value, rawValue, now).ConfigureAwait(false)
                 : CacheValue<T>.NoValue;
+
+            result[originalKeys[i]] = cacheValue;
+
+            if (cacheValue.HasValue)
+            {
+                hits++;
+            }
+            else
+            {
+                misses++;
+            }
         }
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeHit,
+            CachingMetrics.TierL2,
+            hits
+        );
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL2,
+            misses
+        );
 
         return result.AsReadOnly();
     }
@@ -1055,7 +1106,16 @@ public sealed class RedisCache(
         // logical-expiry rule the read methods use. Lease read (#580): only the header is inspected, so the
         // value bytes never become a per-call heap allocation.
         var lease = await _database.StringGetLeaseAsync(_GetKey(key), cacheOptions.ReadMode).ConfigureAwait(false);
-        return await _LeaseIsLogicallyPresentAsync(lease).ConfigureAwait(false);
+        var exists = await _LeaseIsLogicallyPresentAsync(lease).ConfigureAwait(false);
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationExists,
+            exists ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL2
+        );
+
+        return exists;
     }
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -1329,7 +1389,14 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyDeleteAsync(_GetKey(key)).ConfigureAwait(false);
+        var removed = await _database.KeyDeleteAsync(_GetKey(key)).ConfigureAwait(false);
+
+        if (removed)
+        {
+            CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL2);
+        }
+
+        return removed;
     }
 
     public async ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
@@ -1492,6 +1559,8 @@ public sealed class RedisCache(
             }
         }
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL2, deleted);
+
         return (int)deleted;
     }
 
@@ -1500,7 +1569,11 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return (int)await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+        var removed = await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL2, removed);
+
+        return (int)removed;
     }
 
     // Scans every primary node for keys matching the pattern and UNLINKs them in batches. Shared by
@@ -1551,7 +1624,7 @@ public sealed class RedisCache(
     }
 
     /// <inheritdoc />
-    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public async ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
@@ -1560,7 +1633,11 @@ public sealed class RedisCache(
         // tag, so this works on Redis Cluster) plus the local stamp. Reads compare a tagged entry's CreatedAt
         // against it. Routed through WriteTagMarkerAsync so the live path and auto-recovery replay share one
         // raise-only write (on the live path `now` is monotonic, so behavior is unchanged).
-        return WriteTagMarkerAsync(tag, timeProvider.GetUtcNow(), cancellationToken);
+        await WriteTagMarkerAsync(tag, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+
+        // Member count is not cheaply known (no enumeration by design), so record a single logical remove-by-tag
+        // write rather than trying to count affected entries.
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByTag, CachingMetrics.TierL2);
     }
 
     /// <inheritdoc />
@@ -1790,13 +1867,25 @@ public sealed class RedisCache(
         );
     }
 
-    private string _GetTagMarkerKey(string tag) => string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
+    private string _GetTagMarkerKey(string tag)
+    {
+        return string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
+    }
 
-    private string _GetClearMarkerKey() => string.Concat(_keyPrefix, _ClearMarkerSuffix);
+    private string _GetClearMarkerKey()
+    {
+        return string.Concat(_keyPrefix, _ClearMarkerSuffix);
+    }
 
-    private string _GetRemoveMarkerKey() => string.Concat(_keyPrefix, _RemoveMarkerSuffix);
+    private string _GetRemoveMarkerKey()
+    {
+        return string.Concat(_keyPrefix, _RemoveMarkerSuffix);
+    }
 
-    private static long _StopwatchTicks() => Stopwatch.GetTimestamp();
+    private static long _StopwatchTicks()
+    {
+        return Stopwatch.GetTimestamp();
+    }
 
     private bool _MarkerIsFresh(long fetchedTicks)
     {
@@ -1962,8 +2051,10 @@ public sealed class RedisCache(
         return newestMs;
     }
 
-    private static long _ParseMarkerMs(RedisValue value) =>
-        RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+    private static long _ParseMarkerMs(RedisValue value)
+    {
+        return RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+    }
 
     // Bulk StringGet returning values position-aligned with the input keys, shared by the bulk value reads
     // (GetAllAsync / GetAllWithExpirationAsync / _TryGetAllEntriesAsync) and the tag-marker fetches. Keys carry no
@@ -2252,7 +2343,10 @@ public sealed class RedisCache(
     // Byte-level mirror of the _NullValue comparison for the lease/memory read paths (#580). Compares against
     // _NullValueBytes (derived from _NullValue at init) so there is a single sentinel source of truth; RedisValue
     // equality is content-based, so this matches the RedisValue-path comparison exactly.
-    private static bool _IsNullSentinel(ReadOnlySpan<byte> value) => value.SequenceEqual(_NullValueBytes);
+    private static bool _IsNullSentinel(ReadOnlySpan<byte> value)
+    {
+        return value.SequenceEqual(_NullValueBytes);
+    }
 
     /// <summary>
     /// Single-key read conversion from a pooled <see cref="Lease{T}"/> (#580). The lease buffer is ArrayPool-owned
@@ -2622,7 +2716,10 @@ public sealed class RedisCache(
     {
         public RedisValue Value { get; } = value;
 
-        public void Dispose() => payloadOwner?.Dispose();
+        public void Dispose()
+        {
+            payloadOwner?.Dispose();
+        }
     }
 
     // #580 zero-concat write: same value-segment fast paths as _EncodeFramedValue, but a serialized payload stays
@@ -3210,9 +3307,15 @@ public sealed class RedisCache(
         }
     }
 
-    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt <= now;
+    private static bool _IsExpired(DateTime? expiresAt, DateTime now)
+    {
+        return expiresAt <= now;
+    }
 
-    private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
+    private static TimeSpan _Min(TimeSpan left, TimeSpan right)
+    {
+        return left <= right ? left : right;
+    }
 
     private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
     {

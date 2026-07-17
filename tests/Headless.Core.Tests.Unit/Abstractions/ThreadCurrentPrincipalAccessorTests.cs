@@ -22,7 +22,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
     private readonly ThreadCurrentPrincipalAccessor _accessor = new();
 
     [Fact]
-    public void change_should_set_and_restore_principal()
+    public void should_set_and_restore_principal_when_change()
     {
         // given
         var originalPrincipal = _FakerClaimsPrincipal();
@@ -52,7 +52,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
     }
 
     [Fact]
-    public void principal_should_return_thread_current_principal()
+    public void should_return_thread_current_principal_when_principal()
     {
         // given
         var expectedPrincipal = _FakerClaimsPrincipal();
@@ -64,7 +64,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
     }
 
     [Fact]
-    public void change_should_restore_original_principal_when_disposed()
+    public void should_restore_original_principal_when_change_disposed()
     {
         // given
         const string newName = "zad-charities";

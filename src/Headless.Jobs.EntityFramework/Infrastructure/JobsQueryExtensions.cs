@@ -16,8 +16,9 @@ public static class JobsQueryExtensions
         string ownerId,
         DateTime now
     )
-        where TTimeJob : TimeJobEntity<TTimeJob> =>
-        q.Where(e =>
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
             && (
                 e.OwnerId == ownerId
@@ -25,14 +26,16 @@ public static class JobsQueryExtensions
                 || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
             )
         );
+    }
 
     public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanAcquire<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
         string ownerId,
         DateTime now
     )
-        where TCronJob : CronJobEntity =>
-        q.Where(e =>
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
             && (
                 e.OwnerId == ownerId
@@ -40,6 +43,7 @@ public static class JobsQueryExtensions
                 || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
             )
         );
+    }
 
     /// <summary>Relational runtime variant whose clock expression is translated inside the claim statement.</summary>
     internal static IQueryable<TTimeJob> WhereCanAcquireUsingDatabaseClock<TTimeJob>(
@@ -85,22 +89,26 @@ public static class JobsQueryExtensions
     /// fallback predicate — <paramref name="now"/> is supplied by the caller.
     /// </summary>
     public static IQueryable<TTimeJob> WhereCanFallbackClaim<TTimeJob>(this IQueryable<TTimeJob> q, DateTime now)
-        where TTimeJob : TimeJobEntity<TTimeJob> =>
-        q.Where(e =>
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
             e.Status == JobStatus.Idle
             || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
         );
+    }
 
     /// <inheritdoc cref="WhereCanFallbackClaim{TTimeJob}(System.Linq.IQueryable{TTimeJob},System.DateTime)"/>
     public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanFallbackClaim<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
         DateTime now
     )
-        where TCronJob : CronJobEntity =>
-        q.Where(e =>
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e =>
             e.Status == JobStatus.Idle
             || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
         );
+    }
 
     internal static IQueryable<TTimeJob> WhereCanFallbackClaimUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
         where TTimeJob : TimeJobEntity<TTimeJob>

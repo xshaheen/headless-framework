@@ -467,8 +467,9 @@ public sealed class RedisCacheEntryFrameTests
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
         DateTime? createdAt = null
-    ) =>
-        RedisCacheEntryFrame.Encode(
+    )
+    {
+        return RedisCacheEntryFrame.Encode(
             value,
             isNull,
             logicalExpiresAt,
@@ -480,8 +481,15 @@ public sealed class RedisCacheEntryFrameTests
             tags,
             createdAt
         );
+    }
 
-    private static RedisValue _RedisValue(byte[] value) => value;
+    private static RedisValue _RedisValue(byte[] value)
+    {
+        return value;
+    }
 
-    private static RedisCacheEntryFrame.DecodedFrame _Decode(RedisValue value) => RedisCacheEntryFrame.Decode(value);
+    private static RedisCacheEntryFrame.DecodedFrame _Decode(RedisValue value)
+    {
+        return RedisCacheEntryFrame.Decode(value);
+    }
 }

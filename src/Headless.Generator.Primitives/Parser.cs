@@ -489,13 +489,17 @@ internal static class Parser
         return flags;
     }
 
-    private static bool _IsSystemNamespace(INamespaceSymbol ns) =>
-        ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+    private static bool _IsSystemNamespace(INamespaceSymbol ns)
+    {
+        return ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+    }
 
-    private static bool _IsSystemNumericsNamespace(INamespaceSymbol ns) =>
-        ns
+    private static bool _IsSystemNumericsNamespace(INamespaceSymbol ns)
+    {
+        return ns
             is {
                 Name: "Numerics",
                 ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true },
             };
+    }
 }

@@ -57,20 +57,38 @@ public interface IBuildInformationAccessor
 public sealed class BuildInformationAccessor : IBuildInformationAccessor
 {
     /// <inheritdoc/>
-    public string? GetTitle() => AssemblyInformation.Entry?.Title;
+    public string? GetTitle()
+    {
+        return AssemblyInformation.Entry?.Title;
+    }
 
     /// <inheritdoc/>
-    public string? GetProduct() => AssemblyInformation.Entry?.Product;
+    public string? GetProduct()
+    {
+        return AssemblyInformation.Entry?.Product;
+    }
 
     /// <inheritdoc/>
-    public string? GetDescription() => AssemblyInformation.Entry?.Description;
+    public string? GetDescription()
+    {
+        return AssemblyInformation.Entry?.Description;
+    }
 
     /// <inheritdoc/>
-    public string? GetCompany() => AssemblyInformation.Entry?.Company;
+    public string? GetCompany()
+    {
+        return AssemblyInformation.Entry?.Company;
+    }
 
     /// <inheritdoc/>
-    public string? GetVersion() => AssemblyInformation.Entry?.Version;
+    public string? GetVersion()
+    {
+        return AssemblyInformation.Entry?.Version;
+    }
 
     /// <inheritdoc/>
-    public string? GetCommitNumber() => AssemblyInformation.Entry?.CommitNumber;
+    public string? GetCommitNumber()
+    {
+        return AssemblyInformation.Entry?.CommitNumber;
+    }
 }

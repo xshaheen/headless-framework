@@ -234,7 +234,10 @@ internal sealed class SqlServerSettingValueRecordRepository(
     }
 
     /// <summary>Returns <see cref="SqlServerSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
     /// <summary>Builds a structured <c>@Ids</c> TVP parameter containing the supplied <paramref name="ids"/>, typed as <c>HeadlessSettingsIdList</c>.</summary>
     private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
@@ -271,5 +274,8 @@ internal sealed class SqlServerSettingValueRecordRepository(
     }
 
     /// <summary>Creates a <see cref="SqlParameter"/> prefixed with <c>@</c> named <paramref name="name"/> with <paramref name="value"/>, substituting <see cref="DBNull.Value"/> for <see langword="null"/>.</summary>
-    private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
+    private static SqlParameter _Param(string name, object? value)
+    {
+        return new($"@{name}", value ?? DBNull.Value);
+    }
 }

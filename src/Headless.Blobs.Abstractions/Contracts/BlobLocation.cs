@@ -86,5 +86,8 @@ public readonly record struct BlobLocation
     public string Path { get; }
 
     /// <summary>Returns <c>Container:Path</c> for diagnostics.</summary>
-    public override string ToString() => $"{Container}:{Path}";
+    public override string ToString()
+    {
+        return $"{Container}:{Path}";
+    }
 }

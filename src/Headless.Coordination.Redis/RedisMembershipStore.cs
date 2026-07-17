@@ -343,12 +343,9 @@ internal sealed class RedisMembershipStore(
         return _ToMilliseconds(retention);
     }
 
-    private HeartbeatParams _CreateHeartbeatParams(
-        NodeIdentity identity,
-        NodeDescriptor? descriptor,
-        bool allowCreate
-    ) =>
-        new(
+    private HeartbeatParams _CreateHeartbeatParams(NodeIdentity identity, NodeDescriptor? descriptor, bool allowCreate)
+    {
+        return new(
             _LiveKey(),
             _KnownKey(),
             _GenKey(identity.NodeId),
@@ -360,6 +357,7 @@ internal sealed class RedisMembershipStore(
             descriptor?.Role ?? string.Empty,
             _MetadataJson(identity, descriptor)
         );
+    }
 
     private static long _ToMilliseconds(TimeSpan value)
     {

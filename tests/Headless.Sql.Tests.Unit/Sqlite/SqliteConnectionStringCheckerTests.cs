@@ -14,7 +14,7 @@ namespace Tests.Sqlite;
 public sealed class SqliteConnectionStringCheckerTests : TestBase
 {
     [Fact]
-    public void should_implement_IConnectionStringChecker()
+    public void should_implement_i_connection_string_checker()
     {
         // given
         var logger = Substitute.For<ILogger<SqliteConnectionStringChecker>>();

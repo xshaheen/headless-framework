@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -105,7 +104,10 @@ public class JobFunctionContext
         return ServiceScope.ServiceProvider.GetRequiredService<IJobScheduler>().CancelAsync(Id, cancellationToken);
     }
 
-    internal void SetServiceScope(AsyncServiceScope serviceScope) => ServiceScope = serviceScope;
+    internal void SetServiceScope(AsyncServiceScope serviceScope)
+    {
+        ServiceScope = serviceScope;
+    }
 }
 
 /// <summary>
@@ -128,5 +130,8 @@ public class CronOccurrenceOperations
     /// same cron job is currently running on this node. Use this to prevent overlapping executions for
     /// long-running cron jobs.
     /// </summary>
-    public void SkipIfAlreadyRunning() => SkipIfAlreadyRunningAction();
+    public void SkipIfAlreadyRunning()
+    {
+        SkipIfAlreadyRunningAction();
+    }
 }

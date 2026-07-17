@@ -162,23 +162,45 @@ public sealed class CashInTransaction
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; }
 
-    public bool IsCard() => string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
+    public bool IsCard()
+    {
+        return string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
+    }
 
-    public bool IsWallet() => string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
+    public bool IsWallet()
+    {
+        return string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
+    }
 
-    public bool IsCashCollection() => string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
+    public bool IsCashCollection()
+    {
+        return string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
+    }
 
-    public bool IsAcceptKiosk() => string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
+    public bool IsAcceptKiosk()
+    {
+        return string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
+    }
 
-    public bool IsFromIFrame() => string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
+    public bool IsFromIFrame()
+    {
+        return string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
+    }
 
-    public bool IsInvoice() => string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
+    public bool IsInvoice()
+    {
+        return string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
+    }
 
-    public bool IsInsufficientFundError() =>
-        string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
+    public bool IsInsufficientFundError()
+    {
+        return string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
+    }
 
-    public bool IsAuthenticationFailedError() =>
-        string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
+    public bool IsAuthenticationFailedError()
+    {
+        return string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
+    }
 
     public bool IsDeclinedError()
     {

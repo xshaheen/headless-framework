@@ -11,14 +11,23 @@ internal static class CircuitBreakerTestHelpers
     /// the factory is disposed — mirroring the DI-container ownership model used in production.
     /// Callers own the returned factory and must dispose it.
     /// </summary>
-    public static IMeterFactory CreateMeterFactory() => new TestMeterFactory();
+    public static IMeterFactory CreateMeterFactory()
+    {
+        return new TestMeterFactory();
+    }
 
     private sealed class TestMeterFactory : IMeterFactory
     {
         private readonly Meter _meter = new("Headless.Messaging.Test");
 
-        public Meter Create(MeterOptions options) => _meter;
+        public Meter Create(MeterOptions options)
+        {
+            return _meter;
+        }
 
-        public void Dispose() => _meter.Dispose();
+        public void Dispose()
+        {
+            _meter.Dispose();
+        }
     }
 }

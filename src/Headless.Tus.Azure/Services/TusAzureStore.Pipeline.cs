@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using Headless.Checks;
-using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Interfaces;

@@ -133,8 +133,9 @@ internal sealed class SqlServerDataStorage(
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangeMessageStateAsync(
+    )
+    {
+        return _ChangeMessageStateAsync(
             _publishedTable,
             message,
             state,
@@ -145,12 +146,16 @@ internal sealed class SqlServerDataStorage(
             originalInlineAttempts,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ReservePublishAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _ReserveAttemptAsync(_publishedTable, message, originalInlineAttempts, cancellationToken);
+    )
+    {
+        return _ReserveAttemptAsync(_publishedTable, message, originalInlineAttempts, cancellationToken);
+    }
 
     /// <summary>
     /// Acquires a dispatch lease on a published message by setting <c>LockedUntil</c> and <c>Owner</c>.
@@ -161,21 +166,26 @@ internal sealed class SqlServerDataStorage(
         MediumMessage message,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_publishedTable, message, leaseDuration, cancellationToken);
+    )
+    {
+        return _LeaseMessageAsync(_publishedTable, message, leaseDuration, cancellationToken);
+    }
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
         MediumMessage message,
         TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAndReserveAttemptAsync(
+    )
+    {
+        return _LeaseAndReserveAttemptAsync(
             _publishedTable,
             message,
             leaseDuration,
             originalInlineAttempts,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
@@ -189,8 +199,9 @@ internal sealed class SqlServerDataStorage(
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangeReceiveStateAsync(
+    )
+    {
+        return _ChangeReceiveStateAsync(
             message,
             state,
             nextRetryAt,
@@ -199,6 +210,7 @@ internal sealed class SqlServerDataStorage(
             originalInlineAttempts: null,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
@@ -208,8 +220,9 @@ internal sealed class SqlServerDataStorage(
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _ChangeReceiveStateAsync(
+    )
+    {
+        return _ChangeReceiveStateAsync(
             message,
             state,
             nextRetryAt,
@@ -218,12 +231,16 @@ internal sealed class SqlServerDataStorage(
             originalInlineAttempts,
             cancellationToken
         );
+    }
 
     public ValueTask<bool> ReserveReceiveAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) => _ReserveAttemptAsync(_receivedTable, message, originalInlineAttempts, cancellationToken);
+    )
+    {
+        return _ReserveAttemptAsync(_receivedTable, message, originalInlineAttempts, cancellationToken);
+    }
 
     private async ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
@@ -297,15 +314,26 @@ internal sealed class SqlServerDataStorage(
         MediumMessage message,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default
-    ) => _LeaseMessageAsync(_receivedTable, message, leaseDuration, cancellationToken);
+    )
+    {
+        return _LeaseMessageAsync(_receivedTable, message, leaseDuration, cancellationToken);
+    }
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
         MediumMessage message,
         TimeSpan leaseDuration,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
-    ) =>
-        _LeaseAndReserveAttemptAsync(_receivedTable, message, leaseDuration, originalInlineAttempts, cancellationToken);
+    )
+    {
+        return _LeaseAndReserveAttemptAsync(
+            _receivedTable,
+            message,
+            leaseDuration,
+            originalInlineAttempts,
+            cancellationToken
+        );
+    }
 
     /// <summary>
     /// Persists a published outbox message to the <c>Published</c> table. When <paramref name="transaction"/>
@@ -426,8 +454,9 @@ internal sealed class SqlServerDataStorage(
         Message content,
         object? transaction = null,
         CancellationToken cancellationToken = default
-    ) =>
-        StoreMessageAsync(
+    )
+    {
+        return StoreMessageAsync(
             name,
             new MediumMessage
             {
@@ -439,6 +468,7 @@ internal sealed class SqlServerDataStorage(
             transaction,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Stores a received message that failed before it could be dispatched, using its raw serialized
@@ -597,8 +627,9 @@ internal sealed class SqlServerDataStorage(
         string group,
         Message message,
         CancellationToken cancellationToken = default
-    ) =>
-        StoreReceivedMessageAsync(
+    )
+    {
+        return StoreReceivedMessageAsync(
             name,
             group,
             new MediumMessage
@@ -610,6 +641,7 @@ internal sealed class SqlServerDataStorage(
             },
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Deletes expired terminal messages from the specified table in batches.
@@ -1556,17 +1588,23 @@ internal sealed class SqlServerDataStorage(
         };
     }
 
-    private SqlParameter _OwnerParameter(string name, DateTimeOffset? lockedUntil) =>
-        _OwnerParameter(name, lockedUntil is not null);
+    private SqlParameter _OwnerParameter(string name, DateTimeOffset? lockedUntil)
+    {
+        return _OwnerParameter(name, lockedUntil is not null);
+    }
 
-    private SqlParameter _OwnerParameter(string name, bool hasLease) =>
-        new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+    private SqlParameter _OwnerParameter(string name, bool hasLease)
+    {
+        return new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
         {
             Value = hasLease ? nodeMembership.GetOwnerTag() ?? (object)DBNull.Value : DBNull.Value,
         };
+    }
 
-    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception) =>
-        new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
+    {
+        return new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+    }
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
 }

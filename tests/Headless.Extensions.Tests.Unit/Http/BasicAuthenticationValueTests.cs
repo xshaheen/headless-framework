@@ -7,7 +7,7 @@ namespace Tests.Http;
 public sealed class BasicAuthenticationValueTests
 {
     [Fact]
-    public void constructor_should_create_basic_header_with_scheme_only()
+    public void should_create_basic_header_with_scheme_only_when_constructor()
     {
         // when
         var result = new BasicAuthenticationValue();
@@ -18,7 +18,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_should_encode_username_and_password()
+    public void should_encode_username_and_password_when_constructor()
     {
         // given
         const string userName = "user";
@@ -34,7 +34,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_should_handle_empty_password()
+    public void should_handle_empty_password_when_constructor()
     {
         // given
         const string userName = "user";
@@ -49,7 +49,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_should_handle_colon_in_password()
+    public void should_handle_colon_in_password_when_constructor()
     {
         // given
         const string userName = "user";
@@ -64,7 +64,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_should_handle_special_characters()
+    public void should_handle_special_characters_when_constructor()
     {
         // given
         const string userName = "user@domain.com";
@@ -79,7 +79,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_string_overload_should_encode_value()
+    public void should_encode_value_when_constructor_string_overload()
     {
         // given
         const string value = "user:pass";
@@ -94,7 +94,7 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void constructor_should_handle_unicode_characters()
+    public void should_handle_unicode_characters_when_constructor()
     {
         // given
         const string userName = "用户";
@@ -109,13 +109,13 @@ public sealed class BasicAuthenticationValueTests
     }
 
     [Fact]
-    public void BasicScheme_constant_should_be_Basic()
+    public void should_be_basic_when_basic_scheme_constant()
     {
         BasicAuthenticationValue.BasicScheme.Should().Be("Basic");
     }
 
     [Fact]
-    public void ToString_should_return_formatted_header()
+    public void should_return_formatted_header_when_to_string()
     {
         // given
         var auth = new BasicAuthenticationValue("user", "pass");

@@ -8,7 +8,7 @@ namespace Tests.Core;
 public sealed class LogStateTests
 {
     [Fact]
-    public void tag_should_accumulate_tags_across_multiple_calls()
+    public void should_accumulate_tags_across_multiple_calls_when_tag()
     {
         // given
         var state = new LogState();
@@ -23,7 +23,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void critical_then_tag_should_not_throw()
+    public void should_not_throw_when_critical_then_tag()
     {
         // given
         var state = new LogState();
@@ -38,7 +38,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void tag_should_deduplicate_case_insensitively()
+    public void should_deduplicate_case_insensitively_when_tag()
     {
         // given
         var state = new LogState();
@@ -52,7 +52,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void property_should_overwrite_an_existing_key()
+    public void should_overwrite_an_existing_key_when_property()
     {
         // given
         var state = new LogState();
@@ -67,7 +67,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void properties_should_not_throw_on_duplicate_keys()
+    public void should_not_throw_on_duplicate_keys_when_properties()
     {
         // given
         var state = new LogState();
@@ -82,7 +82,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void property_should_throw_on_a_null_key()
+    public void should_throw_on_a_null_key_when_property()
     {
         // given
         var state = new LogState();
@@ -95,7 +95,7 @@ public sealed class LogStateTests
     }
 
     [Fact]
-    public void property_if_should_throw_on_a_null_key()
+    public void should_throw_on_a_null_key_when_property_if()
     {
         // given
         var state = new LogState();

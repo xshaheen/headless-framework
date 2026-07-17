@@ -11,7 +11,7 @@ public sealed class ToObjectExtensionsTests
     [InlineData("-1", -1)]
     [InlineData("0", 0)]
     [InlineData("42", 42)]
-    public void To_ValidIntegerString_ReturnsInteger(string input, int expected)
+    public void to_valid_integer_string_returns_integer(string input, int expected)
     {
         input.To<int>().Should().Be(expected);
     }
@@ -20,7 +20,7 @@ public sealed class ToObjectExtensionsTests
     [InlineData("")]
     [InlineData("test")]
     [InlineData("2.0")]
-    public void To_InvalidIntegerString_ThrowsFormatException(string input)
+    public void to_invalid_integer_string_throws_format_exception(string input)
     {
         var action = () => input.To<int>();
         action.Should().ThrowExactly<FormatException>();
@@ -29,7 +29,7 @@ public sealed class ToObjectExtensionsTests
     [Theory]
     [InlineData("1", 1L)]
     [InlineData("28173829281734", 28173829281734L)]
-    public void To_ValidLongString_ReturnsLong(string input, long expected)
+    public void to_valid_long_string_returns_long(string input, long expected)
     {
         input.To<long>().Should().Be(expected);
     }
@@ -37,7 +37,7 @@ public sealed class ToObjectExtensionsTests
     [Theory]
     [InlineData("2.0", 2.0)]
     [InlineData("0.2", 0.2)]
-    public void To_ValidDoubleString_ReturnsDouble(string input, double expected)
+    public void to_valid_double_string_returns_double(string input, double expected)
     {
         input.To<double>().Should().Be(expected);
     }
@@ -47,7 +47,7 @@ public sealed class ToObjectExtensionsTests
     [InlineData("True", true)]
     [InlineData("False", false)]
     [InlineData("TrUE", true)]
-    public void To_ValidBooleanString_ReturnsBoolean(string input, bool expected)
+    public void to_valid_boolean_string_returns_boolean(string input, bool expected)
     {
         input.To<bool>().Should().Be(expected);
     }
@@ -56,14 +56,14 @@ public sealed class ToObjectExtensionsTests
     [InlineData("test")]
     [InlineData("T")]
     [InlineData("F")]
-    public void To_InvalidBooleanString_ThrowsFormatException(string input)
+    public void to_invalid_boolean_string_throws_format_exception(string input)
     {
         var action = () => input.To<bool>();
         action.Should().ThrowExactly<FormatException>();
     }
 
     [Fact]
-    public void To_ValidGuidString_ReturnsGuid()
+    public void to_valid_guid_string_returns_guid()
     {
         const string guidString = "2260AFEC-BBFD-42D4-A91A-DCB11E09B17F";
         var expected = new Guid(
@@ -85,7 +85,7 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_JsonElement_DeserializesCorrectly()
+    public void to_json_element_deserializes_correctly()
     {
         var json = JsonSerializer.Serialize(new { Name = "Test", Value = 42 });
         var element = JsonSerializer.Deserialize<JsonElement>(json);
@@ -98,7 +98,7 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_JsonNode_DeserializesCorrectly()
+    public void to_json_node_deserializes_correctly()
     {
         var jsonNode = JsonNode.Parse("""{"Name":"Test", "Value":42}""");
 
@@ -110,7 +110,7 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_JsonDocument_DeserializesCorrectly()
+    public void to_json_document_deserializes_correctly()
     {
         using var document = JsonDocument.Parse("""{"Name":"Test", "Value":42}""");
 
@@ -122,7 +122,7 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_NullObject_ReturnsDefault()
+    public void to_null_object_returns_default()
     {
         object? nullObj = null;
 
@@ -132,7 +132,7 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_Enum_ParsesCorrectly()
+    public void to_enum_parses_correctly()
     {
         const string input = "Value2";
 
@@ -143,7 +143,7 @@ public sealed class ToObjectExtensionsTests
 
     [Theory]
     [InlineData("InvalidValue")]
-    public void To_InvalidEnum_ThrowsArgumentException(string input)
+    public void to_invalid_enum_throws_argument_exception(string input)
     {
         var action = () => input.To<TestEnum>();
 

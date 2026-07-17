@@ -85,7 +85,7 @@ public sealed class SitemapModelTests : TestBase
     }
 
     [Fact]
-    public void should_store_WriteAlternateLanguageCodes()
+    public void should_store_write_alternate_language_codes()
     {
         var alternates = new[]
         {

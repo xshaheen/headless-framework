@@ -10,7 +10,7 @@ public sealed class IsInRangeForTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
-    public void is_in_range_for_should_return_index_when_in_range(int index)
+    public void should_return_index_when_is_in_range_for_in_range(int index)
     {
         Argument.IsInRangeFor(index, 3).Should().Be(index);
     }
@@ -19,14 +19,14 @@ public sealed class IsInRangeForTests
     [InlineData(-1)]
     [InlineData(3)]
     [InlineData(100)]
-    public void is_in_range_for_should_throw_when_out_of_range(int index)
+    public void should_throw_when_is_in_range_for_out_of_range(int index)
     {
         var action = () => Argument.IsInRangeFor(index, 3);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void is_in_range_for_should_format_message()
+    public void should_format_message_when_is_in_range_for()
     {
         const int index = 5;
         var action = () => Argument.IsInRangeFor(index, 3);
@@ -40,7 +40,7 @@ public sealed class IsInRangeForTests
     }
 
     [Fact]
-    public void is_in_range_for_collection_should_validate_against_count()
+    public void should_validate_against_count_when_is_in_range_for_collection()
     {
         var collection = new[] { 10, 20, 30 };
 
@@ -51,14 +51,14 @@ public sealed class IsInRangeForTests
     }
 
     [Fact]
-    public void is_in_range_for_collection_should_throw_argument_null_when_null()
+    public void should_throw_argument_null_when_is_in_range_for_collection_null()
     {
         var action = () => Argument.IsInRangeFor(0, (IReadOnlyCollection<int>)null!);
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]
-    public void is_in_range_for_span_should_validate_against_length()
+    public void should_validate_against_length_when_is_in_range_for_span()
     {
         Span<int> span = [10, 20, 30];
 

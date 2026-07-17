@@ -37,8 +37,9 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    ) =>
-        _ExecuteCoreAsync(
+    )
+    {
+        return _ExecuteCoreAsync(
             context,
             async (dbContext, ct) =>
             {
@@ -49,6 +50,7 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
             isolation,
             cancellationToken
         );
+    }
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync(DbContext, Func{DbContext, CancellationToken, Task}, IServiceProvider, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -60,8 +62,9 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    ) =>
-        _ExecuteCoreAsync(
+    )
+    {
+        return _ExecuteCoreAsync(
             context,
             async (dbContext, ct) =>
             {
@@ -72,6 +75,7 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
             isolation,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient, commit-coordinated transaction and returns its result.
@@ -89,7 +93,10 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    ) => _ExecuteCoreAsync(context, operation, services, isolation, cancellationToken);
+    )
+    {
+        return _ExecuteCoreAsync(context, operation, services, isolation, cancellationToken);
+    }
 
     /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TResult}(DbContext, Func{DbContext, CancellationToken, Task{TResult}}, IServiceProvider, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
@@ -101,14 +108,16 @@ public static class HeadlessEntityFrameworkCoordinatedTransactionExtensions
         IServiceProvider services,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
-    ) =>
-        _ExecuteCoreAsync(
+    )
+    {
+        return _ExecuteCoreAsync(
             context,
             (dbContext, ct) => operation(arg, dbContext, ct),
             services,
             isolation,
             cancellationToken
         );
+    }
 
     private static async Task<TResult> _ExecuteCoreAsync<TResult>(
         DbContext context,

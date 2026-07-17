@@ -7,7 +7,7 @@ namespace Tests.Reflections;
 public sealed class StringHelperTests
 {
     [Fact]
-    public void convert_from_bytes_without_bom_should_return_string_without_bom()
+    public void should_return_string_without_bom_when_convert_from_bytes_without_bom()
     {
         // given
         var bytesWithBom = new byte[] { 0xEF, 0xBB, 0xBF, 0x48, 0x65, 0x6C, 0x6C, 0x6F };
@@ -21,7 +21,7 @@ public sealed class StringHelperTests
     }
 
     [Fact]
-    public void convert_from_bytes_without_bom_should_return_string_with_default_encoding_when_bom_absent()
+    public void should_return_string_with_default_encoding_when_convert_from_bytes_without_bom_bom_absent()
     {
         // given
         var bytesWithoutBom = "BuildingBlocks"u8.ToArray();

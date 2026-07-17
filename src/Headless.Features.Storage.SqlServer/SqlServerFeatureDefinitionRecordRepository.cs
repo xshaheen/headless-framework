@@ -426,24 +426,37 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         return builder.ToString();
     }
 
-    private string _UpdateGroupSql() =>
-        _updateGroupSql ??=
+    private string _UpdateGroupSql()
+    {
+        return _updateGroupSql ??=
             $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+    }
 
-    private string _DeleteGroupSql() =>
-        _deleteGroupSql ??=
+    private string _DeleteGroupSql()
+    {
+        return _deleteGroupSql ??=
             $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE [Id]=@Id;";
+    }
 
-    private string _UpdateFeatureSql() =>
-        _updateFeatureSql ??=
+    private string _UpdateFeatureSql()
+    {
+        return _updateFeatureSql ??=
             $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[ParentName]=@ParentName,[Description]=@Description,[DefaultValue]=@DefaultValue,[IsVisibleToClients]=@IsVisibleToClients,[IsAvailableToHost]=@IsAvailableToHost,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+    }
 
-    private string _DeleteFeatureSql() =>
-        _deleteFeatureSql ??=
+    private string _DeleteFeatureSql()
+    {
+        return _deleteFeatureSql ??=
             $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} WHERE [Id]=@Id;";
+    }
 
-    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    private int _CommandTimeout()
+    {
+        return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+    }
 
-    private ExtraProperties _DeserializeExtraProperties(string json) =>
-        serializer.Deserialize<ExtraProperties>(json) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json)
+    {
+        return serializer.Deserialize<ExtraProperties>(json) ?? [];
+    }
 }

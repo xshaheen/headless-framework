@@ -23,7 +23,10 @@ public static class MessagingTestHarnessExtensions
     /// </code>
     /// </remarks>
     public static TestConsumer<TMessage> GetTestConsumer<TMessage>(this MessagingTestHarness harness)
-        where TMessage : class => harness.GetRequiredService<TestConsumer<TMessage>>();
+        where TMessage : class
+    {
+        return harness.GetRequiredService<TestConsumer<TMessage>>();
+    }
 
     /// <summary>
     /// Registers the messaging test harness recording infrastructure into an existing

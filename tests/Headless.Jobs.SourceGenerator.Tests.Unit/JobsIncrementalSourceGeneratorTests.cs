@@ -53,7 +53,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
         );
 
         compilationDiagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        return Verifier.Verify(driver).UseDirectory("Snapshots");
+        return Verify(driver).UseDirectory("Snapshots");
     }
 
     [Fact]

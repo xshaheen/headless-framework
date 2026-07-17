@@ -15,21 +15,18 @@ namespace Tests;
 /// </summary>
 public sealed class PulsarConsumerClientTests : TestBase
 {
-    private readonly IOptions<PulsarMessagingOptions> _options;
-
-    public PulsarConsumerClientTests()
-    {
-        _options = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" });
-    }
+    private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
+        new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
+    );
 
     [Fact]
-    public void GetSubscriptionName_should_use_group_for_bus_intent()
+    public void should_use_group_for_bus_intent_when_get_subscription_name()
     {
         PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Bus).Should().Be("payments");
     }
 
     [Fact]
-    public void GetSubscriptionName_should_use_shared_subscription_for_queue_intent()
+    public void should_use_shared_subscription_for_queue_intent_when_get_subscription_name()
     {
         PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Queue).Should().Be("headless-queue");
     }
@@ -46,7 +43,7 @@ public sealed class PulsarConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void options_service_url_should_be_used_for_broker_address()
+    public void should_be_used_for_broker_address_when_options_service_url()
     {
         // given
         var customOptions = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://custom-host:6650" });

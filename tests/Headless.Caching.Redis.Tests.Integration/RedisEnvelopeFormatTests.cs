@@ -345,7 +345,10 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         stored.Should().Equal(Encoding.UTF8.GetBytes("5"));
     }
 
-    private IDatabase _Database() => Fixture.ConnectionMultiplexer.GetDatabase();
+    private IDatabase _Database()
+    {
+        return Fixture.ConnectionMultiplexer.GetDatabase();
+    }
 
     private async Task<byte[]> _GetRawBytesAsync(string key)
     {

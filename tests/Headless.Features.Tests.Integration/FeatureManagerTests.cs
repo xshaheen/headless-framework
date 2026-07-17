@@ -24,7 +24,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     // Not defined feature
 
     [Fact]
-    public async Task get_should_error_when_not_defined_feature()
+    public async Task should_error_when_get_not_defined_feature()
     {
         // given
         await Fixture.ResetAsync();
@@ -44,7 +44,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     }
 
     [Fact]
-    public async Task get_all_should_return_empty_when_not_defined_feature()
+    public async Task should_return_empty_when_get_all_not_defined_feature()
     {
         // given
         await Fixture.ResetAsync();

@@ -25,11 +25,15 @@ public sealed class TurnstileVerifierFixture : ICaptchaVerifierFixture, IDisposa
             {"success":false,"error-codes":["invalid-input-response"]}
             """;
 
-    public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler) =>
-        _Build(handler).GetRequiredService<ICaptchaVerifier>();
+    public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler)
+    {
+        return _Build(handler).GetRequiredService<ICaptchaVerifier>();
+    }
 
-    public ITurnstileVerifier CreateTurnstileVerifier(StubSiteVerifyHandler handler) =>
-        _Build(handler).GetRequiredService<ITurnstileVerifier>();
+    public ITurnstileVerifier CreateTurnstileVerifier(StubSiteVerifyHandler handler)
+    {
+        return _Build(handler).GetRequiredService<ITurnstileVerifier>();
+    }
 
     private ServiceProvider _Build(StubSiteVerifyHandler handler)
     {
@@ -45,8 +49,9 @@ public sealed class TurnstileVerifierFixture : ICaptchaVerifierFixture, IDisposa
         return serviceProvider;
     }
 
-    private static IConfiguration _Configuration() =>
-        new ConfigurationBuilder()
+    private static IConfiguration _Configuration()
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -55,6 +60,7 @@ public sealed class TurnstileVerifierFixture : ICaptchaVerifierFixture, IDisposa
                 }
             )
             .Build();
+    }
 
     public void Dispose()
     {

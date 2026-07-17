@@ -2,8 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-namespace Headless.Api.Abstractions;
+namespace Headless.Abstractions;
 
 /// <summary>
 /// Builds absolute URLs from relative paths using the current HTTP request's scheme, host, and path base.

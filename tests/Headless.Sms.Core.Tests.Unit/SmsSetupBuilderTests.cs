@@ -23,7 +23,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void named_only_setup_should_not_register_default_sms_sender()
+    public void should_not_register_default_sms_sender_when_named_only_setup()
     {
         // given
         var services = new ServiceCollection();
@@ -39,7 +39,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void throwing_setup_should_leave_the_service_collection_unchanged()
+    public void should_leave_the_service_collection_unchanged_when_throwing_setup()
     {
         // given - a collection with unrelated registrations plus a setup that fails the at-most-one-default
         // gate even though it queued a named instance.
@@ -149,7 +149,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public async Task named_keyed_registration_should_be_reachable_via_sms_sender_provider()
+    public async Task should_be_reachable_via_sms_sender_provider_when_named_keyed_registration()
     {
         // given - exercises the provider-agnostic slot mechanics directly through RegisterProvider.
         var namedSender = Substitute.For<ISmsSender>();
@@ -178,7 +178,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_zero_providers()
+    public void should_reject_zero_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -199,7 +199,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_multiple_providers()
+    public void should_reject_multiple_providers_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -222,7 +222,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_whitespace_name()
+    public void should_reject_whitespace_name_when_add_named()
     {
         // given
         var services = new ServiceCollection();
@@ -238,7 +238,7 @@ public sealed class SmsSetupBuilderTests
     }
 
     [Fact]
-    public void add_named_should_reject_duplicate_names()
+    public void should_reject_duplicate_names_when_add_named()
     {
         // given
         var services = new ServiceCollection();

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
 using Headless.Emails;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -88,7 +87,7 @@ public sealed class EmailSenderProviderTests
     }
 
     [Fact]
-    public void email_sender_provider_registration_should_be_idempotent()
+    public void should_be_idempotent_when_email_sender_provider_registration()
     {
         // given
         var services = new ServiceCollection();
@@ -102,7 +101,7 @@ public sealed class EmailSenderProviderTests
     }
 
     [Fact]
-    public void registered_names_should_list_named_instances_and_exclude_the_default()
+    public void should_list_named_instances_and_exclude_the_default_when_registered_names()
     {
         // given
         var services = new ServiceCollection();

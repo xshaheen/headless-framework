@@ -282,7 +282,13 @@ internal sealed class PostgreSqlAuditLogWriter(
         }
     }
 
-    private string? _Serialize<T>(T? value) => serializer.SerializeToString(value);
+    private string? _Serialize<T>(T? value)
+    {
+        return serializer.SerializeToString(value);
+    }
 
-    private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
+    private static NpgsqlParameter _Param(string name, object? value)
+    {
+        return new(name, value ?? DBNull.Value);
+    }
 }

@@ -42,12 +42,17 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     // offsets to a bounded window (±1 year) before computing the range.
     private const int _MaxGraphRangeDays = 366;
 
-    private static int _ClampGraphDays(int days) => Math.Clamp(days, -_MaxGraphRangeDays, _MaxGraphRangeDays);
+    private static int _ClampGraphDays(int days)
+    {
+        return Math.Clamp(days, -_MaxGraphRangeDays, _MaxGraphRangeDays);
+    }
 
     // Inverted ranges (pastDays > futureDays) would otherwise pass a negative count to Enumerable.Range and
     // throw; clamp the count to 0 so a nonsensical range yields an empty series instead of a 500.
-    private static int _GraphDayCount(DateTime startDate, DateTime endDate) =>
-        Math.Max(0, (endDate - startDate).Days + 1);
+    private static int _GraphDayCount(DateTime startDate, DateTime endDate)
+    {
+        return Math.Max(0, (endDate - startDate).Days + 1);
+    }
 
     public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default)
     {

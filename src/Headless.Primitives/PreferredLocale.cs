@@ -29,7 +29,10 @@ public sealed class PreferredLocale(string country, string language) : IEquatabl
     public string Language { get; private init; } = language?.ToLowerInvariant()!;
 
     /// <summary>Returns the locale formatted as <c>{Language}-{Country}</c>.</summary>
-    public override string ToString() => $"{Language}-{Country}";
+    public override string ToString()
+    {
+        return $"{Language}-{Country}";
+    }
 
     /// <summary>Determines whether this locale equals <paramref name="other"/> by country and language.</summary>
     /// <param name="other">The locale to compare with.</param>

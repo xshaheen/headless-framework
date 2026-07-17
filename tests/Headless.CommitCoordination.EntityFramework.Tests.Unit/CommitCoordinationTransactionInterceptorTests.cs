@@ -16,7 +16,10 @@ public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable
     // outlive the request) — the same contract SqlServerCommitSignalSource imposes.
     private readonly ServiceProvider _services = new ServiceCollection().BuildServiceProvider();
 
-    public void Dispose() => _services.Dispose();
+    public void Dispose()
+    {
+        _services.Dispose();
+    }
 
     [Fact]
     public void should_not_deadlock_when_sync_commit_override_drains_under_a_synchronization_context()

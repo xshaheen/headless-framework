@@ -10,20 +10,20 @@ public sealed class IsCloseToTests
     [InlineData(5, 7, 3)]
     [InlineData(5, 5, 0)]
     [InlineData(10, 8, 2)]
-    public void is_close_to_should_return_value_when_within_delta(int value, int target, int delta)
+    public void should_return_value_when_is_close_to_within_delta(int value, int target, int delta)
     {
         Argument.IsCloseTo(value, target, delta).Should().Be(value);
     }
 
     [Fact]
-    public void is_close_to_should_work_for_floating_point()
+    public void should_work_for_floating_point_when_is_close_to()
     {
         Argument.IsCloseTo(0.1 + 0.2, 0.3, 1e-9).Should().BeApproximately(0.3, 1e-9);
         Argument.IsCloseTo(1.0f, 1.05f, 0.1f).Should().Be(1.0f);
     }
 
     [Fact]
-    public void is_close_to_should_throw_when_outside_delta()
+    public void should_throw_when_is_close_to_outside_delta()
     {
         const int value = 5;
         var action = () => Argument.IsCloseTo(value, 10, 2);
@@ -35,7 +35,7 @@ public sealed class IsCloseToTests
     }
 
     [Fact]
-    public void is_close_to_should_treat_nan_as_not_close()
+    public void should_treat_nan_as_not_close_when_is_close_to()
     {
         var action = () => Argument.IsCloseTo(double.NaN, 1.0, 0.5);
         action.Should().ThrowExactly<ArgumentException>();
@@ -44,13 +44,13 @@ public sealed class IsCloseToTests
     [Theory]
     [InlineData(5, 10, 2)]
     [InlineData(0, 100, 50)]
-    public void is_not_close_to_should_return_value_when_outside_delta(int value, int target, int delta)
+    public void should_return_value_when_is_not_close_to_outside_delta(int value, int target, int delta)
     {
         Argument.IsNotCloseTo(value, target, delta).Should().Be(value);
     }
 
     [Fact]
-    public void is_not_close_to_should_throw_when_within_delta()
+    public void should_throw_when_is_not_close_to_within_delta()
     {
         const int value = 5;
         var action = () => Argument.IsNotCloseTo(value, 6, 2);
@@ -62,13 +62,13 @@ public sealed class IsCloseToTests
     }
 
     [Fact]
-    public void is_not_close_to_should_treat_nan_as_not_close()
+    public void should_treat_nan_as_not_close_when_is_not_close_to()
     {
         Argument.IsNotCloseTo(double.NaN, 1.0, 0.5).Should().Be(double.NaN);
     }
 
     [Fact]
-    public void is_close_to_should_not_false_positive_at_integer_extremes()
+    public void should_not_false_positive_at_integer_extremes_when_is_close_to()
     {
         // The true distance (~4.29e9) overflows int's signed range; it must NOT be reported as "close" to a small delta.
         var closeAction = () => Argument.IsCloseTo(int.MaxValue, int.MinValue, 5);

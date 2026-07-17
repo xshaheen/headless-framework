@@ -69,7 +69,7 @@ public sealed class FormattedStringValueExtractorTests
     }
 
     [Fact]
-    public void extract_should_not_match_when_input_has_trailing_text_after_final_constant()
+    public void should_not_match_when_extract_input_has_trailing_text_after_final_constant()
     {
         // given
         // The format ends with the constant ".", but "abc.def" has trailing "def" that the format
@@ -85,7 +85,7 @@ public sealed class FormattedStringValueExtractorTests
     }
 
     [Fact]
-    public void extract_should_match_when_input_ends_with_final_constant()
+    public void should_match_when_extract_input_ends_with_final_constant()
     {
         // given
         const string input = "abc.";
@@ -101,7 +101,7 @@ public sealed class FormattedStringValueExtractorTests
     }
 
     [Fact]
-    public void is_match_should_be_false_when_trailing_text_after_final_constant()
+    public void should_be_false_when_is_match_trailing_text_after_final_constant()
     {
         // when
         var isMatch = FormattedStringValueExtractor.IsMatch("abc.def", "{x}.", out var values);

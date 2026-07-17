@@ -46,8 +46,10 @@ public sealed class PermissionsInitializationBackgroundService(
     /// Returns a task that completes when initialization finishes, or faults if it failed.
     /// Respects <paramref name="cancellationToken"/> so callers do not block indefinitely.
     /// </summary>
-    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
-        _tcs.Task.WaitAsync(cancellationToken);
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+    {
+        return _tcs.Task.WaitAsync(cancellationToken);
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {

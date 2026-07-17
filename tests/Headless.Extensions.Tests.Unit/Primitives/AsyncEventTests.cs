@@ -10,7 +10,7 @@ public sealed class AsyncEventTests : TestBase
     private sealed class TestEventArgs : EventArgs;
 
     [Fact]
-    public async Task parallel_invoke_should_run_all_handlers_even_when_one_throws_synchronously()
+    public async Task should_run_all_handlers_even_when_parallel_invoke_one_throws_synchronously()
     {
         // given - a parallel async event where the middle handler throws synchronously (before any await), surrounded
         // by handlers that record that they ran
@@ -46,7 +46,7 @@ public sealed class AsyncEventTests : TestBase
     }
 
     [Fact]
-    public async Task parallel_invoke_should_aggregate_multiple_synchronous_faults()
+    public async Task should_aggregate_multiple_synchronous_faults_when_parallel_invoke()
     {
         // given - two handlers that both throw synchronously
         var asyncEvent = new AsyncEvent<TestEventArgs>(parallelInvoke: true);

@@ -93,7 +93,10 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <summary>Gets the success value, or <paramref name="defaultValue"/> when the result is a failure.</summary>
     /// <param name="defaultValue">The value to return when the result is a failure.</param>
     /// <returns>The success value when successful; otherwise <paramref name="defaultValue"/>.</returns>
-    public T GetValueOrDefault(T defaultValue) => IsSuccess ? _value! : defaultValue;
+    public T GetValueOrDefault(T defaultValue)
+    {
+        return IsSuccess ? _value! : defaultValue;
+    }
 
     /// <summary>Invokes <paramref name="success"/> with the value or <paramref name="failure"/> with the error, returning its result.</summary>
     /// <typeparam name="TResult">The type produced by both branches.</typeparam>
@@ -155,13 +158,19 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <param name="value">The success value.</param>
     /// <returns>A successful <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Ok(T value) => new(value);
+    public static ApiResult<T> Ok(T value)
+    {
+        return new(value);
+    }
 
     /// <summary>Creates a failed result carrying <paramref name="error"/>.</summary>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Fail(ResultError error) => new(error);
+    public static ApiResult<T> Fail(ResultError error)
+    {
+        return new(error);
+    }
 
     // Convenience factories
 
@@ -210,7 +219,10 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>
     /// A failed <see cref="ApiResult{T}"/> containing a <see cref="ForbiddenError"/> with the provided reason.
     /// </returns>
-    public static ApiResult<T> Forbidden(string reason) => new(new ForbiddenError { Reason = reason });
+    public static ApiResult<T> Forbidden(string reason)
+    {
+        return new(new ForbiddenError { Reason = reason });
+    }
 
     /// <summary>
     /// Creates a failed <see cref="ApiResult{T}"/> representing an unauthorized operation.
@@ -218,7 +230,10 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>
     /// A failed <see cref="ApiResult{T}"/> containing an <see cref="UnauthorizedError"/>.
     /// </returns>
-    public static ApiResult<T> Unauthorized() => new(UnauthorizedError.Instance);
+    public static ApiResult<T> Unauthorized()
+    {
+        return new(UnauthorizedError.Instance);
+    }
 
     // Implicit conversions
 
@@ -257,11 +272,17 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <summary>Determines whether <paramref name="obj"/> is an <see cref="ApiResult{T}"/> equal to this instance.</summary>
     /// <param name="obj">The object to compare with.</param>
     /// <returns><see langword="true"/> if <paramref name="obj"/> is an equal <see cref="ApiResult{T}"/>; otherwise <see langword="false"/>.</returns>
-    public override bool Equals(object? obj) => obj is ApiResult<T> other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is ApiResult<T> other && Equals(other);
+    }
 
     /// <summary>Returns a hash code derived from the success state, value, and error.</summary>
     /// <returns>A hash code for this instance.</returns>
-    public override int GetHashCode() => HashCode.Combine(IsSuccess, _value, _error);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(IsSuccess, _value, _error);
+    }
 
     /// <summary>Determines whether two <see cref="ApiResult{T}"/> instances are equal.</summary>
     /// <param name="left">The left operand.</param>

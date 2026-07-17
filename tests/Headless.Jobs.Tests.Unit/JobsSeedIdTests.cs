@@ -12,19 +12,19 @@ namespace Tests;
 public sealed class JobsSeedIdTests
 {
     [Fact]
-    public void ForCronSeed_is_deterministic_for_the_same_function()
+    public void for_cron_seed_is_deterministic_for_the_same_function()
     {
         JobsSeedId.ForCronSeed("ProcessPayments").Should().Be(JobsSeedId.ForCronSeed("ProcessPayments"));
     }
 
     [Fact]
-    public void ForCronSeed_differs_across_functions()
+    public void for_cron_seed_differs_across_functions()
     {
         JobsSeedId.ForCronSeed("ProcessPayments").Should().NotBe(JobsSeedId.ForCronSeed("SendReports"));
     }
 
     [Fact]
-    public void ForCronSeed_is_not_empty()
+    public void for_cron_seed_is_not_empty()
     {
         JobsSeedId.ForCronSeed("ProcessPayments").Should().NotBe(Guid.Empty);
     }

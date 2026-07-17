@@ -35,8 +35,9 @@ public sealed class ReCaptchaV2VerifierFixture : ICaptchaVerifierFixture, IDispo
         return serviceProvider.GetRequiredService<ICaptchaVerifier>();
     }
 
-    private static IConfiguration _Configuration() =>
-        new ConfigurationBuilder()
+    private static IConfiguration _Configuration()
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -45,6 +46,7 @@ public sealed class ReCaptchaV2VerifierFixture : ICaptchaVerifierFixture, IDispo
                 }
             )
             .Build();
+    }
 
     public void Dispose()
     {

@@ -46,11 +46,13 @@ public sealed class SequentialGuidGenerator(SequentialGuidType type) : IGuidGene
     /// <summary>Creates a new sequential <see cref="Guid"/> using the configured <see cref="SequentialGuidType"/>.</summary>
     /// <returns>A newly generated sequential <see cref="Guid"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the configured <see cref="SequentialGuidType"/> is not a recognized value.</exception>
-    public Guid Create() =>
-        type switch
+    public Guid Create()
+    {
+        return type switch
         {
             SequentialGuidType.Version7 => Guid.CreateVersion7(),
             SequentialGuidType.SqlServer => SequentialGuid.NextSequentialAtEnd(),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, message: null),
         };
+    }
 }

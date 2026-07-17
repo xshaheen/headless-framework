@@ -55,10 +55,15 @@ internal sealed class IdempotencyRecord : IEquatable<IdempotencyRecord>
             && _HeadersEqual(Headers, other.Headers);
     }
 
-    public override bool Equals(object? obj) => obj is IdempotencyRecord other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is IdempotencyRecord other && Equals(other);
+    }
 
-    public override int GetHashCode() =>
-        HashCode.Combine(Kind, StatusCode, CreatedAt, Body.Length, Fingerprint?.Length ?? -1, Headers.Count);
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, StatusCode, CreatedAt, Body.Length, Fingerprint?.Length ?? -1, Headers.Count);
+    }
 
     private static bool _BytesEqual(byte[]? a, byte[]? b)
     {

@@ -51,7 +51,10 @@ public sealed class SqlServerDistributedLockOptions
     /// </summary>
     public bool EnableFencing { get; set; } = true;
 
-    internal SqlConnection CreateConnection() => new(ConnectionString);
+    internal SqlConnection CreateConnection()
+    {
+        return new(ConnectionString);
+    }
 }
 
 internal sealed class SqlServerDistributedLockOptionsValidator : AbstractValidator<SqlServerDistributedLockOptions>

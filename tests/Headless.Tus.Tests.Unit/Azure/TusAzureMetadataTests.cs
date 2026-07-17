@@ -159,7 +159,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var act = () => TusAzureMetadata.FromTus(tusString);
 
         // then
-        act.Should().Throw<tusdotnet.Models.TusStoreException>();
+        act.Should().Throw<TusStoreException>();
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var act = () => TusAzureMetadata.FromTus(tusString);
 
         // then
-        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*ASCII*");
+        act.Should().Throw<TusStoreException>().WithMessage("*ASCII*");
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var act = () => TusAzureMetadata.FromTus(tusString);
 
         // then
-        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*too large*");
+        act.Should().Throw<TusStoreException>().WithMessage("*too large*");
     }
 
     #endregion
@@ -362,7 +362,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var act = () => metadata.ToTus();
 
         // then - fail loudly instead of silently dropping the client's metadata
-        act.Should().Throw<tusdotnet.Models.TusStoreException>().WithMessage("*corrupted*");
+        act.Should().Throw<TusStoreException>().WithMessage("*corrupted*");
     }
 
     #endregion

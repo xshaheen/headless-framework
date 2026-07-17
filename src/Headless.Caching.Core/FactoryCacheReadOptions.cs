@@ -34,6 +34,12 @@ public readonly record struct FactoryCacheReadOptions
     /// </summary>
     /// <param name="options">The cache entry options whose read-skip flags are read.</param>
     [Pure]
-    public static FactoryCacheReadOptions FromEntryOptions(CacheEntryOptions options) =>
-        new() { SkipMemoryRead = options.SkipMemoryCacheRead, SkipDistributedRead = options.SkipDistributedCacheRead };
+    public static FactoryCacheReadOptions FromEntryOptions(CacheEntryOptions options)
+    {
+        return new()
+        {
+            SkipMemoryRead = options.SkipMemoryCacheRead,
+            SkipDistributedRead = options.SkipDistributedCacheRead,
+        };
+    }
 }

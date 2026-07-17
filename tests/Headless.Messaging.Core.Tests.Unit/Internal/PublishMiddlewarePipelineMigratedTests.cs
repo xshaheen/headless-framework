@@ -294,9 +294,15 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         public IReadOnlyList<string> Calls => _calls.ToArray();
         public IReadOnlyList<Guid> InstanceIds => _instanceIds.ToArray();
 
-        public void Record(string call) => _calls.Enqueue(call);
+        public void Record(string call)
+        {
+            _calls.Enqueue(call);
+        }
 
-        public void RecordInstance(Guid id) => _instanceIds.Enqueue(id);
+        public void RecordInstance(Guid id)
+        {
+            _instanceIds.Enqueue(id);
+        }
     }
 
     private sealed class TenantStampingPublishMiddleware : IPublishMiddleware<PublishContext<MigratedPublishMessage>>

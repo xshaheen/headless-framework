@@ -11,7 +11,7 @@ public sealed class RegexPatternsTests
     [InlineData("invalid-email@", false)]
     [InlineData("user@domain.co.uk", true)]
     [InlineData("user@", false)]
-    public void email_address_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_email_address(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.EmailAddress.IsMatch(input);
@@ -36,7 +36,7 @@ public sealed class RegexPatternsTests
     [Theory]
     [InlineData("سلام", true)]
     [InlineData("world", false)]
-    public void rtl_characters_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_rtl_characters(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.RtlCharacters.IsMatch(input);
@@ -49,7 +49,7 @@ public sealed class RegexPatternsTests
     [InlineData("12345678901234", true)]
     [InlineData("123456", false)]
     [InlineData("1234567890123X", false)]
-    public void egyptian_national_id_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_egyptian_national_id(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.EgyptianNationalId.IsMatch(input);
@@ -62,7 +62,7 @@ public sealed class RegexPatternsTests
     [InlineData("   ", true)]
     [InlineData("text", false)]
     [InlineData("\t", true)]
-    public void spaces_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_spaces(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.Spaces.IsMatch(input);
@@ -74,7 +74,7 @@ public sealed class RegexPatternsTests
     [Theory]
     [InlineData("\u001A", true)]
     [InlineData("A", false)]
-    public void hidden_chars_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_hidden_chars(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.HiddenChars.IsMatch(input);
@@ -87,7 +87,7 @@ public sealed class RegexPatternsTests
     [InlineData("'Quoted Text'", true)]
     [InlineData("\"Another Quoted Text\"", true)]
     [InlineData("NoQuotes", false)]
-    public void quotes_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_quotes(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.Quotes.IsMatch(input);
@@ -100,7 +100,7 @@ public sealed class RegexPatternsTests
     [InlineData("192.168.1.1", true)]
     [InlineData("256.256.256.256", false)]
     [InlineData("10.0.0.1", true)]
-    public void ip4_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_ip4(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.Ip4.IsMatch(input);
@@ -113,7 +113,7 @@ public sealed class RegexPatternsTests
     [InlineData("2001:0db8:85a3:0000:0000:8a2e:0370:7334", true)]
     [InlineData("::1", true)]
     [InlineData("invalid-ip6", false)]
-    public void ip6_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_ip6(string input, bool isMatch)
     {
         // given
         var result = RegexPatterns.Ip6.IsMatch(input);
@@ -126,7 +126,7 @@ public sealed class RegexPatternsTests
     [InlineData("255.255.255.255", true)]
     [InlineData("192.168.0.1", true)]
     [InlineData("99999", false)]
-    public void ip_address_range_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_ip_address_range(string input, bool isMatch)
     {
         // when
         var result = RegexPatterns.IpAddressRange.IsMatch(input);
@@ -182,7 +182,7 @@ public sealed class RegexPatternsTests
     [InlineData("http://example.com/path/to/page", true)]
     [InlineData("example.com", true)]
     [InlineData("!!!", false)]
-    public void url_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_url(string input, bool isMatch)
     {
         // when
         var result = RegexPatterns.Url.IsMatch(input);
@@ -195,7 +195,7 @@ public sealed class RegexPatternsTests
     [InlineData("<div>hello</div>", true)]
     [InlineData("<br/>", true)]
     [InlineData("plain text", false)]
-    public void xml_tag_should_match_expected_results(string input, bool isMatch)
+    public void should_match_expected_results_when_xml_tag(string input, bool isMatch)
     {
         // when
         var result = RegexPatterns.XmlTag.IsMatch(input);

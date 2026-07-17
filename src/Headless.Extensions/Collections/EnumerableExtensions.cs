@@ -355,6 +355,9 @@ public static partial class EnumerableExtensions
         }
 
         [MustDisposeResource]
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
     }
 }

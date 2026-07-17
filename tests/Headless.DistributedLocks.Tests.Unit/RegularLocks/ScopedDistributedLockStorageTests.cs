@@ -10,10 +10,13 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     private const string _Prefix = "distributed-lock:";
     private readonly IDistributedLockStorage _inner = Substitute.For<IDistributedLockStorage>();
 
-    private ScopedDistributedLockStorage _CreateStorage() => new(_inner, _Prefix);
+    private ScopedDistributedLockStorage _CreateStorage()
+    {
+        return new(_inner, _Prefix);
+    }
 
     [Fact]
-    public void constructor_should_reject_null_inner_and_empty_prefix()
+    public void should_reject_null_inner_and_empty_prefix_when_constructor()
     {
         // when / then
         var nullInner = () => new ScopedDistributedLockStorage(null!, _Prefix);
@@ -24,7 +27,7 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     }
 
     [Fact]
-    public async Task write_operations_should_prepend_the_scope_prefix()
+    public async Task should_prepend_the_scope_prefix_when_write_operations()
     {
         // given
         var storage = _CreateStorage();
@@ -43,7 +46,7 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     }
 
     [Fact]
-    public async Task read_operations_should_prepend_the_scope_prefix()
+    public async Task should_prepend_the_scope_prefix_when_read_operations()
     {
         // given
         var storage = _CreateStorage();
@@ -62,7 +65,7 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     }
 
     [Fact]
-    public async Task get_all_by_prefix_should_strip_the_scope_prefix_from_returned_keys()
+    public async Task should_strip_the_scope_prefix_from_returned_keys_when_get_all_by_prefix()
     {
         // given — the backend returns fully-scoped keys; callers must see bare resource names
         var storage = _CreateStorage();
@@ -86,7 +89,7 @@ public sealed class ScopedDistributedLockStorageTests : TestBase
     }
 
     [Fact]
-    public async Task get_all_with_expiration_by_prefix_should_strip_the_scope_prefix_from_returned_keys()
+    public async Task should_strip_the_scope_prefix_from_returned_keys_when_get_all_with_expiration_by_prefix()
     {
         // given
         var storage = _CreateStorage();

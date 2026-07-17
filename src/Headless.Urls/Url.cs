@@ -233,9 +233,15 @@ public sealed class Url
     /// <param name="url">The URL string to parse.</param>
     /// <returns>A new <see cref="Url"/> object representing the parsed URL.</returns>
     /// <exception cref="UriFormatException">Thrown when <paramref name="url"/> is not a valid URI.</exception>
-    public static Url Parse(string url) => new Url(url)._ParseInternal();
+    public static Url Parse(string url)
+    {
+        return new Url(url)._ParseInternal();
+    }
 
-    private Url _EnsureParsed() => _parsed ? this : _ParseInternal();
+    private Url _EnsureParsed()
+    {
+        return _parsed ? this : _ParseInternal();
+    }
 
     private Url _ParseInternal(Uri? uri = null)
     {
@@ -328,7 +334,10 @@ public sealed class Url
     /// </summary>
     /// <param name="query">The URL query to parse. A <see langword="null"/> value yields an empty collection.</param>
     /// <returns>A <see cref="QueryParamCollection"/> containing the parsed name/value pairs.</returns>
-    public static QueryParamCollection ParseQueryParams(string? query) => UrlParser.ParseQueryParams(query);
+    public static QueryParamCollection ParseQueryParams(string? query)
+    {
+        return UrlParser.ParseQueryParams(query);
+    }
 
     /// <summary>
     /// Splits the given path into segments, encoding illegal characters, "?", and "#".
@@ -336,7 +345,10 @@ public sealed class Url
     /// <param name="path">The path to split.</param>
     /// <returns>The "/"-delimited segments of the encoded path.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
-    public static IEnumerable<string> ParsePathSegments(string path) => UrlParser.ParsePathSegments(path);
+    public static IEnumerable<string> ParsePathSegments(string path)
+    {
+        return UrlParser.ParsePathSegments(path);
+    }
     #endregion
 
     #region fluent builder methods
@@ -533,7 +545,10 @@ public sealed class Url
     /// </summary>
     /// <param name="names">Names of query parameters</param>
     /// <returns>The Url object with the query parameter added.</returns>
-    public Url SetQueryParams(params string[] names) => SetQueryParams(names as IEnumerable<string>);
+    public Url SetQueryParams(params string[] names)
+    {
+        return SetQueryParams(names as IEnumerable<string>);
+    }
 
     /// <summary>
     /// Adds a parameter to the query.
@@ -634,7 +649,10 @@ public sealed class Url
     /// </summary>
     /// <param name="names">Names of query parameters</param>
     /// <returns>The Url object with the query parameter added.</returns>
-    public Url AppendQueryParam(params string[] names) => AppendQueryParam(names as IEnumerable<string>);
+    public Url AppendQueryParam(params string[] names)
+    {
+        return AppendQueryParam(names as IEnumerable<string>);
+    }
 
     /// <summary>
     /// Removes a name/value pair from the query by name.
@@ -702,7 +720,10 @@ public sealed class Url
     /// Removes the URL fragment including the #.
     /// </summary>
     /// <returns>The Url object with the fragment removed</returns>
-    public Url RemoveFragment() => SetFragment("");
+    public Url RemoveFragment()
+    {
+        return SetFragment("");
+    }
 
     /// <summary>
     /// Resets the URL to its root, including the scheme, any user info, host, and port (if specified).
@@ -867,14 +888,20 @@ public sealed class Url
     /// <summary>
     /// Converts this Url object to its string representation.
     /// </summary>
-    public override string ToString() => ToString(encodeSpaceAsPlus: false);
+    public override string ToString()
+    {
+        return ToString(encodeSpaceAsPlus: false);
+    }
 
     /// <summary>
     /// Converts this Url object to System.Uri
     /// </summary>
     /// <returns>The <see cref="System.Uri"/> object.</returns>
     /// <exception cref="UriFormatException">Thrown when the string representation of this URL is not a valid URI.</exception>
-    public Uri ToUri() => new(ToString(), UriKind.RelativeOrAbsolute);
+    public Uri ToUri()
+    {
+        return new(ToString(), UriKind.RelativeOrAbsolute);
+    }
 
     /// <summary>
     /// Implicit conversion from Url to String.
@@ -896,7 +923,10 @@ public sealed class Url
     /// </summary>
     /// <param name="url">The String representation of the URL.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="url"/>.</returns>
-    public static Url FromString(string? url) => url;
+    public static Url FromString(string? url)
+    {
+        return url;
+    }
 
     /// <summary>
     /// Implicit conversion from System.Uri to <see cref="Url"/>.
@@ -912,18 +942,27 @@ public sealed class Url
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null"/>.</exception>
-    public static Url FromUri(Uri uri) => new(uri);
+    public static Url FromUri(Uri uri)
+    {
+        return new(uri);
+    }
 
     /// <summary>
     /// True if obj is an instance of Url and its string representation is equal to this instance's string representation.
     /// </summary>
     /// <param name="obj">The object to compare to this instance.</param>
-    public override bool Equals(object? obj) => obj is Url url && ToString().OrdinalEquals(url.ToString());
+    public override bool Equals(object? obj)
+    {
+        return obj is Url url && ToString().OrdinalEquals(url.ToString());
+    }
 
     /// <summary>
     /// Returns the hashcode for this Url.
     /// </summary>
-    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(ToString());
+    public override int GetHashCode()
+    {
+        return StringComparer.Ordinal.GetHashCode(ToString());
+    }
     #endregion
 
     #region static utility methods
@@ -934,7 +973,10 @@ public sealed class Url
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
     /// <returns>The combined, illegal-character-encoded URL string.</returns>
-    public static string Combine(string?[] parts) => Combine(parts.AsSpan());
+    public static string Combine(string?[] parts)
+    {
+        return Combine(parts.AsSpan());
+    }
 
     /// <summary>
     /// Basically a Path.Combine for URLs. Ensures exactly one '/' separates each segment,
@@ -1007,7 +1049,10 @@ public sealed class Url
         return EncodeIllegalCharacters(sb.ToString());
     }
 
-    private static bool _EndsWithChar(StringBuilder sb, char c) => sb.Length > 0 && sb[^1] == c;
+    private static bool _EndsWithChar(StringBuilder sb, char c)
+    {
+        return sb.Length > 0 && sb[^1] == c;
+    }
 
     private static void _AppendWithSingleSeparator(StringBuilder sb, string part, char separator)
     {
@@ -1048,7 +1093,10 @@ public sealed class Url
     /// <param name="s">The URL-encoded string.</param>
     /// <param name="interpretPlusAsSpace">If true, any '+' character will be decoded to a space.</param>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? Decode(string? s, bool interpretPlusAsSpace) => UrlEncoder.Decode(s, interpretPlusAsSpace);
+    public static string? Decode(string? s, bool interpretPlusAsSpace)
+    {
+        return UrlEncoder.Decode(s, interpretPlusAsSpace);
+    }
 
     /// <summary>
     /// URL-encodes a string, including reserved characters such as '/' and '?'.
@@ -1057,7 +1105,10 @@ public sealed class Url
     /// <param name="encodeSpaceAsPlus">If true, spaces will be encoded as + signs. Otherwise, they'll be encoded as %20.</param>
     /// <returns>The encoded URL.</returns>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? Encode(string? s, bool encodeSpaceAsPlus = false) => UrlEncoder.Encode(s, encodeSpaceAsPlus);
+    public static string? Encode(string? s, bool encodeSpaceAsPlus = false)
+    {
+        return UrlEncoder.Encode(s, encodeSpaceAsPlus);
+    }
 
     /// <summary>
     /// URL-encodes characters in a string that are neither reserved nor unreserved. Avoids encoding reserved characters such as '/' and '?'. Avoids encoding '%' if it begins a %-hex-hex sequence (i.e. avoids double-encoding).
@@ -1066,23 +1117,27 @@ public sealed class Url
     /// <param name="encodeSpaceAsPlus">If true, spaces will be encoded as + signs. Otherwise, they'll be encoded as %20.</param>
     /// <returns>The encoded URL.</returns>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? EncodeIllegalCharacters(string? s, bool encodeSpaceAsPlus = false) =>
-        UrlEncoder.EncodeIllegalCharacters(s, encodeSpaceAsPlus);
+    public static string? EncodeIllegalCharacters(string? s, bool encodeSpaceAsPlus = false)
+    {
+        return UrlEncoder.EncodeIllegalCharacters(s, encodeSpaceAsPlus);
+    }
 
     /// <summary>
     /// Checks if a string is a well-formed absolute URL.
     /// </summary>
     /// <param name="url">The string to check</param>
     /// <returns>true if the string is a well-formed absolute URL</returns>
-    public static bool IsValid([NotNullWhen(true)] string? url) =>
-        !string.IsNullOrWhiteSpace(url)
-        &&
-        // TryCreate will succeed for URLs starting with "//". We want to require a scheme to be considered "absolute".
-        !url.Trim().StartsWith('/')
-        &&
-        // Don't be tempted to use IsWellFormedUriString - it's known to return false positives on some platforms:
-        // https://github.com/dotnet/runtime/issues/72632
-        Uri.TryCreate(url, UriKind.Absolute, out _);
+    public static bool IsValid([NotNullWhen(true)] string? url)
+    {
+        return !string.IsNullOrWhiteSpace(url)
+            &&
+            // TryCreate will succeed for URLs starting with "//". We want to require a scheme to be considered "absolute".
+            !url.Trim().StartsWith('/')
+            &&
+            // Don't be tempted to use IsWellFormedUriString - it's known to return false positives on some platforms:
+            // https://github.com/dotnet/runtime/issues/72632
+            Uri.TryCreate(url, UriKind.Absolute, out _);
+    }
 
     #endregion
 }

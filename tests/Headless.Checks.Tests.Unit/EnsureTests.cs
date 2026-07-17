@@ -62,7 +62,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_disposed_should_not_throw_when_not_disposed()
+    public void should_not_throw_when_not_disposed_not_disposed()
     {
         // given
         const bool disposed = false;
@@ -73,7 +73,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_disposed_should_throw_when_disposed_with_null_value()
+    public void should_throw_when_not_disposed_disposed_with_null_value()
     {
         // given
         const bool disposed = true;
@@ -87,7 +87,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_disposed_should_throw_when_disposed_with_object()
+    public void should_throw_when_not_disposed_disposed_with_object()
     {
         // given
         const bool disposed = true;
@@ -104,7 +104,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_disposed_should_throw_with_custom_message()
+    public void should_throw_with_custom_message_when_not_disposed()
     {
         // given
         const bool disposed = true;
@@ -119,7 +119,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_disposed_should_include_type_name_in_exception()
+    public void should_include_type_name_in_exception_when_not_disposed()
     {
         // given
         const bool disposed = true;
@@ -136,7 +136,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_null_should_return_value_when_not_null()
+    public void should_return_value_when_not_null_not_null()
     {
         const string reference = "value";
         Ensure.NotNull(reference).Should().Be("value");
@@ -144,7 +144,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_null_should_throw_when_reference_is_null()
+    public void should_throw_when_not_null_reference_is_null()
     {
         const string? reference = null;
         var action = () => Ensure.NotNull(reference);
@@ -156,7 +156,7 @@ public sealed class EnsureTests
     }
 
     [Fact]
-    public void not_null_should_throw_when_nullable_struct_is_null()
+    public void should_throw_when_not_null_nullable_struct_is_null()
     {
         int? value = null;
         var action = () => Ensure.NotNull(value);

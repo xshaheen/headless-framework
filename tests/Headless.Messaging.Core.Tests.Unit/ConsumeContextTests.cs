@@ -143,8 +143,9 @@ public sealed class ConsumeContextTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    private static ConsumeContext _CreateContext() =>
-        new()
+    private static ConsumeContext _CreateContext()
+    {
+        return new()
         {
             Message = new object(),
             MessageId = "message-1",
@@ -154,6 +155,7 @@ public sealed class ConsumeContextTests
             MessageName = "test.message",
             IntentType = IntentType.Bus,
         };
+    }
 
     private interface IResponseContract;
 

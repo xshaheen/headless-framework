@@ -4,8 +4,7 @@ using Headless.Constants;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Mvc;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-namespace Headless.Api.Abstractions;
+namespace Headless.Abstractions;
 
 /// <summary>
 /// Builds normalized <see cref="ProblemDetails"/> for the framework's standard error responses

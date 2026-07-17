@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
 {
     [Fact]
-    public void GenericContext_Preserves_ScheduledFor_From_Base_Context()
+    public void generic_context_preserves_scheduled_for_from_base_context()
     {
         // given
         var scheduledFor = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -41,7 +41,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
     }
 
     [Fact]
-    public async Task RequestCancellationAsync_routes_the_time_job_id_through_the_scoped_scheduler()
+    public async Task request_cancellation_async_routes_the_time_job_id_through_the_scoped_scheduler()
     {
         var scheduler = Substitute.For<IJobScheduler>();
         var id = Guid.NewGuid();

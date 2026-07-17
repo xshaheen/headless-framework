@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -264,6 +263,6 @@ public static class DistributedSemaphoreProviderExtensions
     /// </summary>
     private static string _GetCompositeResource(IReadOnlyList<DistributedSemaphoreRequest> canonicalRequests)
     {
-        return string.Join("+", canonicalRequests.Select(static request => request.Resource));
+        return string.Join('+', canonicalRequests.Select(static request => request.Resource));
     }
 }

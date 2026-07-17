@@ -19,8 +19,14 @@ namespace Headless.DistributedLocks;
 /// <see cref="Exception.InnerException"/>: the latter carries only the first failure.
 /// </para>
 /// </remarks>
+/// <remarks>Initializes an exception carrying every failure reported by cleanup, with a custom message.</remarks>
+/// <param name="failures">The failures reported while releasing or disposing. Must be non-empty.</param>
+/// <param name="message">The error message, or <see langword="null"/>.</param>
+/// <exception cref="ArgumentNullException"><paramref name="failures"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentException"><paramref name="failures"/> is empty.</exception>
 [PublicAPI]
-public sealed class LockCleanupFailedException : DistributedLockException
+public sealed class LockCleanupFailedException(IReadOnlyList<Exception> failures, string? message)
+    : DistributedLockException(message, _FirstOf(failures))
 {
     /// <summary>Initializes an exception carrying every failure reported by cleanup.</summary>
     /// <param name="failures">The failures reported while releasing or disposing. Must be non-empty.</param>
@@ -29,19 +35,8 @@ public sealed class LockCleanupFailedException : DistributedLockException
     public LockCleanupFailedException(IReadOnlyList<Exception> failures)
         : this(failures, _BuildMessage(failures)) { }
 
-    /// <summary>Initializes an exception carrying every failure reported by cleanup, with a custom message.</summary>
-    /// <param name="failures">The failures reported while releasing or disposing. Must be non-empty.</param>
-    /// <param name="message">The error message, or <see langword="null"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="failures"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="failures"/> is empty.</exception>
-    public LockCleanupFailedException(IReadOnlyList<Exception> failures, string? message)
-        : base(message, _FirstOf(failures))
-    {
-        Failures = [.. failures];
-    }
-
     /// <summary>Every failure reported by cleanup, in the order the children were attempted (reverse acquisition order).</summary>
-    public IReadOnlyList<Exception> Failures { get; }
+    public IReadOnlyList<Exception> Failures { get; } = [.. failures];
 
     private static Exception _FirstOf(IReadOnlyList<Exception> failures)
     {

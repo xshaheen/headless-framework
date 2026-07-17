@@ -55,5 +55,8 @@ public abstract class Entity : EqualityBase<Entity>, IEntity
     }
 
     /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Keys = k1, k2, ...</c>.</summary>
-    public override string ToString() => $"[ENTITY: {GetType().Name}] Keys = {string.Join(", ", GetKeys())}";
+    public override string ToString()
+    {
+        return $"[ENTITY: {GetType().Name}] Keys = {string.Join(", ", GetKeys())}";
+    }
 }

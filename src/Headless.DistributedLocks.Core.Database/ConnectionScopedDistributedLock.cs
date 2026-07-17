@@ -490,5 +490,8 @@ public sealed class ConnectionScopedDistributedLock(
         return activity;
     }
 
-    private static double _GetRandomUnitDouble() => RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+    private static double _GetRandomUnitDouble()
+    {
+        return RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+    }
 }

@@ -42,8 +42,10 @@ internal sealed class SqlServerFeaturesStorageInitializer(
     /// <param name="options">Storage options supplying the schema name.</param>
     /// <param name="tableName">Unqualified table name.</param>
     /// <returns>A bracket-quoted, schema-qualified table identifier safe for SQL Server DDL/DML.</returns>
-    internal static string Qualified(FeaturesStorageOptions options, string tableName) =>
-        $"[{options.Schema}].[{tableName}]";
+    internal static string Qualified(FeaturesStorageOptions options, string tableName)
+    {
+        return $"[{options.Schema}].[{tableName}]";
+    }
 
     private static string _CreateScript(FeaturesStorageOptions options)
     {

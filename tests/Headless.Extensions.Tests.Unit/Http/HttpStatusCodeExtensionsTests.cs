@@ -12,7 +12,7 @@ public sealed class HttpStatusCodeExtensionsTests
     [InlineData(HttpStatusCode.Accepted)]
     [InlineData(HttpStatusCode.NoContent)]
     [InlineData((HttpStatusCode)299)]
-    public void IsSuccessStatusCode_should_return_true_for_2xx(HttpStatusCode code)
+    public void should_return_true_for_2xx_when_is_success_status_code(HttpStatusCode code)
     {
         code.IsSuccessStatusCode().Should().BeTrue();
     }
@@ -34,7 +34,7 @@ public sealed class HttpStatusCodeExtensionsTests
     [InlineData(HttpStatusCode.Created)]
     [InlineData(HttpStatusCode.NoContent)]
     [InlineData((HttpStatusCode)299)]
-    public void EnsureSuccessStatusCode_should_not_throw_for_2xx(HttpStatusCode code)
+    public void should_not_throw_for_2xx_when_ensure_success_status_code(HttpStatusCode code)
     {
         var act = () => code.EnsureSuccessStatusCode();
 
@@ -47,7 +47,7 @@ public sealed class HttpStatusCodeExtensionsTests
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData((HttpStatusCode)199)]
     [InlineData(HttpStatusCode.MultipleChoices)]
-    public void EnsureSuccessStatusCode_should_throw_for_non_2xx(HttpStatusCode code)
+    public void should_throw_for_non_2xx_when_ensure_success_status_code(HttpStatusCode code)
     {
         var act = () => code.EnsureSuccessStatusCode();
 
@@ -55,7 +55,7 @@ public sealed class HttpStatusCodeExtensionsTests
     }
 
     [Fact]
-    public void EnsureSuccessStatusCode_should_include_status_code_in_exception_message()
+    public void should_include_status_code_in_exception_message_when_ensure_success_status_code()
     {
         // given
         const HttpStatusCode code = HttpStatusCode.NotFound;
@@ -68,25 +68,25 @@ public sealed class HttpStatusCodeExtensionsTests
     }
 
     [Fact]
-    public void IsSuccessStatusCode_should_return_true_for_boundary_200()
+    public void should_return_true_for_boundary_200_when_is_success_status_code()
     {
         HttpStatusCode.OK.IsSuccessStatusCode().Should().BeTrue();
     }
 
     [Fact]
-    public void IsSuccessStatusCode_should_return_true_for_boundary_299()
+    public void should_return_true_for_boundary_299_when_is_success_status_code()
     {
         ((HttpStatusCode)299).IsSuccessStatusCode().Should().BeTrue();
     }
 
     [Fact]
-    public void IsSuccessStatusCode_should_return_false_for_boundary_199()
+    public void should_return_false_for_boundary_199_when_is_success_status_code()
     {
         ((HttpStatusCode)199).IsSuccessStatusCode().Should().BeFalse();
     }
 
     [Fact]
-    public void IsSuccessStatusCode_should_return_false_for_boundary_300()
+    public void should_return_false_for_boundary_300_when_is_success_status_code()
     {
         HttpStatusCode.MultipleChoices.IsSuccessStatusCode().Should().BeFalse();
     }

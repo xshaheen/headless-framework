@@ -120,7 +120,7 @@ public sealed class DateTimeExtensionsTests
     [InlineData(DateTimeKind.Utc)]
     [InlineData(DateTimeKind.Local)]
     [InlineData(DateTimeKind.Unspecified)]
-    public void clear_time_should_preserve_kind(DateTimeKind kind)
+    public void should_preserve_kind_when_clear_time(DateTimeKind kind)
     {
         // given - DateTime equality ignores Kind, so Kind must be asserted explicitly
         var dateTime = new DateTime(2021, 1, 1, 12, 30, 45, kind);
@@ -137,7 +137,7 @@ public sealed class DateTimeExtensionsTests
     [InlineData(DateTimeKind.Utc)]
     [InlineData(DateTimeKind.Local)]
     [InlineData(DateTimeKind.Unspecified)]
-    public void truncate_helpers_should_preserve_kind(DateTimeKind kind)
+    public void should_preserve_kind_when_truncate_helpers(DateTimeKind kind)
     {
         // given - sub-millisecond ticks so every truncation level actually changes the value
         var dateTime = new DateTime(2021, 1, 1, 12, 30, 45, 123, kind).AddTicks(4567);
@@ -150,7 +150,7 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_return_utc_input_unchanged()
+    public void should_return_utc_input_unchanged_when_normalize_to_utc()
     {
         // given
         var utc = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Utc);
@@ -164,7 +164,7 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_convert_local_kind_to_utc()
+    public void should_convert_local_kind_to_utc_when_normalize_to_utc()
     {
         // given
         var local = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Local);
@@ -180,7 +180,7 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
-    public void normalize_to_utc_should_stamp_unspecified_kind_without_shifting_the_value()
+    public void should_stamp_unspecified_kind_without_shifting_the_value_when_normalize_to_utc()
     {
         // given
         var unspecified = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Unspecified);
@@ -194,7 +194,7 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
-    public void truncate_to_milliseconds_should_floor_sub_millisecond_ticks()
+    public void should_floor_sub_millisecond_ticks_when_truncate_to_milliseconds()
     {
         // given - 123 ms plus 4567 sub-millisecond ticks
         var dateTime = new DateTime(2021, 1, 1, 12, 30, 45, 123).AddTicks(4567);
@@ -207,7 +207,7 @@ public sealed class DateTimeExtensionsTests
     }
 
     [Fact]
-    public void safe_add_should_clamp_to_max_without_overflowing_for_extreme_positive_span()
+    public void should_clamp_to_max_without_overflowing_for_extreme_positive_span_when_safe_add()
     {
         // given - date.Ticks + value.Ticks overflows long before the bounds check in the old code,
         // wrapping negative and wrongly returning MinValue instead of clamping to MaxValue

@@ -42,7 +42,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_messageId_is_null()
+    public void should_throw_when_message_id_is_null()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -65,7 +65,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_messageId_is_empty_string()
+    public void should_throw_when_message_id_is_empty_string()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -88,7 +88,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_messageId_is_whitespace()
+    public void should_throw_when_message_id_is_whitespace()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -111,7 +111,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_allow_null_correlationId()
+    public void should_allow_null_correlation_id()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -133,7 +133,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_correlationId_is_empty_string()
+    public void should_throw_when_correlation_id_is_empty_string()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -156,7 +156,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_correlationId_is_whitespace()
+    public void should_throw_when_correlation_id_is_whitespace()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -179,7 +179,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_default_tenantId_to_null_when_not_set()
+    public void should_default_tenant_id_to_null_when_not_set()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -201,7 +201,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_expose_tenantId_when_set()
+    public void should_expose_tenant_id_when_set()
     {
         // given
         const string tenantId = "acme";
@@ -224,7 +224,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_allow_null_tenantId()
+    public void should_allow_null_tenant_id()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -247,7 +247,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_tenantId_is_empty_string()
+    public void should_throw_when_tenant_id_is_empty_string()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);
@@ -271,7 +271,7 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_tenantId_is_whitespace()
+    public void should_throw_when_tenant_id_is_whitespace()
     {
         // given
         var message = new TestMessage("order-123", 99.99m);

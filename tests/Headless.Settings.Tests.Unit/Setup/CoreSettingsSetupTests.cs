@@ -13,7 +13,7 @@ namespace Tests.Setup;
 public sealed class CoreSettingsSetupTests
 {
     [Fact]
-    public void add_headless_settings_should_require_string_encryption_service()
+    public void should_require_string_encryption_service_when_add_headless_settings()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -27,7 +27,7 @@ public sealed class CoreSettingsSetupTests
     }
 
     [Fact]
-    public void add_headless_settings_should_not_override_existing_string_encryption_registration()
+    public void should_not_override_existing_string_encryption_registration_when_add_headless_settings()
     {
         // given
         var builder = Host.CreateApplicationBuilder();

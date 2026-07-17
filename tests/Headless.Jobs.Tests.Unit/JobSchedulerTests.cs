@@ -352,7 +352,7 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task CancelAsync_delegates_to_the_internal_durable_cancellation_operation()
+    public async Task cancel_async_delegates_to_the_internal_durable_cancellation_operation()
     {
         var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
         var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
@@ -375,7 +375,7 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task CancelAsync_does_not_restart_the_host_when_the_transition_is_rejected()
+    public async Task cancel_async_does_not_restart_the_host_when_the_transition_is_rejected()
     {
         var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
         var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();

@@ -8,12 +8,10 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.Helpers;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
@@ -287,7 +285,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
     {
         // given — a Scoped marker service. The caller (Dispatcher) creates a scope and
         // passes its IServiceProvider; the executor must surface that SAME provider through

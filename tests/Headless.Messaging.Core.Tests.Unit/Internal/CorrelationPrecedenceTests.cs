@@ -208,8 +208,9 @@ public sealed class CorrelationPrecedenceTests
         );
     }
 
-    private static ConsumeContext<TestMessage> _ConsumeContext(string correlationId) =>
-        new()
+    private static ConsumeContext<TestMessage> _ConsumeContext(string correlationId)
+    {
+        return new()
         {
             Message = new TestMessage(null),
             MessageId = "source-message",
@@ -219,6 +220,7 @@ public sealed class CorrelationPrecedenceTests
             MessageName = "source",
             IntentType = IntentType.Bus,
         };
+    }
 
     private sealed record TestMessage(string? Correlation);
 }

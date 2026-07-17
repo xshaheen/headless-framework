@@ -28,8 +28,9 @@ public sealed partial class PostgreSqlCommitSignalSource(
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
     /// <inheritdoc />
-    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken) =>
-        CommitSignalSourceAttach.Attach(
+    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
+    {
+        return CommitSignalSourceAttach.Attach(
             scopeFactory,
             bindings,
             _scopes,
@@ -43,6 +44,7 @@ public sealed partial class PostgreSqlCommitSignalSource(
             },
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Signals a commit for a previously attached scope, draining its registered

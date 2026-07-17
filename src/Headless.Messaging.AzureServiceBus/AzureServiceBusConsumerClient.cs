@@ -16,6 +16,7 @@ internal sealed class AzureServiceBusConsumerClient(
     byte groupConcurrent,
     IOptions<AzureServiceBusMessagingOptions> options,
     IServiceProvider serviceProvider,
+    IAzureServiceBusClientPool clientPool,
     IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
@@ -31,7 +32,10 @@ internal sealed class AzureServiceBusConsumerClient(
     private int _disposed;
     private int _hasStartedProcessing;
     private ServiceBusAdministrationClient? _administrationClient;
+
+#pragma warning disable CA2213 // Justification: shared client owned and disposed by AzureServiceBusClientPool
     private ServiceBusClient? _serviceBusClient;
+#pragma warning restore CA2213
     private ServiceBusProcessorFacade? _serviceBusProcessor;
     private readonly List<ServiceBusProcessorFacade> _queueProcessors = [];
 
@@ -247,10 +251,8 @@ internal sealed class AzureServiceBusConsumerClient(
             await processor.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (_serviceBusClient is not null)
-        {
-            await _serviceBusClient.DisposeAsync().ConfigureAwait(false);
-        }
+        // The ServiceBusClient is shared and pool-owned; other consumers and the publish
+        // transports keep using it after this consumer stops. Only processors are ours.
 
         _connectionLock.Dispose();
         _semaphore.Dispose();
@@ -333,15 +335,13 @@ internal sealed class AzureServiceBusConsumerClient(
             if (_serviceBusProcessor == null && (intentType != IntentType.Queue || _serviceBusClient == null))
 #pragma warning restore CA1508
             {
-                _serviceBusClient = _asbOptions.TokenCredential is not null
-                    ? new ServiceBusClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
-                    : new ServiceBusClient(_asbOptions.ConnectionString);
+                // Shared, pool-owned resources: processors created from this client multiplex the
+                // same AMQP connection as the publish senders. This client is never disposed here.
+                _serviceBusClient = clientPool.GetClient();
 
                 if (_asbOptions.AutoProvision)
                 {
-                    _administrationClient = _asbOptions.TokenCredential is not null
-                        ? new ServiceBusAdministrationClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
-                        : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
+                    _administrationClient = clientPool.GetAdministrationClient();
                 }
 
                 if (intentType == IntentType.Bus && _asbOptions.AutoProvision)

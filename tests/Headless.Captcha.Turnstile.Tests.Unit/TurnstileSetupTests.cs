@@ -184,8 +184,9 @@ public sealed class TurnstileSetupTests
             .BeAssignableTo<ITurnstileVerifier>();
     }
 
-    private static IConfigurationSection _Section(string section, string key, string secret) =>
-        new ConfigurationBuilder()
+    private static IConfigurationSection _Section(string section, string key, string secret)
+    {
+        return new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -195,4 +196,5 @@ public sealed class TurnstileSetupTests
             )
             .Build()
             .GetSection(section);
+    }
 }

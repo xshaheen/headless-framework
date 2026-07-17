@@ -8,9 +8,15 @@ public sealed class CashInSource
     public static readonly CashInSource Kiosk = new("AGGREGATOR", "AGGREGATOR");
     public static readonly CashInSource Cash = new("cash", "CASH");
 
-    public static CashInSource Wallet(string phoneNumber) => new(phoneNumber, "WALLET");
+    public static CashInSource Wallet(string phoneNumber)
+    {
+        return new(phoneNumber, "WALLET");
+    }
 
-    public static CashInSource SavedToken(string savedToken) => new(savedToken, "TOKEN");
+    public static CashInSource SavedToken(string savedToken)
+    {
+        return new(savedToken, "TOKEN");
+    }
 
     private CashInSource(string identifier, string subtype)
     {

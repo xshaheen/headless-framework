@@ -9,7 +9,7 @@ namespace Tests;
 public sealed class MatchesTests
 {
     [Fact]
-    public void matches_should_return_argument_when_valid_pattern()
+    public void should_return_argument_when_matches_valid_pattern()
     {
         // given
         const string argument = "Sleem123";
@@ -20,7 +20,7 @@ public sealed class MatchesTests
     }
 
     [Fact]
-    public void matches_should_throw_when_argument_does_not_match_pattern()
+    public void should_throw_when_matches_argument_does_not_match_pattern()
     {
         // given
         const string argument = "sleem@123";
@@ -34,7 +34,7 @@ public sealed class MatchesTests
     }
 
     [Fact]
-    public void matches_should_return_argument_when_pattern_is_complex()
+    public void should_return_argument_when_matches_pattern_is_complex()
     {
         // given
         const string argument = "user@example.com";
@@ -45,7 +45,7 @@ public sealed class MatchesTests
     }
 
     [Fact]
-    public void matches_should_work_with_case_insensitive_patterns()
+    public void should_work_with_case_insensitive_patterns_when_matches()
     {
         // given
         const string argument = "Hello";
@@ -56,7 +56,7 @@ public sealed class MatchesTests
     }
 
     [Fact]
-    public void matches_should_throw_argument_null_exception_with_correct_param_name_when_argument_is_null()
+    public void should_throw_argument_null_exception_with_correct_param_name_when_matches_argument_is_null()
     {
         // given
         const string? value = null;

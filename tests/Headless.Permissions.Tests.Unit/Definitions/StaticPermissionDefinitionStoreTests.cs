@@ -10,14 +10,8 @@ namespace Tests.Definitions;
 
 public sealed class StaticPermissionDefinitionStoreTests : TestBase
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly PermissionManagementProvidersOptions _providersOptions;
-
-    public StaticPermissionDefinitionStoreTests()
-    {
-        _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
-        _providersOptions = new PermissionManagementProvidersOptions();
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
+    private readonly PermissionManagementProvidersOptions _providersOptions = new();
 
     #region GetAllPermissionsAsync
 
@@ -182,27 +176,16 @@ public sealed class StaticPermissionDefinitionStoreTests : TestBase
         }
     }
 
-    private sealed class TestPermissionProvider2 : IPermissionDefinitionProvider
+    private sealed class TestPermissionProvider2(string groupName, string[] permissionNames)
+        : IPermissionDefinitionProvider
     {
-        private readonly string _groupName;
-        private readonly string[] _permissionNames;
-
         public TestPermissionProvider2()
-        {
-            _groupName = "Group2";
-            _permissionNames = ["Permission3"];
-        }
-
-        public TestPermissionProvider2(string groupName, string[] permissionNames)
-        {
-            _groupName = groupName;
-            _permissionNames = permissionNames;
-        }
+            : this("Group2", ["Permission3"]) { }
 
         public void Define(IPermissionDefinitionContext context)
         {
-            var group = context.AddGroup(_groupName);
-            foreach (var name in _permissionNames)
+            var group = context.AddGroup(groupName);
+            foreach (var name in permissionNames)
             {
                 group.AddChild(name);
             }

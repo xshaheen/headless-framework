@@ -16,7 +16,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     private readonly PresentationDocumentMediaFileTextProvider _sut = new();
 
     [Fact]
-    public async Task get_text_async_should_extract_text_from_power_point_file()
+    public async Task should_extract_text_from_power_point_file_when_get_text_async()
     {
         // given
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
@@ -33,7 +33,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_empty_string_when_presentation_has_no_slides()
+    public async Task should_return_empty_string_when_get_text_async_presentation_has_no_slides()
     {
         await using var stream = _CreateEmptyPresentation();
         var result = await _sut.GetTextAsync(stream, AbortToken);
@@ -41,7 +41,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_text_from_single_slide()
+    public async Task should_return_text_from_single_slide_when_get_text_async()
     {
         const string expectedText = "Test slide content";
         await using var stream = _CreatePresentationWithSlide(expectedText);
@@ -50,7 +50,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task get_text_async_should_return_text_from_multiple_slides()
+    public async Task should_return_text_from_multiple_slides_when_get_text_async()
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);

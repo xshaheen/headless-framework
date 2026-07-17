@@ -59,8 +59,10 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         }
     }
 
-    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     public virtual async Task should_allow_multiple_readers_and_release_on_dispose()
     {
@@ -690,7 +692,12 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         {
             await race;
         }
-        catch (Exception) { }
+#pragma warning disable ERP022
+        catch (Exception)
+        {
+            // ignored
+        }
+#pragma warning restore ERP022
     }
 #pragma warning restore CA1031, RCS1075
 }

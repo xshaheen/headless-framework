@@ -170,8 +170,10 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
     /// <param name="options">Storage options supplying the schema name.</param>
     /// <param name="tableName">Unqualified table name.</param>
     /// <returns>A double-quoted, schema-qualified table identifier safe for PostgreSQL DDL/DML.</returns>
-    internal static string Qualified(FeaturesStorageOptions options, string tableName) =>
-        _Qualified(options.Schema, tableName);
+    internal static string Qualified(FeaturesStorageOptions options, string tableName)
+    {
+        return _Qualified(options.Schema, tableName);
+    }
 
     private static string _Qualified(string schema, string tableName)
     {

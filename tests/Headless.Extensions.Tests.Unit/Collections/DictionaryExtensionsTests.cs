@@ -7,7 +7,7 @@ namespace Tests.Collections;
 public sealed class DictionaryExtensionsTests
 {
     [Fact]
-    public void dictionary_equal_should_return_true_when_dictionaries_are_equal()
+    public void should_return_true_when_dictionary_equal_dictionaries_are_equal()
     {
         // given
         var first = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 2 } };
@@ -22,7 +22,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void dictionary_equal_should_return_false_when_dictionaries_have_different_values()
+    public void should_return_false_when_dictionary_equal_dictionaries_have_different_values()
     {
         // given
         var first = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 2 } };
@@ -37,7 +37,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void get_or_default_should_return_default_value_if_key_does_not_exist()
+    public void should_return_default_value_if_key_does_not_exist_when_get_or_default()
     {
         // given
         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -50,7 +50,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void get_or_add_should_return_existing_value_if_key_exists()
+    public void should_return_existing_value_if_key_exists_when_get_or_add()
     {
         // given
         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal) { { "key", 42 } };
@@ -63,7 +63,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void get_or_add_should_add_and_return_value_if_key_does_not_exist()
+    public void should_add_and_return_value_if_key_does_not_exist_when_get_or_add()
     {
         // given
         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -77,7 +77,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void add_dictionary_should_copy_all_pairs_and_return_same_instance()
+    public void should_copy_all_pairs_and_return_same_instance_when_add_dictionary()
     {
         // given
         var target = new Dictionary<string, int>(StringComparer.Ordinal) { { "a", 1 } };
@@ -94,7 +94,7 @@ public sealed class DictionaryExtensionsTests
     }
 
     [Fact]
-    public void add_dictionary_should_copy_all_pairs_from_readonly_dictionary()
+    public void should_copy_all_pairs_from_readonly_dictionary_when_add_dictionary()
     {
         // given
         var target = new Dictionary<string, int>(StringComparer.Ordinal) { { "a", 1 } };

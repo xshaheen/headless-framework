@@ -52,12 +52,7 @@ internal static class CompositeDistributedLockAcquireCoordinator
 
         Argument.IsNotEmpty(materialized, paramName: nameof(resources));
 
-        return
-        [
-            .. materialized
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static resource => resource, StringComparer.Ordinal),
-        ];
+        return [.. materialized.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>
@@ -66,6 +61,6 @@ internal static class CompositeDistributedLockAcquireCoordinator
     /// </summary>
     private static string _GetCompositeResource(IReadOnlyList<string> canonicalResources)
     {
-        return string.Join("+", canonicalResources);
+        return string.Join('+', canonicalResources);
     }
 }

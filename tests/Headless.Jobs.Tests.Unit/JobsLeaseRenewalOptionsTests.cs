@@ -7,7 +7,7 @@ namespace Tests;
 public sealed class JobsLeaseRenewalOptionsTests
 {
     [Fact]
-    public void ResolveLeaseRenewalInterval_defaults_to_one_third_of_lease_duration()
+    public void resolve_lease_renewal_interval_defaults_to_one_third_of_lease_duration()
     {
         var options = new SchedulerOptionsBuilder { LeaseDuration = TimeSpan.FromMinutes(6) };
 
@@ -16,7 +16,7 @@ public sealed class JobsLeaseRenewalOptionsTests
     }
 
     [Fact]
-    public void ResolveLeaseRenewalInterval_uses_explicit_value_when_set_and_valid()
+    public void resolve_lease_renewal_interval_uses_explicit_value_when_set_and_valid()
     {
         var options = new SchedulerOptionsBuilder
         {
@@ -28,7 +28,7 @@ public sealed class JobsLeaseRenewalOptionsTests
     }
 
     [Fact]
-    public void ResolveLeaseRenewalInterval_rejects_an_interval_at_or_above_lease_duration()
+    public void resolve_lease_renewal_interval_rejects_an_interval_at_or_above_lease_duration()
     {
         var options = new SchedulerOptionsBuilder
         {
@@ -42,7 +42,7 @@ public sealed class JobsLeaseRenewalOptionsTests
     }
 
     [Fact]
-    public void ResolveLeaseRenewalInterval_rejects_a_non_positive_interval()
+    public void resolve_lease_renewal_interval_rejects_a_non_positive_interval()
     {
         var options = new SchedulerOptionsBuilder
         {

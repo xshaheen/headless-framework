@@ -143,8 +143,10 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
         capturedOptions.TimeUntilExpires.Should().BeNull();
     }
 
-    private DistributedLockCacheFactoryLockProvider _CreateProvider(CacheFactoryLockOptions? options = null) =>
-        new(_distributedLock, options ?? new CacheFactoryLockOptions());
+    private DistributedLockCacheFactoryLockProvider _CreateProvider(CacheFactoryLockOptions? options = null)
+    {
+        return new(_distributedLock, options ?? new CacheFactoryLockOptions());
+    }
 
     private void _SetupAcquire(IDistributedLease? lease)
     {

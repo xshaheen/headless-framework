@@ -49,7 +49,7 @@ public sealed class NullDistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
-    public void create_semaphore_should_validate_arguments()
+    public void should_validate_arguments_when_create_semaphore()
     {
         // given
         var provider = new NullDistributedSemaphoreProvider(TimeProvider.System);
@@ -86,7 +86,7 @@ public sealed class NullDistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
-    public async Task slot_renew_should_succeed_and_increment_renewal_count()
+    public async Task should_succeed_and_increment_renewal_count_when_slot_renew()
     {
         // given
         var provider = new NullDistributedSemaphoreProvider(TimeProvider.System);
@@ -103,7 +103,7 @@ public sealed class NullDistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
-    public async Task holder_count_should_always_be_zero()
+    public async Task should_always_be_zero_when_holder_count()
     {
         // given — the sentinel stores nothing, so observability reads are empty even while held
         var provider = new NullDistributedSemaphoreProvider(TimeProvider.System);

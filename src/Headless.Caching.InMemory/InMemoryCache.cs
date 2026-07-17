@@ -59,6 +59,7 @@ public sealed class InMemoryCache
 
     private readonly AsyncLock _lock = new();
     private readonly FactoryCacheCoordinator _coordinator;
+    private readonly string _cacheName;
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
@@ -95,11 +96,20 @@ public sealed class InMemoryCache
         TimeProvider timeProvider,
         InMemoryCacheOptions options,
         ILogger<InMemoryCache>? logger = null,
-        ICacheFactoryLockProvider? factoryLockProvider = null
+        ICacheFactoryLockProvider? factoryLockProvider = null,
+        CacheInstrumentationConfig? instrumentation = null
     )
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
-        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger, factoryLockProvider);
+        _cacheName = string.IsNullOrEmpty(options.CacheName) ? CachingDiagnostics.DefaultCacheName : options.CacheName;
+        _coordinator = new FactoryCacheCoordinator(
+            timeProvider,
+            _logger,
+            factoryLockProvider,
+            _cacheName,
+            CachingMetrics.TierL1,
+            instrumentation?.IncludeKeyInTraces ?? false
+        );
         _timeProvider = timeProvider;
         DefaultEntryOptions = options.DefaultEntryOptions;
         _keyPrefix = options.KeyPrefix ?? "";
@@ -225,6 +235,7 @@ public sealed class InMemoryCache
             nowTicksOverride: nowTicks
         );
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
         return _SetInternalAsync(key, entry, nowTicks: nowTicks);
     }
 
@@ -242,6 +253,7 @@ public sealed class InMemoryCache
 
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
         return true;
     }
 
@@ -568,8 +580,9 @@ public sealed class InMemoryCache
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<double>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -580,14 +593,16 @@ public sealed class InMemoryCache
             },
             cancellationToken
         );
+    }
 
     public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<long>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             amount,
             expiration,
@@ -598,14 +613,16 @@ public sealed class InMemoryCache
             },
             cancellationToken
         );
+    }
 
     public ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<double>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -615,14 +632,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<long>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -632,14 +651,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<double>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -649,14 +670,16 @@ public sealed class InMemoryCache
                     : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     public ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) =>
-        _RunNumericOpAsync<long>(
+    )
+    {
+        return _RunNumericOpAsync(
             key,
             value,
             expiration,
@@ -666,6 +689,7 @@ public sealed class InMemoryCache
                     : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
             cancellationToken
         );
+    }
 
     // Shared numeric mutation pipeline for the double/long Increment / SetIfHigher / SetIfLower overloads: it owns
     // validation, zero-expiration eviction, the AddOrUpdate, size/expiry bookkeeping, and maintenance scheduling.
@@ -936,55 +960,19 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
+        var result = _GetCore<T>(key);
 
-        if (!_memory.TryGetValue(key, out var existingEntry))
-        {
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGet,
+            result.HasValue ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1
+        );
 
-        // Fetch the clock once for the whole hit path (expiry, logical expiry, sliding re-arm) instead of three
-        // virtual TimeProvider dispatches. Misses above never reach here, so a miss still pays zero clock reads.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-
-        if (existingEntry.IsExpiredAt(now))
-        {
-            _TryRemoveExpiredEntry(key, existingEntry);
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        if (existingEntry.IsLogicallyExpiredAt(now))
-        {
-            if (existingEntry.SlidingExpiration.HasValue)
-            {
-                _TryRemoveExpiredEntry(key, existingEntry);
-            }
-
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
-        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
-        if (_IsTagInvalidated(existingEntry))
-        {
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
-
-        try
-        {
-            var value = existingEntry.GetValue<T>();
-            _TryRearmSlidingEntry(key, existingEntry, now);
-
-            return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
-        }
-        catch (Exception ex) when (!_shouldThrowOnSerializationError)
-        {
-            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
-            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
-        }
+        return new ValueTask<CacheValue<T>>(result);
     }
 
-    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     )
@@ -994,13 +982,96 @@ public sealed class InMemoryCache
         cancellationToken.ThrowIfCancellationRequested();
 
         var map = new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
+        long hits = 0;
+        long misses = 0;
 
         foreach (var key in cacheKeys)
         {
-            map[key] = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var value = _GetCore<T>(key);
+            map[key] = value;
+
+            if (value.HasValue)
+            {
+                hits++;
+            }
+            else
+            {
+                misses++;
+            }
         }
 
-        return map;
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeHit,
+            CachingMetrics.TierL1,
+            hits
+        );
+
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationGetAll,
+            CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1,
+            misses
+        );
+
+        return new ValueTask<IDictionary<string, CacheValue<T>>>(map);
+    }
+
+    // Shared, uninstrumented read core for the single-key hit path (expiry, logical expiry, Family-2 tag/clear
+    // invalidation, sliding re-arm). GetAsync and GetAllAsync both funnel through this so GetAllAsync can record
+    // one aggregated hit/miss pair (operation get_all) instead of N per-key "get" records.
+    private CacheValue<T> _GetCore<T>(string key)
+    {
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return CacheValue<T>.NoValue;
+        }
+
+        // Fetch the clock once for the whole hit path (expiry, logical expiry, sliding re-arm) instead of three
+        // virtual TimeProvider dispatches. Misses above never reach here, so a miss still pays zero clock reads.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (existingEntry.IsExpiredAt(now))
+        {
+            _TryRemoveExpiredEntry(key, existingEntry);
+            return CacheValue<T>.NoValue;
+        }
+
+        if (existingEntry.IsLogicallyExpiredAt(now))
+        {
+            if (existingEntry.SlidingExpiration.HasValue)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
+            return CacheValue<T>.NoValue;
+        }
+
+        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
+        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
+        if (_IsTagInvalidated(existingEntry))
+        {
+            return CacheValue<T>.NoValue;
+        }
+
+        try
+        {
+            var value = existingEntry.GetValue<T>();
+            _TryRearmSlidingEntry(key, existingEntry, now);
+
+            return new CacheValue<T>(value, hasValue: true);
+        }
+        catch (Exception ex) when (!_shouldThrowOnSerializationError)
+        {
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
+            return CacheValue<T>.NoValue;
+        }
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
@@ -1030,19 +1101,30 @@ public sealed class InMemoryCache
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
+        bool exists;
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
-            return new ValueTask<bool>(result: false);
+            exists = false;
+        }
+        else
+        {
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+            exists =
+                !existingEntry.IsExpiredAt(now)
+                && !existingEntry.IsLogicallyExpiredAt(now)
+                && !_IsTagInvalidated(existingEntry);
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-
-        return new ValueTask<bool>(
-            !existingEntry.IsExpiredAt(now)
-                && !existingEntry.IsLogicallyExpiredAt(now)
-                && !_IsTagInvalidated(existingEntry)
+        CachingMetrics.RecordRequest(
+            _cacheName,
+            CachingMetrics.OperationExists,
+            exists ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL1
         );
+
+        return new ValueTask<bool>(exists);
     }
 
     /// <summary>
@@ -1341,6 +1423,8 @@ public sealed class InMemoryCache
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictRemoved, CachingMetrics.TierL1);
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1);
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
@@ -1452,6 +1536,8 @@ public sealed class InMemoryCache
             }
         }
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1, removed);
+
         return new ValueTask<int>(removed);
     }
 
@@ -1476,6 +1562,8 @@ public sealed class InMemoryCache
             }
         }
 
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL1, removed);
+
         return new ValueTask<int>(removed);
     }
 
@@ -1490,6 +1578,10 @@ public sealed class InMemoryCache
         // entry's CreatedAt against this marker; physically present reserves survive for fail-safe serving.
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _tagMarkers.AddOrUpdate(tag, now, (_, existing) => now > existing ? now : existing);
+
+        // Member count is not cheaply known (no enumeration by design), so record a single logical remove-by-tag
+        // write rather than trying to count affected entries.
+        CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByTag, CachingMetrics.TierL1);
 
         return ValueTask.CompletedTask;
     }
@@ -1613,8 +1705,10 @@ public sealed class InMemoryCache
     }
 
     /// <summary>Returns whether <paramref name="entry"/> is logically invalidated by a tag or clear marker.</summary>
-    private bool _IsTagInvalidated(CacheEntry entry) =>
-        CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
+    private bool _IsTagInvalidated(CacheEntry entry)
+    {
+        return CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
+    }
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
@@ -1707,6 +1801,18 @@ public sealed class InMemoryCache
     {
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Count the wiped entries only when a metrics listener is attached (Count is O(n)).
+        if (CachingMetrics.EvictionsEnabled)
+        {
+            CachingMetrics.RecordEviction(
+                _cacheName,
+                CachingMetrics.EvictFlushed,
+                CachingMetrics.TierL1,
+                _memory.Count
+            );
+        }
+
         _memory.Clear();
         // Physical wipe also resets the logical invalidation markers: no entry survives to be invalidated, so the
         // markers and clear generation can drop with the keyspace.
@@ -2329,6 +2435,13 @@ public sealed class InMemoryCache
                         break;
                     }
                 }
+
+                CachingMetrics.RecordEviction(
+                    _cacheName,
+                    CachingMetrics.EvictCapacity,
+                    CachingMetrics.TierL1,
+                    removalCount
+                );
             }
         }
         catch (OperationCanceledException)
@@ -2451,6 +2564,8 @@ public sealed class InMemoryCache
                 soonest = tracked.Ticks;
             }
         }
+
+        CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictExpired, CachingMetrics.TierL1, removalCount);
 
         // Re-arm the hint.
         //
@@ -2690,12 +2805,18 @@ public sealed class InMemoryCache
 
         /// <summary>Physical-expiry check against a caller-supplied <paramref name="now"/>, so a hot read path can
         /// fetch the clock once and reuse it across the expiry/logical-expiry/sliding-rearm checks.</summary>
-        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt <= now;
+        internal bool IsExpiredAt(DateTime now)
+        {
+            return PhysicalExpiresAt <= now;
+        }
 
         internal bool IsLogicallyExpired => IsLogicallyExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
 
         /// <summary>Logical-expiry check against a caller-supplied <paramref name="now"/> (see <see cref="IsExpiredAt"/>).</summary>
-        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt <= now;
+        internal bool IsLogicallyExpiredAt(DateTime now)
+        {
+            return LogicalExpiresAt <= now;
+        }
 
         internal bool ShouldRemoveAt(long expiresAtTicks)
         {
@@ -2724,22 +2845,35 @@ public sealed class InMemoryCache
         /// use inside <c>AddOrUpdate</c>/<c>TryUpdate</c> factories where the caller is inspecting
         /// the existing entry to decide the next entry — a context in which LRU touches and clones
         /// are both incorrect and wasteful.</summary>
-        internal object? PeekValue() => _cacheValue;
+        internal object? PeekValue()
+        {
+            return _cacheValue;
+        }
 
         /// <summary>Converts the raw stored value to <typeparamref name="T"/> without touching LRU or
         /// cloning. Used for metadata reads where a clone/LRU touch would be incorrect or wasteful.</summary>
-        internal T? PeekValue<T>() => _ConvertValue<T>(_cacheValue);
+        internal T? PeekValue<T>()
+        {
+            return _ConvertValue<T>(_cacheValue);
+        }
 
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
-        internal CacheEntry WithExpiration(DateTime? expiresAt) =>
-            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+        internal CacheEntry WithExpiration(DateTime? expiresAt)
+        {
+            return new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+        }
 
         /// <summary>Returns a new entry that shares this entry's value but only moves logical expiration.</summary>
-        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt) =>
-            new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
+        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt)
+        {
+            return new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
+        }
 
-        public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
+        public T? GetValue<T>()
+        {
+            return _ConvertValue<T>(ReadValue());
+        }
 
         private static T? _ConvertValue<T>(object? val)
         {
@@ -2889,7 +3023,10 @@ public sealed class InMemoryCache
         return hasInfinite ? null : max;
     }
 
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+    private static DateTime _Min(DateTime left, DateTime right)
+    {
+        return left <= right ? left : right;
+    }
 
     #endregion
 }

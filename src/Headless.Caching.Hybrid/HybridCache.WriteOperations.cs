@@ -1067,6 +1067,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationTag,
+            CachingMetrics.DirectionPublish
+        );
 
         // L2 marker bump is best-effort under the circuit breaker. When the L2 supports timestamped marker writes
         // (ISeedableTagMarkerCache) and auto-recovery is enabled, a skipped/failed bump is queued and replayed at
@@ -1108,6 +1113,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationClear,
+            CachingMetrics.DirectionPublish
+        );
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteClearMarkerAsync(invalidatedAt, ct),
@@ -1125,7 +1135,10 @@ public sealed partial class HybridCache
     private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
     private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
 
-    private static string _TagMarkerRecoveryKey(string tag) => $"\0hybrid-marker:tag:{tag}";
+    private static string _TagMarkerRecoveryKey(string tag)
+    {
+        return $"\0hybrid-marker:tag:{tag}";
+    }
 
     /// <summary>
     /// Applies a Family-2 marker bump (tag/clear/remove) to L2 as a best-effort operation: skipped when the
@@ -1265,6 +1278,11 @@ public sealed partial class HybridCache
             Timestamp = invalidatedAt,
         };
         await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+        CachingMetrics.RecordInvalidation(
+            _metricCacheName,
+            CachingMetrics.InvalidationFlush,
+            CachingMetrics.DirectionPublish
+        );
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),

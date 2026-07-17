@@ -193,7 +193,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
-    public async Task unavailable_broker_startup_should_finish_within_host_shutdown_timeout()
+    public async Task should_finish_within_host_shutdown_timeout_when_unavailable_broker_startup()
     {
         var rabbitOptions = Options.Create(
             new RabbitMqMessagingOptions

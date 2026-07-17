@@ -689,6 +689,22 @@
           "Headless.Hosting": "[1.0.0, )"
         }
       },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "EFCore.CheckConstraints": "[10.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -729,8 +745,8 @@
       "headless.features.storage.entityframework": {
         "type": "Project",
         "dependencies": {
-          "Headless.Features.Core": "[1.0.0, )",
-          "Headless.Orm.EntityFramework": "[1.0.0, )"
+          "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.Features.Core": "[1.0.0, )"
         }
       },
       "headless.fluentvalidation": {
@@ -760,22 +776,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.orm.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "EFCore.CheckConstraints": "[10.0.0, )",
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Domain": "[1.0.0, )",
-          "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
         }
       },

@@ -516,10 +516,12 @@ internal sealed class Dispatcher : IDispatcher
         // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
         // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
         // and EnqueueToExecute would block forever, masking the failure from the host.
-        _processingTasks = Enumerable
-            .Range(0, _options.SubscriberParallelExecuteThreadCount)
-            .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
-            .ToArray();
+        _processingTasks =
+        [
+            .. Enumerable
+                .Range(0, _options.SubscriberParallelExecuteThreadCount)
+                .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token)),
+        ];
 
         foreach (var loop in _processingTasks)
         {

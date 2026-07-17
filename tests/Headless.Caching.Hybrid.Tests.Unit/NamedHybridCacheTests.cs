@@ -24,7 +24,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_hybrid_should_bind_named_tiers()
+    public async Task should_bind_named_tiers_when_named_hybrid()
     {
         // given
         var services = _CreateBaseServices();
@@ -62,7 +62,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_hybrid_should_publish_invalidation_with_cache_name()
+    public async Task should_publish_invalidation_with_cache_name_when_named_hybrid()
     {
         // given
         var services = _CreateBaseServices();
@@ -105,8 +105,57 @@ public sealed class NamedHybridCacheTests : TestBase
             );
     }
 
+    // Issue #693: a setupAction that tries to override the public CacheName must not change invalidation
+    // routing. Setup.cs applies InvalidationRoutingName = name AFTER setupAction runs, so the registration name
+    // stays authoritative for routing even though CacheName itself does get overwritten too (both are stamped
+    // post-configure).
     [Fact]
-    public async Task invalidation_consumer_should_route_named_message_to_named_hybrid()
+    public async Task should_route_by_registration_name_when_named_hybrid_setup_action_overrides_cache_name()
+    {
+        // given — the setupAction attempts to override the public CacheName
+        var services = _CreateBaseServices();
+        var bus = services
+            .Single(x => x.ServiceType == typeof(IBus))
+            .ImplementationInstance.Should()
+            .BeAssignableTo<IBus>()
+            .Subject;
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
+        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
+
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                        options.CacheName = "attacker-supplied-name";
+                    })
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredKeyedService<ICache>("tenant");
+
+        // when
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — the wire message routes by the registration name, ignoring the setupAction's override
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == "tenant" && message.Key == "key"),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_route_named_message_to_named_hybrid_when_invalidation_consumer()
     {
         // given
         var services = _CreateBaseServices();
@@ -163,7 +212,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task nameless_hybrid_should_bind_named_tiers_when_options_set()
+    public async Task should_bind_named_tiers_when_nameless_hybrid_options_set()
     {
         // given - the options drive tier binding on the default (nameless) path too
         var services = _CreateBaseServices();
@@ -190,7 +239,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_hybrid_should_fail_clearly_when_named_tier_is_missing()
+    public async Task should_fail_clearly_when_named_hybrid_named_tier_is_missing()
     {
         // given
         var services = _CreateBaseServices();
@@ -214,7 +263,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_hybrid_should_fail_clearly_when_named_tier_has_wrong_shape()
+    public async Task should_fail_clearly_when_named_hybrid_named_tier_has_wrong_shape()
     {
         // given - "remote-only" is an IRemoteCache, not an IInMemoryCache
         var services = _CreateBaseServices();
@@ -240,7 +289,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task named_hybrid_default_entry_options_should_govern_option_less_get_or_add_over_tier_defaults()
+    public async Task should_govern_option_less_get_or_add_over_tier_defaults_when_named_hybrid_default_entry_options()
     {
         // given — named tiers that EACH carry their own (short) defaults, composed under a hybrid with a
         // LONGER default of its own
@@ -311,7 +360,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task per_call_options_should_beat_hybrid_and_tier_defaults()
+    public async Task should_beat_hybrid_and_tier_defaults_when_per_call_options()
     {
         // given — the same layered defaults (tiers: 1/2 minutes, hybrid: 10 minutes) and a 30-second per-call
         var services = _CreateBaseServices();

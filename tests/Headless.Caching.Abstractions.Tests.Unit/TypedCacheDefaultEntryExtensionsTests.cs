@@ -25,7 +25,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     // ── ICache<T>.DefaultEntryOptions delegation ─────────────────────────
 
     [Fact]
-    public void cache_t_should_delegate_default_entry_options_to_inner_cache()
+    public void should_delegate_default_entry_options_to_inner_cache_when_cache_t()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
@@ -39,7 +39,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public void cache_t_should_expose_null_default_entry_options_when_inner_has_none()
+    public void should_expose_null_default_entry_options_when_cache_t_inner_has_none()
     {
         // given
         var inner = Substitute.For<ICache>();
@@ -52,7 +52,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public void scoped_cache_should_delegate_default_entry_options_to_inner_cache()
+    public void should_delegate_default_entry_options_to_inner_cache_when_scoped_cache()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(3) };
@@ -66,7 +66,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public void scoped_cache_should_expose_null_default_entry_options_when_inner_has_none()
+    public void should_expose_null_default_entry_options_when_scoped_cache_inner_has_none()
     {
         // given
         var inner = Substitute.For<ICache>();
@@ -81,7 +81,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     // ── Extension: simple factory overload ───────────────────────────────
 
     [Fact]
-    public async Task typed_simple_overload_should_throw_when_default_entry_options_is_null()
+    public async Task should_throw_when_typed_simple_overload_default_entry_options_is_null()
     {
         // given
         var cache = Substitute.For<ICache<string>>();
@@ -95,7 +95,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task typed_context_overload_should_throw_when_default_entry_options_is_null()
+    public async Task should_throw_when_typed_context_overload_default_entry_options_is_null()
     {
         // given
         var cache = Substitute.For<ICache<string>>();
@@ -109,7 +109,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task typed_simple_overload_should_flow_default_entry_options_when_present()
+    public async Task should_flow_default_entry_options_when_typed_simple_overload_present()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), IsFailSafeEnabled = true };
@@ -124,7 +124,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task typed_context_overload_should_flow_default_entry_options_when_present()
+    public async Task should_flow_default_entry_options_when_typed_context_overload_present()
     {
         // given
         var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
@@ -139,7 +139,7 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task typed_option_less_overload_should_apply_default_duration_to_real_cache_entries()
+    public async Task should_apply_default_duration_to_real_cache_entries_when_typed_option_less_overload()
     {
         // given — a real typed cache whose instance default is a 5-minute duration
         var timeProvider = new FakeTimeProvider();

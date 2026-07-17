@@ -23,8 +23,10 @@ internal sealed class SqlServerPermissionsStorageInitializer(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    internal static string Qualified(PermissionsStorageOptions options, string tableName) =>
-        $"[{options.Schema}].[{tableName}]";
+    internal static string Qualified(PermissionsStorageOptions options, string tableName)
+    {
+        return $"[{options.Schema}].[{tableName}]";
+    }
 
     private static string _CreateScript(PermissionsStorageOptions options)
     {

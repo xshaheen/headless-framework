@@ -39,9 +39,15 @@ public sealed class ScopedCache<T> : ICache<T>
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions => _cache.DefaultEntryOptions;
 
-    private string _Prefix() => $"{_scopeProvider()}:";
+    private string _Prefix()
+    {
+        return $"{_scopeProvider()}:";
+    }
 
-    private string _ScopeKey(string key) => $"{_Prefix()}{key}";
+    private string _ScopeKey(string key)
+    {
+        return $"{_Prefix()}{key}";
+    }
 
     /// <inheritdoc />
     public ValueTask<CacheValue<T>> GetOrAddAsync(

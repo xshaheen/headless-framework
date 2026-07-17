@@ -211,7 +211,10 @@ public static class JobFunctionProvider
 
         if (!shouldFreeze)
         {
+            // AddHeadlessJobs is synchronous, so overlapping discovery callbacks must join synchronously.
+#pragma warning disable MA0045
             pendingDiscovery!.GetAwaiter().GetResult();
+#pragma warning restore MA0045
             return;
         }
 
@@ -596,9 +599,15 @@ internal static class JobFunctionRegistryBuilder
         return string.IsNullOrEmpty(mappedCronExpression) ? cronExpression : mappedCronExpression;
     }
 
-    private static bool _IsConfigurationToken(string cronExpression) => cronExpression.StartsWith('%');
+    private static bool _IsConfigurationToken(string cronExpression)
+    {
+        return cronExpression.StartsWith('%');
+    }
 
-    private static string _TypeDisplayName(Type type) => type.FullName ?? type.Name;
+    private static string _TypeDisplayName(Type type)
+    {
+        return type.FullName ?? type.Name;
+    }
 }
 
 internal sealed record JobFunctionRegistry(

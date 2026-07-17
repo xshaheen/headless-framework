@@ -48,7 +48,10 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
     /// </summary>
-    public override string ToString() => ToString(encodeSpaceAsPlus: false);
+    public override string ToString()
+    {
+        return ToString(encodeSpaceAsPlus: false);
+    }
 
     /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
@@ -219,14 +222,23 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// <summary>
     /// Removes all query parameters of the given name.
     /// </summary>
-    public void Remove(string name) => _values.Remove(name);
+    public void Remove(string name)
+    {
+        _values.Remove(name);
+    }
 
     /// <summary>
     /// Clears all query parameters from this collection.
     /// </summary>
-    public void Clear() => _values.Clear();
+    public void Clear()
+    {
+        _values.Clear();
+    }
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 
     /// <inheritdoc />
     public IEnumerator<(string Name, object? Value)> GetEnumerator()
@@ -246,7 +258,10 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     public (string Name, object? Value) this[int index] => (_values[index].Name, _values[index].Value.Value);
 
     /// <inheritdoc />
-    public object? FirstOrDefault(string name) => _values.FirstOrDefault(name).Value;
+    public object? FirstOrDefault(string name)
+    {
+        return _values.FirstOrDefault(name).Value;
+    }
 
     /// <inheritdoc />
     public bool TryGetFirst(string name, out object? value)
@@ -272,7 +287,10 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     }
 
     /// <inheritdoc />
-    public bool Contains(string name) => _values.Contains(name);
+    public bool Contains(string name)
+    {
+        return _values.Contains(name);
+    }
 
     /// <inheritdoc />
     public bool Contains(string name, object? value)

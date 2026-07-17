@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -22,6 +24,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         }
     );
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
+    private readonly IAzureServiceBusClientPool _clientPool = Substitute.For<IAzureServiceBusClientPool>();
 
     [Fact]
     public void should_throw_when_options_value_is_null()
@@ -30,7 +33,8 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         var nullOptions = Options.Create<AzureServiceBusMessagingOptions>(null!);
 
         // when
-        var act = () => new AzureServiceBusConsumerClient(_logger, "test-sub", 1, nullOptions, _serviceProvider);
+        var act = () =>
+            new AzureServiceBusConsumerClient(_logger, "test-sub", 1, nullOptions, _serviceProvider, _clientPool);
 
         // then
         act.Should().ThrowExactly<ArgumentNullException>();
@@ -40,7 +44,14 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_have_correct_broker_address_from_connection_string()
     {
         // given, when
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // then
         client.BrokerAddress.Name.Should().Be("servicebus");
@@ -56,7 +67,14 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         );
 
         // when
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // then
         client.BrokerAddress.Endpoint.Should().Be("sb://custom.servicebus.windows.net/");
@@ -66,7 +84,14 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_initialize_callbacks_as_null()
     {
         // given, when
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // then
         client.OnMessageCallback.Should().BeNull();
@@ -77,7 +102,14 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_allow_setting_on_message_callback()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
         Func<TransportMessage, object?, Task> callback = (_, _) => Task.CompletedTask;
 
         // when
@@ -91,8 +123,15 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_allow_setting_on_log_callback()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
-        Action<Headless.Messaging.Transport.LogMessageEventArgs> callback = _ => { };
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        Action<LogMessageEventArgs> callback = _ => { };
 
         // when
         client.OnLogCallback = callback;
@@ -105,7 +144,14 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         var act = async () => await client.SubscribeAsync(null!);
@@ -115,7 +161,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void CheckValidQueueName_should_allow_names_longer_than_subscription_rule_limit()
+    public void should_allow_names_longer_than_subscription_rule_limit_when_check_valid_queue_name()
     {
         var queueName = new string('a', 80);
 
@@ -125,7 +171,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void CheckValidQueueName_should_reject_reserved_uri_characters()
+    public void should_reject_reserved_uri_characters_when_check_valid_queue_name()
     {
         var act = () => AzureServiceBusConsumerClient.CheckValidQueueName("orders#created");
 
@@ -144,7 +190,16 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
                 Namespace = null!,
             }
         );
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, options, _serviceProvider);
+        // Real pool: connection validation must come from the actual SDK client creation path.
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            options,
+            _serviceProvider,
+            pool
+        );
 
         // when
         var act = async () => await client.ConnectAsync();
@@ -154,10 +209,44 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_dispose_shared_client_on_consumer_dispose()
+    {
+        // given: a queue-intent consumer connected through the shared pool
+        var sharedClient = Substitute.For<ServiceBusClient>();
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetClient().Returns(sharedClient);
+
+        var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            pool,
+            IntentType.Queue
+        );
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        await client.DisposeAsync();
+
+        // then: the pool-owned client stays usable for other consumers and the transports
+        await sharedClient.DidNotReceive().DisposeAsync();
+        await pool.DidNotReceive().DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_dispose_without_error_when_not_connected()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         var act = async () => await client.DisposeAsync();
@@ -171,10 +260,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PauseAsync_is_noop_when_processor_is_null()
+    public async Task pause_async_is_noop_when_processor_is_null()
     {
         // given — no ConnectAsync called, processor is null
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         await client.PauseAsync(AbortToken);
@@ -183,10 +279,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_idempotent_when_called_twice()
+    public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         await client.PauseAsync(AbortToken);
@@ -196,10 +299,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_when_not_paused()
+    public async Task resume_async_is_noop_when_not_paused()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         await client.ResumeAsync(AbortToken);
@@ -208,10 +318,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    public async Task pause_async_then_resume_async_completes_full_cycle()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         await client.PauseAsync(AbortToken);
@@ -221,10 +338,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_idempotent_after_resume()
+    public async Task resume_async_is_idempotent_after_resume()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
 
         // when
         await client.PauseAsync(AbortToken);
@@ -235,10 +359,10 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_is_noop_after_disposal()
+    public async Task pause_async_is_noop_after_disposal()
     {
         // given
-        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider, _clientPool);
         await client.DisposeAsync();
 
         // when — should not throw
@@ -246,10 +370,10 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_is_noop_after_disposal()
+    public async Task resume_async_is_noop_after_disposal()
     {
         // given
-        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider, _clientPool);
         await client.DisposeAsync();
 
         // when — should not throw
@@ -257,10 +381,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task PauseAsync_and_ResumeAsync_should_toggle_the_startup_gate_before_processing_starts()
+    public async Task should_toggle_the_startup_gate_before_processing_starts_when_pause_async_and_resume_async()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
         var gateField = typeof(AzureServiceBusConsumerClient).GetField(
             "_pauseGate",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
@@ -292,10 +423,17 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ResumeAsync_should_not_mark_processing_as_started_before_listening_runs()
+    public async Task should_not_mark_processing_as_started_before_listening_runs_when_resume_async()
     {
         // given
-        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
         var startedField = typeof(AzureServiceBusConsumerClient).GetField(
             "_hasStartedProcessing",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly

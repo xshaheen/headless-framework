@@ -10,28 +10,28 @@ namespace Tests;
 public sealed class GeoConstantsTests
 {
     [Fact]
-    public void GoogleMapsSrid_should_be_4326()
+    public void should_be_4326_when_google_maps_srid()
     {
         // then
         GeoConstants.GoogleMapsSrid.Should().Be(4326);
     }
 
     [Fact]
-    public void UltraPrecision_should_be_floating()
+    public void should_be_floating_when_ultra_precision()
     {
         // then - PrecisionModel.Floating has unlimited precision (~1.1mm)
         GeoConstants.UltraPrecision.PrecisionModelType.Should().Be(PrecisionModels.Floating);
     }
 
     [Fact]
-    public void HighPrecision_should_be_floating_single()
+    public void should_be_floating_single_when_high_precision()
     {
         // then - PrecisionModel.FloatingSingle (~11cm accuracy)
         GeoConstants.HighPrecision.PrecisionModelType.Should().Be(PrecisionModels.FloatingSingle);
     }
 
     [Fact]
-    public void StreetLevelPrecision_should_be_100000()
+    public void should_be_100000_when_street_level_precision()
     {
         // then - Fixed precision with scale 100,000 (~1.1m accuracy)
         GeoConstants.StreetLevelPrecision.Scale.Should().Be(100_000);
@@ -39,49 +39,49 @@ public sealed class GeoConstantsTests
     }
 
     [Fact]
-    public void Around11CmDegrees_should_be_correct_value()
+    public void should_be_correct_value_when_around11_cm_degrees()
     {
         // then - ~11 cm at Equator
         GeoConstants.Around11CmDegrees.Should().Be(0.000001);
     }
 
     [Fact]
-    public void Around1MDegrees_should_be_correct_value()
+    public void should_be_correct_value_when_around1_m_degrees()
     {
         // then - ~1.1 m at Equator
         GeoConstants.Around1MDegrees.Should().Be(0.00001);
     }
 
     [Fact]
-    public void Around111MDegrees_should_be_correct_value()
+    public void should_be_correct_value_when_around111_m_degrees()
     {
         // then - ~111 m at Equator
         GeoConstants.Around111MDegrees.Should().Be(0.0001);
     }
 
     [Fact]
-    public void NtsGeometryServices_should_be_configured_with_correct_srid()
+    public void should_be_configured_with_correct_srid_when_nts_geometry_services()
     {
         // then
         GeoServices.NtsGeometryServices.DefaultSRID.Should().Be(4326);
     }
 
     [Fact]
-    public void NtsGeometryServices_should_use_high_precision()
+    public void should_use_high_precision_when_nts_geometry_services()
     {
         // then
         GeoServices.NtsGeometryServices.DefaultPrecisionModel.Should().BeSameAs(GeoConstants.HighPrecision);
     }
 
     [Fact]
-    public void GeometryFactory_should_have_correct_srid()
+    public void should_have_correct_srid_when_geometry_factory()
     {
         // then
         GeoServices.GeometryFactory.SRID.Should().Be(4326);
     }
 
     [Fact]
-    public void CreateNtsGeometryServices_should_return_new_instance()
+    public void should_return_new_instance_when_create_nts_geometry_services()
     {
         // when
         var services1 = GeoServices.CreateNtsGeometryServices();
@@ -93,7 +93,7 @@ public sealed class GeoConstantsTests
     }
 
     [Fact]
-    public void CreateGeoJsonConverter_should_return_converter_with_correct_settings()
+    public void should_return_converter_with_correct_settings_when_create_geo_json_converter()
     {
         // when
         var converter = GeoServices.CreateGeoJsonConverter();
@@ -105,7 +105,7 @@ public sealed class GeoConstantsTests
 
     [Fact]
     [SuppressMessage("Reliability", "CA1869:Cache and reuse 'JsonSerializerOptions' instances")]
-    public void CreateGeoJsonConverter_should_not_write_bbox()
+    public void should_not_write_bbox_when_create_geo_json_converter()
     {
         // given
         var converter = GeoServices.CreateGeoJsonConverter();

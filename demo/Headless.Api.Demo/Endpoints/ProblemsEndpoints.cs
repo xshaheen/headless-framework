@@ -1,5 +1,5 @@
 using FluentValidation;
-using Headless.Api.Abstractions;
+using Headless.Abstractions;
 using Headless.Exceptions;
 using Headless.Primitives;
 

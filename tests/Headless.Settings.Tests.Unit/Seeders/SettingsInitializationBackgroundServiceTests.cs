@@ -13,10 +13,12 @@ namespace Tests.Seeders;
 
 public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 {
+#pragma warning disable CA2213 // Disposable fields should be disposed
     private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
     private readonly IServiceScope _serviceScope = Substitute.For<IServiceScope>();
     private readonly IServiceProvider _serviceProvider = Substitute.For<IServiceProvider>();
     private readonly IDynamicSettingDefinitionStore _store = Substitute.For<IDynamicSettingDefinitionStore>();
+#pragma warning restore CA2213
     private readonly FakeTimeProvider _timeProvider = new();
 
     public SettingsInitializationBackgroundServiceTests()

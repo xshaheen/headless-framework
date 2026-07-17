@@ -213,7 +213,10 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     #region Core Overrides
 
     /// <summary>Returns the range formatted as <c>{From}|{To}</c> using the invariant culture.</summary>
-    public override string ToString() => ToString(CultureInfo.InvariantCulture);
+    public override string ToString()
+    {
+        return ToString(CultureInfo.InvariantCulture);
+    }
 
     /// <summary>Returns the range formatted as <c>{From}|{To}</c> using the given format provider.</summary>
     /// <param name="formatProvider">The format provider used to format the bounds.</param>
@@ -227,7 +230,10 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <summary>Deconstructs the range into its lower and upper bounds.</summary>
     /// <param name="start">Receives the <see cref="From"/> bound.</param>
     /// <param name="end">Receives the <see cref="To"/> bound.</param>
-    public void Deconstruct(out T? start, out T? end) => (start, end) = (From, To);
+    public void Deconstruct(out T? start, out T? end)
+    {
+        (start, end) = (From, To);
+    }
 
     /// <summary>Compares this range to <paramref name="other"/>, ordering by lower bound and then by upper bound.</summary>
     /// <param name="other">The range to compare with.</param>

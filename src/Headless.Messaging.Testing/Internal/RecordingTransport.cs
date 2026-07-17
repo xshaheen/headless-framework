@@ -30,7 +30,10 @@ internal sealed class RecordingBusTransport(
         return result;
     }
 
-    public ValueTask DisposeAsync() => inner.DisposeAsync();
+    public ValueTask DisposeAsync()
+    {
+        return inner.DisposeAsync();
+    }
 }
 
 internal sealed class RecordingQueueTransport(
@@ -56,7 +59,10 @@ internal sealed class RecordingQueueTransport(
         return result;
     }
 
-    public ValueTask DisposeAsync() => inner.DisposeAsync();
+    public ValueTask DisposeAsync()
+    {
+        return inner.DisposeAsync();
+    }
 }
 
 internal static class RecordingTransportRecorder
@@ -126,8 +132,9 @@ internal static class RecordingTransportRecorder
         store.Record(recorded, MessageObservationType.Published);
     }
 
-    private static Type? _ResolveType(string typeName) =>
-        _TypeCache.GetOrAdd(
+    private static Type? _ResolveType(string typeName)
+    {
+        return _TypeCache.GetOrAdd(
             typeName,
             static name =>
             {
@@ -166,6 +173,7 @@ internal static class RecordingTransportRecorder
                 return null;
             }
         );
+    }
 
     private sealed class SuppressionScope : IDisposable
     {

@@ -12,7 +12,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Helpers;
 
 namespace Tests;
 
@@ -26,7 +25,7 @@ public sealed class DispatcherTests : TestBase
         .GetRequiredService<IServiceScopeFactory>();
 
     [Fact]
-    public async Task EnqueueToPublish_ShouldInvokeSend_WhenParallelSendDisabled()
+    public async Task should_invoke_send_when_enqueue_to_publish_parallel_send_disabled()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -64,7 +63,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToPublish_ShouldBeThreadSafe_WhenParallelSendDisabled()
+    public async Task should_be_thread_safe_when_enqueue_to_publish_parallel_send_disabled()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -106,7 +105,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToScheduler_ShouldBeThreadSafe_WhenDelayLessThenMinute()
+    public async Task should_be_thread_safe_when_enqueue_to_scheduler_delay_less_then_minute()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -165,7 +164,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToScheduler_ShouldSendMessagesInCorrectOrder_WhenEarlierMessageIsSentLater()
+    public async Task should_send_messages_in_correct_order_when_enqueue_to_scheduler_earlier_message_is_sent_later()
     {
         // given — previously this test slept a flat 1.2 s and asserted, which flaked ~50% under
         // full-suite parallel load when thread-pool starvation slowed the queue's polling loop
@@ -240,7 +239,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToScheduler_ShouldBeThreadSafe_WhenDelayLessThenMinuteAndParallelSendEnabled()
+    public async Task should_be_thread_safe_when_enqueue_to_scheduler_delay_less_then_minute_and_parallel_send_enabled()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -299,7 +298,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToScheduler_ShouldSendMessagesInCorrectOrder_WhenParallelSendEnabled()
+    public async Task should_send_messages_in_correct_order_when_enqueue_to_scheduler_parallel_send_enabled()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -361,7 +360,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task EnqueueToScheduler_ShouldNotQueueMessage_WhenStateChangeIsRejected()
+    public async Task should_not_queue_message_when_enqueue_to_scheduler_state_change_is_rejected()
     {
         // given
         var sender = new TestThreadSafeMessageSender();
@@ -563,7 +562,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task enqueue_after_dispose_should_not_throw_invalid_operation_exception()
+    public async Task should_not_throw_invalid_operation_exception_when_enqueue_after_dispose()
     {
         // #5 — after DisposeAsync, `_tasksCts` is disposed (and remains non-null — DisposeAsync only
         // disposes the CTS and flips `_disposed`). Two distinct broken contracts existed pre-fix:
@@ -613,7 +612,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task write_to_channel_post_dispose_with_full_channel_should_unwind_as_cancellation()
+    public async Task should_unwind_as_cancellation_when_write_to_channel_post_dispose_with_full_channel()
     {
         // Companion to enqueue_after_dispose_*: the previous test only proves the early `_tasksCts is
         // null || _disposed` guard. Force the channel-full branch by pre-filling the channel before
@@ -658,7 +657,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_flush_queued_scheduler_ids_back_to_delayed()
+    public async Task should_flush_queued_scheduler_ids_back_to_delayed_when_dispose()
     {
         // #610 regression — DisposeAsync must drain the scheduler loop, then hand every id still
         // sitting in the in-process scheduler queue back to storage as Delayed. Losing this flush
@@ -712,7 +711,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_complete_when_scheduler_flush_fails()
+    public async Task should_complete_when_dispose_scheduler_flush_fails()
     {
         // The shutdown flush writes through IDataStorage; a dead storage must not turn DisposeAsync
         // into a throw — hosts dispose the dispatcher during shutdown, and a propagated storage
@@ -730,7 +729,7 @@ public sealed class DispatcherTests : TestBase
             .Returns(new ValueTask<bool>(true));
         _storage
             .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
-            .Returns<ValueTask>(_ => throw new InvalidOperationException("storage down"));
+            .Returns(_ => throw new InvalidOperationException("storage down"));
 
         await using var dispatcher = new Dispatcher(
             _logger,
@@ -759,7 +758,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_bound_scheduler_flush_by_remaining_shutdown_budget()
+    public async Task should_bound_scheduler_flush_by_remaining_shutdown_budget_when_dispose()
     {
         var flushStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFlush = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -809,7 +808,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_wait_for_inflight_processing_loop()
+    public async Task should_wait_for_inflight_processing_loop_when_dispose()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -856,7 +855,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_complete_via_timeout_path_when_handler_never_observes_cancellation()
+    public async Task should_complete_via_timeout_path_when_dispose_handler_never_observes_cancellation()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -912,14 +911,20 @@ public sealed class DispatcherTests : TestBase
 
         _logger
             .ReceivedCalls()
-            .Any(call =>
-                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
-                && call.GetArguments() is { Length: >= 2 } args
-                && args[1] is EventId eventId
-                && string.Equals(eventId.Name, "ProcessorStopFailed", StringComparison.Ordinal)
-            )
             .Should()
-            .BeTrue("the timeout path logs ProcessorStopFailed");
+            .Contain(
+                call =>
+                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                    && call.GetArguments().Length >= 2
+                    && call.GetArguments()[1] != null
+                    && call.GetArguments()[1]!.GetType() == typeof(EventId)
+                    && string.Equals(
+                        ((EventId)call.GetArguments()[1]!).Name,
+                        "ProcessorStopFailed",
+                        StringComparison.Ordinal
+                    ),
+                "the timeout path logs ProcessorStopFailed"
+            );
 
         // A reentrant dispose uses only the caller's remaining shared budget, not the full configured
         // ShutdownTimeout again. Eventual cleanup remains fault-observed after this join times out.
@@ -933,7 +938,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task start_should_throw_when_dispose_is_still_draining()
+    public async Task should_throw_when_start_dispose_is_still_draining()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -985,7 +990,10 @@ public sealed class DispatcherTests : TestBase
         await dispose;
     }
 
-    private static MediumMessage _CreateTestMessage(int storageId) => _CreateTestMessage(_StorageGuid(storageId));
+    private static MediumMessage _CreateTestMessage(int storageId)
+    {
+        return _CreateTestMessage(_StorageGuid(storageId));
+    }
 
     private static MediumMessage _CreateTestMessage(Guid? storageId = null)
     {
@@ -1005,7 +1013,10 @@ public sealed class DispatcherTests : TestBase
         };
     }
 
-    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    private static Guid _StorageGuid(int value)
+    {
+        return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
 
     /// <summary>
     /// Captures <see cref="IHostApplicationLifetime.StopApplication"/> calls so tests can assert

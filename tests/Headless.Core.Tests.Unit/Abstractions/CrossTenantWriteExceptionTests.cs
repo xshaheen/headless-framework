@@ -7,7 +7,7 @@ namespace Tests.Abstractions;
 public sealed class CrossTenantWriteExceptionTests
 {
     [Fact]
-    public void constructor_should_set_entity_type_operation_and_message()
+    public void should_set_entity_type_operation_and_message_when_constructor()
     {
         // when
         var ex = new CrossTenantWriteException("Order", "Add");
@@ -20,7 +20,7 @@ public sealed class CrossTenantWriteExceptionTests
     }
 
     [Fact]
-    public void constructor_with_inner_exception_should_preserve_the_cause()
+    public void should_preserve_the_cause_when_constructor_with_inner_exception()
     {
         // given
         var inner = new InvalidOperationException("boom");

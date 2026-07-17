@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Api.Idempotency.Resources;
 using Headless.Caching;
 using Headless.Constants;
@@ -745,8 +744,9 @@ internal sealed partial class IdempotencyMiddleware(
     /// and the corresponding constant is an interned string, so a request arriving with any
     /// casing of a known method maps to the same constant reference.
     /// </summary>
-    private static string _CanonicalMethod(string method) =>
-        method switch
+    private static string _CanonicalMethod(string method)
+    {
+        return method switch
         {
             _ when HttpMethods.IsPost(method) => HttpMethods.Post,
             _ when HttpMethods.IsPut(method) => HttpMethods.Put,
@@ -759,6 +759,7 @@ internal sealed partial class IdempotencyMiddleware(
             _ when HttpMethods.IsConnect(method) => HttpMethods.Connect,
             _ => method.ToUpperInvariant(),
         };
+    }
 
     /// <summary>
     /// Validates an idempotency-key header value: single-valued, length &lt;= 255, no control

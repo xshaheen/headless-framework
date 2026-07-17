@@ -112,8 +112,12 @@ internal sealed class PostgreSqlReadAuditLog<TContext>(
         NpgsqlDataReader reader,
         int ordinal,
         CancellationToken cancellationToken
-    ) =>
-        await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(ordinal);
+    )
+    {
+        return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetString(ordinal);
+    }
 
     private async Task<T?> _DeserializeAsync<T>(
         NpgsqlDataReader reader,
@@ -129,5 +133,8 @@ internal sealed class PostgreSqlReadAuditLog<TContext>(
         return serializer.Deserialize<T>(reader.GetString(ordinal));
     }
 
-    private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
+    private static NpgsqlParameter _Param(string name, object? value)
+    {
+        return new(name, value ?? DBNull.Value);
+    }
 }

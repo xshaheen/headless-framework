@@ -12,7 +12,7 @@ public sealed class MonthTests
     [InlineData(12)]
     [InlineData(5)]
     [InlineData(10)]
-    public void validate_should_return_ok_for_valid_month(int validMonth)
+    public void should_return_ok_for_valid_month_when_validate(int validMonth)
     {
         // when
         var result = Month.Validate(validMonth);
@@ -26,7 +26,7 @@ public sealed class MonthTests
     [InlineData(-1)]
     [InlineData(13)]
     [InlineData(100)]
-    public void validate_should_return_error_for_invalid_month_less_than_1_or_greater_than_12(int invalidMonth)
+    public void should_return_error_for_invalid_month_less_than_1_or_greater_than_12_when_validate(int invalidMonth)
     {
         // when
         var result = Month.Validate(invalidMonth);
@@ -40,7 +40,7 @@ public sealed class MonthTests
     [Theory]
     [InlineData(0)]
     [InlineData(13)]
-    public void ctor_should_throw_invalid_primitive_value_exception_for_out_of_range_month(int invalidMonth)
+    public void should_throw_invalid_primitive_value_exception_for_out_of_range_month_when_ctor(int invalidMonth)
     {
         // when
         var act = () => new Month(invalidMonth);
@@ -50,7 +50,7 @@ public sealed class MonthTests
     }
 
     [Fact]
-    public void json_round_trip_should_preserve_month_value()
+    public void should_preserve_month_value_when_json_round_trip()
     {
         // given
         var month = new Month(5);
@@ -67,7 +67,7 @@ public sealed class MonthTests
     [Theory]
     [InlineData("0")]
     [InlineData("13")]
-    public void json_deserialize_should_throw_json_exception_for_out_of_range_month(string json)
+    public void should_throw_json_exception_for_out_of_range_month_when_json_deserialize(string json)
     {
         // when - untrusted input must surface a clean JsonException, not a leaked domain exception
         var act = () => JsonSerializer.Deserialize<Month>(json);

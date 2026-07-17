@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Mime;
-using System.Text;
 using Azure.Storage.Blobs;
 using Demo.Services;
 using Headless.Tus;
 using Microsoft.Extensions.Azure;
 using Microsoft.Net.Http.Headers;
 using tusdotnet;
-using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Models.Expiration;
 
@@ -85,7 +83,7 @@ api.MapGet(
     "/files/{fileId}/download",
     async (string fileId, TusAzureStore store, HttpResponse response, CancellationToken cancellationToken) =>
     {
-        var file = await ((ITusReadableStore)store).GetFileAsync(fileId, cancellationToken);
+        var file = await store.GetFileAsync(fileId, cancellationToken);
 
         if (file is null)
         {

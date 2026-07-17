@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class ComparableTypesTests
 {
     [Fact]
-    public void is_less_than_or_equal_to_should_return_argument_when_less_than_or_equal()
+    public void should_return_argument_when_is_less_than_or_equal_to_less_than_or_equal()
     {
         // given
         InputsTestArgument inputsTestArgument = new();
@@ -20,7 +20,7 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_less_than_or_equal_to_should_throw_argument_out_of_range_exception_when_greater_than()
+    public void should_throw_argument_out_of_range_exception_when_is_less_than_or_equal_to_greater_than()
     {
         // given
         const int argument = 15;
@@ -44,14 +44,14 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_greater_than_or_equal_to_should_return_argument_when_greater_than_or_equal()
+    public void should_return_argument_when_is_greater_than_or_equal_to_greater_than_or_equal()
     {
         // when & then
         Argument.IsGreaterThanOrEqualTo(10, 5).Should().Be(10);
     }
 
     [Fact]
-    public void is_greater_than_or_equal_to_should_throw_argument_out_of_range_exception_when_less_than()
+    public void should_throw_argument_out_of_range_exception_when_is_greater_than_or_equal_to_less_than()
     {
         // given
         const int argument = 3;
@@ -74,7 +74,7 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_less_than_should_return_argument_when_less_than()
+    public void should_return_argument_when_is_less_than_less_than()
     {
         // given
         InputsTestArgument argument = new()
@@ -93,7 +93,7 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_less_than_should_throw_argument_out_of_range_exception_when_greater_than_or_equal()
+    public void should_throw_argument_out_of_range_exception_when_is_less_than_greater_than_or_equal()
     {
         // given
         const int argument = 5;
@@ -118,14 +118,14 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_greater_than_should_return_argument_when_greater_than()
+    public void should_return_argument_when_is_greater_than_greater_than()
     {
         // when
         Argument.IsGreaterThan(10, 5).Should().Be(10);
     }
 
     [Fact]
-    public void is_greater_than_should_throw_argument_out_of_range_exception_when_less_than_or()
+    public void should_throw_argument_out_of_range_exception_when_is_greater_than_less_than_or()
     {
         // given
         const int argument = 3;
@@ -150,7 +150,7 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void range_should_throw_argument_exception_when_minimum_is_greater_than_maximum()
+    public void should_throw_argument_exception_when_range_minimum_is_greater_than_maximum()
     {
         // given
         const int minimumValue = 10;
@@ -176,7 +176,7 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void range_should_not_throw_when_minimum_is_less_than_maximum()
+    public void should_not_throw_when_range_minimum_is_less_than_maximum()
     {
         // given
         const int minimumValue = 5;
@@ -187,14 +187,14 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_inclusive_between_should_return_argument_when_in_range()
+    public void should_return_argument_when_is_inclusive_between_in_range()
     {
         // when
         Argument.IsInclusiveBetween(5, 3, 10).Should().Be(5);
     }
 
     [Fact]
-    public void is_inclusive_between_should_throw_argument_out_of_range_exception_when_out_of_range()
+    public void should_throw_argument_out_of_range_exception_when_is_inclusive_between_out_of_range()
     {
         // given
         const int argument = 5;
@@ -222,14 +222,14 @@ public sealed class ComparableTypesTests
     }
 
     [Fact]
-    public void is_exclusive_between_should_return_argument_when_in_range()
+    public void should_return_argument_when_is_exclusive_between_in_range()
     {
         // when & then
         Argument.IsExclusiveBetween(5, 3, 10).Should().Be(5);
     }
 
     [Fact]
-    public void is_exclusive_between_should_throw_argument_out_of_range_exception_when_out_of_range()
+    public void should_throw_argument_out_of_range_exception_when_is_exclusive_between_out_of_range()
     {
         // given
         const int argument = 1;

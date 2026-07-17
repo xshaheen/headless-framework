@@ -4,7 +4,7 @@ using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Tests;
+namespace Tests.RegularLocks;
 
 public sealed class CompositeDistributedLeaseTests : TestBase
 {
@@ -14,8 +14,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     [Fact]
     public async Task should_project_composite_metadata()
     {
-        var first = new TestLease("a", "lease-a") { RenewalCount = 4 };
-        var second = new TestLease("b", "lease-b") { RenewalCount = 2 };
+        await using var first = new TestLease("a", "lease-a") { RenewalCount = 4 };
+        await using var second = new TestLease("b", "lease-b") { RenewalCount = 2 };
 
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
@@ -35,8 +35,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     {
         using var firstLost = new CancellationTokenSource();
         using var secondLost = new CancellationTokenSource();
-        var first = new TestLease("a", "lease-a", firstLost.Token);
-        var second = new TestLease("b", "lease-b", secondLost.Token);
+        await using var first = new TestLease("a", "lease-a", firstLost.Token);
+        await using var second = new TestLease("b", "lease-b", secondLost.Token);
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         sut.CanObserveLoss.Should().BeTrue();
@@ -69,8 +69,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         // duration and is still held. Reporting `false` would mean "already lost -- nothing to release" under the
         // IDistributedLease contract, and a caller acting on that would orphan "a" until its TTL expired. Throwing
         // names the lost child and cannot be silently ignored.
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b") { Renew = static (_, _) => Task.FromResult(false) };
+        await using var first = new TestLease("a", "lease-a");
+        await using var second = new TestLease("b", "lease-b") { Renew = static (_, _) => Task.FromResult(false) };
         await using var sut = _Create([first, second], releaseOnDispose: false);
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -90,8 +90,14 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     {
         var firstError = new InvalidOperationException("first");
         var secondError = new ApplicationException("second");
-        var first = new TestLease("a", "lease-a") { Renew = (_, _) => Task.FromException<bool>(firstError) };
-        var second = new TestLease("b", "lease-b") { Renew = (_, _) => Task.FromException<bool>(secondError) };
+        await using var first = new TestLease("a", "lease-a")
+        {
+            Renew = (_, _) => Task.FromException<bool>(firstError),
+        };
+        await using var second = new TestLease("b", "lease-b")
+        {
+            Renew = (_, _) => Task.FromException<bool>(secondError),
+        };
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var act = async () => await sut.RenewAsync(cancellationToken: AbortToken);
@@ -116,8 +122,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             return true;
         };
-        var first = new TestLease("a", "lease-a") { Renew = renew };
-        var second = new TestLease("b", "lease-b") { Renew = renew };
+        await using var first = new TestLease("a", "lease-a") { Renew = renew };
+        await using var second = new TestLease("b", "lease-b") { Renew = renew };
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var renewal = sut.RenewAsync(cancellationToken: cancellation.Token);
@@ -135,7 +141,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         var calls = new List<string>();
         var firstAttempt = true;
         var firstError = new InvalidOperationException("release-a");
-        var first = new TestLease("a", "lease-a")
+
+        await using var first = new TestLease("a", "lease-a")
         {
             Release = () =>
             {
@@ -150,7 +157,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
                 return Task.CompletedTask;
             },
         };
-        var second = new TestLease("b", "lease-b")
+
+        await using var second = new TestLease("b", "lease-b")
         {
             Release = () =>
             {
@@ -158,6 +166,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
                 return Task.CompletedTask;
             },
         };
+
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var firstRelease = async () => await sut.ReleaseAsync();
@@ -184,8 +193,9 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task dispose_should_not_throw_but_still_attempt_every_child_when_cleanup_fails()
+    public async Task should_not_throw_but_still_attempt_every_child_when_dispose_cleanup_fails()
     {
+#pragma warning disable CA2000 // This test deliberately verifies the composite's failed child-disposal behavior.
         // Disposal must never throw, matching every other IDistributedLease. `await using` lowers to try/finally,
         // and an exception from a finally block REPLACES the one already in flight — so throwing here would destroy
         // the caller's real exception whenever a release happened to fail. The failure is logged instead, and
@@ -193,7 +203,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         var releaseError = new InvalidOperationException("release-b");
         var disposeError = new ApplicationException("dispose-a");
         var first = new TestLease("a", "lease-a") { Dispose = () => ValueTask.FromException(disposeError) };
-        var second = new TestLease("b", "lease-b") { Release = () => Task.FromException(releaseError) };
+        await using var second = new TestLease("b", "lease-b") { Release = () => Task.FromException(releaseError) };
         var sut = _Create([first, second], releaseOnDispose: true);
 
         var act = async () => await sut.DisposeAsync();
@@ -203,10 +213,11 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         second.ReleaseCalls.Should().Be(1);
         first.DisposeCalls.Should().Be(1);
         second.DisposeCalls.Should().Be(1);
+#pragma warning restore CA2000
     }
 
     [Fact]
-    public async Task await_using_should_preserve_the_callers_exception_when_cleanup_fails()
+    public async Task should_preserve_the_callers_exception_when_await_using_cleanup_fails()
     {
         // The regression this guards: a caller whose body throws a domain exception, whose lock release then hits a
         // storage blip, must still see their own exception — not the storage one. `await using` puts DisposeAsync in
@@ -214,8 +225,9 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         // keyed on the domain exception would never run.
         var callerError = new InvalidOperationException("insufficient funds");
         var releaseError = new ApplicationException("redis timed out");
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b") { Release = () => Task.FromException(releaseError) };
+
+        await using var first = new TestLease("a", "lease-a");
+        await using var second = new TestLease("b", "lease-b") { Release = () => Task.FromException(releaseError) };
 
         var act = async () =>
         {
@@ -235,7 +247,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseCalls = 0;
-        var first = new TestLease("a", "lease-a")
+
+        await using var first = new TestLease("a", "lease-a")
         {
             Renew = async (_, _) =>
             {
@@ -249,7 +262,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
                 return Task.CompletedTask;
             },
         };
-        var second = new TestLease("b", "lease-b");
+
+        await using var second = new TestLease("b", "lease-b");
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var renewal = sut.RenewAsync(cancellationToken: AbortToken);
@@ -270,8 +284,9 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     {
         var disposeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowDispose = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b")
+        await using var first = new TestLease("a", "lease-a");
+
+        await using var second = new TestLease("b", "lease-b")
         {
             Dispose = async () =>
             {
@@ -279,6 +294,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
                 await allowDispose.Task.ConfigureAwait(false);
             },
         };
+
         var sut = _Create([first, second], releaseOnDispose: false);
 
         var firstDispose = sut.DisposeAsync().AsTask();
@@ -296,8 +312,8 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     {
         using var firstLostSource = new CancellationTokenSource();
         using var secondLostSource = new CancellationTokenSource();
-        var first = new TestLease("a", "lease-a", firstLostSource.Token);
-        var second = new TestLease("b", "lease-b", secondLostSource.Token);
+        await using var first = new TestLease("a", "lease-a", firstLostSource.Token);
+        await using var second = new TestLease("b", "lease-b", secondLostSource.Token);
         var sut = _Create([first, second], releaseOnDispose: false);
         var lostToken = sut.LostToken;
 
@@ -318,11 +334,11 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_extensions_should_fan_out_without_touching_composite_lifecycle()
+    public async Task should_fan_out_without_touching_composite_lifecycle_when_provider_extensions()
     {
         var provider = Substitute.For<IDistributedLock>();
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b");
+        await using var first = new TestLease("a", "lease-a");
+        await using var second = new TestLease("b", "lease-b");
         await using var sut = _Create([first, second], releaseOnDispose: false);
         var ttl = TimeSpan.FromMinutes(7);
         provider.RenewAsync("a", "lease-a", ttl, AbortToken).Returns(true);
@@ -347,11 +363,11 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_release_should_surface_pre_cancelled_caller_token_when_all_children_cancel()
+    public async Task should_surface_pre_cancelled_caller_token_when_provider_release_all_children_cancel()
     {
         var provider = Substitute.For<IDistributedLock>();
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b");
+        await using var first = new TestLease("a", "lease-a");
+        await using var second = new TestLease("b", "lease-b");
         await using var sut = _Create([first, second], releaseOnDispose: false);
         using var callerSource = new CancellationTokenSource();
         await callerSource.CancelAsync();
@@ -370,11 +386,11 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     }
 
     [Fact]
-    public async Task provider_release_should_surface_mid_flight_caller_cancellation_when_all_children_cancel()
+    public async Task should_surface_mid_flight_caller_cancellation_when_provider_release_all_children_cancel()
     {
         var provider = Substitute.For<IDistributedLock>();
-        var first = new TestLease("a", "lease-a");
-        var second = new TestLease("b", "lease-b");
+        await using var first = new TestLease("a", "lease-a");
+        await using var second = new TestLease("b", "lease-b");
         await using var sut = _Create([first, second], releaseOnDispose: false);
         using var callerSource = new CancellationTokenSource();
         var callerToken = callerSource.Token;
@@ -384,7 +400,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         {
             calls.Add(resource);
 
-            if (resource == "b")
+            if (string.Equals(resource, "b", StringComparison.Ordinal))
             {
                 await callerSource.CancelAsync();
             }
@@ -411,7 +427,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
     {
         return new CompositeDistributedLease(
             children,
-            string.Join("+", children.Select(static child => child.Resource)),
+            string.Join('+', children.Select(static child => child.Resource)),
             _AcquiredAt,
             _Waited,
             releaseOnDispose,

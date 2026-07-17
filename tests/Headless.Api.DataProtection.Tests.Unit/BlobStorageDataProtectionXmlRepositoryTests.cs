@@ -106,7 +106,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_load_elements_from_DataProtection_container()
+    public async Task should_load_elements_from_data_protection_container()
     {
         var storage = Substitute.For<IBlobStorage>();
         _SetupEmptyStorage(storage);
@@ -298,7 +298,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_upload_to_DataProtection_container()
+    public async Task should_upload_to_data_protection_container()
     {
         var storage = Substitute.For<IBlobStorage>();
         _SetupUpload(storage);
@@ -318,7 +318,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_ensure_DataProtection_container_before_upload_when_manager_is_available()
+    public async Task should_ensure_data_protection_container_before_upload_when_manager_is_available()
     {
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
@@ -388,7 +388,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public void should_retry_on_IOException()
+    public void should_retry_on_io_exception()
     {
         var storage = Substitute.For<IBlobStorage>();
         var callCount = 0;
@@ -597,7 +597,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_exclude_write_probe_sentinel_from_GetAllElements()
+    public async Task should_exclude_write_probe_sentinel_from_get_all_elements()
     {
         // A crash between the probe's upload and delete leaves the sentinel behind; the key-ring load must
         // neither read it nor warn about it.
@@ -652,7 +652,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     #region Thread Safety Tests
 
     [Fact]
-    public async Task should_handle_concurrent_GetAllElements_calls()
+    public async Task should_handle_concurrent_get_all_elements_calls()
     {
         var storage = Substitute.For<IBlobStorage>();
         _SetupStorageWithBlobs(storage, [_CreateBlobInfo("key1.xml")]);
@@ -673,7 +673,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_concurrent_StoreElement_calls()
+    public async Task should_handle_concurrent_store_element_calls()
     {
         var storage = Substitute.For<IBlobStorage>();
         _SetupUpload(storage);
