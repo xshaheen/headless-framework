@@ -10,6 +10,149 @@ namespace Tests;
 public sealed class JobsTaskSchedulerTests : TestBase
 {
     [Fact]
+    public async Task queue_async_runs_user_work_on_thread_pool_without_a_synchronization_context()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool? startedOnThreadPool = null;
+        SynchronizationContext? contextBeforeAwait = null;
+        SynchronizationContext? contextAfterAwait = null;
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                startedOnThreadPool = Thread.CurrentThread.IsThreadPoolThread;
+                contextBeforeAwait = SynchronizationContext.Current;
+                await Task.Yield();
+                contextAfterAwait = SynchronizationContext.Current;
+                completed.TrySetResult();
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        startedOnThreadPool.Should().BeTrue();
+        contextBeforeAwait.Should().BeNull();
+        contextAfterAwait.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task queue_async_allows_nested_queueing_without_exceeding_concurrency()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var nestedCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                await scheduler.QueueAsync(
+                    _ =>
+                    {
+                        nestedCompleted.TrySetResult();
+                        return Task.CompletedTask;
+                    },
+                    JobPriority.Normal,
+                    AbortToken
+                );
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        await nestedCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task queue_async_isolates_failed_work_from_the_next_item()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var nextCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            static _ => Task.FromException(new InvalidOperationException("Expected test failure.")),
+            JobPriority.Normal,
+            AbortToken
+        );
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                nextCompleted.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        await nextCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task long_running_work_keeps_its_dedicated_thread()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool? startedOnThreadPool = null;
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                startedOnThreadPool = Thread.CurrentThread.IsThreadPoolThread;
+                completed.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+        startedOnThreadPool.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task dispose_waits_for_active_long_running_work()
+    {
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        var dispose = scheduler.DisposeAsync().AsTask();
+
+        (await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken))).Should().NotBe(dispose);
+
+        release.TrySetResult();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
+    public async Task retired_worker_slots_restart_to_full_concurrency()
+    {
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 3,
+            idleWorkerTimeout: TimeSpan.FromMilliseconds(25)
+        );
+
+        await _RunBlockedWaveAsync(scheduler, workerCount: 3);
+        await _WaitUntilAsync(() => scheduler.ActiveWorkers <= 1, TimeSpan.FromSeconds(10));
+        await _RunBlockedWaveAsync(scheduler, workerCount: 3);
+    }
+
+    [Fact]
     public async Task wait_for_running_tasks_async_waits_for_active_async_work()
     {
         await using var scheduler = new JobsTaskScheduler(
@@ -333,6 +476,49 @@ public sealed class JobsTaskSchedulerTests : TestBase
             {
                 return;
             }
+        }
+    }
+
+    private static async Task _RunBlockedWaveAsync(JobsTaskScheduler scheduler, int workerCount)
+    {
+        var allStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+
+        for (var i = 0; i < workerCount; i++)
+        {
+            await scheduler.QueueAsync(
+                async _ =>
+                {
+                    if (Interlocked.Increment(ref started) == workerCount)
+                    {
+                        allStarted.TrySetResult();
+                    }
+
+                    await release.Task.ConfigureAwait(false);
+                },
+                JobPriority.Normal,
+                AbortToken
+            );
+        }
+
+        await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        scheduler.ActiveWorkers.Should().Be(workerCount);
+        release.TrySetResult();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = TimeProvider.System.GetUtcNow() + timeout;
+        while (!condition())
+        {
+            if (TimeProvider.System.GetUtcNow() >= deadline)
+            {
+                throw new TimeoutException("Condition was not met before the timeout.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
         }
     }
 }
