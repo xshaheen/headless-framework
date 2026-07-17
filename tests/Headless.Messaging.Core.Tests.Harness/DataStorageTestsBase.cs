@@ -707,6 +707,58 @@ public abstract class DataStorageTestsBase : TestBase
         scheduledMessages.Should().NotBeNull();
     }
 
+    public virtual async Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        var now = TimeProvider.GetUtcNow();
+        var later = await storage.StoreMessageAsync(
+            "delayed-claim-later",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = now.AddSeconds(30),
+            },
+            cancellationToken: AbortToken
+        );
+        var earlier = await storage.StoreMessageAsync(
+            "delayed-claim-earlier",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = now.AddSeconds(20),
+            },
+            cancellationToken: AbortToken
+        );
+        later.ExpiresAt = now.AddSeconds(30);
+        earlier.ExpiresAt = now.AddSeconds(20);
+        (await storage.ChangePublishStateAsync(later, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+        (await storage.ChangePublishStateAsync(earlier, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+
+        claimed.Select(message => message.StorageId).Should().Equal(earlier.StorageId, later.StorageId);
+        claimed.Should().AllSatisfy(message => message.LockedUntil.Should().NotBeNull());
+        (await claimStorage.ClaimDelayedMessagesAsync(AbortToken))
+            .Should()
+            .BeEmpty("the live claim lease must fence an immediate re-poll");
+    }
+
     public virtual async Task should_store_message_with_transaction()
     {
         // given

@@ -5,5 +5,10 @@ using Headless.Messaging.Benchmarks;
 using Headless.Messaging.Benchmarks.Scenarios;
 
 BenchmarkSwitcher
-    .FromTypes([typeof(ConsumeDispatchBenchmarks), typeof(PublishDispatchBenchmarks), typeof(MessageHeaderBenchmarks)])
+    .FromTypes([
+        typeof(ConsumeDispatchBenchmarks),
+        typeof(PublishDispatchBenchmarks),
+        typeof(MessageHeaderBenchmarks),
+        typeof(DelayedSchedulingBenchmarks),
+    ])
     .Run(args, BenchmarkRunConfig.Create());

@@ -19,7 +19,7 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage
+) : IDataStorage, IDelayedMessageClaimStorage
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 

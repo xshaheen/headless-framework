@@ -16,6 +16,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Atomic Delayed Claim SPI**: `IDelayedMessageClaimStorage` lets capable providers claim, lease, and transition a bounded delayed batch before Core enqueues committed winners; legacy providers retain the callback path
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required

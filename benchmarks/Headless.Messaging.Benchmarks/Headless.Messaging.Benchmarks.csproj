@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
   </ItemGroup>
 </Project>

@@ -406,15 +406,14 @@ public sealed class DispatcherTests : TestBase
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
         using var hostCts = new CancellationTokenSource();
         using var operationCts = new CancellationTokenSource();
-        _storage
-            .ChangePublishStateAsync(
-                Arg.Any<MediumMessage>(),
-                StatusName.Delayed,
-                Arg.Any<object?>(),
-                Arg.Any<DateTimeOffset?>(),
-                cancellationToken: operationCts.Token
-            )
-            .Returns(new ValueTask<bool>(true));
+        var storageWrite = _storage.ChangePublishStateAsync(
+            Arg.Any<MediumMessage>(),
+            StatusName.Delayed,
+            Arg.Any<object?>(),
+            Arg.Any<DateTimeOffset?>(),
+            cancellationToken: operationCts.Token
+        );
+        storageWrite.Returns(new ValueTask<bool>(true));
 
         await using var dispatcher = new Dispatcher(
             _logger,

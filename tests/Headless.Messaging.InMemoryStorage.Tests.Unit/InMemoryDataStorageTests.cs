@@ -266,6 +266,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        return base.should_claim_delayed_messages_atomically_when_capability_supported();
+    }
+
+    [Fact]
     public override Task should_store_message_with_transaction()
     {
         return base.should_store_message_with_transaction();
