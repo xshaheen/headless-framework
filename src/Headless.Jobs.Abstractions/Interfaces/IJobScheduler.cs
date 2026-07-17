@@ -20,6 +20,14 @@ public interface IJobScheduler
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Durably pauses one cron definition and prevents pending occurrences from starting.</summary>
+    /// <returns><see langword="true"/> only when this call changes the definition to paused.</returns>
+    Task<bool> PauseCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Durably resumes one cron definition and schedules exactly its first occurrence after resume time.</summary>
+    /// <returns><see langword="true"/> only when this call changes the definition to active.</returns>
+    Task<bool> ResumeCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
+
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>
     Task<Guid> EnqueueAsync<TArgs>(
         TArgs request,

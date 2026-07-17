@@ -18,6 +18,53 @@ public sealed class InternalJobsManagerTests : TestBase
     public sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
+    public async Task cron_control_notifies_only_accepted_transitions_and_resume_uses_strict_next_utc_occurrence()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var now = new DateTimeOffset(2026, 7, 17, 10, 30, 0, TimeSpan.Zero);
+        var timeProvider = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(now);
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            timeProvider,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+        );
+        var definition = new FakeCronJob
+        {
+            Id = Guid.NewGuid(),
+            Function = "fn",
+            Expression = "0 31 10 * * *",
+            IsPaused = true,
+            ScheduleRevision = 4,
+        };
+        provider.PauseCronJobAsync(definition.Id, now.UtcDateTime, AbortToken).Returns((FakeCronJob?)null);
+        provider.GetCronJobByIdAsync(definition.Id, AbortToken).Returns(definition);
+        provider
+            .ResumeCronJobAsync(
+                definition.Id,
+                definition.ScheduleRevision,
+                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                now.UtcDateTime,
+                AbortToken
+            )
+            .Returns(call =>
+            {
+                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                occurrence.ExecutionTime.Should().Be(now.UtcDateTime.AddMinutes(1));
+                occurrence.Status.Should().Be(JobStatus.Idle);
+                definition.IsPaused = false;
+                return definition;
+            });
+
+        (await manager.PauseCronJobAsync(definition.Id, AbortToken)).Should().BeFalse();
+        (await manager.ResumeCronJobAsync(definition.Id, AbortToken)).Should().BeTrue();
+
+        await sender.Received(1).UpdateCronJobNotifyAsync(definition);
+    }
+
+    [Fact]
     public async Task request_time_job_cancellation_async_notifies_only_after_the_provider_accepts_the_transition()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();

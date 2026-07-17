@@ -396,12 +396,38 @@ public sealed class JobSchedulerTests : TestBase
         hostScheduler.DidNotReceive().Restart();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task cron_control_restarts_only_when_the_transition_is_accepted(bool accepted)
+    {
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var hostScheduler = Substitute.For<IJobsHostScheduler>();
+        var cronJobId = Guid.NewGuid();
+        internalManager.PauseCronJobAsync(cronJobId, AbortToken).Returns(accepted);
+        internalManager.ResumeCronJobAsync(cronJobId, AbortToken).Returns(accepted);
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(
+            Substitute.For<ITimeJobManager<TimeJobEntity>>(),
+            Substitute.For<ICronJobManager<CronJobEntity>>(),
+            JobFunctionRegistryBuilder.Build([], [], []),
+            internalManager,
+            hostScheduler
+        );
+
+        (await scheduler.PauseCronAsync(cronJobId, AbortToken)).Should().Be(accepted);
+        (await scheduler.ResumeCronAsync(cronJobId, AbortToken)).Should().Be(accepted);
+
+        await internalManager.Received(1).PauseCronJobAsync(cronJobId, AbortToken);
+        await internalManager.Received(1).ResumeCronJobAsync(cronJobId, AbortToken);
+        hostScheduler.Received(accepted ? 2 : 0).Restart();
+    }
+
     [Fact]
     public void should_expose_only_the_job_id_cancellation_method_and_six_scheduling_overloads()
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(7);
+        methods.Should().HaveCount(9);
         methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(6);
         var cancellation = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)
@@ -413,6 +439,17 @@ public sealed class JobSchedulerTests : TestBase
             .Should()
             .Equal(typeof(Guid), typeof(CancellationToken));
         cancellation.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
+        foreach (var name in new[] { nameof(IJobScheduler.PauseCronAsync), nameof(IJobScheduler.ResumeCronAsync) })
+        {
+            var control = methods.Single(method => string.Equals(method.Name, name, StringComparison.Ordinal));
+            control.ReturnType.Should().Be<Task<bool>>();
+            control
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .Should()
+                .Equal(typeof(Guid), typeof(CancellationToken));
+            control.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
+        }
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTime), typeof(EnqueueOptions));
