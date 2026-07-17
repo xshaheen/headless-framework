@@ -7,6 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Features.Core\Headless.Features.Core.csproj" />
-    <ProjectReference Include="..\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

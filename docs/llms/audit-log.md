@@ -79,7 +79,7 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 
 ## Agent Instructions
 
-- Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.Orm.EntityFramework`; domain entities need no audit marker or attributes.
+- Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.EntityFramework`; domain entities need no audit marker or attributes.
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
@@ -150,7 +150,7 @@ Raw providers (`PostgreSql`, `SqlServer`) create the audit schema, table, and in
 | **Schema management** | EF migrations. | Self-initializing DDL at startup (idempotent; races serialized via `pg_advisory_xact_lock`). | Self-initializing DDL at startup (idempotent; races serialized via `sp_getapplock`). |
 | **JSON columns** | String columns by default; opt into native `jsonb`/`json` via `AuditLogJsonColumnType`. | `jsonb` by default (native JSONB type; `Json` or `NvarcharMax` also accepted). | `nvarchar(max)` only. |
 | **Extra dependencies** | `Microsoft.EntityFrameworkCore` | `Npgsql` | `Microsoft.Data.SqlClient` |
-| **Change capture** | Built-in via `EfAuditChangeCapture` scanning `ChangeTracker` and reading EF model policy. | Storage only; pair with `Headless.Orm.EntityFramework` for built-in automatic capture, or log explicit events. | Same as PostgreSql. |
+| **Change capture** | Built-in via `EfAuditChangeCapture` scanning `ChangeTracker` and reading EF model policy. | Storage only; pair with `Headless.EntityFramework` for built-in automatic capture, or log explicit events. | Same as PostgreSql. |
 
 ---
 
@@ -185,7 +185,7 @@ dotnet add package Headless.AuditLog.Abstractions
 
 ### Quick Start
 
-Keep domain entities free of audit annotations, then configure automatic capture in the EF model using `Headless.Orm.EntityFramework`:
+Keep domain entities free of audit annotations, then configure automatic capture in the EF model using `Headless.EntityFramework`:
 
 ```csharp
 public sealed class Patient : AggregateRoot<Guid>
@@ -208,7 +208,7 @@ public sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
 }
 ```
 
-`IsAudited`, `ExcludeFromAudit`, and `IsAuditSensitive` are supplied by `Headless.Orm.EntityFramework`; this abstractions package stays EF-free.
+`IsAudited`, `ExcludeFromAudit`, and `IsAuditSensitive` are supplied by `Headless.EntityFramework`; this abstractions package stays EF-free.
 
 Log explicit events:
 
@@ -410,7 +410,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 ```
 
-The fluent audit policy is supplied by `Headless.Orm.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
+The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
 
 #### Explicit event logging
 
@@ -463,7 +463,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 
 - `Headless.AuditLog.Abstractions`
 - `Headless.AuditLog.Core`
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ### Side Effects
@@ -472,7 +472,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
 - Registers `AuditLogEntityValidationStartupGate<TContext>` as a hosted service (validates model at startup).
-- Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.Orm.EntityFramework`; this package only selects EF-backed audit storage.
+- Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
 
 ---
 

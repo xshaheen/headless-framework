@@ -29,7 +29,7 @@ dotnet add package Headless.AuditLog.Abstractions
 
 ## Quick Start
 
-Keep domain entities free of audit annotations, then configure automatic capture in the EF model using `Headless.Orm.EntityFramework`:
+Keep domain entities free of audit annotations, then configure automatic capture in the EF model using `Headless.EntityFramework`:
 
 ```csharp
 public sealed class Patient : AggregateRoot<Guid>
@@ -52,7 +52,7 @@ public sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
 }
 ```
 
-`IsAudited`, `ExcludeFromAudit`, and `IsAuditSensitive` are supplied by `Headless.Orm.EntityFramework`; this abstractions package stays EF-free.
+`IsAudited`, `ExcludeFromAudit`, and `IsAuditSensitive` are supplied by `Headless.EntityFramework`; this abstractions package stays EF-free.
 
 Log explicit events:
 

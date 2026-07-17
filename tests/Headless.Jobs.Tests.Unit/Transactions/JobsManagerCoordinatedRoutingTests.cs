@@ -6,6 +6,7 @@ using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
@@ -21,28 +22,17 @@ namespace Tests.Transactions;
 /// capture fork, the fail-loud cases, and post-commit side-effect deferral. Atomicity itself (rows committing /
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
-public sealed class JobsManagerCoordinatedRoutingTests : TestBase
+[Collection<JobsHelperCollection>]
+public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
 {
     private const string _FunctionName = "routing-test-fn";
 
-    static JobsManagerCoordinatedRoutingTests()
+    public JobsManagerCoordinatedRoutingTests()
     {
-        // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
-        // a one-time static registration is stable for this assembly.
-        JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-            {
-                [_FunctionName] = new JobFunctionRegistration
-                {
-                    CronExpression = "0 0 * * *",
-                    Priority = JobPriority.LongRunning,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 1,
-                },
-            }
-        );
-        JobFunctionProvider.Build();
+        _BuildProvider();
     }
+
+    public void Dispose() => JobFunctionProvider.ResetForTests();
 
     [Fact]
     public async Task time_job_without_coordinator_takes_direct_path()
@@ -55,6 +45,96 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
         await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task schedule_middleware_that_omits_next_rejects_before_direct_or_coordinated_write()
+    {
+        using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
+        {
+            var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+
+            var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+
+            await act.Should().ThrowAsync<JobValidatorException>();
+            await sut
+                .Persistence.DidNotReceive()
+                .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+            await sut
+                .Writer.DidNotReceive()
+                .WriteTimeJobsAsync(
+                    Arg.Any<TimeJobEntity[]>(),
+                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<CancellationToken>()
+                );
+            sut.Coordinator!.OnCommitCount.Should().Be(0);
+            sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+        }
+    }
+
+    [Fact]
+    public async Task Schedule_middleware_that_omits_next_aborts_the_entire_batch_before_one_writer_call()
+    {
+        using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+
+            var act = () => sut.Time.AddBatchAsync([_FutureTimeJob(), _FutureTimeJob()], AbortToken);
+
+            await act.Should().ThrowAsync<JobValidatorException>();
+            await sut
+                .Persistence.DidNotReceive()
+                .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+            await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Time_batch_schedule_middleware_runs_before_manager_normalizes_the_entity()
+    {
+        DateTime? executionTimeSeenByMiddleware = DateTime.MaxValue;
+        using (
+            _ReplaceScheduleDispatch(
+                (context, next, token) =>
+                {
+                    executionTimeSeenByMiddleware = ((TimeJobEntity)context.Job).ExecutionTime;
+                    return next(token);
+                }
+            )
+        )
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+            var job = _FutureTimeJob();
+            job.ExecutionTime = null;
+
+            await sut.Time.AddBatchAsync([job], AbortToken);
+
+            executionTimeSeenByMiddleware.Should().BeNull();
+            job.ExecutionTime.Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task Cron_batch_schedule_middleware_runs_before_expression_validation()
+    {
+        using (
+            _ReplaceScheduleDispatch(
+                (context, next, token) =>
+                {
+                    ((CronJobEntity)context.Job).Expression = "0 0 0 * * *";
+                    return next(token);
+                }
+            )
+        )
+        {
+            var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+            var job = _CronJob();
+            job.Expression = "invalid";
+
+            var result = await sut.Cron.AddBatchAsync([job], AbortToken);
+
+            result.Should().ContainSingle().Which.Should().BeSameAs(job);
+        }
     }
 
     [Fact]
@@ -617,6 +697,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             new FakeCurrentCommitCoordinator(coordinator),
             new CronScheduleCache(TimeZoneInfo.Utc),
             new SchedulerOptionsBuilder { PostCommitDrainTimeout = postCommitDrainTimeout ?? TimeSpan.FromSeconds(30) },
+            JobFunctionProvider.CreateHostRegistry(configuration: null),
             logger
         );
 
@@ -630,6 +711,46 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase
             Manager = manager,
             Logger = logger,
         };
+    }
+
+    private static IDisposable _ReplaceScheduleDispatch(
+        Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task> dispatch
+    )
+    {
+        _BuildProvider(dispatch);
+        return new ResetFunctionProvider();
+    }
+
+    private static void _BuildProvider(
+        Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task>? dispatch = null
+    )
+    {
+        JobFunctionProvider.ResetForTests(discoveryComplete: false);
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                [_FunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = "0 0 * * *",
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    MaxConcurrency = 1,
+                },
+            }
+        );
+
+        if (dispatch is not null)
+        {
+            JobMiddlewareRegistry.RegisterSchedule("Tests:ScheduleDispatch", null, 0, dispatch.Invoke);
+        }
+
+        JobFunctionProvider.MarkDiscoveryComplete();
+        JobFunctionProvider.Build();
+    }
+
+    private sealed class ResetFunctionProvider : IDisposable
+    {
+        public void Dispose() => JobFunctionProvider.ResetForTests();
     }
 
     private sealed class Sut

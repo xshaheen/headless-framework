@@ -46,7 +46,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Database access
 
-- For EF Core, use `Headless.Orm.EntityFramework` — call `services.AddHeadlessDbContext<TContext>(...)` for framework conventions, global filters, soft deletes, and tenancy support.
+- For EF Core, use `Headless.EntityFramework` — call `services.AddHeadlessDbContext<TContext>(...)` for framework conventions, global filters, soft deletes, and tenancy support.
 - For raw SQL, use the connection factories in `Headless.Sql.PostgreSql` / `Headless.Sql.SqlServer` / `Headless.Sql.Sqlite` rather than constructing `NpgsqlConnection` / `SqlConnection` directly.
 
 ### Code style
@@ -404,9 +404,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.OpenApi.Scalar` — Scalar API documentation UI.
 
 ### ORM
-- `Headless.Orm.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
-- `Headless.Orm.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
-- `Headless.Orm.Couchbase` — Couchbase with bucket context and cluster management.
+- `Headless.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
+- `Headless.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
+- `Headless.Couchbase` — Couchbase with bucket context and cluster management.
 
 ### Payments
 - `Headless.Payments.Paymob.CashIn` — Paymob payment collection.

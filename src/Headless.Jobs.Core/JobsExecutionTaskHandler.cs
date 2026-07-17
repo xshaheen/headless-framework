@@ -19,6 +19,7 @@ internal sealed class JobsExecutionTaskHandler
     private readonly TimeProvider _timeProvider;
     private readonly IJobsInstrumentation _jobsInstrumentation;
     private readonly IInternalJobManager _internalJobsManager;
+    private readonly JobFunctionRegistry _functionRegistry;
     private readonly ILogger<JobsExecutionTaskHandler> _logger;
 
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
@@ -35,6 +36,7 @@ internal sealed class JobsExecutionTaskHandler
         TimeProvider timeProvider,
         IJobsInstrumentation jobsInstrumentation,
         IInternalJobManager internalJobsManager,
+        JobFunctionRegistry functionRegistry,
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
         JobsRetryOptions? retryOptions = null
@@ -44,6 +46,7 @@ internal sealed class JobsExecutionTaskHandler
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
         _internalJobsManager = internalJobsManager;
+        _functionRegistry = functionRegistry;
         _logger = logger;
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
         _leaseDuration = schedulerOptions.LeaseDuration;
@@ -285,9 +288,26 @@ internal sealed class JobsExecutionTaskHandler
                         stopWatch.Start();
                         await using var scope = _serviceProvider.CreateAsyncScope();
                         jobFunctionContext.SetServiceScope(scope);
-                        await context
-                            .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
-                            .ConfigureAwait(false);
+                        if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
+                        {
+                            Task terminal(CancellationToken token) =>
+                                context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
+                            await JobMiddlewareRegistry
+                                .DispatchExecuteAsync(
+                                    new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
+                                    terminal,
+                                    attemptToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // Older generated assemblies can still supply a cached registration without descriptor
+                            // metadata. Preserve their execution path while new generated assemblies use middleware.
+                            await context
+                                .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
+                                .ConfigureAwait(false);
+                        }
                         success = true;
                     },
                     async (retryCount, exception, retryToken) =>

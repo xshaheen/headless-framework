@@ -37,39 +37,49 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var jobMethods = context
+        var attributedMethods = context
             .SyntaxProvider.CreateSyntaxProvider(
                 predicate: (node, _) => node is MethodDeclarationSyntax { AttributeLists.Count: > 0 },
-                transform: (ctx, _) => _GetJobMethodIfAny(ctx)
+                transform: (ctx, _) => _GetAttributedMethodIfAny(ctx)
             )
             .Where(pair => pair is not null)
             .Select((pair, _) => pair!.Value);
 
-        var compilationAndMethods = context.CompilationProvider.Combine(jobMethods.Collect());
+        var compilationAndMethods = context.CompilationProvider.Combine(attributedMethods.Collect());
 
         context.RegisterSourceOutput(
             compilationAndMethods,
             (productionContext, source) =>
             {
-                var (compilation, methodPairs) = source;
+                var (compilation, methodInfos) = source;
 
                 if (string.Equals(compilation.Assembly.Name, "Jobs", StringComparison.Ordinal))
                 {
                     return;
                 }
 
-                if (!CompilationCollisionValidator.Validate(methodPairs, compilation, productionContext))
+                var jobMethodPairs = methodInfos
+                    .Where(info => info.HasJobFunction)
+                    .Select(info => (info.ClassDecl, info.MethodDecl))
+                    .ToImmutableArray();
+                var methodPairs = methodInfos.Select(info => (info.ClassDecl, info.MethodDecl)).ToImmutableArray();
+
+                if (!CompilationCollisionValidator.Validate(jobMethodPairs, compilation, productionContext))
                 {
                     return;
                 }
 
                 // Generate constructor calls (no need for class conflict detection since we always use full names)
-                var constructorCalls = _BuildConstructorMethodCalls(methodPairs, compilation, compilation.Assembly.Name)
+                var constructorCalls = _BuildConstructorMethodCalls(
+                        jobMethodPairs,
+                        compilation,
+                        compilation.Assembly.Name
+                    )
                     .ToList();
 
                 // Generate delegates and detect type conflicts for generic types
                 var initialDelegatesWithMetadata = _BuildJobFunctionDelegates(
-                        methodPairs,
+                        jobMethodPairs,
                         compilation,
                         productionContext,
                         compilation.Assembly.Name
@@ -83,7 +93,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
                 // Regenerate delegates with type conflict information for generic types
                 var delegatesWithMetadata = _BuildJobFunctionDelegates(
-                        methodPairs,
+                        jobMethodPairs,
                         compilation,
                         productionContext,
                         compilation.Assembly.Name,
@@ -94,12 +104,16 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var delegateCodes = delegatesWithMetadata.ConvertAll(info => info.DelegateCode);
                 var requestTypes = delegatesWithMetadata.ConvertAll(info => info.RequestType);
                 var descriptors = delegatesWithMetadata.ConvertAll(info => info.Descriptor);
+                var middleware = MiddlewareRegistrationCollector
+                    .Collect(compilation, descriptors.Select(x => x.FunctionName), methodPairs, productionContext)
+                    .ToList();
 
                 var generatedCode = _GenerateSourceWithFullNamespaces(
                     delegateCodes,
                     constructorCalls,
                     requestTypes,
                     descriptors,
+                    middleware,
                     compilation.Assembly.Name,
                     typeNameConflicts
                 );
@@ -113,11 +127,13 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Extracts job method information from the syntax context if it has a JobFunction attribute.
+    /// Extracts attributed method information from the current compilation.
     /// </summary>
-    private static (ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)? _GetJobMethodIfAny(
-        GeneratorSyntaxContext ctx
-    )
+    private static (
+        ClassDeclarationSyntax ClassDecl,
+        MethodDeclarationSyntax MethodDecl,
+        bool HasJobFunction
+    )? _GetAttributedMethodIfAny(GeneratorSyntaxContext ctx)
     {
         if (ctx.Node is not MethodDeclarationSyntax methodSyntax)
         {
@@ -141,26 +157,20 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             return null;
         }
 
-        var hasJobFunction = methodSymbol
-            .GetAttributes()
-            .Any(attr =>
-                string.Equals(
-                    attr.AttributeClass?.Name,
-                    SourceGeneratorConstants.JobFunctionAttributeName,
-                    StringComparison.Ordinal
-                )
-            );
-        if (!hasJobFunction)
-        {
-            return null;
-        }
-
         if (methodSyntax.Parent is not ClassDeclarationSyntax cd)
         {
             return null;
         }
 
-        return (cd, methodSyntax);
+        var attributes = methodSymbol.GetAttributes();
+        var hasJobFunction = attributes.Any(_IsJobFunctionAttribute);
+        var hasMiddleware = attributes.Any(MiddlewareRegistrationCollector.IsMiddlewareAttribute);
+        if (!hasJobFunction && !hasMiddleware)
+        {
+            return null;
+        }
+
+        return (cd, methodSyntax, hasJobFunction);
     }
 
     /// <summary>
@@ -190,15 +200,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
             var methodSymbol = semanticModel.GetDeclaredSymbol(methodDeclaration);
 
-            var jobFunctionAttributeData = methodSymbol
-                ?.GetAttributes()
-                .FirstOrDefault(ad =>
-                    string.Equals(
-                        ad.AttributeClass?.Name,
-                        SourceGeneratorConstants.JobFunctionAttributeName,
-                        StringComparison.Ordinal
-                    )
-                );
+            var jobFunctionAttributeData = methodSymbol?.GetAttributes().FirstOrDefault(_IsJobFunctionAttribute);
             if (jobFunctionAttributeData == null)
             {
                 continue;
@@ -294,6 +296,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         IReadOnlyList<string> ctorCalls,
         IReadOnlyList<(string GenericTypeName, string FunctionName)> requestTypes,
         IReadOnlyList<JobFunctionDescriptorInfo> descriptors,
+        IReadOnlyList<MiddlewareRegistrationInfo> middleware,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -304,8 +307,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         var includeBaseUtilities = requestTypes.Any(rt => !string.IsNullOrEmpty(rt.GenericTypeName));
 
         _GenerateFileHeaderWithJobsUsings(sb, includeBaseUtilities, assemblyName);
+        _GenerateDescriptorMetadata(sb, descriptors);
         _GenerateClassDeclarationWithFullNamespaces(sb, assemblyName);
-        _GenerateInitializeMethodWithFullNamespaces(sb, delegates);
+        _GenerateInitializeMethodWithFullNamespaces(sb, delegates, middleware);
         _GenerateDescriptorRegistrationWithFullNamespaces(sb, descriptors);
         _GenerateConstructorMethods(sb, ctorCalls); // Constructor methods already handle their own namespacing
 
@@ -320,6 +324,31 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         return sb.ToString();
     }
+
+    private static void _GenerateDescriptorMetadata(
+        StringBuilder sb,
+        IReadOnlyList<JobFunctionDescriptorInfo> descriptors
+    )
+    {
+        foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
+        {
+            sb.AppendLine(
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute(\"{descriptor.FunctionName}\")]"
+            );
+        }
+
+        if (descriptors.Count > 0)
+        {
+            sb.AppendLine();
+        }
+    }
+
+    private static bool _IsJobFunctionAttribute(AttributeData attribute) =>
+        string.Equals(
+            attribute.AttributeClass?.Name,
+            SourceGeneratorConstants.JobFunctionAttributeName,
+            StringComparison.Ordinal
+        );
 
     /// <summary>
     /// Generates the complete source code for the factory class (legacy method with using statements).
@@ -529,7 +558,11 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// Generates the Initialize method with delegate registrations using full namespaces.
     /// </summary>
-    private static void _GenerateInitializeMethodWithFullNamespaces(StringBuilder sb, IEnumerable<string> delegates)
+    private static void _GenerateInitializeMethodWithFullNamespaces(
+        StringBuilder sb,
+        IEnumerable<string> delegates,
+        IReadOnlyList<MiddlewareRegistrationInfo> middleware
+    )
     {
         var delegateList = delegates.ToList();
         var delegateCount = delegateList.Count;
@@ -556,6 +589,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         sb.AppendLine("            RegisterRequestTypes();");
         sb.AppendLine("            RegisterDescriptors();");
+        foreach (var entry in middleware)
+        {
+            var identity = SymbolDisplay.FormatLiteral(entry.Identity, quote: true);
+            var function = entry.Function is null ? "null" : SymbolDisplay.FormatLiteral(entry.Function, quote: true);
+            var registrationMethod = entry.IsSchedule ? "RegisterSchedule" : "RegisterExecute";
+            sb.AppendLine(
+                $"            JobMiddlewareRegistry.{registrationMethod}({identity}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
+            );
+        }
         sb.AppendLine("        }");
     }
 

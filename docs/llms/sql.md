@@ -78,7 +78,7 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 
 ## Agent Instructions
 
-- These packages are for **raw SQL / Dapper** scenarios only. For EF Core, use the `Headless.Orm.EntityFramework` packages instead.
+- These packages are for **raw SQL / Dapper** scenarios only. For EF Core, use the `Headless.EntityFramework` packages instead.
 - Always depend on `ISqlConnectionFactory` from `Headless.Sql.Abstractions` in service code. Never reference `NpgsqlConnectionFactory`, `SqlServerConnectionFactory`, or `SqliteConnectionFactory` in application-layer code.
 - Do **not** construct connections directly (`new NpgsqlConnection(cs)` / `new SqlConnection(cs)`). Always go through the factory so the connection string is centralized and the factory can be swapped in tests.
 - Connections returned by `CreateNewConnectionAsync()` are **already open** — calling `OpenAsync()` on them again throws an `InvalidOperationException`.

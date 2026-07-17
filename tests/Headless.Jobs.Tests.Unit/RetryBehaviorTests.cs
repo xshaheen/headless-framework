@@ -13,8 +13,11 @@ using Polly.Retry;
 
 namespace Tests;
 
+[Collection<JobsHelperCollection>]
 public sealed class RetryBehaviorTests : TestBase
 {
+    private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);
+
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
 
@@ -115,9 +118,7 @@ public sealed class RetryBehaviorTests : TestBase
             [],
             retries: 3,
             retryOptions: options,
-#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
-            exceptionFactory: static () => new ArgumentException("permanent", "request")
-#pragma warning restore MA0015
+            exceptionFactory: static () => new InvalidOperationException("permanent")
         );
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -228,6 +229,109 @@ public sealed class RetryBehaviorTests : TestBase
         await exceptionHandler
             .Received(2)
             .HandleExceptionAsync(Arg.Any<Exception>(), context.JobId, context.Type, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task execute_task_async_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
+    {
+        JobFunctionProvider.ResetForTests();
+        try
+        {
+            var descriptor = new JobFunctionDescriptor("TestFunction", null, "", JobPriority.Normal, 0);
+            JobFunctionProvider.RegisterFunctions(
+                new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                {
+                    [descriptor.FunctionName] = new()
+                    {
+                        CronExpression = string.Empty,
+                        Priority = JobPriority.Normal,
+                        Delegate = static (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 0,
+                    },
+                }
+            );
+            JobFunctionProvider.RegisterDescriptors(
+                new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
+                {
+                    [descriptor.FunctionName] = descriptor,
+                }
+            );
+
+            var attempts = new List<(int Attempt, RetryScopeMarker Scope, CancellationToken Token)>();
+            var observedErrors = new List<string>();
+            var terminalInvocations = 0;
+            JobMiddlewareRegistry.RegisterExecute(
+                "Consumer:ConsumerMiddleware",
+                null,
+                10,
+                async (middlewareContext, next, token) =>
+                {
+                    try
+                    {
+                        attempts.Add(
+                            (
+                                middlewareContext.Attempt,
+                                middlewareContext.Services.GetRequiredService<RetryScopeMarker>(),
+                                token
+                            )
+                        );
+                        await next(token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observedErrors.Add("consumer");
+                        throw;
+                    }
+                }
+            );
+            JobMiddlewareRegistry.RegisterExecute(
+                "Producer:ProducerMiddleware",
+                null,
+                -10,
+                async (_, next, token) =>
+                {
+                    try
+                    {
+                        await next(token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observedErrors.Add("producer");
+                        throw;
+                    }
+                }
+            );
+            JobFunctionProvider.MarkDiscoveryComplete();
+            JobFunctionProvider.Build();
+
+            var options = _ZeroDelayRetryOptions();
+            var (handler, context, manager, _) = _SetupRetryTestFixture(
+                [],
+                retries: 1,
+                retryOptions: options,
+                configureServices: static services => services.AddScoped<RetryScopeMarker>(),
+                functionRegistry: JobFunctionProvider.CreateHostRegistry(configuration: null)
+            );
+            context.CachedDelegate = (_, _, functionContext) =>
+            {
+                terminalInvocations++;
+                return functionContext.RetryCount == 0 ? throw new TimeoutException("transient") : Task.CompletedTask;
+            };
+
+            await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+            attempts.Select(attempt => attempt.Attempt).Should().Equal(0, 1);
+            terminalInvocations.Should().Be(2);
+            attempts[0].Scope.Should().NotBeSameAs(attempts[1].Scope);
+            attempts.Should().OnlyContain(attempt => attempt.Token.CanBeCanceled);
+            observedErrors.Should().Equal("consumer", "producer");
+            context.Status.Should().Be(JobStatus.DueDone);
+            await manager.Received(2).UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            JobFunctionProvider.ResetForTests();
+        }
     }
 
     [Fact]
@@ -375,6 +479,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
@@ -475,6 +580,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -543,6 +649,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -592,6 +699,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -646,6 +754,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -719,6 +828,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -772,6 +882,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMilliseconds(250),
@@ -833,6 +944,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -906,7 +1018,8 @@ public sealed class RetryBehaviorTests : TestBase
         JobsRetryOptions? retryOptions = null,
         Func<Exception>? exceptionFactory = null,
         Action<IServiceCollection>? configureServices = null,
-        SchedulerOptionsBuilder? schedulerOptions = null
+        SchedulerOptionsBuilder? schedulerOptions = null,
+        JobFunctionRegistry? functionRegistry = null
     )
     {
         var services = new ServiceCollection();
@@ -933,6 +1046,7 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            functionRegistry ?? _EmptyRegistry,
             schedulerOptions ?? new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
             retryOptions

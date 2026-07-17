@@ -17,5 +17,25 @@
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference
+      Include="..\..\test-assets\Headless.Jobs.DiscoveryFixture\Headless.Jobs.DiscoveryFixture.csproj"
+      ReferenceOutputAssembly="false"
+    />
+    <ProjectReference
+      Include="..\..\test-assets\Headless.Jobs.GeneratedDiscoveryFixture\Headless.Jobs.GeneratedDiscoveryFixture.csproj"
+      ReferenceOutputAssembly="false"
+    />
   </ItemGroup>
+  <Target Name="CopyJobsDiscoveryFixture" AfterTargets="Build">
+    <Copy
+      SourceFiles="..\..\test-assets\Headless.Jobs.DiscoveryFixture\bin\$(Configuration)\net10.0\Headless.Jobs.DiscoveryFixture.dll"
+      DestinationFolder="$(OutDir)fixtures"
+    />
+  </Target>
+  <Target Name="CopyJobsGeneratedDiscoveryFixture" AfterTargets="Build">
+    <Copy
+      SourceFiles="..\..\test-assets\Headless.Jobs.GeneratedDiscoveryFixture\bin\$(Configuration)\net10.0\Headless.Jobs.GeneratedDiscoveryFixture.dll"
+      DestinationFolder="$(OutDir)fixtures"
+    />
+  </Target>
 </Project>

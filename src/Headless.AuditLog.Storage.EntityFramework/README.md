@@ -76,7 +76,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 ```
 
-The fluent audit policy is supplied by `Headless.Orm.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
+The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
 
 ### Explicit event logging
 
@@ -127,7 +127,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 
 - `Headless.AuditLog.Abstractions`
 - `Headless.AuditLog.Core`
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -136,4 +136,4 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
 - Registers `AuditLogEntityValidationStartupGate<TContext>` as a hosted service (validates model at startup).
-- Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.Orm.EntityFramework`; this package only selects EF-backed audit storage.
+- Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.

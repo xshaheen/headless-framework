@@ -5,7 +5,6 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -18,6 +17,7 @@ namespace Headless.Jobs.BackgroundServices;
 /// </summary>
 internal sealed class JobsInitializationHostedService(
     IServiceProvider serviceProvider,
+    JobFunctionRegistry functionRegistry,
     ILogger<JobsInitializationHostedService> logger
 ) : IHostedService
 {
@@ -27,7 +27,6 @@ internal sealed class JobsInitializationHostedService(
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
-        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
 
@@ -86,10 +85,6 @@ internal sealed class JobsInitializationHostedService(
             executionContext.NotifyCoreAction += _notifyCoreHandler;
         }
 
-        // Build function metadata
-        JobFunctionProvider.UpdateCronExpressionsFromIConfiguration(configuration);
-        JobFunctionProvider.Build();
-
         // Seeding pipeline
         var options = executionContext.OptionsSeeding;
 
@@ -129,8 +124,7 @@ internal sealed class JobsInitializationHostedService(
     // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
     // service-locator — resolution happens at DI-build time, inside the construction fault boundary, consistent with
     // JobsDeadOwnerReclaimer. Internal (not private) is the codebase's standard InternalsVisibleTo test seam: the guard
-    // unit test constructs the service and calls this directly, avoiding a StartAsync run over global JobFunctionProvider
-    // static state.
+    // unit test constructs the service and calls this directly, avoiding a full StartAsync run.
     internal async Task SeedDefinedCronJobsAsync(
         SchedulerOptionsBuilder schedulerOptions,
         CancellationToken cancellationToken
@@ -138,8 +132,8 @@ internal sealed class JobsInitializationHostedService(
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
-        var functionsToSeed = JobFunctionProvider
-            .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
+        var functionsToSeed = functionRegistry
+            .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
             .Select(x => (x.Key, x.Value.CronExpression))
             .ToArray();
 
