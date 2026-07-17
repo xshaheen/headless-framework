@@ -45,6 +45,7 @@
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="OpenTelemetry.Api" />
     <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.InMemoryStorage, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.InMemoryStorage, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.Testing
 ---
 
 # Messaging
@@ -63,15 +63,12 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Configuration](#configuration-5)
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
-- [Headless.Messaging.OpenTelemetry](#headlessmessagingopentelemetry)
+- [OpenTelemetry (native, in Headless.Messaging.Core)](#opentelemetry-native-in-headlessmessagingcore)
     - [Problem Solved](#problem-solved-6)
     - [Key Features](#key-features-6)
     - [Design Notes](#design-notes-3)
-    - [Installation](#installation-6)
+    - [Span attributes and toggles](#span-attributes-and-toggles)
     - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
 - [Headless.Messaging.Aws](#headlessmessagingaws)
     - [Problem Solved](#problem-solved-7)
     - [Key Features](#key-features-7)
@@ -205,7 +202,7 @@ services.AddHeadlessMessaging(setup =>
 - **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
-- **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
+- **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
 - **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning. Use the scan callback overloads to set per-consumer queue/bus intent, group, concurrency, handler id, circuit-breaker override, or `Skip()`; keep message-name overrides on explicit `ForMessage<TMessage>(...)` registrations.
@@ -1060,48 +1057,72 @@ Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 - Queries the Kubernetes API for Services and namespaces.
 - Requires RBAC permissions to read Services and namespaces.
 
-## Headless.Messaging.OpenTelemetry
+## OpenTelemetry (native, in Headless.Messaging.Core)
 
 ### Problem Solved
 
-Adds tracing and metrics instrumentation for messaging publish, consume, retry, circuit breaker, and transport flows.
+Spans and metrics for messaging publish, persist, consume, and subscriber-invoke flows are emitted **natively** from `Headless.Messaging.Core` via BCL `System.Diagnostics` `ActivitySource`/`Meter` primitives. There is **no** separate `Headless.Messaging.OpenTelemetry` satellite package (removed) and no `DiagnosticSource` bridge — Core references only the 80 KB, dependency-free `OpenTelemetry.Api` (for W3C context propagation and the typed provider-builder helpers), never the SDK. Any consumer subscribes: an OpenTelemetry exporter, a raw `ActivityListener`/`MeterListener`, Application Insights, or `dotnet-counters`. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Key Features
 
-- `AddMessagingInstrumentation(...)` for traces and metrics.
-- `IActivityTagEnricher` extension point.
-- Built-in tags for broker, message name, group, intent, status, and retry/circuit state.
+- The Meter/ActivitySource is named `Headless.Messaging` — exposed as the `public const string MessagingDiagnostics.SourceName`.
+- Typed `AddMessagingInstrumentation()` extensions on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`) — thin `AddSource`/`AddMeter` wrappers over the const. Subscribing by name is equally supported.
+- Instrument names + standard dimensions follow the OpenTelemetry messaging **semconv** (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation` / `messaging.system` / `messaging.consumer.group` / `error.type` / `messaging.subscriber` / `messaging.persistence.type`); framework-specific span attributes are bespoke `headless.messaging.*`.
+- W3C `traceparent` + baggage are injected on publish headers and extracted on consume — **always on whenever any messaging telemetry is enabled**, no toggle. A metrics-only service (meter subscribed, no trace listener) — or a sampled-out publish — **relays** the incoming/ambient parent context verbatim onto outgoing messages instead of dropping it, so trace continuity survives non-tracing hops; a consumed message's context flows to publishes made from its handler even without a span. A fully unobserved host (no listeners at all) pays nothing and forwards nothing. The framework never fabricates a root: relay happens only when a parent actually exists. The app's OpenTelemetry setup must assign `Propagators.DefaultTextMapPropagator` (the standard `AddOpenTelemetry().WithTracing()` does this).
+- `IActivityTagEnricher` extension point, invoked **synchronously at span start** (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), with per-enricher exception isolation.
 
 ### Design Notes
 
-Payload-derived routing values may contain sensitive data. Instrumentation must log presence and stable metadata, not raw selector outputs.
+- Metrics are always registered; **subscribing a meter is the toggle** — there is no `EnableMetrics` flag. Emission is near-free when unobserved (`ActivitySource.HasListeners()` / `Counter.Enabled` early-outs).
+- Enricher registration and the built-in suppression toggles live on the **messaging setup builder** (`setup.Instrumentation`), not at OpenTelemetry-registration time. This is what fixes the old bridge's fire-and-forget async-enricher wart: enrichers run synchronously, so every tag they add is attached before the span can end.
+- **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). `headless.messaging.tenant_id` is suppressible. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
 
-### Installation
+### Span attributes and toggles
 
-```bash
-dotnet add package Headless.Messaging.OpenTelemetry
-```
+| Tag / attribute | Emitted by | Toggle |
+| --- | --- | --- |
+| `headless.messaging.intent` (`bus`/`queue`) + `messaging.destination.kind` | built-in `IntentTagEnricher` | `setup.Instrumentation.SuppressIntentTags` |
+| `headless.messaging.tenant_id` | built-in `TenantIdTagEnricher` | `setup.Instrumentation.SuppressTenantIdTag` |
+| `headless.messaging.retry_count` | built-in `RetryCountTagEnricher` (subscriber-invoke) | `setup.Instrumentation.SuppressRetryCountTag` |
+| custom tags | your `IActivityTagEnricher` | `setup.Instrumentation.AddEnricher(...)` |
 
 ### Quick Start
 
 ```csharp
+// 1. Register enrichers / suppression on the messaging setup builder (optional).
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseRabbitMq(/* ... */);
+    setup.Instrumentation.SuppressTenantIdTag = true;      // opt out of tenant-id tagging
+    setup.Instrumentation.AddEnricher(new MyTagEnricher()); // custom tags
+});
+
+// 2. Subscribe the messaging scope on your OpenTelemetry providers.
 builder
     .Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddMessagingInstrumentation())
     .WithMetrics(metrics => metrics.AddMessagingInstrumentation());
 ```
 
-### Configuration
+### Instrument reference
 
-Use `MessagingInstrumentationOptions` and `AddEnricher(...)` for custom tags. Enrichers should avoid unbounded cardinality.
+All instruments register on the `Headless.Messaging` meter. Names and standard dimensions follow the OTel messaging semantic conventions; span attributes specific to the framework are namespaced `headless.messaging.*`.
 
-### Dependencies
+| Instrument | Kind | Dimensions |
+| --- | --- | --- |
+| `messaging.publish.messages` | Counter | `messaging.operation`, `messaging.system` |
+| `messaging.publish.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type` |
+| `messaging.publish.duration` | Histogram (ms) | `messaging.operation`, `messaging.system` |
+| `messaging.consume.messages` | Counter | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
+| `messaging.consume.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type`, `messaging.consumer.group` |
+| `messaging.consume.duration` | Histogram (ms) | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
+| `messaging.subscriber.invocations` | Counter | `messaging.subscriber`, `messaging.operation` |
+| `messaging.subscriber.errors` | Counter | `messaging.subscriber`, `messaging.operation`, `error.type` |
+| `messaging.subscriber.duration` | Histogram (ms) | `messaging.subscriber`, `messaging.operation` |
+| `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
+| `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
 
-OpenTelemetry tracing and metrics packages, `Headless.Messaging.Core`.
-
-### Side Effects
-
-Registers OpenTelemetry instrumentation hooks and meters/tracers.
+Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headless.messaging.tenant_id` (suppressible), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
 
 ## Headless.Messaging.Aws
 
@@ -1171,6 +1192,7 @@ Provides Azure Service Bus topic and queue transports.
 - Session-aware processing.
 - Producer hatch: `UseAzureServiceBus(asb => asb.PartitionKey(message => ...))`.
 - Consumer startup honors host cancellation through client, topology, and processor setup.
+- Shared connection: bus and queue publishing and consumer processors share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders and a shared administration client; senders are drained before the client on shutdown, and consumers stop their processors without touching the shared client.
 
 ### Design Notes
 
@@ -1204,7 +1226,7 @@ Azure.Messaging.ServiceBus, `Headless.Messaging.Core`.
 
 ### Side Effects
 
-Registers Service Bus clients, transports, consumer client factory, and producer descriptor services.
+Registers a shared client pool (one `ServiceBusClient` per namespace, shared by the bus and queue transports and every consumer client, plus a shared administration client), transports, consumer client factory, and producer descriptor services.
 
 ## Headless.Messaging.InMemory
 

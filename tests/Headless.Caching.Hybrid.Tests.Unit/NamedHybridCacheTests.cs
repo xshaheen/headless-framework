@@ -105,6 +105,55 @@ public sealed class NamedHybridCacheTests : TestBase
             );
     }
 
+    // Issue #693: a setupAction that tries to override the public CacheName must not change invalidation
+    // routing. Setup.cs applies InvalidationRoutingName = name AFTER setupAction runs, so the registration name
+    // stays authoritative for routing even though CacheName itself does get overwritten too (both are stamped
+    // post-configure).
+    [Fact]
+    public async Task should_route_by_registration_name_when_named_hybrid_setup_action_overrides_cache_name()
+    {
+        // given — the setupAction attempts to override the public CacheName
+        var services = _CreateBaseServices();
+        var bus = services
+            .Single(x => x.ServiceType == typeof(IBus))
+            .ImplementationInstance.Should()
+            .BeAssignableTo<IBus>()
+            .Subject;
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
+        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
+
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                        options.CacheName = "attacker-supplied-name";
+                    })
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredKeyedService<ICache>("tenant");
+
+        // when
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — the wire message routes by the registration name, ignoring the setupAction's override
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == "tenant" && message.Key == "key"),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Fact]
     public async Task should_route_named_message_to_named_hybrid_when_invalidation_consumer()
     {

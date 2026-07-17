@@ -37,6 +37,12 @@ public sealed partial class HybridCache
                 {
                     _logger.LogLocalCacheHit(key);
                     Interlocked.Increment(ref _localCacheHits);
+                    CachingMetrics.RecordRequest(
+                        _metricCacheName,
+                        CachingMetrics.OperationGet,
+                        CachingMetrics.OutcomeHit,
+                        CachingMetrics.TierL1
+                    );
 
                     if (!l1Entry.SlidingExpiration.HasValue)
                     {
@@ -61,6 +67,12 @@ public sealed partial class HybridCache
                 {
                     _logger.LogLocalCacheHit(key);
                     Interlocked.Increment(ref _localCacheHits);
+                    CachingMetrics.RecordRequest(
+                        _metricCacheName,
+                        CachingMetrics.OperationGet,
+                        CachingMetrics.OutcomeHit,
+                        CachingMetrics.TierL1
+                    );
                     return new CacheStoreEntry<T>(
                         Found: true,
                         IsNull: l1Value.IsNull,
@@ -75,6 +87,12 @@ public sealed partial class HybridCache
             if (!l1SlidingHit)
             {
                 _logger.LogLocalCacheMiss(key);
+                CachingMetrics.RecordRequest(
+                    _metricCacheName,
+                    CachingMetrics.OperationGet,
+                    CachingMetrics.OutcomeMiss,
+                    CachingMetrics.TierL1
+                );
             }
         }
 
@@ -108,6 +126,13 @@ public sealed partial class HybridCache
                 _logger.LogFailedToReadFromL2Cache(exception, key);
             }
 
+            CachingMetrics.RecordRequest(
+                _metricCacheName,
+                CachingMetrics.OperationGet,
+                CachingMetrics.OutcomeMiss,
+                CachingMetrics.TierL2
+            );
+
             if (
                 l1StaleCandidate is { } fallback
                 && l2Read.Status is DistributedCacheReadStatus.TimedOut or DistributedCacheReadStatus.CircuitOpen
@@ -120,6 +145,13 @@ public sealed partial class HybridCache
         }
 
         var l2Entry = l2Read.Value;
+
+        CachingMetrics.RecordRequest(
+            _metricCacheName,
+            CachingMetrics.OperationGet,
+            l2Entry.Found ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+            CachingMetrics.TierL2
+        );
 
         // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
         // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.

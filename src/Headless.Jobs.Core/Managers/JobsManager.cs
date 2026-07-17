@@ -412,11 +412,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         var completed = false;
-        JobScheduleNext terminal = _ =>
+        Task terminal(CancellationToken _)
         {
             completed = true;
             return Task.CompletedTask;
-        };
+        }
 
         if (_serviceScopeFactory is null)
         {

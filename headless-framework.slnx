@@ -226,7 +226,6 @@
         <Project Path="src/Headless.Jobs.EntityFramework/Headless.Jobs.EntityFramework.csproj" />
         <Project Path="src/Headless.Jobs.EntityFramework.PostgreSql/Headless.Jobs.EntityFramework.PostgreSql.csproj" />
         <Project Path="src/Headless.Jobs.EntityFramework.SqlServer/Headless.Jobs.EntityFramework.SqlServer.csproj" />
-        <Project Path="src/Headless.Jobs.OpenTelemetry/Headless.Jobs.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj" />
@@ -298,7 +297,6 @@
         <Project Path="src/Headless.Messaging.InMemoryStorage/Headless.Messaging.InMemoryStorage.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
-        <Project Path="src/Headless.Messaging.OpenTelemetry/Headless.Messaging.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql/Headless.Messaging.Storage.PostgreSql.csproj" />
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
@@ -310,7 +308,6 @@
     <Folder Name="/Messaging/Tests/">
         <Project Path="tests/Headless.Messaging.Testing.Tests.Unit/Headless.Messaging.Testing.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />
@@ -341,14 +338,14 @@
     </Folder>
     <Folder Name="/Orms/">
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />
-        <Project Path="src\Headless.Orm.Couchbase\Headless.Orm.Couchbase.csproj" />
-        <Project Path="src\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
-        <Project Path="src\Headless.Orm.EntityFramework.Messaging\Headless.Orm.EntityFramework.Messaging.csproj" />
-        <Project Path="tests\Headless.Orm.Couchbase.Tests.Unit\Headless.Orm.Couchbase.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Orm.EntityFramework.Messaging.Tests.Unit\Headless.Orm.EntityFramework.Messaging.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Orm.EntityFramework.Messaging.Tests.Integration\Headless.Orm.EntityFramework.Messaging.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Orm.EntityFramework.Tests.Integration\Headless.Orm.EntityFramework.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Orm.Tests.Harness\Headless.Orm.Tests.Harness.csproj" />
+        <Project Path="src\Headless.Couchbase\Headless.Couchbase.csproj" />
+        <Project Path="src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+        <Project Path="src\Headless.EntityFramework.Messaging\Headless.EntityFramework.Messaging.csproj" />
+        <Project Path="tests\Headless.Couchbase.Tests.Unit\Headless.Couchbase.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Unit\Headless.EntityFramework.Messaging.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Integration\Headless.EntityFramework.Messaging.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Tests.Integration\Headless.EntityFramework.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Payments/">
         <Project Path="src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />

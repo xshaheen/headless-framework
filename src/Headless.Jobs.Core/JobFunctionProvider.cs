@@ -211,7 +211,10 @@ public static class JobFunctionProvider
 
         if (!shouldFreeze)
         {
+            // AddHeadlessJobs is synchronous, so overlapping discovery callbacks must join synchronously.
+#pragma warning disable MA0045
             pendingDiscovery!.GetAwaiter().GetResult();
+#pragma warning restore MA0045
             return;
         }
 

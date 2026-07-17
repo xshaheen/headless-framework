@@ -24,10 +24,15 @@ public sealed class HybridCacheOptions : CacheOptions
     public string? InstanceId { get; set; }
 
     /// <summary>
-    /// Optional named hybrid cache instance this options object configures. Set by the setup builder for
-    /// named hybrids so invalidation messages can be routed to the matching named instance on peer nodes.
+    /// Framework-owned cross-node invalidation-routing identity, stamped onto every
+    /// <c>CacheInvalidationMessage.CacheName</c> this instance publishes and used to route incoming
+    /// invalidations back to the matching instance. Set automatically by named-instance registration
+    /// (<c>UseHybrid</c> on <see cref="HeadlessCacheInstanceBuilder"/>) to the registration name; stays
+    /// <see langword="null"/> for the default (unkeyed) instance. Distinct from the public
+    /// <see cref="CacheOptions.CacheName"/>, which is telemetry-only and cannot affect routing — consumers
+    /// cannot set this property directly.
     /// </summary>
-    public string? CacheName { get; internal set; }
+    internal string? InvalidationRoutingName { get; set; }
 
     /// <summary>
     /// Optional name of a keyed <see cref="ICache"/> registration to use as the local (L1) tier. The named

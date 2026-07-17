@@ -78,7 +78,7 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 ## Dependencies
 
 - `Headless.Settings.Core`
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects

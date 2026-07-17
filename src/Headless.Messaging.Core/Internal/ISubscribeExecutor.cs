@@ -50,14 +50,11 @@ internal sealed class SubscribeExecutor(
     TimeProvider timeProvider,
     ILogger<SubscribeExecutor> logger,
     IOptions<MessagingOptions> options,
-    ICircuitBreakerStateManager? circuitBreakerStateManager = null
+    ICircuitBreakerStateManager? circuitBreakerStateManager = null,
+    MessagingTelemetry? telemetry = null
 ) : ISubscribeExecutor
 {
-    // Diagnostics listener
-    private static readonly DiagnosticListener _DiagnosticListener = new(
-        MessageDiagnosticListenerNames.DiagnosticListenerName
-    );
-
+    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
@@ -94,16 +91,8 @@ internal sealed class SubscribeExecutor(
                         + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
                 );
 
-                _TracingError(
-                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                    message.Origin,
-                    message.IntentType,
-                    method: null,
-                    exception,
-                    retryCount: 0,
-                    cancellationToken
-                );
-
+                // No subscriber.invoke span exists on the not-found path (BeforeSubscriberInvoke never ran), so
+                // there is nothing to mark with error status; the failure is surfaced via _SetFailedState below.
                 await _SetFailedState(
                         message,
                         exception,
@@ -550,13 +539,7 @@ internal sealed class SubscribeExecutor(
     )
     {
         var consumerContext = new ConsumerContext(descriptor, message);
-        var tracingTimestamp = _TracingBefore(
-            message.Origin,
-            message.IntentType,
-            descriptor.MethodInfo,
-            message.Retries,
-            cancellationToken
-        );
+        var traceHandle = _TracingBefore(message.Origin, message.IntentType, descriptor.MethodInfo, message.Retries);
         try
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
@@ -594,16 +577,9 @@ internal sealed class SubscribeExecutor(
                     .ConfigureAwait(false);
             }
 
-            // Fire AfterSubscriberInvoke only after the callback response publish completes so the success
+            // Fire the invoke success span only after the callback response publish completes so the success
             // event also reflects a successful callback publish; still fires on the no-callback path above.
-            _TracingAfter(
-                tracingTimestamp,
-                message.Origin,
-                message.IntentType,
-                descriptor.MethodInfo,
-                message.Retries,
-                cancellationToken
-            );
+            _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodInfo);
         }
         catch (OperationCanceledException oce)
         {
@@ -612,33 +588,20 @@ internal sealed class SubscribeExecutor(
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
                 var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
-                _TracingError(
-                    tracingTimestamp,
-                    message.Origin,
-                    message.IntentType,
-                    descriptor.MethodInfo,
-                    e,
-                    message.Retries,
-                    cancellationToken
-                );
+                _TracingError(traceHandle, message.Origin.Name, descriptor.MethodInfo, e);
                 e.ReThrow();
             }
 
+            // A genuine cancellation (caller/shutdown token) propagates; stop the span un-errored so it is
+            // exported rather than leaked into Activity.Current.
+            traceHandle.Activity?.Dispose();
             throw;
         }
         catch (Exception ex)
         {
             var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message), ex);
 
-            _TracingError(
-                tracingTimestamp,
-                message.Origin,
-                message.IntentType,
-                descriptor.MethodInfo,
-                e,
-                message.Retries,
-                cancellationToken
-            );
+            _TracingError(traceHandle, message.Origin.Name, descriptor.MethodInfo, e);
 
             e.ReThrow();
         }
@@ -646,98 +609,56 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private long? _TracingBefore(
+    private MessagingTraceHandle _TracingBefore(
         Message message,
         IntentType intentType,
         MethodInfo method,
-        int retryCount,
-        CancellationToken cancellationToken
+        int retryCount
     )
     {
-        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
+        if (!MessagingDiagnostics.IsEnabled)
         {
-            var eventData = new MessageEventDataSubExecute
-            {
-                OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                MethodInfo = method,
-                RetryCount = retryCount,
-                CancellationToken = cancellationToken,
-            };
-
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
-
-            return eventData.OperationTimestamp;
+            return default;
         }
 
-        return null;
+        var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var activity = _telemetry.SubscriberInvokeStart(message, message.Name, intentType, method, retryCount, now);
+
+        return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(
-        long? tracingTimestamp,
-        Message message,
-        IntentType intentType,
-        MethodInfo method,
-        int retryCount,
-        CancellationToken cancellationToken
-    )
+    private void _TracingAfter(MessagingTraceHandle traceHandle, string operation, MethodInfo method)
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
-        if (
-            tracingTimestamp != null
-            && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterSubscriberInvoke)
-        )
-        {
-            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var eventData = new MessageEventDataSubExecute
-            {
-                OperationTimestamp = now,
-                Operation = message.Name,
-                Message = message,
-                IntentType = intentType,
-                MethodInfo = method,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                RetryCount = retryCount,
-                CancellationToken = cancellationToken,
-            };
 
-            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
-        }
-    }
-
-    private void _TracingError(
-        long? tracingTimestamp,
-        Message message,
-        IntentType intentType,
-        MethodInfo? method,
-        Exception ex,
-        int retryCount,
-        CancellationToken cancellationToken
-    )
-    {
-        if (!_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke))
+        if (!traceHandle.IsRecording)
         {
             return;
         }
 
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        MessagingTelemetry.SubscriberInvokeStop(
+            traceHandle.Activity,
+            operation,
+            method,
+            traceHandle.StartTimestampMs!.Value,
+            now
+        );
+    }
 
-        var eventData = new MessageEventDataSubExecute
+    private static void _TracingError(
+        MessagingTraceHandle traceHandle,
+        string operation,
+        MethodInfo method,
+        Exception ex
+    )
+    {
+        if (!traceHandle.IsRecording)
         {
-            OperationTimestamp = now,
-            Operation = message.Name,
-            Message = message,
-            IntentType = intentType,
-            MethodInfo = method,
-            ElapsedTimeMs = now - tracingTimestamp,
-            Exception = ex,
-            RetryCount = retryCount,
-            CancellationToken = cancellationToken,
-        };
+            return;
+        }
 
-        _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);
+        MessagingTelemetry.SubscriberInvokeError(traceHandle.Activity, operation, method, ex);
     }
 
     #endregion

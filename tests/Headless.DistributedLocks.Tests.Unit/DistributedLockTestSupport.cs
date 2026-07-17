@@ -23,7 +23,8 @@ internal static class DistributedLockTestSupport
     public const int NonBlockingAcquireDeadlineSeconds = 10;
 
     /// <summary>
-    /// Captures the <c>reason</c> tag values recorded on the named failure counter
+    /// Captures the namespaced reason tag values (<c>headless.lock.reason</c> /
+    /// <c>headless.semaphore.reason</c>) recorded on the named failure counter
     /// (<c>headless.lock.failed</c> or <c>headless.semaphore.failed</c>). The instruments are
     /// process-wide and shared across parallel tests, so assert with <c>Contain</c>, not
     /// <c>ContainSingle</c>; exclusivity belongs on an isolated capturing logger.
@@ -31,6 +32,8 @@ internal static class DistributedLockTestSupport
     public static List<string> CaptureFailedReasons(MeterListener listener, string instrumentName)
     {
         var reasons = new List<string>();
+        // `headless.lock.failed` carries `headless.lock.reason`; same shape for the semaphore counter.
+        var tagName = instrumentName.Replace(".failed", ".reason", StringComparison.Ordinal);
 
         listener.InstrumentPublished = (instrument, l) =>
         {
@@ -48,7 +51,7 @@ internal static class DistributedLockTestSupport
             {
                 foreach (var tag in tags)
                 {
-                    if (tag is { Key: "reason", Value: string reason })
+                    if (tag.Value is string reason && string.Equals(tag.Key, tagName, StringComparison.Ordinal))
                     {
                         lock (reasons)
                         {

@@ -290,7 +290,7 @@ internal sealed class JobsExecutionTaskHandler
                         jobFunctionContext.SetServiceScope(scope);
                         if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                         {
-                            JobExecuteNext terminal = token =>
+                            Task terminal(CancellationToken token) =>
                                 context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
                             await JobMiddlewareRegistry
                                 .DispatchExecuteAsync(

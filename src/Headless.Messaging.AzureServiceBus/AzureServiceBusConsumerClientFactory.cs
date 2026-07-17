@@ -10,7 +10,8 @@ namespace Headless.Messaging.AzureServiceBus;
 internal sealed class AzureServiceBusConsumerClientFactory(
     ILoggerFactory loggerFactory,
     IOptions<AzureServiceBusMessagingOptions> asbOptions,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    IAzureServiceBusClientPool clientPool
 ) : IIntentAwareConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
@@ -46,6 +47,7 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 groupConcurrent,
                 asbOptions,
                 serviceProvider,
+                clientPool,
                 intentType
             );
 

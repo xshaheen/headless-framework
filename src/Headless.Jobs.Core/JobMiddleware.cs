@@ -249,7 +249,7 @@ public static class JobMiddlewareRegistry
 
     private static T[] _Order<T>(IEnumerable<T> registrations)
         where T : IRegistration =>
-        registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal).ToArray();
+        [.. registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal)];
 
     private interface IRegistration
     {
