@@ -158,6 +158,41 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     #region Cron_Ticker_Shared_Methods
     Task<TCronJob?> GetCronJobByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically pauses a cron definition and skips its pending Idle or Queued occurrences. InProgress work is
+    /// preserved. Returns the updated definition, or <see langword="null"/> when the definition is absent or already
+    /// paused.
+    /// </summary>
+    Task<TCronJob?> PauseCronJobAsync(
+        Guid cronJobId,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically resumes a paused definition and inserts its single replacement occurrence. The schedule revision
+    /// fences stale callers. Returns the updated definition, or <see langword="null"/> when the transition loses the
+    /// fence.
+    /// </summary>
+    Task<TCronJob?> ResumeCronJobAsync(
+        Guid cronJobId,
+        long expectedScheduleRevision,
+        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically applies a definition batch. Schedule-changing edits retire pending occurrences and insert their
+    /// replacement occurrence while metadata-only edits preserve both the schedule revision and pending work.
+    /// </summary>
+    Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
+        CronJobAtomicUpdate<TCronJob>[] updates,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    );
+
     Task<TCronJob[]> GetCronJobsAsync(
         Expression<Func<TCronJob, bool>>? predicate,
         CancellationToken cancellationToken = default

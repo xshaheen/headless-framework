@@ -19,6 +19,15 @@ public class JobManagerDispatchContext(Guid id)
     /// <summary>Six-field NCrontab expression that governs occurrence generation.</summary>
     public required string Expression { get; set; }
 
+    /// <summary>Optional IANA timezone identifier used to evaluate <see cref="Expression"/>.</summary>
+    public string? TimeZoneId { get; set; }
+
+    /// <summary>Whether the authoritative definition was paused when this dispatch projection was read.</summary>
+    public bool IsPaused { get; set; }
+
+    /// <summary>Monotonic schedule version used to reject stale occurrence materialization.</summary>
+    public long ScheduleRevision { get; set; }
+
     /// <summary>Maximum number of retry attempts on failure.</summary>
     public int Retries { get; set; }
 

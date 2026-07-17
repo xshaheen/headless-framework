@@ -25,6 +25,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _cronOccurrences = new();
 
+    private readonly ConcurrentDictionary<Guid, object> _cronDefinitionLocks = new();
+
     private readonly TimeProvider _timeProvider;
     private readonly string _ownerId;
     private readonly TimeSpan _leaseDuration;
@@ -958,7 +960,196 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         _cronJobs.TryGetValue(id, out var job);
 
-        return Task.FromResult(job);
+        return Task.FromResult(job is null ? null : _CloneCronJob(job));
+    }
+
+    public Task<TCronJob?> PauseCronJobAsync(
+        Guid cronJobId,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_GetCronDefinitionLock(cronJobId))
+        {
+            if (!_cronJobs.TryGetValue(cronJobId, out var current) || current.IsPaused)
+            {
+                return Task.FromResult<TCronJob?>(null);
+            }
+
+            var updated = _CloneCronJob(current);
+            updated.IsPaused = true;
+            updated.ScheduleRevision++;
+            updated.UpdatedAt = operationTimeUtc;
+
+            foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == cronJobId).ToArray())
+            {
+                if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
+                {
+                    continue;
+                }
+
+                var skipped = _CloneCronOccurrence(pair.Value);
+                skipped.Status = JobStatus.Skipped;
+                skipped.ExecutedAt = operationTimeUtc;
+                skipped.UpdatedAt = operationTimeUtc;
+                skipped.SkippedReason = "Cron definition paused";
+                skipped.OwnerId = null;
+                skipped.LockedUntil = null;
+                _cronOccurrences[pair.Key] = skipped;
+            }
+
+            _cronJobs[cronJobId] = updated;
+            return Task.FromResult<TCronJob?>(_CloneCronJob(updated));
+        }
+    }
+
+    public Task<TCronJob?> ResumeCronJobAsync(
+        Guid cronJobId,
+        long expectedScheduleRevision,
+        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_GetCronDefinitionLock(cronJobId))
+        {
+            if (
+                !_cronJobs.TryGetValue(cronJobId, out var current)
+                || !current.IsPaused
+                || current.ScheduleRevision != expectedScheduleRevision
+                || nextOccurrence.CronJobId != cronJobId
+                || _cronOccurrences.ContainsKey(nextOccurrence.Id)
+            )
+            {
+                return Task.FromResult<TCronJob?>(null);
+            }
+
+            var updated = _CloneCronJob(current);
+            updated.IsPaused = false;
+            updated.ScheduleRevision++;
+            updated.UpdatedAt = operationTimeUtc;
+
+            var replacement = _CloneCronOccurrence(nextOccurrence);
+            replacement.CronJob = updated;
+            _cronOccurrences[nextOccurrence.Id] = replacement;
+            _cronJobs[cronJobId] = updated;
+
+            return Task.FromResult<TCronJob?>(_CloneCronJob(updated));
+        }
+    }
+
+    public Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
+        CronJobAtomicUpdate<TCronJob>[] updates,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (updates.Select(x => x.Definition.Id).Distinct().Count() != updates.Length)
+        {
+            return Task.FromResult<TCronJob[]?>(null);
+        }
+
+        var definitionIds = updates.Select(x => x.Definition.Id).Order().ToArray();
+        var locks = definitionIds.Select(_GetCronDefinitionLock).ToArray();
+        var acquiredLockCount = 0;
+
+        try
+        {
+            foreach (var definitionLock in locks)
+            {
+                Monitor.Enter(definitionLock);
+                acquiredLockCount++;
+            }
+
+            var prepared =
+                new List<(TCronJob Definition, CronJobOccurrenceEntity<TCronJob>? Replacement, bool Changed)>();
+
+            foreach (var update in updates)
+            {
+                if (
+                    !_cronJobs.TryGetValue(update.Definition.Id, out var current)
+                    || current.ScheduleRevision != update.ExpectedScheduleRevision
+                )
+                {
+                    return Task.FromResult<TCronJob[]?>(null);
+                }
+
+                var changed =
+                    !string.Equals(current.Expression, update.Definition.Expression, StringComparison.Ordinal)
+                    || !string.Equals(current.TimeZoneId, update.Definition.TimeZoneId, StringComparison.Ordinal);
+
+                if (changed && !current.IsPaused && update.NextOccurrence is null)
+                {
+                    return Task.FromResult<TCronJob[]?>(null);
+                }
+
+                var definition = _CloneCronJob(update.Definition);
+                definition.IsPaused = current.IsPaused;
+                definition.ScheduleRevision = changed ? current.ScheduleRevision + 1 : current.ScheduleRevision;
+                definition.CreatedAt = current.CreatedAt;
+                definition.UpdatedAt = operationTimeUtc;
+
+                CronJobOccurrenceEntity<TCronJob>? replacement = null;
+                if (changed && !current.IsPaused)
+                {
+                    replacement = _CloneCronOccurrence(update.NextOccurrence!);
+                    replacement.CronJobId = definition.Id;
+                    replacement.CronJob = definition;
+
+                    if (_cronOccurrences.ContainsKey(replacement.Id))
+                    {
+                        return Task.FromResult<TCronJob[]?>(null);
+                    }
+                }
+
+                prepared.Add((definition, replacement, changed));
+            }
+
+            foreach (var item in prepared)
+            {
+                if (item.Changed)
+                {
+                    foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == item.Definition.Id).ToArray())
+                    {
+                        if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
+                        {
+                            continue;
+                        }
+
+                        var skipped = _CloneCronOccurrence(pair.Value);
+                        skipped.Status = JobStatus.Skipped;
+                        skipped.ExecutedAt = operationTimeUtc;
+                        skipped.UpdatedAt = operationTimeUtc;
+                        skipped.SkippedReason = "Cron definition updated";
+                        skipped.OwnerId = null;
+                        skipped.LockedUntil = null;
+                        _cronOccurrences[pair.Key] = skipped;
+                    }
+
+                    if (item.Replacement is not null)
+                    {
+                        _cronOccurrences[item.Replacement.Id] = item.Replacement;
+                    }
+                }
+
+                _cronJobs[item.Definition.Id] = item.Definition;
+            }
+
+            return Task.FromResult<TCronJob[]?>(prepared.Select(x => _CloneCronJob(x.Definition)).ToArray());
+        }
+        finally
+        {
+            for (var index = acquiredLockCount - 1; index >= 0; index--)
+            {
+                Monitor.Exit(locks[index]);
+            }
+        }
     }
 
     public Task<TCronJob[]> GetCronJobsAsync(
@@ -1097,56 +1288,65 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Each cron occurrence should have a unique ID
-            var occurrenceId = context.NextCronOccurrence?.Id ?? Guid.NewGuid();
-
-            // Check if this specific occurrence already exists
-            if (_cronOccurrences.TryGetValue(occurrenceId, out var existingOccurrence))
+            lock (_GetCronDefinitionLock(context.Id))
             {
-                // Update existing occurrence (should be rare - only if re-queuing)
-                var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
-                updatedOccurrence.OwnerId = _ownerId;
-                updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
-                updatedOccurrence.UpdatedAt = now;
-                updatedOccurrence.Status = JobStatus.Queued;
-                // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
-                updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
-
-                if (_cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
+                if (
+                    !_cronJobs.TryGetValue(context.Id, out var currentDefinition)
+                    || currentDefinition.IsPaused
+                    || context.IsPaused
+                    || currentDefinition.ScheduleRevision != context.ScheduleRevision
+                )
                 {
-                    yield return updatedOccurrence;
-                }
-            }
-            else
-            {
-                // Create new occurrence (normal case - each execution time gets its own occurrence)
-                var newOccurrence = new CronJobOccurrenceEntity<TCronJob>
-                {
-                    Id = occurrenceId,
-                    CronJobId = context.Id,
-                    ExecutionTime = cronJobOccurrences.Key,
-                    Status = JobStatus.Queued,
-                    OwnerId = _ownerId,
-                    LockedUntil = now.Add(_leaseDuration),
-                    // Death policy comes from the JobManagerDispatchContext (canonical, sourced from the cron def via
-                    // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
-                    // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrencesAsync
-                    // projection, which always stamps item.OnNodeDeath.
-                    OnNodeDeath = context.OnNodeDeath,
-                    CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
-                    UpdatedAt = now,
-                    RetryCount = 0,
-                };
-
-                // Attach the cron navigation when the definition is in the in-memory map (execution needs Function).
-                if (_cronJobs.TryGetValue(context.Id, out var cronJob))
-                {
-                    newOccurrence.CronJob = cronJob;
+                    continue;
                 }
 
-                if (_cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
+                // Each cron occurrence should have a unique ID
+                var occurrenceId = context.NextCronOccurrence?.Id ?? Guid.NewGuid();
+
+                // Check if this specific occurrence already exists
+                if (_cronOccurrences.TryGetValue(occurrenceId, out var existingOccurrence))
                 {
-                    yield return newOccurrence;
+                    // Update existing occurrence (should be rare - only if re-queuing)
+                    var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
+                    updatedOccurrence.OwnerId = _ownerId;
+                    updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
+                    updatedOccurrence.UpdatedAt = now;
+                    updatedOccurrence.Status = JobStatus.Queued;
+                    // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
+                    updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
+
+                    if (_cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
+                    {
+                        yield return updatedOccurrence;
+                    }
+                }
+                else
+                {
+                    // Create new occurrence (normal case - each execution time gets its own occurrence)
+                    var newOccurrence = new CronJobOccurrenceEntity<TCronJob>
+                    {
+                        Id = occurrenceId,
+                        CronJobId = context.Id,
+                        ExecutionTime = cronJobOccurrences.Key,
+                        Status = JobStatus.Queued,
+                        OwnerId = _ownerId,
+                        LockedUntil = now.Add(_leaseDuration),
+                        // Death policy comes from the JobManagerDispatchContext (canonical, sourced from the cron def via
+                        // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
+                        // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrencesAsync
+                        // projection, which always stamps item.OnNodeDeath.
+                        OnNodeDeath = context.OnNodeDeath,
+                        CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
+                        UpdatedAt = now,
+                        RetryCount = 0,
+                        CronJob = currentDefinition,
+                    };
+
+                    // Attach the cron navigation when the definition is in the in-memory map (execution needs Function).
+                    if (_cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
+                    {
+                        yield return newOccurrence;
+                    }
                 }
             }
         }
@@ -1838,6 +2038,32 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 || occurrence.LockedUntil == null
                 || (occurrence.LockedUntil <= now && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
             );
+    }
+
+    private object _GetCronDefinitionLock(Guid cronJobId)
+    {
+        return _cronDefinitionLocks.GetOrAdd(cronJobId, static _ => new object());
+    }
+
+    private static TCronJob _CloneCronJob(TCronJob job)
+    {
+        return new TCronJob
+        {
+            Id = job.Id,
+            Function = job.Function,
+            Description = job.Description,
+            InitIdentifier = job.InitIdentifier,
+            CreatedAt = job.CreatedAt,
+            UpdatedAt = job.UpdatedAt,
+            Expression = job.Expression,
+            TimeZoneId = job.TimeZoneId,
+            IsPaused = job.IsPaused,
+            ScheduleRevision = job.ScheduleRevision,
+            Request = job.Request?.ToArray(),
+            Retries = job.Retries,
+            RetryIntervals = job.RetryIntervals?.ToArray(),
+            OnNodeDeath = job.OnNodeDeath,
+        };
     }
 
     private static TTimeJob _CloneTicker(TTimeJob job)
