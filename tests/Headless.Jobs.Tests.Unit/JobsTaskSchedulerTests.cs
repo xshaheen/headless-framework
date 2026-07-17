@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
@@ -38,6 +39,43 @@ public sealed class JobsTaskSchedulerTests : TestBase
         startedOnThreadPool.Should().BeTrue();
         contextBeforeAwait.Should().BeNull();
         contextAfterAwait.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task queue_async_does_not_throw_when_the_round_robin_index_wraps_past_int_max()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+
+        // Seed the round-robin counter just below int.MaxValue so the next enqueues cross the
+        // int.MaxValue -> int.MinValue wrap. Before the sign-bit-mask fix, Math.Abs(int.MinValue) threw
+        // OverflowException out of QueueAsync on exactly the enqueue that landed on int.MinValue.
+        var indexField = typeof(JobsTaskScheduler).GetField(
+            "_nextQueueIndex",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        indexField.Should().NotBeNull();
+        indexField!.SetValue(scheduler, int.MaxValue - 1);
+
+        var completed = 0;
+        var enqueueAcrossWrap = async () =>
+        {
+            for (var i = 0; i < 4; i++)
+            {
+                await scheduler.QueueAsync(
+                    _ =>
+                    {
+                        Interlocked.Increment(ref completed);
+                        return Task.CompletedTask;
+                    },
+                    JobPriority.Normal,
+                    AbortToken
+                );
+            }
+        };
+
+        await enqueueAcrossWrap.Should().NotThrowAsync();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+        completed.Should().Be(4);
     }
 
     [Fact]

@@ -151,9 +151,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     private int _GetNextQueueIndex()
     {
-        // Simple round-robin without complex CAS loop
+        // Simple round-robin without complex CAS loop. Mask the sign bit rather than Math.Abs: when the counter
+        // wraps to int.MinValue after 2^31 enqueues, Math.Abs(int.MinValue) throws OverflowException (it cannot
+        // represent -int.MinValue). Masking keeps the round-robin distribution and never throws.
         var index = Interlocked.Increment(ref _nextQueueIndex);
-        return Math.Abs(index) % _maxConcurrency;
+        return (index & int.MaxValue) % _maxConcurrency;
     }
 
     private async ValueTask _WaitForCapacityAsync(WorkerQueue queue, CancellationToken cancellationToken)
