@@ -37,12 +37,14 @@ public static class TestData
     private static void _ReplayFeature(ICanAddChildFeature parent, FeatureDefinition source)
     {
         var feature = parent.AddChild(
-            source.Name,
-            source.DefaultValue,
-            source.DisplayName,
-            source.Description,
-            source.IsVisibleToClients,
-            source.IsAvailableToHost
+            new(source.Name)
+            {
+                DefaultValue = source.DefaultValue,
+                DisplayName = source.DisplayName,
+                Description = source.Description,
+                IsVisibleToClients = source.IsVisibleToClients,
+                IsAvailableToHost = source.IsAvailableToHost,
+            }
         );
 
         foreach (var child in source.Children)
@@ -54,12 +56,14 @@ public static class TestData
     public static FeatureDefinition AddGeneratedFeatureDefinition(this FeatureGroupDefinition group)
     {
         return group.AddChild(
-            name: Faker.Random.String2(1, FeatureDefinitionRecordConstants.NameMaxLength),
-            defaultValue: Faker.Random.String2(1, FeatureDefinitionRecordConstants.DefaultValueMaxLength),
-            displayName: Faker.Random.String2(1, FeatureDefinitionRecordConstants.DisplayNameMaxLength),
-            description: Faker.Random.String2(1, FeatureDefinitionRecordConstants.DescriptionMaxLength),
-            isVisibleToClients: Faker.Random.Bool(),
-            isAvailableToHost: Faker.Random.Bool()
+            new(Faker.Random.String2(1, FeatureDefinitionRecordConstants.NameMaxLength))
+            {
+                DefaultValue = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DefaultValueMaxLength),
+                DisplayName = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DisplayNameMaxLength),
+                Description = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DescriptionMaxLength),
+                IsVisibleToClients = Faker.Random.Bool(),
+                IsAvailableToHost = Faker.Random.Bool(),
+            }
         );
     }
 

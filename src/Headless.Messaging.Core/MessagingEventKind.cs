@@ -8,14 +8,14 @@ namespace Headless.Messaging;
 public enum MessagingEventKind
 {
     /// <summary>The outbox persist span (<c>message.persist</c>).</summary>
-    Persist,
+    Persist = 0,
 
     /// <summary>The broker publish span (<c>message.publish</c>).</summary>
-    Publish,
+    Publish = 1,
 
     /// <summary>The broker consume span (<c>message.consume</c>).</summary>
-    Consume,
+    Consume = 2,
 
     /// <summary>The subscriber handler invocation span (<c>subscriber.invoke</c>).</summary>
-    SubscriberInvoke,
+    SubscriberInvoke = 3,
 }

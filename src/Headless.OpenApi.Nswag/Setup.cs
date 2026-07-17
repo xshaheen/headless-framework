@@ -5,6 +5,7 @@ using Headless.Api.ApiExplorer;
 using Headless.OpenApi.Nswag.OperationProcessors;
 using Headless.OpenApi.Nswag.SchemaProcessors;
 using Headless.Reflection;
+using Headless.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;

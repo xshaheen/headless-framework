@@ -579,9 +579,10 @@ Provides Redis helper extensions plus definition-first Lua script loading/execut
 
 ### Key Features
 
-- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
+- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
+- Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API
 
 #### Design Notes
 
@@ -647,6 +648,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 ### Key Features
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
+- `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
 - `SitemapUrls` - Extension methods to write sitemap URLs to streams
 - `SitemapIndexBuilder` - Sitemap index generation for large sites
 - `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
@@ -668,11 +670,17 @@ var urls = new List<SitemapUrl>
 {
     new(
         location: new Uri("https://example.com/"),
-        lastModified: DateTime.UtcNow,
-        changeFrequency: ChangeFrequency.Daily,
-        priority: 1.0f
+        options: new SitemapUrlOptions
+        {
+            LastModified = DateTime.UtcNow,
+            ChangeFrequency = ChangeFrequency.Daily,
+            Priority = 1.0f,
+        }
     ),
-    new(location: new Uri("https://example.com/about"), changeFrequency: ChangeFrequency.Monthly, priority: 0.8f),
+    new(
+        location: new Uri("https://example.com/about"),
+        options: new SitemapUrlOptions { ChangeFrequency = ChangeFrequency.Monthly, Priority = 0.8f }
+    ),
 };
 
 // Write to stream
@@ -694,7 +702,7 @@ var urls = new List<SitemapUrl>
             new() { Location = new Uri("https://example.com/en/page"), LanguageCode = "en" },
             new() { Location = new Uri("https://example.com/ar/page"), LanguageCode = "ar" },
         ],
-        lastModified: DateTime.UtcNow
+        options: new SitemapUrlOptions { LastModified = DateTime.UtcNow }
     ),
 };
 

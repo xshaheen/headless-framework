@@ -60,7 +60,9 @@ public sealed class GatewayProxyAgentTests : TestBase
         };
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
+        discoveryProvider
+            .GetNodeAsync("node1", null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Node?>(node));
 
         var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
         using var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
@@ -86,7 +88,7 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         discoveryProvider
-            .GetNode("unknown-node", null, Arg.Any<CancellationToken>())
+            .GetNodeAsync("unknown-node", null, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Node?>(null));
 
         var agent = _CreateAgent(context, discoveryProvider);
@@ -135,7 +137,9 @@ public sealed class GatewayProxyAgentTests : TestBase
         };
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
+        discoveryProvider
+            .GetNodeAsync("node1", null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Node?>(node));
 
         using var httpMessageHandler = new MockHttpMessageHandler(new HttpRequestException("Connection failed"));
         var httpClientFactory = Substitute.For<IHttpClientFactory>();

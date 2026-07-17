@@ -8,6 +8,48 @@ namespace Tests;
 public sealed class CommitCoordinatorTests : TestBase
 {
     [Fact]
+    public async Task should_reject_unspecified_outcome_before_claiming_coordinator_or_draining_callbacks()
+    {
+        var coordinator = new CommitCoordinator();
+        var calls = 0;
+        coordinator.OnCommit(
+            (_, _) =>
+            {
+                calls++;
+
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        Action act = () => coordinator.TryClaimTerminal(CommitOutcome.Unspecified, out _);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("outcome");
+        coordinator.State.Should().Be(CommitCoordinatorState.Active);
+        calls.Should().Be(0);
+
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_keep_commit_enum_numeric_contracts_stable()
+    {
+        new[]
+        {
+            (int)CommitCoordinatorState.Active,
+            (int)CommitCoordinatorState.Committed,
+            (int)CommitCoordinatorState.RolledBack,
+        }
+            .Should()
+            .Equal(0, 1, 2);
+
+        new[] { (int)CommitOutcome.Unspecified, (int)CommitOutcome.Committed, (int)CommitOutcome.RolledBack }
+            .Should()
+            .Equal(0, 1, 2);
+    }
+
+    [Fact]
     public async Task should_drain_commit_callbacks_once_when_commit_is_signaled()
     {
         var coordinator = new CommitCoordinator();

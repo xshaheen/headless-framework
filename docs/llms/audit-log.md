@@ -103,7 +103,7 @@ The pipeline produces two kinds of rows:
 
 1. **Automatic property-level entries** — emitted on every `SaveChanges` for entities implementing `IAuditTracked` (or all entities when `AuditByDefault` is `true`). The `EfAuditChangeCapture` service scans `ChangeTracker` entries before the save, records `OldValues`, `NewValues`, and `ChangedFields`, and maps the EF `EntityState` to an `AuditChangeType` (`Created`, `Updated`, `Deleted`).
 
-2. **Explicit business-event entries** — emitted by calling `IAuditLog<TContext>.LogAsync(action, ...)`. Used for events that have no corresponding entity mutation: data reads, PII reveals, cross-tenant access, authorization failures. These entries have no `OldValues`, no `ChangeType`, and the caller controls every field including the `action` string (e.g., `"pii.revealed"`, `"report.downloaded"`).
+2. **Explicit business-event entries** — emitted by calling `IAuditLog<TContext>.LogAsync(request)`. Used for events that have no corresponding entity mutation: data reads, PII reveals, cross-tenant access, authorization failures. These entries have no `OldValues`, no `ChangeType`, and the caller controls every field through `AuditLogWriteRequest`, including the `action` string (e.g., `"pii.revealed"`, `"report.downloaded"`).
 
 ### What gets captured
 
@@ -209,10 +209,12 @@ Log explicit events:
 
 ```csharp
 await auditLog.LogAsync(
-    "pii.revealed",
-    entityType: typeof(Patient).FullName,
-    entityId: id.ToString(),
-    data: new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId }
+    new AuditLogWriteRequest("pii.revealed")
+    {
+        EntityType = typeof(Patient).FullName,
+        EntityId = id.ToString(),
+        Data = new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId },
+    }
 );
 ```
 
@@ -220,10 +222,13 @@ Query audit history:
 
 ```csharp
 var entries = await readAuditLog.QueryAsync(
-    entityType: typeof(Patient).FullName,
-    entityId: patientId.ToString(),
-    limit: 50,
-    cancellationToken: ct
+    new AuditLogQuery
+    {
+        EntityType = typeof(Patient).FullName,
+        EntityId = patientId.ToString(),
+        Limit = 50,
+    },
+    ct
 );
 ```
 
@@ -402,17 +407,24 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 #### Explicit event logging
 
 ```csharp
-await auditLog.LogAsync("pii.revealed", entityType: typeof(Patient).FullName, entityId: id.ToString());
+await auditLog.LogAsync(new AuditLogWriteRequest("pii.revealed")
+{
+    EntityType = typeof(Patient).FullName,
+    EntityId = id.ToString(),
+});
 ```
 
 #### Query audit entries
 
 ```csharp
 var entries = await readAuditLog.QueryAsync(
-    action: "entity.updated",
-    entityType: typeof(Patient).FullName,
-    limit: 50,
-    cancellationToken: ct
+    new AuditLogQuery
+    {
+        Action = "entity.updated",
+        EntityType = typeof(Patient).FullName,
+        Limit = 50,
+    },
+    ct
 );
 ```
 

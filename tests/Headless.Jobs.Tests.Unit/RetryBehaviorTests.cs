@@ -213,7 +213,7 @@ public sealed class RetryBehaviorTests : TestBase
             }
         );
         var scopes = new List<RetryScopeMarker>();
-        context.CachedDelegate = (_, provider, jobContext) =>
+        context.CachedDelegate = (provider, jobContext, _) =>
         {
             attempts.Add(new Attempt(DateTime.UtcNow, jobContext.RetryCount));
             scopes.Add(provider.GetRequiredService<RetryScopeMarker>());
@@ -308,7 +308,7 @@ public sealed class RetryBehaviorTests : TestBase
                 retryOptions: options,
                 configureServices: static services => services.AddScoped<RetryScopeMarker>()
             );
-            context.CachedDelegate = (_, _, functionContext) =>
+            context.CachedDelegate = (_, functionContext, _) =>
             {
                 terminalInvocations++;
                 return functionContext.RetryCount == 0 ? throw new TimeoutException("transient") : Task.CompletedTask;
@@ -519,7 +519,7 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_marks_cooperative_base_operation_cancellation_as_cancelled()
     {
         var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
-        context.CachedDelegate = (cancellationToken, _, functionContext) =>
+        context.CachedDelegate = (_, functionContext, cancellationToken) =>
         {
             functionContext.RequestCancellation();
             throw new OperationCanceledException(cancellationToken);
@@ -594,7 +594,7 @@ public sealed class RetryBehaviorTests : TestBase
             RetryCount = 0,
             Status = JobStatus.Idle,
             // Runs until cancel-on-loss fires; the infinite delay observes the job token and throws on cancellation.
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -661,7 +661,7 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = 0,
             RetryCount = 0,
             Status = JobStatus.Idle,
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -838,7 +838,7 @@ public sealed class RetryBehaviorTests : TestBase
             RetryCount = 0,
             Status = JobStatus.Idle,
             // Completes only after the renewal loop has ticked twice — deterministic, not timing-dependent.
-            CachedDelegate = async (ct, _, _) =>
+            CachedDelegate = async (_, _, ct) =>
                 await secondRenewalReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
         };
 
@@ -892,7 +892,7 @@ public sealed class RetryBehaviorTests : TestBase
             Status = JobStatus.Idle,
             // Runs until cancel-on-loss fires — deterministic: the lease-window bound WILL trip once membership has
             // been unknown for LeaseDuration (load only delays the moment, never changes the outcome).
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -1050,7 +1050,7 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = retries,
             RetryCount = 0,
             Status = JobStatus.Idle,
-            CachedDelegate = (ct, sp, tctx) =>
+            CachedDelegate = (sp, tctx, ct) =>
             {
                 attempts.Add(new Attempt(DateTime.UtcNow, tctx.RetryCount));
 

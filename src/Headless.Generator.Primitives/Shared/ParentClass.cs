@@ -2,7 +2,7 @@
 
 namespace Headless.Generator.Primitives.Shared;
 
-public sealed class ParentClass(string keyword, string name, string constraints, ParentClass? child)
+internal sealed class ParentClass(string keyword, string name, string constraints, ParentClass? child)
 {
     public ParentClass? Child { get; } = child;
 

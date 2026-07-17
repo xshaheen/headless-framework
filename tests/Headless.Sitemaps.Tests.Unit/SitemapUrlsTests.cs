@@ -38,10 +38,13 @@ public sealed class SitemapUrlsTests : SitemapTestBase
             "with-priority-last-modified-change-frequency" => (
                 [
                     new(
-                        location: new Uri("https://www.example.com"),
-                        lastModified: new DateTime(year: 2021, month: 3, day: 15),
-                        changeFrequency: ChangeFrequency.Daily,
-                        priority: 0.8f
+                        new Uri("https://www.example.com"),
+                        new()
+                        {
+                            LastModified = new DateTime(year: 2021, month: 3, day: 15),
+                            ChangeFrequency = ChangeFrequency.Daily,
+                            Priority = 0.8f,
+                        }
                     ),
                 ],
                 "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
@@ -184,8 +187,8 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         var urls = new List<SitemapUrl>
         {
             new(
-                location: new Uri("https://www.example.com/page"),
-                images: [new SitemapImage(new Uri("https://www.example.com/image.jpg"))]
+                new Uri("https://www.example.com/page"),
+                new() { Images = [new SitemapImage(new Uri("https://www.example.com/image.jpg"))] }
             ),
         };
 
@@ -206,12 +209,15 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         var urls = new List<SitemapUrl>
         {
             new(
-                location: new Uri("https://www.example.com/page"),
-                images:
-                [
-                    new SitemapImage(new Uri("https://www.example.com/image1.jpg")),
-                    new SitemapImage(new Uri("https://www.example.com/image2.png")),
-                ]
+                new Uri("https://www.example.com/page"),
+                new()
+                {
+                    Images =
+                    [
+                        new SitemapImage(new Uri("https://www.example.com/image1.jpg")),
+                        new SitemapImage(new Uri("https://www.example.com/image2.png")),
+                    ],
+                }
             ),
         };
 
@@ -250,7 +256,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
                     new() { Location = new Uri("https://www.example.com/en/page"), LanguageCode = "en" },
                     new() { Location = new Uri("https://www.example.com/de/page"), LanguageCode = "de" },
                 ],
-                images: [new SitemapImage(new Uri("https://www.example.com/shared-image.jpg"))]
+                options: new() { Images = [new SitemapImage(new Uri("https://www.example.com/shared-image.jpg"))] }
             ),
         };
 
@@ -286,7 +292,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
                     new() { Location = new Uri("https://www.example.com/de/page"), LanguageCode = "de" },
                     new() { Location = new Uri("https://www.example.com/fr/page"), LanguageCode = "fr" },
                 ],
-                writeAlternateLanguageCodes: ["en", "de"] // Only write en and de
+                options: new() { WriteAlternateLanguageCodes = ["en", "de"] } // Only write en and de
             ),
         };
 
@@ -441,7 +447,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     [Fact]
     public async Task should_format_priority_with_one_decimal()
     {
-        var urls = new List<SitemapUrl> { new(location: new Uri("https://www.example.com"), priority: 0.8f) };
+        var urls = new List<SitemapUrl> { new(new Uri("https://www.example.com"), new() { Priority = 0.8f }) };
 
         string result;
 
@@ -460,7 +466,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     {
         var urls = new List<SitemapUrl>
         {
-            new(location: new Uri("https://www.example.com"), changeFrequency: ChangeFrequency.Daily),
+            new(new Uri("https://www.example.com"), new() { ChangeFrequency = ChangeFrequency.Daily }),
         };
 
         string result;
@@ -480,7 +486,7 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     {
         var urls = new List<SitemapUrl>
         {
-            new(location: new Uri("https://www.example.com"), lastModified: new DateTime(2021, 3, 15)),
+            new(new Uri("https://www.example.com"), new() { LastModified = new DateTime(2021, 3, 15) }),
         };
 
         string result;

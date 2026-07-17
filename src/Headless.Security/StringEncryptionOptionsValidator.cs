@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Abstractions;
 
-namespace Headless;
+namespace Headless.Security;
 
 /// <summary>Validates <see cref="StringEncryptionOptions" />.</summary>
 internal sealed class StringEncryptionOptionsValidator : AbstractValidator<StringEncryptionOptions>

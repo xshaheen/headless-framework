@@ -349,7 +349,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     {
         public void Define(IFeatureDefinitionContext context)
         {
-            context.AddGroup("Group1").AddChild("Feature1", "Value1");
+            context.AddGroup("Group1").AddChild(new("Feature1") { DefaultValue = "Value1" });
         }
     }
 
@@ -358,7 +358,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     {
         public void Define(IFeatureDefinitionContext context)
         {
-            context.AddGroup("Group2").AddChild("Feature2", "Value2");
+            context.AddGroup("Group2").AddChild(new("Feature2") { DefaultValue = "Value2" });
         }
     }
 
@@ -367,7 +367,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     {
         public void Define(IFeatureDefinitionContext context)
         {
-            context.AddGroup("Group1").AddChild("Feature1", "false");
+            context.AddGroup("Group1").AddChild(new("Feature1") { DefaultValue = "false" });
         }
     }
 

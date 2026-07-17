@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>Security primitives and services for Headless Framework applications.</Description>
     <PackageTags>headless;security;dotnet</PackageTags>
-    <RootNamespace>Headless</RootNamespace>
+    <RootNamespace>Headless.Security</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Security.Tests.Unit" />

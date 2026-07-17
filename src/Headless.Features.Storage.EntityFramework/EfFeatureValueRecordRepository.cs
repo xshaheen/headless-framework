@@ -15,7 +15,7 @@ namespace Headless.Features;
 /// The feature-value cache shared with <c>FeatureValueStore</c>. A write here removes the affected cache key
 /// so a direct repository write (bypassing <c>IFeatureManager</c>) is reflected on the next read.
 /// </param>
-public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory, ICache cache)
+internal sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory, ICache cache)
     : IFeatureValueRecordRepository
     where TContext : DbContext
 {

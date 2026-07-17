@@ -21,20 +21,8 @@ public interface IAuditLog<TContext>
     /// Records an explicit audit event. The entry is added to the current
     /// DbContext and persists with the next <c>SaveChanges</c> call.
     /// </summary>
-    /// <param name="action">A dot-namespaced action name (e.g., <c>"pii.revealed"</c>).</param>
-    /// <param name="entityType">Optional CLR type name of the related entity.</param>
-    /// <param name="entityId">Optional string representation of the entity's primary key.</param>
-    /// <param name="data">Optional payload stored in <c>NewValues</c>.</param>
-    /// <param name="success">Whether the operation succeeded.</param>
-    /// <param name="errorCode">Error code when <paramref name="success"/> is <see langword="false"/>.</param>
+    /// <param name="request">The action and optional event metadata to record.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task LogAsync(
-        string action,
-        string? entityType = null,
-        string? entityId = null,
-        Dictionary<string, object?>? data = null,
-        bool success = true,
-        string? errorCode = null,
-        CancellationToken cancellationToken = default
-    );
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default);
 }

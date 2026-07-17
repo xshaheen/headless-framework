@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Security;
 using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
@@ -227,7 +228,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         public void Define(ISettingDefinitionContext context)
         {
-            var definition = context.Add(_SettingName, "Disabled");
+            var definition = context.Add(new(_SettingName) { DefaultValue = "Disabled" });
             definition.Providers.Add(UserSettingValueProvider.ProviderName);
         }
     }

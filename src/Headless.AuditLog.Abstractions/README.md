@@ -54,10 +54,12 @@ Log explicit events:
 
 ```csharp
 await auditLog.LogAsync(
-    "pii.revealed",
-    entityType: typeof(Patient).FullName,
-    entityId: id.ToString(),
-    data: new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId }
+    new AuditLogWriteRequest("pii.revealed")
+    {
+        EntityType = typeof(Patient).FullName,
+        EntityId = id.ToString(),
+        Data = new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId },
+    }
 );
 ```
 
@@ -65,10 +67,13 @@ Query audit history:
 
 ```csharp
 var entries = await readAuditLog.QueryAsync(
-    entityType: typeof(Patient).FullName,
-    entityId: patientId.ToString(),
-    limit: 50,
-    cancellationToken: ct
+    new AuditLogQuery
+    {
+        EntityType = typeof(Patient).FullName,
+        EntityId = patientId.ToString(),
+        Limit = 50,
+    },
+    ct
 );
 ```
 

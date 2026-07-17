@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
 
-public static class PaginationExtensions
+internal static class PaginationExtensions
 {
     /// <summary>
     /// Converts an IQueryable to a paginated list

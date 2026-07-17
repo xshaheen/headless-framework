@@ -394,7 +394,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         // then — the refresh is best-effort (does not throw) and L1 was still re-armed despite the L2 failure
         await act.Should().NotThrowAsync();
 
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry.Found.Should().BeTrue();
         l1Entry
             .LogicalExpiresAt.Should()

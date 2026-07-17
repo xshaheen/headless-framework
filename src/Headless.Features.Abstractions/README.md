@@ -70,12 +70,12 @@ public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
     {
         var group = context.AddGroup("App.Features");
 
-        group.AddChild("MaxUsers", defaultValue: "10");
-        group.AddChild("EnableReports", defaultValue: "false");
+        group.AddChild(new FeatureDefinitionCreateOptions("MaxUsers") { DefaultValue = "10" });
+        group.AddChild(new FeatureDefinitionCreateOptions("EnableReports") { DefaultValue = "false" });
 
         // Nested child features
-        var billingFeature = group.AddChild("Billing", defaultValue: "false");
-        billingFeature.AddChild("Billing.Invoices", defaultValue: "false");
+        var billingFeature = group.AddChild(new FeatureDefinitionCreateOptions("Billing") { DefaultValue = "false" });
+        billingFeature.AddChild(new FeatureDefinitionCreateOptions("Billing.Invoices") { DefaultValue = "false" });
     }
 }
 ```

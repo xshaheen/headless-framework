@@ -66,7 +66,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
 - **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
-- **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
+- **`Headless.Security.Abstractions`** — security contracts and options in the `Headless.Security` namespace: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, and `StringHashOptions`. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use `IDomainEvent` + `IDomainEventEmitter`; integration (distributed) events use `IIntegrationEvent` + `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
@@ -88,7 +88,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
-- For string encryption, inject `IStringEncryptionService` (from `Headless.Security.Abstractions`) and register the implementation once with `AddStringEncryptionService(...)` (from `Headless.Security`). The first registration wins — do not call it twice.
+- For string encryption, import `Headless.Security`, inject `IStringEncryptionService` from the abstractions package, and register the implementation once with `AddStringEncryptionService(...)` from the implementation package. The first registration wins — do not call it twice.
 - `IStringHashService` is a deterministic keyed lookup digest (PBKDF2), **not** a password hasher. Use it for blind indexes over encrypted columns. For password storage use ASP.NET Core's `PasswordHasher<T>`.
 - `StringEncryptionOptions.DefaultPassPhrase` and `DefaultSalt` are required; both are validated at startup. A missing or empty value is a startup error.
 
@@ -473,6 +473,8 @@ No configuration required.
 
 Security contracts and option models for string encryption and hashing — no implementation, no DI coupling.
 
+All public contracts and options use the `Headless.Security` namespace.
+
 ### Problem Solved
 
 Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings.Core` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
@@ -496,6 +498,8 @@ dotnet add package Headless.Security.Abstractions
 ### Quick Start
 
 ```csharp
+using Headless.Security;
+
 // Inject the contract; the implementation is registered by Headless.Security.
 public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {
@@ -527,6 +531,8 @@ None.
 ## Headless.Security
 
 Default implementations of `IStringEncryptionService` and `IStringHashService`, plus idempotent DI registration helpers.
+
+Contracts, options, implementations, and registration extensions all use the `Headless.Security` namespace.
 
 ### Problem Solved
 

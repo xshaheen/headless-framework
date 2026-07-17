@@ -1656,6 +1656,20 @@
           "Microsoft.Extensions.Http.Resilience": "[10.7.0, )"
         }
       },
+      "headless.payments.paymob.cashout": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.7.0, )"
+        }
+      },
+      "headless.payments.paymob.services": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Payments.Paymob.CashIn": "[1.0.0, )",
+          "Headless.Payments.Paymob.CashOut": "[1.0.0, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {

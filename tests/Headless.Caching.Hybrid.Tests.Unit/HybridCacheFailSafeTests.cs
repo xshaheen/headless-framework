@@ -367,7 +367,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         // L2 physical expiration = max(duration, failSafeMaxDuration) = 2 h.
         // GetExpirationAsync returns the *logical* TTL, so we must read the raw entry to inspect PhysicalExpiresAt.
-        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l2Entry.Found.Should().BeTrue("coordinator must have written the entry to L2");
         l2Entry.PhysicalExpiresAt.Should().NotBeNull("fail-safe writes must include physical expiry");
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -456,14 +456,14 @@ public sealed class HybridCacheFailSafeTests : TestBase
         );
 
         // when — drive the composite read primitive directly (no factory / activation / restamp involved)
-        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         // then — the entry is surfaced so the coordinator can use it as a stale candidate
         entry.Found.Should().BeTrue("the composite read must surface the L2 reserve as a stale candidate");
         entry.Value.Should().Be(staleValue);
 
         // and — the read path must NOT have promoted the logically-expired reserve into L1
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry
             .Found.Should()
             .BeFalse(
@@ -566,7 +566,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // Direct L1 assertion: after fail-safe, the throttle entry must be present in L1 with
         // LogicalExpiresAt ≈ now + FailSafeThrottleDuration (in the future, within physical reserve).
         // This assertion fails if the L1 restamp write is removed.
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry.Found.Should().BeTrue("fail-safe must write a throttle entry into L1 after activation");
         l1Entry
             .LogicalExpiresAt.Should()
@@ -677,14 +677,14 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         // when — composite read (TryGetEntryAsync) triggers promotion of the null-timestamp L2 entry
-        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         // then — entry found with the value from L2
         entry.Found.Should().BeTrue("the null-timestamp L2 entry must be surfaced");
         entry.Value.Should().Be(value);
 
         // and — L1 must have been populated with the entry bounded by now + DefaultLocalExpiration
-        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry
             .Found.Should()
             .BeTrue("null-timestamp L2 entry must be promoted into L1 when DefaultLocalExpiration is configured");
@@ -733,14 +733,14 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // when — composite read triggers the null-timestamp branch
-        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         // then — entry still surfaced to caller (coordinator needs it)
         entry.Found.Should().BeTrue();
         entry.Value.Should().Be(value);
 
         // but — L1 must NOT have been populated (no finite bound exists)
-        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry
             .Found.Should()
             .BeFalse(

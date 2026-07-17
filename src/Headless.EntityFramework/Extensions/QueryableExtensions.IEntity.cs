@@ -13,7 +13,7 @@ public static partial class QueryableExtensions
     /// <c>EntityNotFoundException</c> when no match is found.
     /// </summary>
     /// <typeparam name="TEntity">The entity type implementing <c>IEntity&lt;TKey&gt;</c>.</typeparam>
-    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <typeparam name="TKey">The non-null, equatable key type.</typeparam>
     /// <param name="source">The source queryable.</param>
     /// <param name="id">The primary key value to look up.</param>
     /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
@@ -25,7 +25,7 @@ public static partial class QueryableExtensions
         CancellationToken cancellationToken = default
     )
         where TEntity : class, IEntity<TKey>
-        where TKey : IEquatable<TKey>
+        where TKey : notnull, IEquatable<TKey>
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id.Equals(id), cancellationToken).ConfigureAwait(false);
 

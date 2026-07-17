@@ -20,10 +20,17 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         var context = new SettingDefinitionContext(new Dictionary<string, SettingDefinition>(StringComparer.Ordinal));
 
-        context.Add("Setting1", "Value1", displayName: "Display1");
-        context.Add("Setting2", "Value2", description: "Description2");
-        context.Add("Setting3", "Value3", isInherited: true);
-        context.Add("Setting4", "Value4", isVisibleToClients: true, isEncrypted: true);
+        context.Add(new("Setting1") { DefaultValue = "Value1", DisplayName = "Display1" });
+        context.Add(new("Setting2") { DefaultValue = "Value2", Description = "Description2" });
+        context.Add(new("Setting3") { DefaultValue = "Value3", IsInherited = true });
+        context.Add(
+            new("Setting4")
+            {
+                DefaultValue = "Value4",
+                IsVisibleToClients = true,
+                IsEncrypted = true,
+            }
+        );
 
         return [.. context.GetAll()];
     }
@@ -282,7 +289,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add("Setting1", "Value1");
+            context.Add(new("Setting1") { DefaultValue = "Value1" });
         }
     }
 
@@ -291,7 +298,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add("Setting2", "Value2");
+            context.Add(new("Setting2") { DefaultValue = "Value2" });
         }
     }
 

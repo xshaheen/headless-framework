@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> logger, IDispatcher dispatcher)
+internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> logger, IDispatcher dispatcher)
     : IProcessor
 {
     private readonly TimeSpan _waitingInterval = TimeSpan.FromSeconds(60);

@@ -251,7 +251,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     {
         public void Define(IFeatureDefinitionContext context)
         {
-            context.AddGroup("CustomSchemaGroup").AddChild(_FeatureName, "false");
+            context.AddGroup("CustomSchemaGroup").AddChild(new(_FeatureName) { DefaultValue = "false" });
         }
     }
 }

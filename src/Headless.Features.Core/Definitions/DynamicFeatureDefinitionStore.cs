@@ -279,12 +279,14 @@ public sealed class DynamicFeatureDefinitionStore(
     )
     {
         var feature = featureContainer.AddChild(
-            featureRecord.Name,
-            featureRecord.DefaultValue,
-            featureRecord.DisplayName,
-            featureRecord.Description,
-            featureRecord.IsVisibleToClients,
-            featureRecord.IsAvailableToHost
+            new(featureRecord.Name)
+            {
+                DefaultValue = featureRecord.DefaultValue,
+                DisplayName = featureRecord.DisplayName,
+                Description = featureRecord.Description,
+                IsVisibleToClients = featureRecord.IsVisibleToClients,
+                IsAvailableToHost = featureRecord.IsAvailableToHost,
+            }
         );
 
         featureCacheBuilder[feature.Name] = feature;

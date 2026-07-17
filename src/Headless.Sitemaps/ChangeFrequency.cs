@@ -11,23 +11,23 @@ namespace Headless.Sitemaps;
 public enum ChangeFrequency
 {
     /// <summary>The page changes with every access (for example, dynamically generated pages).</summary>
-    Always,
+    Always = 0,
 
     /// <summary>The page changes approximately every hour.</summary>
-    Hourly,
+    Hourly = 1,
 
     /// <summary>The page changes approximately once per day.</summary>
-    Daily,
+    Daily = 2,
 
     /// <summary>The page changes approximately once per week.</summary>
-    Weekly,
+    Weekly = 3,
 
     /// <summary>The page changes approximately once per month.</summary>
-    Monthly,
+    Monthly = 4,
 
     /// <summary>The page changes approximately once per year.</summary>
-    Yearly,
+    Yearly = 5,
 
     /// <summary>The page is archived and will not change. Search engines may still recrawl it periodically.</summary>
-    Never,
+    Never = 6,
 }

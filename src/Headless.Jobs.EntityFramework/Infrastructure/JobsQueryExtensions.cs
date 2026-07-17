@@ -5,7 +5,7 @@ using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.Infrastructure;
 
-public static class JobsQueryExtensions
+internal static class JobsQueryExtensions
 {
     /// <summary>
     /// Selects acquirable non-terminal rows using the caller-supplied clock. EF runtime claim paths use the internal

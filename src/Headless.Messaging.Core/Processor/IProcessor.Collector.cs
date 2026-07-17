@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class CollectorProcessor : IProcessor
+internal sealed class CollectorProcessor : IProcessor
 {
     private const int _ItemBatch = 1000;
     private readonly TimeSpan _delay = TimeSpan.FromSeconds(1);

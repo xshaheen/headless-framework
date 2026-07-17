@@ -100,7 +100,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
 - Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `GetAsync` returns a `SettingValue` with a `null` `Value` regardless of lower-priority providers.
-- `SettingDefinition` instances are minted through the `ISettingDefinitionContext.Add(name, ...)` factory (the constructor is `internal`). The factory returns the created definition so you can then mutate `Providers` or `ExtraProperties` on it.
+- `SettingDefinition` instances are minted through the `ISettingDefinitionContext.Add(options)` factory (the constructor is `internal`). The factory returns the created definition so you can then mutate `Providers` or `ExtraProperties` on it.
 - Custom value providers must implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write). Register with `services.AddSettingValueProvider<T>()`. The last-registered provider has the highest resolution priority.
 
 ## Core Concepts
@@ -203,14 +203,18 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size");
+        context.Add(new SettingDefinitionCreateOptions("App.MaxFileSize")
+        {
+            DefaultValue = "10485760",
+            DisplayName = "Maximum File Size",
+        });
 
-        context.Add(
-            name: "App.ApiKey",
-            displayName: "API Key",
-            isEncrypted: true,
-            isVisibleToClients: false
-        );
+        context.Add(new SettingDefinitionCreateOptions("App.ApiKey")
+        {
+            DisplayName = "API Key",
+            IsEncrypted = true,
+            IsVisibleToClients = false,
+        });
     }
 }
 ```
@@ -291,9 +295,17 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760");
+        context.Add(new SettingDefinitionCreateOptions("App.MaxFileSize")
+        {
+            DisplayName = "Maximum File Size",
+            DefaultValue = "10485760",
+        });
 
-        context.Add(name: "App.ApiKey", displayName: "API Key", isEncrypted: true);
+        context.Add(new SettingDefinitionCreateOptions("App.ApiKey")
+        {
+            DisplayName = "API Key",
+            IsEncrypted = true,
+        });
     }
 }
 ```

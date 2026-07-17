@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Security;
 
 /// <summary>
 /// Creates deterministic, salted hashes for string values, intended for lookup and indexing (for example, blind

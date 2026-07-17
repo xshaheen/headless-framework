@@ -41,6 +41,8 @@ internal sealed class TrackedCommitScope : ICommitScope
 
     public async ValueTask SignalAsync(CommitOutcome outcome)
     {
+        CommitOutcomeValidation.ThrowIfNotTerminal(outcome);
+
         ValueTask signal;
         var claimedSignal = false;
 
