@@ -91,7 +91,13 @@ public sealed class JobSchedulerTests : TestBase
             [],
             [new KeyValuePair<string, JobFunctionDescriptor>(_TypedDescriptor.FunctionName, _TypedDescriptor)]
         );
-        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(timeManager, cronManager, registry);
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(
+            timeManager,
+            cronManager,
+            registry,
+            Substitute.For<IInternalJobManager>(),
+            Substitute.For<IJobsHostScheduler>()
+        );
 
         var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
 
@@ -125,7 +131,13 @@ public sealed class JobSchedulerTests : TestBase
         var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
         var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
         timeManager.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(call => call.Arg<TimeJobEntity>());
-        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(timeManager, cronManager, registry);
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(
+            timeManager,
+            cronManager,
+            registry,
+            Substitute.For<IInternalJobManager>(),
+            Substitute.For<IJobsHostScheduler>()
+        );
 
         await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
 
@@ -289,7 +301,9 @@ public sealed class JobSchedulerTests : TestBase
             timeManager,
             cronManager,
             requestType => requestType == typeof(UnsupportedRequest) ? descriptor : null,
-            _ => null
+            _ => null,
+            Substitute.For<IInternalJobManager>(),
+            Substitute.For<IJobsHostScheduler>()
         );
 
         var act = async () =>
@@ -338,12 +352,67 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public void should_expose_only_the_six_supported_scheduler_overloads()
+    public async Task cancel_async_delegates_to_the_internal_durable_cancellation_operation()
+    {
+        var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var hostScheduler = Substitute.For<IJobsHostScheduler>();
+        var jobId = Guid.NewGuid();
+        internalManager.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(
+            timeManager,
+            cronManager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            internalManager,
+            hostScheduler
+        );
+
+        (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeTrue();
+
+        await internalManager.Received(1).RequestTimeJobCancellationAsync(jobId, AbortToken);
+        hostScheduler.Received(1).Restart();
+    }
+
+    [Fact]
+    public async Task cancel_async_does_not_restart_the_host_when_the_transition_is_rejected()
+    {
+        var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var hostScheduler = Substitute.For<IJobsHostScheduler>();
+        var jobId = Guid.NewGuid();
+        internalManager.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(false);
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(
+            timeManager,
+            cronManager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            internalManager,
+            hostScheduler
+        );
+
+        (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeFalse();
+
+        hostScheduler.DidNotReceive().Restart();
+    }
+
+    [Fact]
+    public void should_expose_only_the_job_id_cancellation_method_and_six_scheduling_overloads()
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(6);
-        methods.Should().OnlyContain(method => method.ReturnType == typeof(Task<Guid>));
+        methods.Should().HaveCount(7);
+        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(6);
+        var cancellation = methods.Single(method =>
+            string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)
+        );
+        cancellation.ReturnType.Should().Be<Task<bool>>();
+        cancellation
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .Should()
+            .Equal(typeof(Guid), typeof(CancellationToken));
+        cancellation.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTime), typeof(EnqueueOptions));
@@ -421,7 +490,9 @@ public sealed class JobSchedulerTests : TestBase
             functionName =>
                 string.Equals(functionName, _RequestlessDescriptor.FunctionName, StringComparison.Ordinal)
                     ? _RequestlessDescriptor
-                    : null
+                    : null,
+            Substitute.For<IInternalJobManager>(),
+            Substitute.For<IJobsHostScheduler>()
         );
 
         return (scheduler, timeManager, cronManager);

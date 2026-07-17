@@ -301,6 +301,13 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan? LeaseRenewalInterval { get; set; }
 
     /// <summary>
+    /// How often a running time job checks its durable cancellation request. <see langword="null"/> uses the
+    /// effective <see cref="LeaseRenewalInterval"/> cadence. The effective interval must be finite, positive, and no
+    /// greater than <see cref="LeaseDuration"/>.
+    /// </summary>
+    public TimeSpan? CancellationObservationInterval { get; set; }
+
+    /// <summary>
     /// How often the fallback background service wakes up to poll for due jobs and reclaim stalled
     /// leases when no scheduler event triggered an earlier wake-up. Defaults to 30 seconds. Should be
     /// less than or equal to <see cref="LeaseDuration"/> so a stalled job is reclaimed within one
@@ -372,6 +379,28 @@ public sealed class SchedulerOptionsBuilder
             throw new InvalidOperationException(
                 $"SchedulerOptionsBuilder.LeaseRenewalInterval ({interval}) must be strictly less than "
                     + $"LeaseDuration ({LeaseDuration}) so a renewal lands before the lease deadline."
+            );
+        }
+
+        return interval;
+    }
+
+    /// <summary>Resolves and validates the durable-cancellation observation cadence.</summary>
+    internal TimeSpan ResolveCancellationObservationInterval()
+    {
+        var interval = CancellationObservationInterval ?? ResolveLeaseRenewalInterval();
+        if (interval <= TimeSpan.Zero || interval == Timeout.InfiniteTimeSpan)
+        {
+            throw new InvalidOperationException(
+                $"SchedulerOptionsBuilder.CancellationObservationInterval ({interval}) must be finite and positive."
+            );
+        }
+
+        if (interval > LeaseDuration)
+        {
+            throw new InvalidOperationException(
+                $"SchedulerOptionsBuilder.CancellationObservationInterval ({interval}) must not exceed "
+                    + $"LeaseDuration ({LeaseDuration})."
             );
         }
 

@@ -54,6 +54,12 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual DateTime? ExecutedAt { get; internal set; }
 
     /// <summary>
+    /// Whether cooperative cancellation was durably requested for this job. The flag is retained as audit data even
+    /// when an executing handler ignores its cancellation token and records its natural terminal result.
+    /// </summary>
+    public virtual bool CancelRequested { get; internal set; }
+
+    /// <summary>
     /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
     /// (only <see cref="NodeDeathPolicy.Retry"/> is speculatively re-claimable) and drives the dead-node
     /// sweep's terminal transitions. Defaults to <see cref="NodeDeathPolicy.Retry"/>.

@@ -28,6 +28,171 @@ namespace Tests;
 public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    public virtual async Task time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cancellation-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var idleId = Guid.NewGuid();
+            var queuedId = Guid.NewGuid();
+            var inProgressId = Guid.NewGuid();
+            var terminalId = Guid.NewGuid();
+            var lockedUntil = DateTime.UtcNow.AddMinutes(5);
+
+            await fixture.SeedTimeJobAsync(
+                idleId,
+                "cancel-idle",
+                (int)JobStatus.Idle,
+                owner,
+                ct,
+                lockedUntil: lockedUntil
+            );
+            await fixture.SeedTimeJobAsync(
+                queuedId,
+                "cancel-queued",
+                (int)JobStatus.Queued,
+                owner,
+                ct,
+                lockedUntil: lockedUntil
+            );
+            await fixture.SeedTimeJobAsync(
+                inProgressId,
+                "cancel-running",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                lockedUntil: lockedUntil
+            );
+            await fixture.SeedTimeJobAsync(
+                terminalId,
+                "cancel-terminal",
+                (int)JobStatus.Succeeded,
+                owner,
+                ct,
+                lockedUntil: lockedUntil
+            );
+            var terminalBefore = await persistence.GetTimeJobByIdAsync(terminalId, ct);
+
+            (await persistence.IsTimeJobCancellationRequestedAsync(inProgressId, ct)).Should().BeFalse();
+            (await persistence.IsTimeJobCancellationRequestedAsync(queuedId, ct)).Should().BeNull();
+            (await persistence.RequestTimeJobCancellationAsync(idleId, ct)).Should().BeTrue();
+            var queuedRequests = await Task.WhenAll(
+                Enumerable.Range(0, 8).Select(_ => persistence.RequestTimeJobCancellationAsync(queuedId, ct))
+            );
+            (await persistence.RequestTimeJobCancellationAsync(inProgressId, ct)).Should().BeTrue();
+
+            queuedRequests.Count(static accepted => accepted).Should().Be(1);
+            (await persistence.RequestTimeJobCancellationAsync(queuedId, ct)).Should().BeFalse();
+            (await persistence.RequestTimeJobCancellationAsync(terminalId, ct)).Should().BeFalse();
+            (await persistence.RequestTimeJobCancellationAsync(Guid.NewGuid(), ct)).Should().BeFalse();
+            (await persistence.IsTimeJobCancellationRequestedAsync(inProgressId, ct)).Should().BeTrue();
+            (await persistence.IsTimeJobCancellationRequestedAsync(terminalId, ct)).Should().BeNull();
+
+            var idle = await persistence.GetTimeJobByIdAsync(idleId, ct);
+            idle!.Status.Should().Be(JobStatus.Cancelled);
+            idle.CancelRequested.Should().BeTrue();
+            idle.ExecutedAt.Should().NotBeNull();
+            idle.OwnerId.Should().BeNull();
+            idle.LockedUntil.Should().BeNull();
+
+            var queued = await persistence.GetTimeJobByIdAsync(queuedId, ct);
+            queued!.Status.Should().Be(JobStatus.Queued);
+            queued.CancelRequested.Should().BeTrue();
+            queued.ExecutedAt.Should().BeNull();
+            queued.OwnerId.Should().Be(owner);
+            queued.LockedUntil.Should().NotBeNull();
+
+            var inProgress = await persistence.GetTimeJobByIdAsync(inProgressId, ct);
+            inProgress!.Status.Should().Be(JobStatus.InProgress);
+            inProgress.CancelRequested.Should().BeTrue();
+            inProgress.ExecutedAt.Should().BeNull();
+            inProgress.OwnerId.Should().Be(owner);
+            inProgress.LockedUntil.Should().NotBeNull();
+
+            var terminalAfter = await persistence.GetTimeJobByIdAsync(terminalId, ct);
+            terminalAfter!.Status.Should().Be(JobStatus.Succeeded);
+            terminalAfter.CancelRequested.Should().BeFalse();
+            terminalAfter.OwnerId.Should().Be(terminalBefore!.OwnerId);
+            terminalAfter.LockedUntil.Should().Be(terminalBefore.LockedUntil);
+            terminalAfter.UpdatedAt.Should().Be(terminalBefore.UpdatedAt);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task idle_parent_cancellation_applies_terminal_run_conditions_in_one_transaction()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cancellation-chain");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var eligible = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "eligible-child",
+                RunCondition = RunCondition.OnCancelled,
+            };
+            var rejectedGrandchild = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "rejected-grandchild",
+                RunCondition = RunCondition.OnCancelled,
+            };
+            var rejected = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "rejected-child",
+                RunCondition = RunCondition.OnSuccess,
+                Children = [rejectedGrandchild],
+            };
+            var root = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "cancelled-root",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(10),
+                Children = [eligible, rejected],
+            };
+            (await persistence.AddTimeJobsAsync([root], ct)).Should().Be(4);
+
+            (await persistence.RequestTimeJobCancellationAsync(root.Id, ct)).Should().BeTrue();
+
+            var cancelled = await persistence.GetTimeJobByIdAsync(root.Id, ct);
+            cancelled!.Status.Should().Be(JobStatus.Cancelled);
+
+            var released = await persistence.GetTimeJobByIdAsync(eligible.Id, ct);
+            released!.Status.Should().Be(JobStatus.Idle);
+            released.ExecutionTime.Should().NotBeNull();
+
+            var skipped = await persistence.GetTimeJobByIdAsync(rejected.Id, ct);
+            skipped!.Status.Should().Be(JobStatus.Skipped);
+            skipped.ExecutedAt.Should().NotBeNull();
+
+            var skippedDescendant = await persistence.GetTimeJobByIdAsync(rejectedGrandchild.Id, ct);
+            skippedDescendant!.Status.Should().Be(JobStatus.Skipped);
+            skippedDescendant.ExecutedAt.Should().NotBeNull();
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task queued_job_is_stamped_with_the_node_incarnation_owner()
     {
         var ct = AbortToken;
