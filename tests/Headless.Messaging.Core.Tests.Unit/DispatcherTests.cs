@@ -406,12 +406,13 @@ public sealed class DispatcherTests : TestBase
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
         using var hostCts = new CancellationTokenSource();
         using var operationCts = new CancellationTokenSource();
+        var operationToken = operationCts.Token;
         var storageWrite = _storage.ChangePublishStateAsync(
             Arg.Any<MediumMessage>(),
             StatusName.Delayed,
             Arg.Any<object?>(),
             Arg.Any<DateTimeOffset?>(),
-            cancellationToken: operationCts.Token
+            cancellationToken: operationToken
         );
         storageWrite.Returns(new ValueTask<bool>(true));
 
@@ -429,7 +430,7 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.EnqueueToScheduler(
             _CreateTestMessage(),
             DateTimeOffset.UtcNow.AddMinutes(2),
-            cancellationToken: operationCts.Token
+            cancellationToken: operationToken
         );
 
         await _storage
@@ -439,7 +440,7 @@ public sealed class DispatcherTests : TestBase
                 StatusName.Delayed,
                 Arg.Any<object?>(),
                 Arg.Any<DateTimeOffset?>(),
-                cancellationToken: operationCts.Token
+                cancellationToken: operationToken
             );
     }
 

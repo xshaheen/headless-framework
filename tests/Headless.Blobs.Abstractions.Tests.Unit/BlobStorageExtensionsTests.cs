@@ -549,8 +549,10 @@ public sealed class BlobStorageExtensionsTests : TestBase
         var downloadResult = new BlobDownloadResult(stream, "malformed.json");
         _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
 
-        Func<Task> read = () =>
-            _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken).AsTask();
+        Func<Task> read = async () =>
+        {
+            _ = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
+        };
 
         await read.Should().ThrowAsync<JsonException>();
         stream.IsDisposed.Should().BeTrue();
@@ -563,12 +565,14 @@ public sealed class BlobStorageExtensionsTests : TestBase
         var stream = new CancellationOnlyStream();
         var downloadResult = new BlobDownloadResult(stream, "cancelled.json");
         using var cancellationSource = new CancellationTokenSource();
-        _storage.OpenReadStreamAsync(location, cancellationSource.Token).Returns(downloadResult);
+        var cancellationToken = cancellationSource.Token;
+        _storage.OpenReadStreamAsync(location, cancellationToken).Returns(downloadResult);
 
-        var readTask = _storage
-            .GetBlobContentAsync<TestData>(location, cancellationToken: cancellationSource.Token)
-            .AsTask();
-        Func<Task> read = () => readTask;
+        var readTask = _storage.GetBlobContentAsync<TestData>(location, cancellationToken: cancellationToken).AsTask();
+        Func<Task> read = async () =>
+        {
+            _ = await readTask;
+        };
         await cancellationSource.CancelAsync();
 
         await read.Should().ThrowAsync<OperationCanceledException>();
