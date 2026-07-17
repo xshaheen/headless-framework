@@ -804,7 +804,9 @@ public abstract class DataStorageTestsBase : TestBase
         var winner = claimed.Should().ContainSingle().Subject;
         winner.StorageId.Should().Be(stored.StorageId);
         winner.LockedUntil.Should().NotBeNull();
-        winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout));
+        // LockedUntil is persisted at the storage clock's granularity (PostgreSQL truncates to microseconds),
+        // so allow up to 1 microsecond of downward truncation from the tick-precision expected value.
+        winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout) - TimeSpan.FromMicroseconds(1));
     }
 
     public virtual async Task should_clear_claim_lease_when_flushing_delayed_state()
