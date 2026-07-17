@@ -8,7 +8,7 @@ namespace Tests.Extensions;
 public sealed class FormFileExtensionsTests : TestBase
 {
     [Fact]
-    public async Task should_preserve_parameterless_get_all_bytes_async_behavior()
+    public async Task should_use_default_token_when_get_all_bytes_async_token_is_omitted()
     {
         byte[] bytes = [1, 2, 3, 4];
         IFormFile file = new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", "file.bin");

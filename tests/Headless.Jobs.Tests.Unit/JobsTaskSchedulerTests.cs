@@ -269,31 +269,35 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_steals_higher_priority_work_from_other_workers_before_local_low_priority()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+        var releaseWorkerOne = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            workerStartGate: (workerId, cancellationToken) =>
+                workerId == 1 ? releaseWorkerOne.Task.WaitAsync(cancellationToken) : Task.CompletedTask
+        );
 
         // Occupy both workers so the follow-up items stay parked in their queues until we release exactly one
-        // worker. Each blocker records the worker thread it runs on so we can release a specific worker.
+        // worker. Worker 1 stays behind the start gate until worker 0 has taken the first blocker.
         var firstBlockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstBlockerRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondBlockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondBlockerRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        string? firstBlockerWorker = null;
-        string? secondBlockerWorker = null;
 
         await scheduler.QueueAsync(
             async _ =>
             {
-                firstBlockerWorker = Thread.CurrentThread.Name;
                 firstBlockerStarted.TrySetResult();
                 await firstBlockerRelease.Task.ConfigureAwait(false);
             },
             JobPriority.Normal,
             AbortToken
         );
+
+        await firstBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
         await scheduler.QueueAsync(
             async _ =>
             {
-                secondBlockerWorker = Thread.CurrentThread.Name;
                 secondBlockerStarted.TrySetResult();
                 await secondBlockerRelease.Task.ConfigureAwait(false);
             },
@@ -301,7 +305,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
             AbortToken
         );
 
-        await firstBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        releaseWorkerOne.SetResult();
         await secondBlockerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // With both workers parked, round-robin distribution places the single High item on worker 1's local
@@ -336,10 +340,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
 
         // Release worker 0 only, keeping worker 1 parked, so worker 0 is the sole consumer and the drain
         // order is single-threaded and deterministic.
-        var worker0Release = string.Equals(firstBlockerWorker, "Headless.Jobs.Worker-0", StringComparison.Ordinal)
-            ? firstBlockerRelease
-            : secondBlockerRelease;
-        worker0Release.SetResult();
+        firstBlockerRelease.SetResult();
 
         await highRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 

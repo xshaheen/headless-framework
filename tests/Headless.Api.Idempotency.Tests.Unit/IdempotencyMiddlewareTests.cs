@@ -9,6 +9,7 @@ using Headless.DistributedLocks;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
@@ -1024,11 +1025,13 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Theory]
-    [InlineData(4, 4)]
-    [InlineData(4, 5)]
+    [InlineData(4, 3, true)]
+    [InlineData(4, 4, true)]
+    [InlineData(4, 5, false)]
     public async Task should_preserve_fingerprint_and_rewind_across_request_buffer_threshold(
         int bufferThreshold,
-        int bodyLength
+        int bodyLength,
+        bool expectedInMemory
     )
     {
         var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
@@ -1052,15 +1055,19 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var body = Enumerable.Range(1, bodyLength).Select(static value => (byte)value).ToArray();
         var middleware = CreateMiddleware(options: options, cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
+        context.Request.Body = new NonSeekableRequestBodyStream(body);
         byte[]? handlerBody = null;
 
         await middleware.InvokeAsync(
             context,
             async ctx =>
             {
-                ctx.Request.Body.Position.Should().Be(0);
+                var bufferingStream = ctx.Request.Body.Should().BeOfType<FileBufferingReadStream>().Which;
+                bufferingStream.InMemory.Should().Be(expectedInMemory);
+                (bufferingStream.TempFileName is null).Should().Be(expectedInMemory);
+                bufferingStream.Position.Should().Be(0);
                 using var buffer = new MemoryStream();
-                await ctx.Request.Body.CopyToAsync(buffer, AbortToken);
+                await bufferingStream.CopyToAsync(buffer, AbortToken);
                 handlerBody = buffer.ToArray();
             }
         );
@@ -1788,4 +1795,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Received(1)
             .RemoveAsync(Arg.Any<string>(), Arg.Is<CancellationToken>(c => !c.IsCancellationRequested));
     }
+}
+
+file sealed class NonSeekableRequestBodyStream(byte[] bytes) : MemoryStream(bytes)
+{
+    public override bool CanSeek => false;
 }

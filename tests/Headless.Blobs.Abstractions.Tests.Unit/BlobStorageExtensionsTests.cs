@@ -461,6 +461,25 @@ public sealed class BlobStorageExtensionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_rewind_seekable_stream_for_reflection_json_deserialization()
+    {
+        // Arrange
+        var location = new BlobLocation("bucket", "advanced.json");
+        var stream = new MemoryStream("""{"Name":"Rewound","Value":47}"""u8.ToArray());
+        stream.Position = stream.Length;
+        await using var downloadResult = new BlobDownloadResult(stream, "advanced.json");
+
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+
+        // Act
+        var result = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
+
+        // Assert
+        result.Should().BeEquivalentTo(new TestData { Name = "Rewound", Value = 47 });
+    }
+
+    [Fact]
     public async Task should_return_default_when_blob_not_found_for_typed_content()
     {
         // Arrange
@@ -496,6 +515,25 @@ public sealed class BlobStorageExtensionsTests : TestBase
         result.Should().NotBeNull();
         result!.Name.Should().Be("AOT");
         result.Value.Should().Be(123);
+    }
+
+    [Fact]
+    public async Task should_rewind_seekable_stream_for_source_generated_json_deserialization()
+    {
+        // Arrange
+        var location = new BlobLocation("bucket", "generated-advanced.json");
+        var stream = new MemoryStream("""{"Name":"GeneratedRewound","Value":53}"""u8.ToArray());
+        stream.Position = stream.Length;
+        await using var downloadResult = new BlobDownloadResult(stream, "generated-advanced.json");
+
+        // ReSharper disable once NotDisposedResource
+        _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
+
+        // Act
+        var result = await _storage.GetBlobContentAsync(location, TestDataJsonContext.Default.TestData, AbortToken);
+
+        // Assert
+        result.Should().BeEquivalentTo(new TestData { Name = "GeneratedRewound", Value = 53 });
     }
 
     [Fact]

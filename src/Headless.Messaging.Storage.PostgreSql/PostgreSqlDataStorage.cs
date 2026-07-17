@@ -1021,7 +1021,11 @@ internal sealed class PostgreSqlDataStorage(
                 cancellationToken
             )
             .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        // PostgreSQL may commit after accepting COMMIT even when the client subsequently observes cancellation.
+        // Once commit starts, observe its definitive outcome so callers never lose committed claim winners.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         claimed.Sort(
             static (left, right) =>

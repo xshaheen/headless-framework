@@ -18,6 +18,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly int _maxCapacityPerWorker;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<JobsTaskScheduler> _logger;
+    private readonly Func<int, CancellationToken, Task>? _workerStartGate;
     private static readonly TimeSpan _WorkerFaultRestartDelay = TimeSpan.FromMilliseconds(100);
 
     // Worker queues for work stealing
@@ -44,7 +45,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
         TimeProvider? timeProvider = null,
-        ILogger<JobsTaskScheduler>? logger = null
+        ILogger<JobsTaskScheduler>? logger = null,
+        Func<int, CancellationToken, Task>? workerStartGate = null
     )
     {
         _maxConcurrency = Argument.IsPositive(maxConcurrency);
@@ -53,6 +55,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger<JobsTaskScheduler>.Instance;
+        _workerStartGate = workerStartGate;
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
@@ -226,6 +229,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         try
         {
+            if (_workerStartGate is not null)
+            {
+                await _workerStartGate(workerId, _shutdownCts.Token).ConfigureAwait(false);
+            }
+
             await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)

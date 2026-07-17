@@ -321,6 +321,7 @@ public static class BlobStorageExtensions
                 return default;
             }
 
+            result.Stream.ResetPosition();
             options ??= JsonConstants.DefaultInternalJsonOptions;
             return await JsonSerializer
                 .DeserializeAsync<T>(result.Stream, options, cancellationToken)
@@ -351,6 +352,7 @@ public static class BlobStorageExtensions
                 return default;
             }
 
+            result.Stream.ResetPosition();
             return await JsonSerializer
                 .DeserializeAsync(result.Stream, jsonTypeInfo, cancellationToken)
                 .ConfigureAwait(false);
