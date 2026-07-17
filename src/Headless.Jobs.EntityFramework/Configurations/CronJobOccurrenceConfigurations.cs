@@ -12,11 +12,20 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)
     {
+        var utcDateTimeConverter = new JobsUtcDateTimeValueConverter();
+        var nullableUtcDateTimeConverter = new JobsNullableUtcDateTimeValueConverter();
+
         builder.HasKey("Id");
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
         builder.Property(x => x.OwnerId).IsRequired(false);
+
+        builder.Property(x => x.ExecutionTime).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.ExecutedAt).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.CreatedAt).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.UpdatedAt).HasConversion(utcDateTimeConverter);
 
         // Persist enums by name (not ordinal) — see TimeJobConfigurations.
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);

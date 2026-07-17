@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -62,6 +63,54 @@ public sealed class InternalJobsManagerTests : TestBase
         (await manager.ResumeCronJobAsync(definition.Id, AbortToken)).Should().BeTrue();
 
         await sender.Received(1).UpdateCronJobNotifyAsync(definition);
+    }
+
+    [Theory]
+    [InlineData("2026-03-08T05:00:00Z", "0 30 2 * * *", "2026-03-08T07:30:00Z")]
+    [InlineData("2026-11-01T04:00:00Z", "0 30 1 * * *", "2026-11-01T06:30:00Z")]
+    public async Task resume_uses_the_definition_iana_timezone_across_dst_transitions(
+        string resumeTimeText,
+        string expression,
+        string expectedOccurrenceText
+    )
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var resumeTime = DateTimeOffset.Parse(resumeTimeText, CultureInfo.InvariantCulture);
+        var expectedOccurrence = DateTimeOffset.Parse(expectedOccurrenceText, CultureInfo.InvariantCulture).UtcDateTime;
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(resumeTime),
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+        );
+        var definition = new FakeCronJob
+        {
+            Id = Guid.NewGuid(),
+            Function = "fn",
+            Expression = expression,
+            TimeZoneId = "America/New_York",
+            IsPaused = true,
+            ScheduleRevision = 5,
+        };
+        provider.GetCronJobByIdAsync(definition.Id, AbortToken).Returns(definition);
+        provider
+            .ResumeCronJobAsync(
+                definition.Id,
+                definition.ScheduleRevision,
+                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                resumeTime.UtcDateTime,
+                AbortToken
+            )
+            .Returns(call =>
+            {
+                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                occurrence.ExecutionTime.Should().Be(expectedOccurrence);
+                occurrence.ExecutionTime.Kind.Should().Be(DateTimeKind.Utc);
+                return definition;
+            });
+
+        (await manager.ResumeCronJobAsync(definition.Id, AbortToken)).Should().BeTrue();
     }
 
     [Fact]

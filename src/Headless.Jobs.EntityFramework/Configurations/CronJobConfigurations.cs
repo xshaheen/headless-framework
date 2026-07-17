@@ -12,6 +12,8 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
+        var utcDateTimeConverter = new JobsUtcDateTimeValueConverter();
+
         builder.HasKey("Id");
 
         builder.Property(e => e.Id).ValueGeneratedNever();
@@ -21,6 +23,10 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
         builder.Property(e => e.ScheduleRevision).HasDefaultValue(0L);
 
         builder.Property(e => e.TimeZoneId).HasMaxLength(128);
+
+        builder.Property(e => e.CreatedAt).HasConversion(utcDateTimeConverter);
+
+        builder.Property(e => e.UpdatedAt).HasConversion(utcDateTimeConverter);
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
