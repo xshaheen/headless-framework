@@ -30,16 +30,14 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
     {
         try
         {
-            if (connection is IDelayedMessageClaimStorage claimStorage)
+            if (
+                connection is IDelayedMessageClaimStorage claimStorage
+                && dispatcher is ICommittedDelayedMessageDispatcher committedDispatcher
+            )
             {
                 var messages = await claimStorage
                     .ClaimDelayedMessagesAsync(context.CancellationToken)
                     .ConfigureAwait(false);
-                var committedDispatcher =
-                    dispatcher as ICommittedDelayedMessageDispatcher
-                    ?? throw new InvalidOperationException(
-                        "The configured dispatcher does not support committed delayed-message enqueue."
-                    );
 
                 foreach (var message in messages)
                 {

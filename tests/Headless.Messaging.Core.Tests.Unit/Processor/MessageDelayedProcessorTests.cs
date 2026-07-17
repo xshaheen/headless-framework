@@ -65,6 +65,38 @@ public sealed class MessageDelayedProcessorTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_preserve_callback_path_when_custom_dispatcher_lacks_committed_enqueue_capability()
+    {
+        var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();
+        var claimStorage = (IDelayedMessageClaimStorage)storage;
+        var dispatcher = Substitute.For<IDispatcher>();
+        var message = _CreateDelayedMessage();
+        storage
+            .ScheduleMessagesOfDelayedAsync(
+                Arg.Any<Func<object?, IEnumerable<MediumMessage>, ValueTask>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => call.Arg<Func<object?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
+        using var context = _CreateContext(storage);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
+        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+
+        await claimStorage.DidNotReceive().ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .ScheduleMessagesOfDelayedAsync(
+                Arg.Any<Func<object?, IEnumerable<MediumMessage>, ValueTask>>(),
+                Arg.Any<CancellationToken>()
+            );
+        await dispatcher
+            .Received(1)
+            .EnqueueToScheduler(message, message.ExpiresAt!.Value, null, Arg.Any<CancellationToken>());
+    }
+
     private static ProcessingContext _CreateContext(IDataStorage storage)
     {
         var services = new ServiceCollection().AddSingleton(storage).BuildServiceProvider();
