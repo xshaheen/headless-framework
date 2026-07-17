@@ -64,9 +64,11 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Ta
 
 ## Configuration
 
-No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
+Attributes are the sole authoring interface; there is no runtime middleware discovery configuration. Middleware implementations must still be registered with DI because generated dispatch resolves them from the bounded scheduling or execution scope. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 
 `[JobFunction]` remains the only handler discovery model. Requestless functions have a descriptor whose `RequestType` is `null`; typed functions are indexed by both their durable function name and the exact request `Type`. Priority and maximum concurrency come from the attribute and remain descriptor metadata rather than per-schedule options.
+
+Stage-specific `JobScheduleMiddleware<TMiddleware>` and `JobExecuteMiddleware<TMiddleware>` declarations are discovered at compile time and produce direct schedule/execute calls in the declaring assembly. Assembly declarations are global unless their `Function` property explicitly targets descriptor metadata from a referenced assembly. A declaration placed beside a local `[JobFunction]` derives that function identity without duplicating a string. Both placements normalize to the same generated registration model; ordering is priority then stable middleware type identity. Generated descriptor metadata makes external identities available without runtime scanning.
 
 ## Dependencies
 

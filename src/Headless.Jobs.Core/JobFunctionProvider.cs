@@ -190,6 +190,20 @@ public static class JobFunctionProvider
         _requestTypeRegistrations = null;
         _descriptorRegistrations = null;
         _configuration = null;
+        JobMiddlewareRegistry.Freeze();
+    }
+
+    internal static void ResetForTests()
+    {
+        _requestTypeRegistrations = null;
+        _functionRegistrations = null;
+        _descriptorRegistrations = null;
+        _configuration = null;
+        JobFunctions = FrozenDictionary<string, JobFunctionRegistration>.Empty;
+        JobFunctionRequestTypes = FrozenDictionary<string, (string, Type)>.Empty;
+        JobFunctionDescriptors = FrozenDictionary<string, JobFunctionDescriptor>.Empty;
+        JobFunctionDescriptorsByRequestType = FrozenDictionary<Type, JobFunctionDescriptor>.Empty;
+        JobMiddlewareRegistry.ResetForTests();
     }
 }
 

@@ -282,9 +282,31 @@ internal sealed class JobsExecutionTaskHandler
                         stopWatch.Start();
                         await using var scope = _serviceProvider.CreateAsyncScope();
                         jobFunctionContext.SetServiceScope(scope);
-                        await context
-                            .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
-                            .ConfigureAwait(false);
+                        if (
+                            JobFunctionProvider.JobFunctionDescriptors.TryGetValue(
+                                context.FunctionName,
+                                out var descriptor
+                            )
+                        )
+                        {
+                            JobExecuteNext terminal = token =>
+                                context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
+                            await JobMiddlewareRegistry
+                                .DispatchExecuteAsync(
+                                    new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
+                                    terminal,
+                                    attemptToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // Older generated assemblies can still supply a cached registration without descriptor
+                            // metadata. Preserve their execution path while new generated assemblies use middleware.
+                            await context
+                                .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
+                                .ConfigureAwait(false);
+                        }
                         success = true;
                     },
                     async (retryCount, exception, retryToken) =>

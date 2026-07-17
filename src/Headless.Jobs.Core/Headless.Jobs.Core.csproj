@@ -10,12 +10,12 @@
     <InternalsVisibleTo Include="Headless.Jobs.Benchmarks" />
     <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
-    <InternalsVisibleTo Include="Headless.Jobs.OpenTelemetry" />
     <!-- Lets NSubstitute proxy internal types. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NCrontab.Signed" />
+    <PackageReference Include="OpenTelemetry.Api" />
     <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>

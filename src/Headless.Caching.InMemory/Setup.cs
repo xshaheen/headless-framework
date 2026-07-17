@@ -156,6 +156,10 @@ public static class SetupInMemoryCache
     {
         services.AddCacheProvider();
 
+        // Surface the registered instance name on the headless.cache.name telemetry dimension (unless the user
+        // set one explicitly). Runs after the user's configure action.
+        services.PostConfigure<InMemoryCacheOptions>(name, options => options.CacheName ??= name);
+
         services.AddKeyedSingleton<ICache>(
             name,
             (provider, _) =>
@@ -163,7 +167,8 @@ public static class SetupInMemoryCache
                     provider.GetRequiredService<TimeProvider>(),
                     provider.GetRequiredService<IOptionsMonitor<InMemoryCacheOptions>>().Get(name),
                     provider.GetService<ILogger<InMemoryCache>>(),
-                    provider.GetService<ICacheFactoryLockProvider>()
+                    provider.GetService<ICacheFactoryLockProvider>(),
+                    provider.GetService<CacheInstrumentationConfig>()
                 )
         );
 

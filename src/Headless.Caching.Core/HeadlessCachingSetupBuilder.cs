@@ -25,6 +25,14 @@ public sealed class HeadlessCachingSetupBuilder
 
     internal IReadOnlySet<string> InstanceNames => _instanceNames;
 
+    /// <summary>
+    /// Whether caching spans may carry the raw cache key on the <c>headless.cache.key</c> attribute. Default
+    /// <see langword="false"/>: cache keys routinely carry tenant/user identifiers and PII cannot be un-leaked
+    /// from a trace backend. The key is never a metric dimension regardless of this flag. Applies to every cache
+    /// instance registered by this <c>AddHeadlessCaching</c> call.
+    /// </summary>
+    public bool IncludeKeyInTraces { get; set; }
+
     internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
     internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];

@@ -40,6 +40,16 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// </summary>
     public MessagingOptions Options { get; }
 
+    /// <summary>
+    /// Gets the OpenTelemetry span-enrichment configuration. Register custom
+    /// <see cref="IActivityTagEnricher"/> implementations and toggle the built-in tenant-id / intent /
+    /// retry-count enrichers here; the enricher pipeline runs natively at span start inside
+    /// <c>Headless.Messaging.Core</c>. Subscribing an OpenTelemetry exporter (or any
+    /// <see cref="System.Diagnostics.ActivityListener"/> / <see cref="System.Diagnostics.Metrics.MeterListener"/>)
+    /// to the <c>Headless.Messaging</c> scope is what enables emission.
+    /// </summary>
+    public MessagingInstrumentationOptions Instrumentation { get; } = new();
+
     internal IServiceCollection Services { get; }
 
     internal ConsumerRegistry Registry { get; }

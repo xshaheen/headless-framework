@@ -469,6 +469,7 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -763,6 +764,12 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.16.0, )",
+        "resolved": "1.16.0",
+        "contentHash": "WZP8Eb6vZTeNqeV+fjBitc7iefBoTHIhaWorqg/h/YiQBlcQJu0bICuTqKV0XRyjiE0eWs80yLlnUtHAFSkFWA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

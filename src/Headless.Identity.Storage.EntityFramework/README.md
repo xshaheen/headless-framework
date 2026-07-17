@@ -22,7 +22,7 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 
 **Not poolable.** `HeadlessIdentityDbContext` takes `HeadlessDbContextServices` as a constructor parameter (a scoped DI service). EF Core pooling resolves contexts through a single-`DbContextOptions` constructor and does not support this shape. Do not register with `AddDbContextPool` or `AddPooledDbContextFactory`.
 
-**`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. This is the same implementation used by `Headless.Orm.EntityFramework` so behavior is at parity.
+**`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. This is the same implementation used by `Headless.EntityFramework` so behavior is at parity.
 
 ## Installation
 
@@ -120,7 +120,7 @@ Service lifetimes default to `ServiceLifetime.Scoped` for both the context and i
 
 ## Dependencies
 
-- `Headless.Orm.EntityFramework`
+- `Headless.EntityFramework`
 - `Microsoft.AspNetCore.Identity.EntityFrameworkCore`
 
 ## Side Effects

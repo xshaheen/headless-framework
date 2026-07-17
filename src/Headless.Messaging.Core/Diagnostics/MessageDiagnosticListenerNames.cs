@@ -3,32 +3,15 @@
 namespace Headless.Messaging.Diagnostics;
 
 /// <summary>
-/// Extension methods on the DiagnosticListener class to log messaging data
+/// Names for the messaging <see cref="System.Diagnostics.Tracing.EventSource"/> real-time rate counters
+/// (<see cref="MessageEventCounterSource"/>). Span/metric OpenTelemetry emission is native and does not use
+/// <c>DiagnosticSource</c> — see <see cref="Headless.Messaging.MessagingDiagnostics"/>.
 /// </summary>
 public static class MessageDiagnosticListenerNames
 {
     private const string _Prefix = "Headless.Messages.";
 
-    //Tracing
-    public const string DiagnosticListenerName = "MessagingDiagnosticListener";
-
-    public const string BeforePublishMessageStore = _Prefix + "WritePublishMessageStoreBefore";
-    public const string AfterPublishMessageStore = _Prefix + "WritePublishMessageStoreAfter";
-    public const string ErrorPublishMessageStore = _Prefix + "WritePublishMessageStoreError";
-
-    public const string BeforePublish = _Prefix + "WritePublishBefore";
-    public const string AfterPublish = _Prefix + "WritePublishAfter";
-    public const string ErrorPublish = _Prefix + "WritePublishError";
-
-    public const string BeforeConsume = _Prefix + "WriteConsumeBefore";
-    public const string AfterConsume = _Prefix + "WriteConsumeAfter";
-    public const string ErrorConsume = _Prefix + "WriteConsumeError";
-
-    public const string BeforeSubscriberInvoke = _Prefix + "WriteSubscriberInvokeBefore";
-    public const string AfterSubscriberInvoke = _Prefix + "WriteSubscriberInvokeAfter";
-    public const string ErrorSubscriberInvoke = _Prefix + "WriteSubscriberInvokeError";
-
-    //Metrics
+    // Real-time EventCounter metrics (consumed by the messaging dashboard's EventListener).
     public const string MetricListenerName = _Prefix + "EventCounter";
     public const string PublishedPerSec = "published-per-second";
     public const string ConsumePerSec = "consume-per-second";
