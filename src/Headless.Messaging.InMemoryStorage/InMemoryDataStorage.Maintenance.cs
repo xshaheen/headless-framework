@@ -198,8 +198,7 @@ internal sealed partial class InMemoryDataStorage
                 )
             )
             .OrderBy(message => message.ExpiresAt)
-            .ThenBy(message => message.StorageId)
-            .ToArray();
+            .ThenBy(message => message.StorageId);
 
         foreach (var candidate in candidates)
         {

@@ -19,7 +19,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
     private readonly Lock _workerSlotsLock = new();
-    private readonly bool[] _workerSlotStates;
     private readonly Task?[] _workerTasks;
 
     // Global state
@@ -51,7 +50,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
-        _workerSlotStates = new bool[maxConcurrency];
         _workerTasks = new Task?[maxConcurrency];
         for (var i = 0; i < maxConcurrency; i++)
         {
@@ -195,9 +193,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
 
             var workerId = -1;
-            for (var i = 0; i < _workerSlotStates.Length; i++)
+            for (var i = 0; i < _workerTasks.Length; i++)
             {
-                if (_workerSlotStates[i])
+                if (_workerTasks[i] is not null)
                 {
                     continue;
                 }
@@ -211,7 +209,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 return;
             }
 
-            _workerSlotStates[workerId] = true;
             activeWorkers = Interlocked.Increment(ref _activeWorkers);
             _workerTasks[workerId] = Task.Run(() => _WorkerLoopAsync(workerId));
         }
@@ -244,7 +241,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
             lock (_workerSlotsLock)
             {
-                _workerSlotStates[workerId] = false;
+                _workerTasks[workerId] = null;
                 activeWorkers = Interlocked.Decrement(ref _activeWorkers);
                 restartWorker = _totalQueuedTasks > 0 && !_shutdownCts.IsCancellationRequested && !_disposed;
             }

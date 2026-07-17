@@ -113,9 +113,7 @@ public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IR
 
     private void _Remove(string resource, SignalEntry signal)
     {
-        ((ICollection<KeyValuePair<string, SignalEntry>>)_signals).Remove(
-            new KeyValuePair<string, SignalEntry>(resource, signal)
-        );
+        _signals.TryRemove(KeyValuePair.Create(resource, signal));
     }
 
     private sealed class SignalEntry
