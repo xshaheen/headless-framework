@@ -205,8 +205,8 @@ public sealed class JobSchedulerTests : TestBase
             .Be("unknown");
         await staleDescriptor.Should().ThrowAsync<JobFunctionNotFoundException>();
         await typedDescriptor.Should().ThrowAsync<ArgumentException>();
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
-        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -232,8 +232,8 @@ public sealed class JobSchedulerTests : TestBase
             await scheduler.EnqueueAsync(new UnsupportedRequest(typeof(string)), cancellationToken: AbortToken);
 
         await act.Should().ThrowAsync<NotSupportedException>();
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
-        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
     }
 
     [Fact]

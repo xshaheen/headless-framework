@@ -112,6 +112,60 @@ internal static class DiagnosticDescriptors
         DiagnosticSeverity.Error
     );
 
+    public static readonly DiagnosticDescriptor UnknownMiddlewareTarget = new(
+        "HF014",
+        "Unknown Jobs middleware target",
+        "The Jobs middleware target '{0}' does not match a generated job-function descriptor",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor DuplicateMiddleware = new(
+        "HF015",
+        "Duplicate Jobs middleware declaration",
+        "The Jobs middleware declaration for '{0}' is duplicated",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor MethodMiddlewareRequiresJobFunction = new(
+        "HF016",
+        "Method Jobs middleware requires JobFunction",
+        "Method-level Jobs middleware must be declared beside a [JobFunction] attribute",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor MethodMiddlewareFunctionTarget = new(
+        "HF017",
+        "Method Jobs middleware cannot specify Function",
+        "Method-level Jobs middleware derives its target from [JobFunction]; remove the Function property",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor LocalAssemblyMiddlewareTarget = new(
+        "HF018",
+        "Assembly Jobs middleware cannot target a local function",
+        "The Jobs middleware target '{0}' is declared in this assembly; place the middleware attribute beside that [JobFunction] method",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    public static readonly DiagnosticDescriptor InaccessibleMiddlewareType = new(
+        "HF019",
+        "Jobs middleware type is inaccessible to generated code",
+        "The Jobs middleware type '{0}' must be accessible from generated code in the declaring assembly",
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     private static DiagnosticDescriptor _Create(
         string id,
         string titleResourceName,
