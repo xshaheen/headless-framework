@@ -27,6 +27,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     ICurrentCommitCoordinator currentCommitCoordinator,
     CronScheduleCache cronScheduleCache,
     SchedulerOptionsBuilder schedulerOptions,
+    JobFunctionRegistry functionRegistry,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger,
     IServiceScopeFactory? serviceScopeFactory = null
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
@@ -38,6 +39,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
     private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
+    private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
     private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
@@ -141,7 +143,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -236,7 +238,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             entity.Id = guidGenerator.Create();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
@@ -330,9 +332,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
-        if (
-            JobFunctionProvider.JobFunctions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal))
-        )
+        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
@@ -406,17 +406,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task _RunSchedulePipelineAsync(BaseJobEntity entity, CancellationToken cancellationToken)
     {
-        if (!JobFunctionProvider.JobFunctionDescriptors.TryGetValue(entity.Function, out var descriptor))
+        if (!_functionRegistry.Descriptors.TryGetValue(entity.Function, out var descriptor))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
         var completed = false;
-        JobScheduleNext terminal = _ =>
+        Task terminal(CancellationToken _)
         {
             completed = true;
             return Task.CompletedTask;
-        };
+        }
 
         if (_serviceScopeFactory is null)
         {
@@ -464,12 +464,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     }
 
     // Batch operations implementation
-    private static void _CacheFunctionReferences(Span<JobExecutionState> functions)
+    private void _CacheFunctionReferences(Span<JobExecutionState> functions)
     {
         for (var i = 0; i < functions.Length; i++)
         {
             ref var context = ref functions[i];
-            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (_functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -519,7 +519,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entities ?? [];
         }
 
-        var jobFunctionsHashSet = new HashSet<string>(JobFunctionProvider.JobFunctions.Keys, StringComparer.Ordinal);
+        var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
@@ -639,11 +639,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 entity.Id = guidGenerator.Create();
             }
 
-            if (
-                JobFunctionProvider.JobFunctions.All(x =>
-                    !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)
-                )
-            )
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
                 (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
                 continue;
@@ -793,11 +789,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            if (
-                JobFunctionProvider.JobFunctions.All(x =>
-                    !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)
-                )
-            )
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
             {
                 errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
                 continue;

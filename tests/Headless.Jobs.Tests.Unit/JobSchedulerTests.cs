@@ -9,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -69,6 +70,69 @@ public sealed class JobSchedulerTests : TestBase
         captured.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
         JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!).Should().Be(request);
         await timeManager.Received(1).AddAsync(Arg.Any<TimeJobEntity>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_resolve_descriptors_from_the_injected_host_registry()
+    {
+        var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
+        var persistedId = Guid.NewGuid();
+        timeManager
+            .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
+            .Returns(call =>
+            {
+                var entity = call.Arg<TimeJobEntity>();
+                entity.Id = persistedId;
+                return entity;
+            });
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [new KeyValuePair<string, JobFunctionDescriptor>(_TypedDescriptor.FunctionName, _TypedDescriptor)]
+        );
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(timeManager, cronManager, registry);
+
+        var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
+
+        id.Should().Be(persistedId);
+        await timeManager
+            .Received(1)
+            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Function == _TypedDescriptor.FunctionName), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_accept_the_public_canonical_descriptor_when_the_host_resolves_its_cron_token()
+    {
+        var canonicalDescriptor = new JobFunctionDescriptor(
+            "configured-requestless",
+            null,
+            "%Jobs:Configured:Cron%",
+            JobPriority.Normal,
+            0
+        );
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Jobs:Configured:Cron"] = "0 */5 * * * *" }
+            )
+            .Build();
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [new KeyValuePair<string, JobFunctionDescriptor>(canonicalDescriptor.FunctionName, canonicalDescriptor)],
+            configuration
+        );
+        var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
+        timeManager.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(call => call.Arg<TimeJobEntity>());
+        var scheduler = new JobScheduler<TimeJobEntity, CronJobEntity>(timeManager, cronManager, registry);
+
+        await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
+
+        registry.Descriptors[canonicalDescriptor.FunctionName].CronExpression.Should().Be("0 */5 * * * *");
+        await timeManager
+            .Received(1)
+            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Function == canonicalDescriptor.FunctionName), AbortToken);
     }
 
     [Fact]

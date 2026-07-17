@@ -90,7 +90,7 @@ public static Task SendReminderAsync(
 public static Task CleanupAsync(CancellationToken ct) => Task.CompletedTask;
 ```
 
-All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its frozen indexes.
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`.
 
 Delayed and recurring scheduling keep time and cron expressions explicit:
 
