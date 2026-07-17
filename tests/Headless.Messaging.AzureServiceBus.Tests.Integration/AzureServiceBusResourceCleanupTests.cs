@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class AzureServiceBusResourceCleanupTests
+public sealed class AzureServiceBusResourceCleanupTests : TestBase
 {
     [Fact]
     public async Task should_remove_tracking_after_successful_delete()
@@ -16,7 +17,7 @@ public sealed class AzureServiceBusResourceCleanupTests
             "queue",
             _ => Task.CompletedTask,
             _ => false,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         tracked.Should().BeEmpty();
@@ -32,7 +33,7 @@ public sealed class AzureServiceBusResourceCleanupTests
             "queue",
             _ => Task.FromException(new MissingResourceException()),
             exception => exception is MissingResourceException,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         tracked.Should().BeEmpty();
@@ -50,7 +51,7 @@ public sealed class AzureServiceBusResourceCleanupTests
                     "queue",
                     _ => Task.FromException(new InvalidOperationException("delete failed")),
                     _ => false,
-                    TestContext.Current.CancellationToken
+                    AbortToken
                 )
                 .AsTask();
 

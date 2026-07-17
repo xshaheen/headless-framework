@@ -56,6 +56,36 @@ class VerifyMessagingConformanceTests(unittest.TestCase):
 
         self.assertTrue(any("appeared 2 times" in error for error in errors))
 
+    def test_rejects_empty_roster(self) -> None:
+        errors = self._verify(
+            expected_tests=[],
+            results=[("Tests.Unrelated.marker", "Passed")],
+        )
+
+        self.assertTrue(any("expected conformance test roster is empty" in error for error in errors))
+
+    def test_rejects_duplicate_roster_entries(self) -> None:
+        errors = self._verify(
+            expected_tests=["Tests.Provider.round_trip", "Tests.Provider.round_trip"],
+            results=[("Tests.Provider.round_trip", "Passed")],
+        )
+
+        self.assertTrue(any("roster contains duplicates" in error for error in errors))
+
+    def test_rejects_missing_trx_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            errors = verify_results("Provider", Path(directory), ["Tests.Provider.round_trip"])
+
+        self.assertTrue(any("no TRX results found" in error for error in errors))
+
+    def test_rejects_malformed_trx(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            results_directory = Path(directory)
+            (results_directory / "broken.trx").write_bytes(b"<TestRun><Results>")
+            errors = verify_results("Provider", results_directory, ["Tests.Provider.round_trip"])
+
+        self.assertTrue(any("invalid TRX" in error for error in errors))
+
     def _verify(self, expected_tests: list[str], results: list[tuple[str, str]]) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
             results_directory = Path(directory)
