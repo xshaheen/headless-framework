@@ -144,7 +144,8 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Establish commit coordination synchronously before entering asynchronous work. The provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly; once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before `AddAsync`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from `JobFunctionProvider.JobFunctionDescriptors`.
-- `EnqueueOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy only. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
+- `EnqueueOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
+- `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and never performs catch-up replay.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
 - Managers remain supported: inject `ITimeJobManager<TTimeJob>` / `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
@@ -269,9 +270,9 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 
 ### Key Features
 
-- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, and schedules immediate, delayed, and recurring jobs without copied function strings or entity construction.
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
-- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains generated function metadata.
+- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy; recurring options also accept a nullable IANA `TimeZoneId`. Priority remains generated function metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
@@ -345,12 +346,17 @@ var delayedId = await scheduler.ScheduleAsync(
 var recurringId = await scheduler.ScheduleRecurringAsync(
     new OrderReminderRequest(orderId),
     "0 0 * * *",
-    new RecurringJobOptions { Description = "daily-reminder" },
+    new RecurringJobOptions { Description = "daily-reminder", TimeZoneId = "America/New_York" },
     ct
 );
+
+var pauseAccepted = await scheduler.PauseCronAsync(recurringId, ct);
+var resumeAccepted = await scheduler.ResumeCronAsync(recurringId, ct);
 ```
 
 All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
+
+Cron control is durable and definition-specific. Pause returns `true` only when it atomically marks the definition and skips pending `Idle` / `Queued` occurrences; it never cancels `InProgress` work. Resume returns `true` only when it wins the schedule-revision fence and creates exactly one next occurrence strictly after the resume time. It never replays the paused interval. `TimeZoneId` accepts IANA identifiers only; null falls back to the scheduler-global timezone, while occurrence persistence remains UTC with deterministic gap/overlap handling.
 
 ### Configuration
 
@@ -378,7 +384,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 ### Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
-- **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
+- **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. Only `LongRunning` work receives a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
@@ -405,9 +411,11 @@ Claiming a chained time job leases its direct children and grandchildren to the 
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
 
-Relational consumers must add and apply a migration for non-null `TimeJobs.CancelRequested` with a `false` default before deploying this version. The PostgreSQL demos include reference migrations; SQL Server and custom-schema applications own the equivalent migration.
+Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule-revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant. The paused interval is never replayed; catch-up and misfire policy are outside this contract.
 
-Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
+Relational consumers must apply the Jobs migrations for `TimeJobs.CancelRequested`, `CronJobs.TimeZoneId`, `CronJobs.IsPaused`, `CronJobs.ScheduleRevision`, and the live-state cron-occurrence unique index before deployment. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom-schema applications own the equivalent migration.
+
+Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Only validated IANA identifiers are accepted. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
 ### Installation
 
@@ -473,7 +481,7 @@ public sealed class OrderService(IJobScheduler scheduler)
 
 Typed facade calls resolve `typeof(TArgs)`, serialize through the configured Jobs JSON/GZip pipeline, and persist through the configured manager. Requestless calls accept a descriptor from `JobFunctionProvider.JobFunctionDescriptors`. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition ID. Unknown or stale identities fail before serialization or persistence.
 
-`EnqueueOptions` and `RecurringJobOptions` expose only description, durable retries/intervals, and node-death policy. Execution time and cron expression remain explicit method arguments; priority remains immutable `[JobFunction]` / descriptor metadata. Managers remain public and supported for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
+`EnqueueOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression remain explicit method arguments; priority remains immutable `[JobFunction]` / descriptor metadata. Managers remain public and supported for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
 
 Facade calls use those managers internally, so they enlist in an established `Headless.CommitCoordination` scope and retain the same deferred post-commit dispatch/restart/notification behavior.
 
