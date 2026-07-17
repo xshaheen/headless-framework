@@ -19,12 +19,22 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<JobsTaskScheduler> _logger;
     private readonly Func<int, CancellationToken, Task>? _workerStartGate;
+
+    // Worker-fault restart backoff: start at 100ms, double per consecutive fault up to a 30s ceiling, and stop
+    // auto-restarting a slot after this many back-to-back faults so a deterministically-faulting slot cannot spin
+    // (log -> restart -> log) forever while liveness stays green.
     private static readonly TimeSpan _WorkerFaultRestartDelay = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan _MaxWorkerFaultRestartDelay = TimeSpan.FromSeconds(30);
+    private const int _MaxConsecutiveWorkerFaults = 5;
 
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
     private readonly Lock _workerSlotsLock = new();
     private readonly Task?[] _workerTasks;
+
+    // Per-slot consecutive-fault counter; slot-partitioned (one worker task per index at a time) but written via
+    // Interlocked so the reset on the restarting task always observes the prior task's increment.
+    private readonly int[] _workerFaultCounts;
 
     // Global state
     private volatile int _totalQueuedTasks;
@@ -60,6 +70,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
         _workerTasks = new Task?[maxConcurrency];
+        _workerFaultCounts = new int[maxConcurrency];
         for (var i = 0; i < maxConcurrency; i++)
         {
             _workerQueues[i] = new WorkerQueue();
@@ -229,6 +240,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     private async Task _WorkerLoopAsync(int workerId)
     {
+        var permanentlyDegraded = false;
+
         try
         {
             if (_workerStartGate is not null)
@@ -237,24 +250,42 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
 
             await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false);
+
+            // A clean exit (idle-timeout retirement) clears the consecutive-fault streak so a recovered slot gets a
+            // full backoff budget next time it faults.
+            Interlocked.Exchange(ref _workerFaultCounts[workerId], 0);
         }
         catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
         {
             // Shutdown cancelled an in-flight await inside the loop (e.g. the idle backoff delay).
+            Interlocked.Exchange(ref _workerFaultCounts[workerId], 0);
         }
         // ERP022/RCS1075: A scheduler fault must retire this slot without becoming unobserved.
 #pragma warning disable ERP022, RCS1075
         catch (Exception ex)
         {
+            var consecutiveFaults = Interlocked.Increment(ref _workerFaultCounts[workerId]);
             _logger.WorkerLoopFaulted(ex, workerId);
 
-            try
+            if (consecutiveFaults >= _MaxConsecutiveWorkerFaults)
             {
-                await Task.Delay(_WorkerFaultRestartDelay, _shutdownCts.Token).ConfigureAwait(false);
+                // Stop auto-restarting a slot that keeps faulting back-to-back: a deterministic scheduler-internal
+                // fault would otherwise spin (log -> backoff -> restart) forever while liveness stays green. New work
+                // arriving later can still revive the slot through _EnsureWorkerAvailable.
+                permanentlyDegraded = true;
+                _logger.WorkerSlotPermanentlyDegraded(workerId, consecutiveFaults);
             }
-            catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
+            else
             {
-                // Shutdown cancels the fixed restart backoff; the finally block retires the slot without restarting.
+                try
+                {
+                    await Task.Delay(_GetWorkerFaultRestartDelay(consecutiveFaults), _shutdownCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
+                {
+                    // Shutdown cancels the restart backoff; the finally block retires the slot without restarting.
+                }
             }
         }
 #pragma warning restore ERP022, RCS1075
@@ -267,7 +298,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 _workerTasks[workerId] = null;
                 activeWorkers = Interlocked.Decrement(ref _activeWorkers);
-                restartWorker = _totalQueuedTasks > 0 && !_shutdownCts.IsCancellationRequested && !_disposed;
+                restartWorker =
+                    !permanentlyDegraded
+                    && _totalQueuedTasks > 0
+                    && !_shutdownCts.IsCancellationRequested
+                    && !_disposed;
             }
 
             _notifyDebounce.NotifySafely(activeWorkers);
@@ -277,6 +312,17 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 _EnsureWorkerAvailable();
             }
         }
+    }
+
+    private static TimeSpan _GetWorkerFaultRestartDelay(int consecutiveFaults)
+    {
+        // Exponential backoff from the base delay, doubling per consecutive fault, capped at the ceiling.
+        // consecutiveFaults is >= 1 here, so the first fault waits exactly the base delay.
+        var exponent = Math.Min(consecutiveFaults - 1, 30);
+        var delayMs = _WorkerFaultRestartDelay.TotalMilliseconds * Math.Pow(2, exponent);
+        var cappedMs = Math.Min(delayMs, _MaxWorkerFaultRestartDelay.TotalMilliseconds);
+
+        return TimeSpan.FromMilliseconds(cappedMs);
     }
 
     private async Task _WorkerLoopCoreAsync(int workerId)
@@ -717,4 +763,12 @@ internal static partial class JobsTaskSchedulerLog
         Message = "Jobs worker slot {WorkerId} faulted outside user work; restart is rate-limited."
     )]
     public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
+
+    [LoggerMessage(
+        EventId = 3301,
+        EventName = "JobsWorkerSlotPermanentlyDegraded",
+        Level = LogLevel.Critical,
+        Message = "Jobs worker slot {WorkerId} degraded after {ConsecutiveFaults} consecutive faults; auto-restart stopped until new work arrives."
+    )]
+    public static partial void WorkerSlotPermanentlyDegraded(this ILogger logger, int workerId, int consecutiveFaults);
 }

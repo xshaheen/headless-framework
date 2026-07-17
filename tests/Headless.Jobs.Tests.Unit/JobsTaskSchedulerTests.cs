@@ -79,6 +79,28 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
+    public void worker_fault_restart_delay_grows_exponentially_then_caps()
+    {
+        var method = typeof(JobsTaskScheduler).GetMethod(
+            "_GetWorkerFaultRestartDelay",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        method.Should().NotBeNull();
+
+        TimeSpan Delay(int consecutiveFaults) => (TimeSpan)method!.Invoke(null, [consecutiveFaults])!;
+
+        // 100ms base, doubling per consecutive fault, so a fault storm slows itself down instead of spinning.
+        Delay(1).Should().Be(TimeSpan.FromMilliseconds(100));
+        Delay(2).Should().Be(TimeSpan.FromMilliseconds(200));
+        Delay(3).Should().Be(TimeSpan.FromMilliseconds(400));
+        Delay(4).Should().Be(TimeSpan.FromMilliseconds(800));
+
+        // Capped at the 30s ceiling regardless of how high the fault count climbs (no overflow).
+        Delay(20).Should().Be(TimeSpan.FromSeconds(30));
+        Delay(int.MaxValue).Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public async Task queue_async_allows_nested_queueing_without_exceeding_concurrency()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
