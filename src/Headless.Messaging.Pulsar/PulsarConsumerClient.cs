@@ -164,7 +164,20 @@ internal sealed class PulsarConsumerClient(
 
                 if (groupConcurrent > 0)
                 {
-                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+                    {
+                        // Shutdown raced the concurrency-gate wait: settle the in-flight message
+                        // best-effort so it is redelivered promptly, then stop. Mirrors the
+                        // must-complete nack for malformed messages below and the ObjectDisposedException
+                        // guard already on _semaphore.Release() in _ReleaseSemaphore.
+                        await _SafeShutdownRejectAsync(consumerResult.MessageId).ConfigureAwait(false);
+                        break;
+                    }
+
                     _ObserveBackgroundHandler(
                         Task.Run(
                             async () =>
@@ -240,6 +253,25 @@ internal sealed class PulsarConsumerClient(
         if (sender is MessageId id)
         {
             await _consumerClient!.NegativeAcknowledge(id).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _SafeShutdownRejectAsync(MessageId messageId)
+    {
+        try
+        {
+            await RejectAsync(messageId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        {
+            // Consumer already disposed during shutdown; Pulsar redelivers the unacknowledged message.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Best-effort shutdown nack skipped (consumer disposed): {e.Message}",
+                }
+            );
         }
     }
 
