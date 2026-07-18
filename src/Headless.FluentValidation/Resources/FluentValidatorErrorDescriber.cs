@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using FluentValidatorErrors = Headless.FluentValidation.Resources.FluentValidatorErrors;
 
-namespace FluentValidation.Resources;
+namespace Headless.FluentValidation.Resources;
 
 /// <summary>
 /// Factory methods that return the <see cref="ErrorDescriptor"/> instances used by the Headless

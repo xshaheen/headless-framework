@@ -122,7 +122,7 @@ Per-provider seam (same three edits in every provider): sender constructor takes
 ### Sources & Research
 
 - Blueprint (read before implementing): `src/Headless.Emails.Core/Setup.cs`, `HeadlessEmailsSetupBuilder.cs`, `HeadlessEmailInstanceBuilder.cs`, `KeyedServiceEmailSenderProvider.cs`; `src/Headless.Emails.Abstractions/IEmailSenderProvider.cs`; `src/Headless.Emails.Mailkit/Setup.cs` (HTTP-ish provider shape); `src/Headless.Emails.Aws/Setup.cs` (keyed AWS client + fallback chain).
-- Test blueprint: `tests/Headless.Emails.Core.Tests.Unit/{EmailsSetupBuilderTests,EmailSenderProviderTests,CrossProviderEmailMixingTests}.cs`, `tests/Headless.Emails.Mailkit.Tests.Unit/SetupMailkitNamedEmailTests.cs`.
+- Test blueprint: `tests/Headless.Emails.Composition.Tests.Unit/{EmailsSetupBuilderTests,EmailSenderProviderTests,CrossProviderEmailMixingTests}.cs`, `tests/Headless.Emails.Mailkit.Tests.Unit/SetupMailkitNamedEmailTests.cs`.
 - Institutional learnings: `docs/solutions/architecture-patterns/named-instance-keyed-provider-registration.md` (triad: named options + keyed factory + per-instance deps; per-instance disposables as own keyed singletons), `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` (§5 per-slot gate evolution), `docs/solutions/architecture-patterns/messaging-keyed-di-lock-isolation.md` (TryAdd first-wins collision trap — the likeliest runtime-only bug here), `docs/solutions/conventions/keyed-services-for-overridable-abstractions.md` (TryAdd-vs-Add ordering discipline), `docs/solutions/best-practices/http-stub-conformance-harness.md` (stub through the named client's HttpClient name).
 - Current seam: `src/Headless.Sms.Abstractions/{Setup.cs,HeadlessSmsSetupBuilder.cs,ISmsProviderOptionsExtension.cs}`, all `src/Headless.Sms.*/Setup.cs`, senders' `IOptions<T>` constructor fields.
 
@@ -199,13 +199,13 @@ Per-provider seam (same three edits in every provider): sender constructor takes
 - **Goal:** Gate suite, factory suite, cross-provider mixing, and harness proof that named wiring works end to end.
 - **Requirements:** R1–R8, AE1–AE4
 - **Dependencies:** U3, U4, U5
-- **Files:** `tests/Headless.Sms.Core.Tests.Unit/` (new project: `SmsSetupBuilderTests.cs`, `SmsSenderProviderTests.cs`, `CrossProviderSmsMixingTests.cs`), `tests/Headless.Sms.Tests.Harness/` (named-instance fixture support), `headless-framework.slnx`
+- **Files:** `tests/Headless.Sms.Composition.Tests.Unit/` (new project: `SmsSetupBuilderTests.cs`, `SmsSenderProviderTests.cs`, `CrossProviderSmsMixingTests.cs`), `tests/Headless.Sms.Tests.Harness/` (named-instance fixture support), `headless-framework.slnx`
 - **Approach:** Replicate the Emails test matrix. The harness extension wires the transport stub through the named client's HttpClient name (`AddHttpClient("Headless:{Provider}Sms:{name}").ConfigurePrimaryHttpMessageHandler(...)`) so a named conformance run exercises real options binding + keyed resolution, not a hand-built sender.
 - **Test scenarios:**
   - Gates (`SmsSetupBuilderTests`): reject zero defaults (AE3 — collection unchanged after throw); reject two defaults; reject repeated `AddHeadlessSms` (including when the first call had named instances); `AddNamed` rejects whitespace/duplicate names and zero/two providers per instance; factory registered as singleton and idempotent.
   - Factory (`SmsSenderProviderTests`): resolve known name; `GetSenderOrNull` unknown → null; `GetSender` unknown → `InvalidOperationException` naming `AddNamed` (AE2); null/whitespace name guards throw.
   - Mixing (`CrossProviderSmsMixingTests`): one `AddHeadlessSms` with a default plus one named instance per provider — no DI collisions, keyed resolution matches factory results; same provider twice with different options sends with its own config (AE1, via harness stubs for HTTP providers).
-- **Verification:** `make test-project TEST_PROJECT=tests/Headless.Sms.Core.Tests.Unit/...` plus the provider suites; full `make build` green (warnings-as-errors).
+- **Verification:** `make test-project TEST_PROJECT=tests/Headless.Sms.Composition.Tests.Unit/...` plus the provider suites; full `make build` green (warnings-as-errors).
 
 ### U7. Repo-wide CA1708 de-pragma sweep
 

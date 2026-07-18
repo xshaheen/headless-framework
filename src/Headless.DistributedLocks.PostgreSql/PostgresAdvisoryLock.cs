@@ -28,7 +28,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
     public object GetHeldLockIdentity(string resourceName)
     {
-        return PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
+        return PostgreSqlAdvisoryLockKey.FromString(resourceName, allowHashing);
     }
 
     public async ValueTask<object?> TryAcquireAsync(
@@ -40,7 +40,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     {
         const string savePointName = "headless_distributed_locks_postgres_advisory_lock_acquire";
 
-        var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing);
+        var key = PostgreSqlAdvisoryLockKey.FromString(resourceName, allowHashing);
 
         if (
             connection.IsExternallyOwned
@@ -168,10 +168,14 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
     public ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, object lockCookie)
     {
-        return _ReleaseAsync(connection, PostgresAdvisoryLockKey.FromString(resourceName, allowHashing), isTry: false);
+        return _ReleaseAsync(
+            connection,
+            PostgreSqlAdvisoryLockKey.FromString(resourceName, allowHashing),
+            isTry: false
+        );
     }
 
-    private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgresAdvisoryLockKey key, bool isTry)
+    private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgreSqlAdvisoryLockKey key, bool isTry)
     {
         Debug.Assert(
             !_UseTransactionScopedLock(connection),
@@ -193,7 +197,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
     private static async Task<bool> _IsHoldingLockAsync(
         DatabaseConnection connection,
-        PostgresAdvisoryLockKey key,
+        PostgreSqlAdvisoryLockKey key,
         CancellationToken cancellationToken
     )
     {
@@ -215,7 +219,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
     private DatabaseCommand _CreateAcquireCommand(
         DatabaseConnection connection,
-        PostgresAdvisoryLockKey key,
+        PostgreSqlAdvisoryLockKey key,
         TimeSpan timeout
     )
     {

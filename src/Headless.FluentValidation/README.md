@@ -104,6 +104,9 @@ codes via `FluentValidatorErrorDescriber` (for example `Ipv4()` → `g:invalid_i
 see a single consistent code namespace in `errors[].code`. Codes you supply yourself through
 `WithErrorDescriptor(...)` are passed through unchanged.
 
+Extension methods remain in the `FluentValidation` namespace for fluent discovery. Stable Headless error-code
+constants and localized descriptor factories live in `Headless.FluentValidation.Resources`.
+
 ## Available Validators
 
 | Category | Validators |

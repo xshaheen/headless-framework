@@ -159,7 +159,7 @@ flowchart TB
   - `src/Headless.AuditLog.Abstractions/IAuditTracked.cs`
   - `src/Headless.AuditLog.Abstractions/AuditIgnoreAttribute.cs`
   - `src/Headless.AuditLog.Abstractions/AuditSensitiveAttribute.cs`
-  - `tests/Headless.AuditLog.Tests.Unit/EfAuditChangeCaptureTests.cs`
+  - `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Unit/EfAuditChangeCaptureTests.cs`
 - **Approach:** Add a dedicated EF-style public extension holder and internal annotation constants. Resolve effective entity eligibility from EF metadata, base types, and root ownership; retain option filters as vetoes. Read property annotations directly, preserve exclusion order, and remove reflection caches and obsolete public types. Convert test POCOs to annotation-free entities configured in `OnModelCreating`.
 - **Patterns to follow:** `src/Headless.EntityFramework/Extensions/HeadlessCoordinatedTransactionExtensions.cs`, generic/non-generic builder overloads in `EntityTypeBuilderExtensions.cs`, and the current capture value/error/deferred-resolution flow.
 - **Execution note:** Start with the metadata/default and precedence matrix, then replace reflection while keeping all unrelated capture tests green.
@@ -181,8 +181,8 @@ flowchart TB
 - **Files:**
   - `src/Headless.AuditLog.Storage.EntityFramework/AuditLogEntry.cs`
   - `src/Headless.AuditLog.Storage.EntityFramework/AuditLogEntryConfiguration.cs`
-  - `src/Headless.AuditLog.Storage.EntityFramework/AuditLogModelBuilderExtensions.cs`
-  - `tests/Headless.AuditLog.Tests.Unit/AuditStoreDbContext.cs`
+  - `src/Headless.AuditLog.Storage.EntityFramework/HeadlessAuditLogModelBuilderExtensions.cs`
+  - `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Unit/AuditStoreDbContext.cs`
   - `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Integration/Fixture/AuditTestDbContext.cs`
   - `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Integration/Fixture/ThrowingPublishAuditTestDbContext.cs`
   - `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Integration/Fixture/Order.cs`
@@ -225,7 +225,7 @@ flowchart TB
 | Gate | Applicability | Done signal |
 | --- | --- | --- |
 | `make build-project PROJECT=src/Headless.EntityFramework/Headless.EntityFramework.csproj` | U1 | Public fluent API and metadata capture compile cleanly. |
-| `make test-project TEST_PROJECT=tests/Headless.AuditLog.Tests.Unit/Headless.AuditLog.Tests.Unit.csproj` | U1, U2 | Metadata precedence, capture behavior, and model recursion assertions pass. |
+| `make test-project TEST_PROJECT=tests/Headless.AuditLog.Storage.EntityFramework.Tests.Unit/Headless.AuditLog.Storage.EntityFramework.Tests.Unit.csproj` | U1, U2 | Metadata precedence, capture behavior, and model recursion assertions pass. |
 | `make test-project TEST_PROJECT=tests/Headless.AuditLog.Storage.EntityFramework.Tests.Integration/Headless.AuditLog.Storage.EntityFramework.Tests.Integration.csproj` | U2 | Real EF storage pipeline behavior remains green. |
 | `make format-check` | U1-U3 | Changed C# and documentation satisfy repository formatting. |
 | Targeted analyzers through the changed project builds | U1-U2 | Warnings-as-errors and package conventions pass. |
@@ -252,8 +252,8 @@ Browser verification is not applicable because this change has no web UI or brow
 ### Sources and Research
 
 - `src/Headless.EntityFramework/Contexts/Auditing/EfAuditChangeCapture.cs` — current automatic capture, ownership behavior, reflection caches, and runtime filter precedence.
-- `src/Headless.AuditLog.Storage.EntityFramework/AuditLogModelBuilderExtensions.cs` — current entity-discovery idempotence seam that can skip recursion configuration.
-- `tests/Headless.AuditLog.Tests.Unit/EfAuditChangeCaptureTests.cs` — primary behavior and SQLite model harness.
+- `src/Headless.AuditLog.Storage.EntityFramework/HeadlessAuditLogModelBuilderExtensions.cs` — current entity-discovery idempotence seam that can skip recursion configuration.
+- `tests/Headless.AuditLog.Storage.EntityFramework.Tests.Unit/EfAuditChangeCaptureTests.cs` — primary behavior and SQLite model harness.
 - `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` — package boundary: EF capture belongs in ORM while raw stores remain EF-free.
 - `docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md` — public API changes require lockstep implementation, package README, and LLM documentation updates.
 - `docs/solutions/tooling-decisions/jobs-middleware-cross-assembly-discovery-2026-07-14.md` — adjacent precedent for one metadata source with deterministic precedence and no fallback registry.

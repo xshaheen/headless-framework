@@ -47,7 +47,7 @@ help: ## Show available commands.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
-	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj\n"
+	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*ClockTests'\n"
 	@printf "  make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj\n"
 	@printf "  make coverage-json\n"
@@ -213,13 +213,13 @@ test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override T
 
 .PHONY: test-project
 test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
-	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
+	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-project-fast
 test-project-fast: ## Run one prebuilt test project without restore/build.
-	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
+	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 

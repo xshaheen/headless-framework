@@ -450,7 +450,7 @@ No product-level question remains open. Implementation may choose internal type 
 
 - Update lease acquisition contracts in `src/Headless.Messaging.Core/Persistence/IDataStorage.cs` and both publish/subscribe executors so storage receives a lease duration rather than a client-computed absolute relational timestamp.
 - Update `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs` and `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs` so every relational claim and fresh-dispatch lease compares and stamps from one database-clock snapshot and returns the stored expiry.
-- Keep `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs` on its injected `TimeProvider`, which is the authoritative clock for that single-process store.
+- Keep `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs` on its injected `TimeProvider`, which is the authoritative clock for that single-process store.
 - Extend the shared storage harness plus PostgreSQL, SQL Server, and InMemory storage tests.
 
 **Approach:** Treat scheduling time and lease time as separate authorities. `NextRetryAt` remains application scheduling state, while each storage provider owns lease comparison and expiry stamping. Reuse the existing `(LockedUntil, Owner)` conditional-write identity as the attempt generation/fence, and require terminal or retry-state writes to match the acquired values; no schema column is added. The relational atomic retry-claim paths already use database time, so PR 0 aligns the remaining fresh-dispatch and lease/reservation paths with that rule. This eliminates client wall-clock skew as an early-reclaim cause. It does not claim that a process paused longer than `DispatchTimeout` still owns the row: after genuine lease expiry, at-least-once recovery may overlap a resumed attempt because transports do not enforce the storage fence.
@@ -581,7 +581,7 @@ No product-level question remains open. Implementation may choose internal type 
 
 **Files:**
 
-- Update `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs`, `InMemoryMonitoringApi.cs`, and maintenance paths.
+- Update `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs`, `InMemoryMonitoringApi.cs`, and maintenance paths.
 - Update `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs`, `PostgreSqlMonitoringApi.cs`, and `PostgreSqlStorageInitializer.cs`.
 - Update `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs`, `SqlServerMonitoringApi.cs`, and `SqlServerStorageInitializer.cs`.
 - Update `src/Headless.Messaging.Core/Persistence/`, monitoring models, diagnostics event data, and dashboard endpoints.

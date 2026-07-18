@@ -365,8 +365,10 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 | Package | Description |
 |---------|-------------|
 | [Headless.Messaging.Storage.PostgreSql](src/Headless.Messaging.Storage.PostgreSql/README.md) | PostgreSQL message persistence |
+| [Headless.Messaging.Storage.PostgreSql.EntityFramework](src/Headless.Messaging.Storage.PostgreSql.EntityFramework/README.md) | Binds PostgreSQL message persistence to an EF Core context and transactional outbox |
 | [Headless.Messaging.Storage.SqlServer](src/Headless.Messaging.Storage.SqlServer/README.md) | SQL Server message persistence |
-| [Headless.Messaging.InMemoryStorage](src/Headless.Messaging.InMemoryStorage/README.md) | Ephemeral storage (dev/testing) |
+| [Headless.Messaging.Storage.SqlServer.EntityFramework](src/Headless.Messaging.Storage.SqlServer.EntityFramework/README.md) | Binds SQL Server message persistence to an EF Core context and transactional outbox |
+| [Headless.Messaging.Storage.InMemory](src/Headless.Messaging.Storage.InMemory/README.md) | Ephemeral storage (dev/testing) |
 
 ### Jobs
 
@@ -399,6 +401,7 @@ Database access utilities for Entity Framework Core and Couchbase — convention
 | Package | Description |
 |---------|-------------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.EntityFramework.CommitCoordination](src/Headless.EntityFramework.CommitCoordination/README.md) | Opt-in commit coordination for the Headless EF save pipeline |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 

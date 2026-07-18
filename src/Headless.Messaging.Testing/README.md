@@ -286,7 +286,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
-- `Headless.Messaging.InMemoryStorage`
+- `Headless.Messaging.Storage.InMemory`
 
 ## Side Effects
 

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace FluentValidation.Resources;
+namespace Headless.Api.FluentValidation.Resources;
 
 /// <summary>
 /// Compile-time constants for the <c>errors[].code</c> values emitted by the file-upload FluentValidation rules

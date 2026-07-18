@@ -9,7 +9,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -122,7 +121,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -361,14 +360,10 @@ internal sealed partial class PostgreSqlDataStorage(
     /// is supplied the INSERT participates in the caller's database transaction (transactional outbox).
     /// </summary>
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="transaction"/> is a non-null type that is neither
-    /// <c>DbTransaction</c> nor <c>IDbContextTransaction</c>.
-    /// </exception>
     public async ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -423,21 +418,8 @@ internal sealed partial class PostgreSqlDataStorage(
         }
         else
         {
-            var dbTrans = transaction as DbTransaction;
-            if (dbTrans == null && transaction is IDbContextTransaction dbContextTrans)
-            {
-                dbTrans = dbContextTrans.GetDbTransaction();
-            }
-
-            if (dbTrans is null)
-            {
-                throw new InvalidOperationException(
-                    $"Unsupported transaction type '{transaction.GetType().FullName}'. Expected DbTransaction or IDbContextTransaction."
-                );
-            }
-
             var connection =
-                dbTrans.Connection
+                transaction.Connection
                 ?? throw new InvalidOperationException(
                     "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
                 );
@@ -445,7 +427,7 @@ internal sealed partial class PostgreSqlDataStorage(
             await connection
                 .ExecuteNonQueryAsync(
                     sql,
-                    transaction: dbTrans,
+                    transaction,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
                     sqlParams: sqlParams,
                     cancellationToken: cancellationToken
@@ -464,7 +446,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -855,7 +837,7 @@ internal sealed partial class PostgreSqlDataStorage(
         string tableName,
         MediumMessage message,
         StatusName state,
-        object? transaction,
+        DbTransaction? transaction,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
@@ -907,24 +889,6 @@ internal sealed partial class PostgreSqlDataStorage(
                 .ExecuteNonQueryAsync(
                     sql,
                     transaction: dbTransaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        else if (transaction is IDbContextTransaction efTransaction)
-        {
-            var dbTrans = efTransaction.GetDbTransaction();
-            var connection =
-                dbTrans.Connection
-                ?? throw new InvalidOperationException(
-                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
-                );
-            affectedRows = await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    transaction: dbTrans,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
                     sqlParams: sqlParams,
                     cancellationToken: cancellationToken

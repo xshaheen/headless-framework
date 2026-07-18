@@ -1,26 +1,52 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using FluentValidation;
+using Headless.Checks;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Runtime;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
-/// SQL Server-specific configuration for the messaging outbox storage backend.
-/// Extends <c>SqlServerEntityFrameworkMessagingOptions</c> with the raw-ADO connection
-/// string used when the storage is not wired through an EF Core <c>DbContext</c>.
+/// SQL Server-specific configuration for the raw ADO.NET messaging storage backend.
 /// </summary>
 [PublicAPI]
-public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
+public sealed partial class SqlServerOptions
 {
+    public const string DefaultSchema = "messaging";
+
+    /// <summary>SQL Server maximum identifier length for schema names.</summary>
+    public const int MaxSchemaLength = 128;
+
+    /// <summary>Gets or sets the schema used when creating messaging database objects.</summary>
+    public string Schema
+    {
+        get;
+        set
+        {
+            Argument.IsNotNullOrWhiteSpace(value);
+            Argument.Matches(
+                value,
+                ValidIdentifier,
+                $"Schema name must start with a letter, underscore, @ or # and contain only letters, digits, underscores, @ or # (max {MaxSchemaLength} chars)"
+            );
+
+            field = value;
+        }
+    } = DefaultSchema;
+
+    [GeneratedRegex("^[a-zA-Z_@#][a-zA-Z0-9_@#$]{0,127}$", RegexOptions.None, 100)]
+    private static partial Regex ValidIdentifier { get; }
+
+    /// <summary>Gets or sets the maximum length for the Owner column.</summary>
+    public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
+
     /// <summary>
     /// Gets or sets the database's connection string that will be used to store database entities.
     /// </summary>
     public string? ConnectionString { get; set; }
+
+    internal string Version { get; set; } = null!;
 }
 
 internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOptions>
@@ -28,47 +54,12 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
     public SqlServerOptionsValidator()
     {
         RuleFor(x => x)
-            .Must(x => x.DbContextType is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
+            .Must(x => !string.IsNullOrWhiteSpace(x.ConnectionString))
             .WithMessage(
-                "SQL Server messaging storage requires either a DbContextType or ConnectionString. "
+                "SQL Server messaging storage requires a ConnectionString. "
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
 
         RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
-    }
-}
-
-internal sealed class ConfigureSqlServerOptions(IServiceScopeFactory serviceScopeFactory)
-    : IConfigureOptions<SqlServerOptions>
-{
-    public void Configure(SqlServerOptions options)
-    {
-        if (options.DbContextType == null)
-        {
-            return;
-        }
-
-        if (
-            RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(options.DbContextType)
-            || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(options.DbContextType)
-        )
-        {
-            throw new InvalidOperationException(
-                "We detected that you are using IOutboxBus or IOutboxQueue in DbContext, please change the configuration to use the storage extension directly to avoid circular references! eg:  x.UseSqlServer()"
-            );
-        }
-
-        using var scope = serviceScopeFactory.CreateScope();
-        var provider = scope.ServiceProvider;
-        using var dbContext = (DbContext)provider.GetRequiredService(options.DbContextType);
-        var connectionString = dbContext.Database.GetConnectionString();
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            throw new InvalidOperationException(
-                "DbContext returned null or empty connection string. Ensure the DbContext is properly configured."
-            );
-        }
-
-        options.ConnectionString = connectionString;
     }
 }

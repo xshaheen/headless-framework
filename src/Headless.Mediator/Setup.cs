@@ -18,7 +18,7 @@ public static class SetupMediator
     {
         /// <summary>Adds the FluentValidation Mediator request pre-processor.</summary>
         /// <remarks>
-        /// Consumers must register any <see cref="FluentValidation.IValidator{T}" />
+        /// Consumers must register any <see cref="global::FluentValidation.IValidator{T}" />
         /// implementations separately. Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>

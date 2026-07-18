@@ -30,7 +30,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 
 - **Not poolable by design.** `HeadlessDbContext` holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher (`IHeadlessOutboxDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooling reuses a prior request's unit of work — a captive-dependency correctness bug. The two-argument constructor also violates EF's single-`DbContextOptions` pooling contract. For read-heavy hot paths that don't need the write pipeline, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`.
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, usable for foreign keys, outbox rows, and domain events in the same unit of work. `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
-- **Synchronous enlist in commit coordination.** The save pipeline synchronously enlists the EF transaction in commit coordination so the ambient coordinator carries the live transaction. An `AsyncLocal` push inside an `async` helper does not flow back to the caller, making synchronous enlistment the only correct approach.
+- **Optional synchronous commit enlistment.** The core package uses a no-op transaction coordinator. `Headless.EntityFramework.CommitCoordination` replaces it so the save pipeline synchronously enlists the EF transaction and the ambient coordinator carries the live transaction.
 - **Unknown commit outcomes are not replayed.** `ExecuteCoordinatedTransactionAsync` lets the EF execution strategy retry failures before commit starts. Once `CommitAsync` begins, an exception is surfaced without replay because the database may already have committed; reconcile with a client-generated key or another durable idempotency key before retrying the business operation.
 - **Domain-event at-most-once guard.** A guard inside the execution-strategy retry ensures domain-event handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent.
 - **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
@@ -193,7 +193,6 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - `Headless.Core`
 - `Headless.Hosting`
 - `Headless.MultiTenancy`
-- `Headless.CommitCoordination.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -201,7 +200,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`)
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline
-- Registers `EntityFrameworkCommitCoordination` (EF interceptor + ambient commit coordinator)
+- Registers a no-op transaction-coordination seam; install `Headless.EntityFramework.CommitCoordination` and call `.AddCommitCoordination()` when the save pipeline must enlist in commit coordination
 - `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`

@@ -636,30 +636,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
-      "headless.commitcoordination.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.commitcoordination.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
-        }
-      },
       "headless.core": {
         "type": "Project",
         "dependencies": {
@@ -694,7 +670,6 @@
         "dependencies": {
           "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
@@ -798,7 +773,7 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security": "[1.0.0, )",
+          "Headless.Security.Abstractions": "[1.0.0, )",
           "Headless.Settings.Abstractions": "[1.0.0, )"
         }
       },

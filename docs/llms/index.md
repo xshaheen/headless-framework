@@ -336,6 +336,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.CommitCoordination.Core` — In-process coordinator, ambient stack, scope factory, and relational capability implementation.
 - `Headless.CommitCoordination.DurableWork` — Durable work buffer base with fail-closed relational provider policy.
 - `Headless.CommitCoordination.EntityFramework` — EF Core commit coordination registration points.
+- `Headless.EntityFramework.CommitCoordination` — Opt-in adapter that enlists the Headless EF save pipeline in commit coordination.
 - `Headless.CommitCoordination.InMemory` — Explicit in-process signal source for tests and owner-driven flows.
 - `Headless.CommitCoordination.PostgreSql` — PostgreSQL inline commit signal source.
 - `Headless.CommitCoordination.SqlServer` — SQL Server provider-key signal correlation.
@@ -394,8 +395,10 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Redis` — Redis Streams queue transport and Redis Pub/Sub bus transport.
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
+- `Headless.Messaging.Storage.PostgreSql.EntityFramework` — EF Core connection and transactional-outbox adapter for PostgreSQL storage.
 - `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
-- `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
+- `Headless.Messaging.Storage.SqlServer.EntityFramework` — EF Core connection and transactional-outbox adapter for SQL Server storage.
+- `Headless.Messaging.Storage.InMemory` — Ephemeral storage (dev/testing).
 - `Headless.Messaging.Testing` — In-process test harness for asserting dispatch/consume behavior (documented in [testing.md](testing.md)).
 
 ### OpenAPI

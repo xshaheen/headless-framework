@@ -180,11 +180,11 @@ stateDiagram-v2
 - **Requirements:** R3, R9, R11
 - **Dependencies:** U1
 - **Files:**
-  - `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs`
-  - `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.Maintenance.cs`
+  - `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs`
+  - `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.Maintenance.cs`
   - `tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs`
   - `tests/Headless.Messaging.Core.Tests.Harness/DeadOwnerReclaimConformanceTests.cs`
-  - `tests/Headless.Messaging.InMemoryStorage.Tests.Unit/InMemoryDataStorageTests.cs`
+  - `tests/Headless.Messaging.Storage.InMemory.Tests.Unit/InMemoryDataStorageTests.cs`
 - **Approach:** Sample injected time once while holding the message row lock, compare the current lease and stamp `now + duration` from that sample, and mirror the stored identity to the caller. Move reusable stale-success and expiry scenarios into shared conformance where appropriate while retaining InMemory-specific exact-time assertions. Update dead-owner conformance lease calls to pass durations through the revised SPI.
 - **Patterns to follow:** Existing row-level `lock (message)` operations, `FakeTimeProvider` leaf fixture, and shared `DataStorageTestsBase` conformance inheritance.
 - **Test scenarios:**
@@ -240,7 +240,7 @@ stateDiagram-v2
 - **Files:**
   - `docs/llms/messaging.md`
   - `src/Headless.Messaging.Core/README.md`
-  - `src/Headless.Messaging.InMemoryStorage/README.md`
+  - `src/Headless.Messaging.Storage.InMemory/README.md`
   - `src/Headless.Messaging.Storage.PostgreSql/README.md`
   - `src/Headless.Messaging.Storage.SqlServer/README.md`
   - `docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md`
@@ -257,7 +257,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | `make build-project PROJECT=src/Headless.Messaging.Core/Headless.Messaging.Core.csproj` | U1 | Public SPI and core compile cleanly. |
 | `make test-project TEST_PROJECT=tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj` | U1 | Core publish/receive path and cancellation/circuit tests pass. |
-| `make test-project TEST_PROJECT=tests/Headless.Messaging.InMemoryStorage.Tests.Unit/Headless.Messaging.InMemoryStorage.Tests.Unit.csproj` | U2 | Deterministic InMemory lease and stale-generation conformance passes. |
+| `make test-project TEST_PROJECT=tests/Headless.Messaging.Storage.InMemory.Tests.Unit/Headless.Messaging.Storage.InMemory.Tests.Unit.csproj` | U2 | Deterministic InMemory lease and stale-generation conformance passes. |
 | `make test-project TEST_PROJECT=tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj` | U3 | Real PostgreSQL skew, precision, persistence, and fencing tests pass with Docker available. |
 | `make test-project TEST_PROJECT=tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj` | U4 | Real SQL Server skew, precision, persistence, and fencing tests pass with Docker available. |
 | Focused `make quality-analyzers-project PROJECT=...` for each changed production project | U1-U4 | No warnings or analyzer findings are introduced in changed projects. |

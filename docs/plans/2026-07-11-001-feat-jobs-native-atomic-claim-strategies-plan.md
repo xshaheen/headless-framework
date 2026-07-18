@@ -134,7 +134,7 @@ sequenceDiagram
 ### Existing Patterns to Follow
 
 - `src/Headless.Jobs.EntityFramework/Infrastructure/BasePersistenceProvider.cs` for current direct/fallback predicates, chain stamping, and projections.
-- `src/Headless.Jobs.EntityFramework/Infrastructure/JobsQueryExtensions.cs` for eligibility and node-death policy rules.
+- `src/Headless.Jobs.EntityFramework/Infrastructure/HeadlessJobsQueryExtensions.cs` for eligibility and node-death policy rules.
 - `src/Headless.Jobs.EntityFramework/EfCoreOptionBuilder.cs` and `src/Headless.Jobs.EntityFramework/DependencyInjection/SetupJobsEntityFramework.cs` for the current Jobs EF configuration surface.
 - `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs` for atomic PostgreSQL update/returning claims.
 - `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs` for atomic SQL Server CTE/update/output claims.
@@ -157,13 +157,13 @@ U1 establishes the internal seam and default behavior. U2 and U3 can then implem
 - **Files:**
   - `src/Headless.Jobs.EntityFramework/Infrastructure/BasePersistenceProvider.cs`
   - `src/Headless.Jobs.EntityFramework/Infrastructure/JobsEFCorePersistenceProvider.cs`
-  - `src/Headless.Jobs.EntityFramework/Infrastructure/JobsQueryExtensions.cs`
+  - `src/Headless.Jobs.EntityFramework/Infrastructure/HeadlessJobsQueryExtensions.cs`
   - `src/Headless.Jobs.EntityFramework/Infrastructure/MappingExtensions.cs`
   - `src/Headless.Jobs.EntityFramework/Customizer/CustomizerServiceDescriptor.cs`
   - `src/Headless.Jobs.EntityFramework/EfCoreOptionBuilder.cs`
   - `src/Headless.Jobs.EntityFramework/Headless.Jobs.EntityFramework.csproj`
-  - `tests/Headless.Jobs.Tests.Unit/Infrastructure/JobsQueryPredicateTests.cs`
-  - `tests/Headless.Jobs.Tests.Unit/JobsDistributedLockWiringTests.cs`
+  - `tests/Headless.Jobs.Composition.Tests.Unit/Infrastructure/JobsQueryPredicateTests.cs`
+  - `tests/Headless.Jobs.Composition.Tests.Unit/JobsDistributedLockWiringTests.cs`
 - **Approach:** Introduce an internal strategy contract and relocate the existing direct/fallback time-job and cron claim behavior into the default EF implementation. Resolve the selected strategy when constructing the EF persistence provider. Add a narrow internal provider-registration hook to the existing EF option builder and friend only the two provider assemblies that require it. Register CAS by default and enforce zero-or-one native override deterministically.
 - **Test scenarios:**
   - Existing `UseEntityFramework` registration resolves the CAS strategy and produces the same eligibility/projection behavior as before.
@@ -280,7 +280,7 @@ U1 establishes the internal seam and default behavior. U2 and U3 can then implem
 
 - Build and analyzer-check `Headless.Jobs.EntityFramework` after U1.
 - Build and analyzer-check each new provider package after U2/U3.
-- Run `Headless.Jobs.Tests.Unit` for registration and predicate regressions.
+- Run `Headless.Jobs.Composition.Tests.Unit` for registration and predicate regressions.
 - Run both Jobs EF PostgreSQL and SQL Server integration projects with Docker available.
 - Run the shared Jobs EF harness through both leaf projects; the harness is not executed as a standalone test assembly.
 - Verify formatting and diff whitespace before the wider solution gate.
@@ -325,7 +325,7 @@ U1 establishes the internal seam and default behavior. U2 and U3 can then implem
 - GitHub issues [#308](https://github.com/xshaheen/headless-framework/issues/308), [#309](https://github.com/xshaheen/headless-framework/issues/309), and [#310](https://github.com/xshaheen/headless-framework/issues/310), updated on 2026-07-11.
 - `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md`.
 - `src/Headless.Jobs.EntityFramework/Infrastructure/BasePersistenceProvider.cs`.
-- `src/Headless.Jobs.EntityFramework/Infrastructure/JobsQueryExtensions.cs`.
+- `src/Headless.Jobs.EntityFramework/Infrastructure/HeadlessJobsQueryExtensions.cs`.
 - `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs`.
 - `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs`.
 - PostgreSQL `SELECT` locking documentation: <https://www.postgresql.org/docs/current/sql-select.html>.

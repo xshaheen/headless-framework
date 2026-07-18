@@ -454,7 +454,7 @@ Messaging each keep their own terminal-state predicate.
   `LockHolder` with it (no schema change — column exists); delete `JobsRedisContext`
   membership + `NodeHeartBeatBackgroundService` + the startup self-reclaim hook; trigger
   `ReleaseDeadNodeResources(node@inc)` from `NodeLeft`. Tighten the reclaim predicate
-  `WhereCanAcquire` (`JobsQueryExtensions.cs:12-28`) to strict `LockHolder == owner`
+  `WhereCanAcquire` (`HeadlessJobsQueryExtensions.cs:12-28`) to strict `LockHolder == owner`
   (drop the `LockedAt == null` arm — incarnation makes the loose match wrong).
 - **Biggest risk (Finding B, behavioral not schema):** the stable incarnation-free
   `NodeIdentifier` is load-bearing for the **no-Redis startup self-reclaim**

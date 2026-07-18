@@ -4,11 +4,11 @@ SQL Server outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
+Provides durable raw ADO.NET message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
 
 ## Key Features
 
-- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Provider-neutral storage**: no EF Core or commit-coordination dependency
 - **Schema Bootstrap**: Creates the final table and index shape directly, including durable bus/queue intent columns and `([StatusName],[Added])` dashboard indexes; it does not carry legacy migration DDL
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
@@ -23,6 +23,8 @@ Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stam
 ```bash
 dotnet add package Headless.Messaging.Storage.SqlServer
 ```
+
+For `UseEntityFramework<TContext>()` and the automatically coordinated transactional outbox, also install `Headless.Messaging.Storage.SqlServer.EntityFramework`.
 
 ## Quick Start
 

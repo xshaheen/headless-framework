@@ -140,7 +140,7 @@ The normalized declaration is an internal generator model, not a second public r
 | Public API | `src/Headless.Jobs.Core/JobMiddleware.cs` | Replace only authoring types; keep runtime registry ABI intact for clean #689 propagation. |
 | Generator | `src/Headless.Jobs.SourceGenerator/JobsIncrementalSourceGenerator.cs`, `src/Headless.Jobs.SourceGenerator/Validation/DiagnosticDescriptors.cs`, `src/Headless.Jobs.SourceGenerator/AnalyzerReleases.Unshipped.md` | One normalized model feeds the existing generated registration emitter. |
 | Generator tests | `tests/Headless.Jobs.SourceGenerator.Tests.Unit/GeneratorTestHelper.cs`, `tests/Headless.Jobs.SourceGenerator.Tests.Unit/JobsIncrementalSourceGeneratorTests.cs`, relevant snapshots | Add real producer-reference coverage and authoring diagnostics. |
-| Runtime regression | `src/Headless.Jobs.Core/DependencyInjection/JobsDiscoveryExtension.cs`, a middleware-only test asset, its focused Jobs unit test, `tests/Headless.Jobs.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`, and `tests/Headless.Jobs.Tests.Unit/RetryBehaviorTests.cs` only where syntax updates are necessary | Prove explicit discovery loads middleware-only assemblies once and preserve existing schedule/retry behavior. |
+| Runtime regression | `src/Headless.Jobs.Core/DependencyInjection/JobsDiscoveryExtension.cs`, a middleware-only test asset, its focused Jobs unit test, `tests/Headless.Jobs.Composition.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`, and `tests/Headless.Jobs.Composition.Tests.Unit/RetryBehaviorTests.cs` only where syntax updates are necessary | Prove explicit discovery loads middleware-only assemblies once and preserve existing schedule/retry behavior. |
 | Documentation | `src/Headless.Jobs.Core/README.md`, `src/Headless.Jobs.SourceGenerator/README.md`, Jobs discovery documentation, `docs/plans/2026-07-15-001-feat-jobs-descriptor-middleware-plan.md` | Show generic global/local/external forms, middleware-only discovery, and final architecture. |
 | Stack propagation | Published branches and PR metadata for #685, #689, and #690 | Bottom-up only; retain registry and cancellation commits and bases. |
 
@@ -218,7 +218,7 @@ The normalized declaration is an internal generator model, not a second public r
 | Core build | `make build-project PROJECT=src/Headless.Jobs.Core/Headless.Jobs.Core.csproj` | U1 |
 | Generator build | `make build-project PROJECT=src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj` | U2, U3 |
 | Generator contracts | `make test-project TEST_PROJECT=tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj` | U1-U4 |
-| Jobs runtime regressions | `make test-project TEST_PROJECT=tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj` | U1, U4 |
+| Jobs runtime regressions | `make test-project TEST_PROJECT=tests/Headless.Jobs.Composition.Tests.Unit/Headless.Jobs.Composition.Tests.Unit.csproj` | U1, U4 |
 | Focused analyzers | `make quality-analyzers-project PROJECT=src/Headless.Jobs.Core/Headless.Jobs.Core.csproj` and the equivalent source-generator project gate | U1-U3 |
 | Formatting | `make format-check` | U1-U5 |
 | Generated AOT contract | Syntax/output assertions prove direct generic DI resolution and forbid reflection scan, reflection invocation, and expression compilation | U2-U4 |

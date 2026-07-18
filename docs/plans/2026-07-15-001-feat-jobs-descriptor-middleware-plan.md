@@ -77,7 +77,7 @@ flowchart LR
 
 ### U1 — Public contracts and assembly metadata
 
-**Files:** `src/Headless.Jobs.Core/`, `tests/Headless.Jobs.Tests.Unit/`, and source-generator reference fixtures.
+**Files:** `src/Headless.Jobs.Core/`, `tests/Headless.Jobs.Composition.Tests.Unit/`, and source-generator reference fixtures.
 
 Define public schedule/execute middleware delegates, interfaces or compatible contracts, context types, priority constants, and constrained stage-specific generic attributes in Jobs Core. Add generated assembly-level descriptor metadata for every `[JobFunction]`, so production generator discovery can validate external assembly targets. Derive local method targets from `[JobFunction]`, keep `Function` only for cross-assembly fallback, and validate declaration placement and arguments. Preserve trailing cancellation-token conventions and public XML documentation.
 
@@ -101,7 +101,7 @@ Add the Core callback registry and generated-dispatch integration. Resolve a des
 
 ### U4 — Scheduling and coordination regression coverage
 
-**Files:** `tests/Headless.Jobs.Tests.Unit/`, `tests/Headless.Jobs.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`, focused manager fixture/helpers.
+**Files:** `tests/Headless.Jobs.Composition.Tests.Unit/`, `tests/Headless.Jobs.Composition.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`, focused manager fixture/helpers.
 
 Extend existing manager/coordination seams rather than inventing persistence fakes. Cover global plus targeted middleware, mutation and rejection, omitted `next`, all manager entry shapes, and post-commit registration boundaries.
 
@@ -109,7 +109,7 @@ Extend existing manager/coordination seams rather than inventing persistence fak
 
 ### U5 — Retry-attempt execute coverage
 
-**Files:** `tests/Headless.Jobs.Tests.Unit/JobsExecutionTaskHandlerTests.cs` or the existing execution-handler test suite.
+**Files:** `tests/Headless.Jobs.Composition.Tests.Unit/JobsExecutionTaskHandlerTests.cs` or the existing execution-handler test suite.
 
 Use the existing retry test seams to demonstrate that a two-attempt job enters/exits execute middleware twice, resolves per-attempt scoped dependencies, and writes terminal state through the unchanged execution flow once.
 

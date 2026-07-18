@@ -11,7 +11,6 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,7 +28,7 @@ internal sealed partial class SqlServerDataStorage
     /// The transaction is committed after <paramref name="scheduleTask"/> completes.
     /// </summary>
     public async ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {

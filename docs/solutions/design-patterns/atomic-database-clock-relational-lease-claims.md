@@ -127,7 +127,7 @@ await jobs
 ```
 
 The Jobs implementation names its database-clock predicates explicitly in
-`src/Headless.Jobs.EntityFramework/Infrastructure/JobsQueryExtensions.cs`. Native root and descendant
+`src/Headless.Jobs.EntityFramework/Infrastructure/HeadlessJobsQueryExtensions.cs`. Native root and descendant
 claim updates use PostgreSQL `CURRENT_TIMESTAMP` and SQL Server `SYSUTCDATETIME()`. PostgreSQL
 Npgsql translates `DateTime.UtcNow` to `now()`, which is fixed at transaction start. Generic EF claims
 execute as individual update commands, while native multi-claim transactions use the explicit

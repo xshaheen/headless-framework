@@ -265,7 +265,7 @@ list on first `GetAll()`.
 - **Files:**
   - `tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegistrationOrderTests.cs` (new)
   - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/` (lock wake-up both orders)
-  - `tests/Headless.DistributedLocks.Tests.Unit/SetupTests.cs` (invert/remove #368 guard test)
+  - `tests/Headless.DistributedLocks.Composition.Tests.Unit/SetupTests.cs` (invert/remove #368 guard test)
 - **Approach:** Use the in-memory transport to register a consumer + name mapping in both
   orders and assert publish/subscribe agree and the consumer fires. For locks, drive a
   real release→wake-up through the in-memory provider with `AddDistributedLock` registered

@@ -31,7 +31,7 @@ internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
     /// <param name="message">The Mediator message to validate.</param>
     /// <param name="cancellationToken">A token that can be used to cancel the validation.</param>
     /// <returns>A completed <see cref="ValueTask"/> when all validators pass.</returns>
-    /// <exception cref="FluentValidation.ValidationException">
+    /// <exception cref="global::FluentValidation.ValidationException">
     /// Thrown when one or more validators return validation failures. All failures from all validators
     /// are aggregated into a single exception.
     /// </exception>

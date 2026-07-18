@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation.Resources;
 using FluentValidation.Results;
+using Headless.FluentValidation;
 using Headless.Primitives;
 using Headless.Validators;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
+
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
 
 namespace FluentValidation;
 

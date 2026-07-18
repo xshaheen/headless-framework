@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.InMemoryStorage, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -95,7 +95,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Configuration](#configuration-9)
     - [Dependencies](#dependencies-9)
     - [Side Effects](#side-effects-9)
-- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
+- [Headless.Messaging.Storage.InMemory](#headlessmessagingstorageinmemory)
     - [Problem Solved](#problem-solved-10)
     - [Key Features](#key-features-10)
     - [Installation](#installation-10)
@@ -222,7 +222,7 @@ services.AddHeadlessMessaging(setup =>
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
-- **Atomic outbox is on by default on the EF storage path** (`setup.UseEntityFramework<TContext>()`): a publish inside a coordinated transaction is atomic with the DB write, zero consumer wiring — do not hand-wire commit coordination for it. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (the opt-out travels with the EF storage choice). Raw-ADO paths (`UsePostgreSql`/`UseSqlServer` by connection string) stay explicit opt-in: wire `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` plus the coordinated-transaction helpers.
+- **Atomic outbox is on by default in the EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`): `setup.UseEntityFramework<TContext>()` couples a publish to the DB write with zero consumer wiring. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)`. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or commit-coordination dependency.
 - **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (bus) **or** `EnqueueOptions` (queue) to a response message name. When the consumer completes, a correlated response message is automatically published to that name through the durable bus path — regardless of which intent delivered the request. The consumer calls `context.SetResponse<TResponse>(value)` to publish a typed response body; if it does not, the callback still goes out as a headers-only message when response headers are present. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response. Callback delivery is **at-least-once** — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root). **Footgun on the bus path:** a published (pub/sub) request is delivered to *every* matching subscriber, so each one fires its own callback — N subscribers produce N response messages. Point-to-point (`IQueue` / `IOutboxQueue`) delivers to one consumer and produces exactly one response; prefer it for command→result chaining unless you intend scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`).
@@ -236,7 +236,7 @@ services.AddHeadlessMessaging(setup =>
 
 ## Core Concepts
 
-- **Transactional outbox (atomic publish) — on by default on the EF storage path**: when the host chooses the EF-context storage path (`setup.UseEntityFramework<TContext>()`), the atomic outbox is ON BY DEFAULT with zero consumer wiring. A `producer.PublishAsync(...)` issued inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback, so the message is durable if and only if the business data committed. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext` — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to restore non-transactional immediate dispatch (the opt-out travels with the EF storage choice). A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired; on a mis-wire it logs a loud warning (default) or fails startup (`CommitProbeMode.Strict`). This applies **only** to the EF-context path: the raw-ADO storage paths (`UsePostgreSql(connString)` / `UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in — there is no `DbContext` to attach an interceptor to, so they register `AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers. See [commit-coordination.md](commit-coordination.md) for the interceptor attachment and probe modes. This is an atomicity guarantee for the *write*, not exactly-once delivery — dispatch is still at-least-once (next bullet).
+- **Transactional outbox (atomic publish) — on by default in the EF adapter packages**: install `Headless.Messaging.Storage.PostgreSql.EntityFramework` or `Headless.Messaging.Storage.SqlServer.EntityFramework`, then select `setup.UseEntityFramework<TContext>()`. A `producer.PublishAsync(...)` inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback. The adapter auto-registers commit coordination, attaches the interceptor through `IDbContextOptionsConfiguration<TContext>`, and enables the startup self-probe. The raw ADO.NET packages remain EF-free and expose only connection/data-source setup. This is an atomicity guarantee for the write, not exactly-once delivery.
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
 - **Intent**: Bus is broadcast/pub-sub. Queue is point-to-point. Received-message identity includes intent so bus and queue deliveries do not collapse into one storage row.
 - **Envelope**: All transport messages carry framework headers such as message id, correlation id, message name, type, sent time, intent, and optional tenant id.
@@ -458,7 +458,7 @@ The blessed cross-package SPI (the contracts that storage providers, transports,
 ```bash
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ### Quick Start
@@ -1268,7 +1268,7 @@ None.
 
 Registers in-memory transports and consumer client factory. Messages are lost when the process exits.
 
-## Headless.Messaging.InMemoryStorage
+## Headless.Messaging.Storage.InMemory
 
 ### Problem Solved
 
@@ -1284,7 +1284,7 @@ InMemoryStorage uses its injected `TimeProvider` for both application-scheduled 
 ### Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ### Quick Start
@@ -1543,7 +1543,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 
 - `setup.UsePostgreSql(...)`.
 - PostgreSQL schema/table configuration.
-- EF/Core.Db integration and startup initialization.
+- Raw ADO.NET integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue.
@@ -1570,11 +1570,15 @@ Configure connection string, schema, table names, and provider-specific storage 
 
 ### Dependencies
 
-Npgsql, EF Core provider packages, `Headless.Messaging.Core`.
+Npgsql, `Headless.Messaging.Core`.
 
 ### Side Effects
 
-Registers PostgreSQL storage, monitoring API, storage initializer, and transaction integration.
+Registers PostgreSQL storage, monitoring API, and storage initializer. It does not register EF Core or commit coordination.
+
+## Headless.Messaging.Storage.PostgreSql.EntityFramework
+
+Adds `setup.UseEntityFramework<TContext>()` for PostgreSQL, derives the connection from the registered context, and selects commit coordination plus its startup gate. Depends on the raw PostgreSQL storage package; install it only for EF-backed transactional outbox composition.
 
 ## Headless.Messaging.Storage.SqlServer
 
@@ -1586,7 +1590,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 
 - `setup.UseSqlServer(...)`.
 - SQL Server schema/table configuration.
-- EF/Core.Db integration and startup initialization.
+- Raw ADO.NET integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue.
@@ -1611,11 +1615,15 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 ### Dependencies
 
-Microsoft.Data.SqlClient, EF Core provider packages, `Headless.Messaging.Core`.
+Microsoft.Data.SqlClient, `Headless.Messaging.Core`.
 
 ### Side Effects
 
-Registers SQL Server storage, monitoring API, storage initializer, and transaction integration.
+Registers SQL Server storage, monitoring API, and storage initializer. It does not register EF Core or commit coordination.
+
+## Headless.Messaging.Storage.SqlServer.EntityFramework
+
+Adds `setup.UseEntityFramework<TContext>()` for SQL Server, derives the connection from the registered context, and selects commit coordination plus its startup gate. Depends on the raw SQL Server storage package; install it only for EF-backed transactional outbox composition.
 
 ## Headless.Messaging.Testing
 
@@ -1658,7 +1666,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The p
 
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
-- `Headless.Messaging.InMemoryStorage`
+- `Headless.Messaging.Storage.InMemory`
 
 ### Side Effects
 

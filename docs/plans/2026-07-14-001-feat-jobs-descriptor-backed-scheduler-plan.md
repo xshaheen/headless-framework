@@ -127,14 +127,14 @@ flowchart TB
 - Owns `src/Headless.Jobs.Abstractions/Base/JobFunctionDescriptor.cs`.
 - Owns descriptor/index/collision changes in `src/Headless.Jobs.Core/JobFunctionProvider.cs`.
 - Owns generator output and diagnostics under `src/Headless.Jobs.SourceGenerator/`.
-- Owns the new isolated generator contract project under `tests/Headless.Jobs.SourceGenerator.Tests.Unit/`, provider registry tests under `tests/Headless.Jobs.Tests.Unit/`, solution registration, and this plan.
+- Owns the new isolated generator contract project under `tests/Headless.Jobs.SourceGenerator.Tests.Unit/`, provider registry tests under `tests/Headless.Jobs.Composition.Tests.Unit/`, solution registration, and this plan.
 - Must not add `IJobScheduler`, scheduler options, facade implementation/DI, demos, or scheduler documentation.
 
 **PR #304b — `xshaheen/issue-304-job-scheduler` -> `xshaheen/issue-304-job-function-descriptors`**
 
 - Owns public scheduler contracts/options/exception under `src/Headless.Jobs.Abstractions/`.
 - Owns implementation and DI changes under `src/Headless.Jobs.Core/`.
-- Owns scheduler unit tests in `tests/Headless.Jobs.Tests.Unit/` and coordinated facade conformance in `tests/Headless.Jobs.EntityFramework.Tests.Harness/` plus provider leaves only when exposure is required.
+- Owns scheduler unit tests in `tests/Headless.Jobs.Composition.Tests.Unit/` and coordinated facade conformance in `tests/Headless.Jobs.EntityFramework.Tests.Harness/` plus provider leaves only when exposure is required.
 - Owns the two demo migrations under `demo/Headless.Jobs.Console.Demo/` and/or `demo/Headless.Jobs.Api.Demo/`, plus `docs/llms/jobs.md`, `docs/llms/index.md` if its canonical example changes, and package READMEs.
 - Must not rewrite descriptor/generator behavior except for a narrowly proven #304a defect; any such repair is committed to #304a first and then rebased/merged into #304b.
 
@@ -151,7 +151,7 @@ flowchart TB
 - Registry and serializer: `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/JobsHelper.cs`, and `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`.
 - Generator: `src/Headless.Jobs.SourceGenerator/JobsIncrementalSourceGenerator.cs`, `Generators/DelegateGenerator.cs`, `Validation/AttributeValidator.cs`, `Validation/DiagnosticDescriptors.cs`, and `Resources/DiagnosticMessages.resx`.
 - Public entity/manager contracts: `src/Headless.Jobs.Abstractions/Entities/`, `src/Headless.Jobs.Abstractions/Interfaces/Managers/`, and `src/Headless.Jobs.Abstractions/Base/JobFunctionRegistration.cs`.
-- Atomicity pattern: `tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsEnqueueAtomicityConformanceTests.cs` and `tests/Headless.Jobs.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`.
+- Atomicity pattern: `tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsEnqueueAtomicityConformanceTests.cs` and `tests/Headless.Jobs.Composition.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs`.
 - Generator test shape: `tests/Headless.Generator.Primitives.Tests.Unit/` with `Verify.SourceGenerators` and xUnit v3 Microsoft Testing Platform.
 - Consumer docs and demos: `docs/llms/jobs.md`, `src/Headless.Jobs.Abstractions/README.md`, `src/Headless.Jobs.SourceGenerator/README.md`, `demo/Headless.Jobs.Console.Demo/`, and `demo/Headless.Jobs.Api.Demo/`.
 
@@ -184,7 +184,7 @@ flowchart TB
 - **Goal:** Freeze unambiguous descriptor views and make cross-assembly conflicts independent of initializer order.
 - **Requirements:** R3-R5
 - **Dependencies:** U1, U2
-- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`; `tests/Headless.Jobs.Tests.Unit/JobFunctionProviderTests.cs` (new or focused replacement); narrowly affected existing provider tests.
+- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`; `tests/Headless.Jobs.Composition.Tests.Unit/JobFunctionProviderTests.cs` (new or focused replacement); narrowly affected existing provider tests.
 - **Approach:** Collect batches, resolve configuration-backed cron metadata consistently, group all registrations, report all duplicate function and payload keys in a stable ordinal order, and freeze only on success. Preserve `JobFunctions` and legacy request metadata for dispatch/dashboard compatibility while adding descriptor indexes.
 - **Test scenarios:** Successful typed/requestless name index; inverse type index; unknown lookups; duplicate function across two batches; duplicate request type across different names; simultaneous conflict classes; identical message under reversed batch order; ordinal sort including casing; no partial frozen state after failure; effective cron expression agrees across registration and descriptor.
 - **Verification:** Jobs Core build and Jobs unit suite pass; public API and analyzer gates pass.
@@ -194,7 +194,7 @@ flowchart TB
 - **Goal:** Define the narrow application API without leaking persistence construction or inventing unsupported controls.
 - **Requirements:** R6-R8, R10-R11
 - **Dependencies:** U3
-- **Files:** `src/Headless.Jobs.Abstractions/Interfaces/IJobScheduler.cs` (new); `src/Headless.Jobs.Abstractions/Models/EnqueueOptions.cs` (new); `src/Headless.Jobs.Abstractions/Models/RecurringJobOptions.cs` (new); `src/Headless.Jobs.Abstractions/Exceptions/JobFunctionNotFoundException.cs` (new); focused API-shape tests under `tests/Headless.Jobs.Tests.Unit/`.
+- **Files:** `src/Headless.Jobs.Abstractions/Interfaces/IJobScheduler.cs` (new); `src/Headless.Jobs.Abstractions/Models/EnqueueOptions.cs` (new); `src/Headless.Jobs.Abstractions/Models/RecurringJobOptions.cs` (new); `src/Headless.Jobs.Abstractions/Exceptions/JobFunctionNotFoundException.cs` (new); focused API-shape tests under `tests/Headless.Jobs.Composition.Tests.Unit/`.
 - **Approach:** Use explicit immediate, delayed, and recurring method names/signatures with generic typed payload and descriptor-based requestless overloads. Keep execution time and cron expression as method arguments and cancellation tokens trailing/optional. Options map only to existing entity properties.
 - **Test scenarios:** Reflection/API test covers every overload, return type, and trailing optional token; options expose only description, durable retry count/intervals, and node-death policy and explicitly do not expose priority; exception captures enough identity to distinguish missing payload type from missing descriptor name.
 - **Verification:** Abstractions and Jobs unit projects compile with analyzers.
@@ -204,7 +204,7 @@ flowchart TB
 - **Goal:** Implement the facade exclusively through the frozen descriptor indexes, existing serializer, and public managers.
 - **Requirements:** R7, R9-R12
 - **Dependencies:** U4
-- **Files:** `src/Headless.Jobs.Core/JobScheduler.cs` (new); `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`; `tests/Headless.Jobs.Tests.Unit/JobSchedulerTests.cs` (new); DI registration tests in the same project.
+- **Files:** `src/Headless.Jobs.Core/JobScheduler.cs` (new); `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`; `tests/Headless.Jobs.Composition.Tests.Unit/JobSchedulerTests.cs` (new); DI registration tests in the same project.
 - **Approach:** Resolve descriptors before serialization, reject requestless/typed overload mismatches, map supported options into the configured `TTimeJob` / `TCronJob` entities, call `JobsHelper.CreateJobRequest` for typed payloads, invoke the appropriate manager once, and return its persisted entity ID. Register the closed internal `JobScheduler<TTimeJob, TCronJob>` against non-generic `IJobScheduler` with the same lifetime as the managers.
 - **Test scenarios:** Immediate typed entity shape; delayed typed execution time; recurring typed expression and definition ID; requestless time/cron requests with null payload; every supported option maps exactly; default values; configured serializer and GZip behavior; unknown request type; unknown descriptor; stale descriptor metadata; typed descriptor rejected by requestless overload; manager never called on validation/serialization failure; cancellation forwarded; DI resolves one facade with default jobs setup and does not bind incompatible generic managers.
 - **Verification:** Jobs Core build and focused unit suite pass.
@@ -239,7 +239,7 @@ flowchart TB
 | Generator build | `make build-project PROJECT=src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj` | U2 |
 | Generator contracts | `make test-project TEST_PROJECT=tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj` | U2 |
 | Jobs Core build | `make build-project PROJECT=src/Headless.Jobs.Core/Headless.Jobs.Core.csproj` | U3, U5 |
-| Jobs unit suite | `make test-project TEST_PROJECT=tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj` | U1, U3-U5 |
+| Jobs unit suite | `make test-project TEST_PROJECT=tests/Headless.Jobs.Composition.Tests.Unit/Headless.Jobs.Composition.Tests.Unit.csproj` | U1, U3-U5 |
 | PostgreSQL atomicity | `make test-project TEST_PROJECT=tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj` | U6 |
 | SQL Server atomicity | `make test-project TEST_PROJECT=tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj` | U6 |
 | Demo builds | `make build-project PROJECT=demo/Headless.Jobs.Api.Demo/Headless.Jobs.Api.Demo.csproj` and `make build-project PROJECT=demo/Headless.Jobs.Console.Demo/Headless.Jobs.Console.Demo.csproj` | U7 |

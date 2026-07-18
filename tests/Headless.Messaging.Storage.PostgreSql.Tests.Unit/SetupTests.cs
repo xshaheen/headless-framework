@@ -7,8 +7,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -19,11 +17,9 @@ public sealed class SetupTests : TestBase
     [Fact]
     public async Task should_register_postgresql_services_and_copy_version_when_using_connection_string()
     {
-        // given
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // when
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v7";
@@ -33,7 +29,6 @@ public sealed class SetupTests : TestBase
 
         await using var provider = services.BuildServiceProvider();
 
-        // then
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
         provider.GetRequiredService<IStorageInitializer>().Should().BeOfType<PostgreSqlStorageInitializer>();
         provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
@@ -44,71 +39,11 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_extract_dbcontext_configuration_when_using_entity_framework()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddDbContext<TestMessagingDbContext>(builder =>
-            builder.UseNpgsql("Host=localhost;Database=entity;Username=postgres;Password=postgres")
-        );
-
-        // when
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.Options.Version = "v9";
-            setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>(postgreSql => postgreSql.Schema = "custom_schema");
-        });
-
-        await using var provider = services.BuildServiceProvider();
-
-        // then
-        var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
-        options.ConnectionString.Should().Contain("Host=localhost");
-        options.ConnectionString.Should().Contain("Database=entity");
-        options.Schema.Should().Be("custom_schema");
-        _GetInternalType(options, "DbContextType").Should().Be<TestMessagingDbContext>();
-        _GetInternalString(options, "Version").Should().Be("v9");
-    }
-
-    [Fact]
-    public async Task should_enable_transactional_outbox_by_default_on_entity_framework_path()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        // when
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-
-        // then — a real commit coordinator (not the null fallback) is wired, and the interceptor auto-attach
-        // configuration is registered for the consumer's DbContext.
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .GetType()
-            .Name.Should()
-            .NotBe("MessagingNullCommitCoordinator");
-        provider
-            .GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>()
-            .Should()
-            .NotBeEmpty("the EF-context path auto-registers the commit-interceptor options configuration");
-    }
-
-    [Fact]
     public async Task should_not_enable_transactional_outbox_on_raw_path()
     {
-        // given
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // when — raw ADO storage, no DbContext
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -117,69 +52,21 @@ public sealed class SetupTests : TestBase
 
         await using var provider = services.BuildServiceProvider();
 
-        // then — the null fallback stays; no auto-registration.
         provider
             .GetRequiredService<ICurrentCommitCoordinator>()
             .GetType()
             .Name.Should()
             .Be("MessagingNullCommitCoordinator");
-        provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_opt_out_of_transactional_outbox_when_requested()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        // when — EF path but explicitly opted out via the per-storage flag
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalOutbox = false);
-        });
-
-        await using var provider = services.BuildServiceProvider();
-
-        // then — opt-out restores non-transactional immediate dispatch; no coordinator, no config.
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .GetType()
-            .Name.Should()
-            .Be("MessagingNullCommitCoordinator");
-        provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
     }
 
     [Fact]
     public void should_throw_when_postgresql_configure_delegate_is_null()
     {
-        // given
-        var setup = _CreateSetup();
+        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
 
-        // when
         var act = () => setup.UsePostgreSql((Action<PostgreSqlOptions>)null!);
 
-        // then
         act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void should_throw_when_entity_framework_configure_delegate_is_null()
-    {
-        // given
-        var setup = _CreateSetup();
-
-        // when
-        var act = () => setup.UseEntityFramework<TestMessagingDbContext>(null!);
-
-        // then
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    private static MessagingSetupBuilder _CreateSetup()
-    {
-        return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
     }
 
     private static string _GetInternalString(object instance, string propertyName)
@@ -190,15 +77,4 @@ public sealed class SetupTests : TestBase
                 .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
                 .GetValue(instance)!;
     }
-
-    private static Type? _GetInternalType(object instance, string propertyName)
-    {
-        return (Type?)
-            instance
-                .GetType()
-                .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
-                .GetValue(instance);
-    }
-
-    private sealed class TestMessagingDbContext(DbContextOptions<TestMessagingDbContext> options) : DbContext(options);
 }

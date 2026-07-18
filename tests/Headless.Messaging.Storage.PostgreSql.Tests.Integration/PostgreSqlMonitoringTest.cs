@@ -323,21 +323,6 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     }
 
     [Fact]
-    public async Task should_throw_for_unsupported_transaction_type()
-    {
-        // given
-        var storage = _storage!;
-        var msg = _CreateMessage();
-        var unsupportedTransaction = new object();
-
-        // when
-        var act = async () => await storage.StoreMessageAsync("bad-tx", msg, unsupportedTransaction, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unsupported transaction type*");
-    }
-
-    [Fact]
     public async Task should_return_empty_page_when_no_messages_match()
     {
         // given — empty table (truncated in InitializeAsync)

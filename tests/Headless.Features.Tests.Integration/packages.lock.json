@@ -819,27 +819,6 @@
       "headless.commitcoordination.abstractions": {
         "type": "Project"
       },
-      "headless.commitcoordination.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
-        }
-      },
-      "headless.commitcoordination.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
-        }
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -917,7 +896,6 @@
         "dependencies": {
           "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
@@ -1034,16 +1012,16 @@
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.inmemorystorage": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )"
-        }
-      },
       "headless.messaging.queue.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
       "headless.messaging.testing": {
@@ -1051,7 +1029,7 @@
         "dependencies": {
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
-          "Headless.Messaging.InMemoryStorage": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }
       },

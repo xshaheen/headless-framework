@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -53,7 +54,7 @@ public sealed class IDispatcherCompatibilityTests : TestBase
         public Task EnqueueToScheduler(
             MediumMessage message,
             DateTimeOffset publishTime,
-            object? transaction = null,
+            DbTransaction? transaction = null,
             CancellationToken cancellationToken = default
         )
         {

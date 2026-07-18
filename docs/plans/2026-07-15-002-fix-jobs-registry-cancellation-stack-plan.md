@@ -186,7 +186,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 - **Catalog and DI:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/JobMiddleware.cs`, `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`, `src/Headless.Jobs.Core/DependencyInjection/JobsDiscoveryExtension.cs` only if documentation must clarify the freeze boundary.
 - **Core runtime registry migration:** `src/Headless.Jobs.Core/JobScheduler.cs`, `src/Headless.Jobs.Core/Managers/JobsManager.cs`, `src/Headless.Jobs.Core/JobsExecutionContext.cs`, registry-lookup hunks in `src/Headless.Jobs.Core/JobsExecutionTaskHandler.cs`, `src/Headless.Jobs.Core/BackgroundServices/JobsInitializationHostedService.cs`, `src/Headless.Jobs.Core/BackgroundServices/JobsFallbackBackgroundService.cs`.
 - **Dashboard and demo consumers:** registry-only hunks in `src/Headless.Jobs.Dashboard/Infrastructure/Dashboard/JobsDashboardRepository.cs`, `demo/Headless.Jobs.Console.Demo/Jobs.cs`.
-- **Tests:** `tests/Headless.Jobs.Tests.Unit/JobFunctionProviderTests.cs`, a focused host-registry test file in that project, registry-specific updates in `JobSchedulerTests.cs`, `RetryBehaviorTests.cs`, manager tests, and Dashboard repository tests; source-generator snapshots remain an unchanged ABI gate unless a verified compatibility fix requires an update.
+- **Tests:** `tests/Headless.Jobs.Composition.Tests.Unit/JobFunctionProviderTests.cs`, a focused host-registry test file in that project, registry-specific updates in `JobSchedulerTests.cs`, `RetryBehaviorTests.cs`, manager tests, and Dashboard repository tests; source-generator snapshots remain an unchanged ABI gate unless a verified compatibility fix requires an update.
 - **Docs and plan:** Jobs registry ownership sections in paired package documentation, plus this plan.
 
 #### Slice B ownership
@@ -195,7 +195,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 - **Cancellation runtime:** cancellation-only hunks in `src/Headless.Jobs.Core/JobScheduler.cs`, `src/Headless.Jobs.Core/Managers/InternalJobsManager.cs`, `src/Headless.Jobs.Core/Managers/JobsManager.cs`, `src/Headless.Jobs.Core/JobsExecutionTaskHandler.cs`, `src/Headless.Jobs.Core/JobsOptionsBuilder.cs`, and `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`; replace `src/Headless.Jobs.Core/JobsCancellationTokenManager.cs` with an internal per-host execution registry.
 - **Providers and schema:** `src/Headless.Jobs.Core/Provider/JobsInMemoryPersistenceProvider.cs`, `src/Headless.Jobs.EntityFramework/Configurations/TimeJobConfigurations.cs`, `src/Headless.Jobs.EntityFramework/Infrastructure/BasePersistenceProvider.cs`, both existing Jobs demo migration directories and snapshots, plus a test-owned migration fixture under `tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Migrations/` and its upgrade-path test.
 - **Dashboard cancellation:** cancellation-only hunks in `src/Headless.Jobs.Dashboard/Infrastructure/Dashboard/JobsDashboardRepository.cs`, `src/Headless.Jobs.Dashboard/Endpoints/DashboardEndpoints.cs`, `src/Headless.Jobs.Abstractions/Interfaces/IJobsDashboardRepository.cs`, and focused Dashboard endpoint/repository tests. No SPA asset is owned unless an actual backend contract change requires one.
-- **Tests and process fixture:** `tests/Headless.Jobs.Tests.Unit/JobSchedulerTests.cs`, cancellation registry/execution test files, `tests/Headless.Jobs.EntityFramework.Tests.Harness/*` cancellation conformance, PostgreSQL/SQL Server leaf integration files, a minimal `tests/Headless.Jobs.Tests.ProcessHost/` console fixture, its parent integration test, project references/locks, and `headless-framework.slnx`.
+- **Tests and process fixture:** `tests/Headless.Jobs.Composition.Tests.Unit/JobSchedulerTests.cs`, cancellation registry/execution test files, `tests/Headless.Jobs.EntityFramework.Tests.Harness/*` cancellation conformance, PostgreSQL/SQL Server leaf integration files, a minimal `tests/Headless.Jobs.Tests.ProcessHost/` console fixture, its parent integration test, project references/locks, and `headless-framework.slnx`.
 - **Docs:** cancellation and migration sections in `src/Headless.Jobs.Abstractions/README.md`, `src/Headless.Jobs.Core/README.md`, and `docs/llms/jobs.md`.
 
 ### PR and Landing Strategy
@@ -235,7 +235,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 - **Goal:** Make `JobFunctionProvider` and generated middleware metadata a one-time thread-safe canonical catalog without host configuration.
 - **Requirements:** R1-R4, R7; AE1.
 - **Dependencies:** The focused foundation issue exists and branch `xshaheen/jobs-host-owned-registries` has been created from the green head of `xshaheen/issue-305-jobs-middleware`.
-- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/JobMiddleware.cs`, `tests/Headless.Jobs.Tests.Unit/JobFunctionProviderTests.cs`, source-generator snapshot as an unchanged compatibility gate.
+- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/JobMiddleware.cs`, `tests/Headless.Jobs.Composition.Tests.Unit/JobFunctionProviderTests.cs`, source-generator snapshot as an unchanged compatibility gate.
 - **Approach:** Replace callback consumption and silent post-build no-ops with an explicit collecting/discovery-complete/frozen lifecycle shared with middleware registration. `SetupJobs` marks discovery complete only after the options callback returns. Before that marker, public `Build()` throws a stable `InvalidOperationException`; afterward the first build publishes canonical dictionaries with raw cron tokens only after deterministic collision validation, and later builds return the same catalog.
 - **Execution note:** Start with lifecycle and duplicate-diagnostic contract tests before changing the provider.
 - **Patterns to follow:** Existing frozen registry builder and stable ordinal diagnostics; generated ABI documented by the middleware discovery decision.
@@ -248,7 +248,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 - **Goal:** Project the canonical catalog through each host's configuration and register the immutable result in that host's DI container.
 - **Requirements:** R5; AE1-AE2.
 - **Dependencies:** U1.
-- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`, focused host-registry tests in `tests/Headless.Jobs.Tests.Unit/`.
+- **Files:** `src/Headless.Jobs.Core/JobFunctionProvider.cs`, `src/Headless.Jobs.Core/DependencyInjection/SetupJobs.cs`, focused host-registry tests in `tests/Headless.Jobs.Composition.Tests.Unit/`.
 - **Approach:** Freeze after `optionsBuilder` returns, then register a singleton host projection resolved from canonical metadata plus the container's `IConfiguration`. Do not expose snapshot/reset behavior to production hosts.
 - **Test scenarios:** Two concurrently alive hosts resolve different registry instances and different effective cron values from the same canonical token; starting host B does not change host A; building a host after freeze is idempotent when it introduces no new generated catalog.
 - **Verification:** Two-host service-provider tests assert reference isolation, effective values, and unchanged canonical public descriptors.
@@ -329,7 +329,7 @@ Slice execution is sequential. Files listed in both slices have explicit hunk ow
 |---|---|---|
 | Restore | Both fresh branch states | `make restore` completes before no-restore build/push hooks. |
 | Catalog ABI | Slice A | Jobs source-generator tests and verified snapshots pass without generator ABI drift. |
-| Jobs registry behavior | Slice A | `make test-project` for `tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj` passes its catalog lifecycle, two-host registry, Dashboard/runtime, and canonical-compatibility suites. |
+| Jobs registry behavior | Slice A | `make test-project` for `tests/Headless.Jobs.Composition.Tests.Unit/Headless.Jobs.Composition.Tests.Unit.csproj` passes its catalog lifecycle, two-host registry, Dashboard/runtime, and canonical-compatibility suites. |
 | Jobs cancellation behavior | Slice B | The same Jobs unit project passes cancellation transition, exact-handle, cause, observer, and race suites; Slice A registry tests rerun as regression coverage. |
 | Dashboard backend | Both | Dashboard project build and focused repository/endpoint tests pass; browser pipeline is skipped only when no SPA/user-visible asset changed. |
 | Provider conformance and migration | Slice B | PostgreSQL and SQL Server Jobs integration projects pass the shared cancellation contract; both PostgreSQL demo snapshots and the SQL Server old-schema upgrade fixture apply successfully. |

@@ -117,7 +117,7 @@ The reclaim predicate is a **4th** copy of the terminal-state guard. It must mat
 |---|---|---|
 | PostgreSQL | `_TerminalRowGuardSimple` (quoted idents) | `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs:53` |
 | SQL Server | `_TerminalRowGuardSimple` (bare idents) | `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs:52` |
-| InMemory | C#: `(StatusName is Succeeded or Failed) && NextRetryAt is null` | `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs:710` |
+| InMemory | C#: `(StatusName is Succeeded or Failed) && NextRetryAt is null` | `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs:710` |
 
 Canonical SQL text: `NOT (StatusName IN ('Succeeded','Failed') AND NextRetryAt IS NULL)`. The reclaim UPDATE reuses the existing per-provider constant rather than re-typing the predicate.
 
@@ -162,7 +162,7 @@ Two corrections to the reclaim write, both grounded in the existing claim at `Po
 
 **Files:**
 - `src/Headless.Messaging.Core/Messages/MediumMessage.cs` — add `Owner` (`string?`).
-- `src/Headless.Messaging.InMemoryStorage/MemoryMessage.cs` — inherits/extends; ensure `Owner` flows (final wiring in U5).
+- `src/Headless.Messaging.Storage.InMemory/MemoryMessage.cs` — inherits/extends; ensure `Owner` flows (final wiring in U5).
 - `src/Headless.Messaging.Core/Persistence/IDataStorage.cs` — add **two** methods, `ReclaimDeadPublishedOwnersAsync(IReadOnlyCollection<string> liveOwners, CancellationToken)` and `ReclaimDeadReceivedOwnersAsync(...)`, mirroring the existing published/received split (`GetPublishedMessagesOfNeedRetryAsync:237` / `GetReceivedMessagesOfNeedRetryAsync:276`). The two retry pipelines run under distinct distributed locks (`_publishRetryResource` / `_receiveRetryResource`), so a single both-tables sweep would cross lock boundaries (review finding 2.1).
 - `src/Headless.Messaging.Core/Setup.cs` — `services.TryAddSingleton<INodeMembership, NullNodeMembership>()` (mirror `:314` null-lock pattern); add a shared `OwnerColumnMaxLength` constant (KTD6).
 - `src/Headless.Messaging.Core/Headless.Messaging.Core.csproj` — `ProjectReference` to `Headless.Coordination.Abstractions` only.
@@ -284,14 +284,14 @@ Two corrections to the reclaim write, both grounded in the existing claim at `Po
 **Dependencies:** U1, U2.
 
 **Files:**
-- `src/Headless.Messaging.InMemoryStorage/MemoryMessage.cs` — add `Owner` (`string?`).
-- `src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs` — set `Owner` at the atomic claim/lease (`_ClaimMessagesOfNeedRetry:608`, `_LeaseAsync:693`) under the existing per-row object lock (the claim guard at `:643-666`); clear `Owner` when `LockedUntil` is cleared on state change (review finding 3.2); **propagate `Owner` in the deep-clone `_Clone` helper (`:693` region)** — without it the stamped owner is silently dropped when rows are read, false-failing the conformance tests (review finding 3.1); add `ReclaimDeadPublishedOwnersAsync` + `ReclaimDeadReceivedOwnersAsync` using the C# terminal form (`:710`) plus `Owner is not null && !liveOwners.Contains(Owner) && LockedUntil > now`.
+- `src/Headless.Messaging.Storage.InMemory/MemoryMessage.cs` — add `Owner` (`string?`).
+- `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs` — set `Owner` at the atomic claim/lease (`_ClaimMessagesOfNeedRetry:608`, `_LeaseAsync:693`) under the existing per-row object lock (the claim guard at `:643-666`); clear `Owner` when `LockedUntil` is cleared on state change (review finding 3.2); **propagate `Owner` in the deep-clone `_Clone` helper (`:693` region)** — without it the stamped owner is silently dropped when rows are read, false-failing the conformance tests (review finding 3.1); add `ReclaimDeadPublishedOwnersAsync` + `ReclaimDeadReceivedOwnersAsync` using the C# terminal form (`:710`) plus `Owner is not null && !liveOwners.Contains(Owner) && LockedUntil > now`.
 
 **Approach:** The stamp + lease must be a single atomic check-then-write under the per-row lock (SQL providers get isolation via the conditional UPDATE; InMemory does not get it for free — `terminal-state-overwrite` learning). Reclaim iterates rows under their locks, sets `LockedUntil = now` (from `TimeProvider`, KTD7) on matches with `LockedUntil > now` (currently leased). `Owner` is stamped only when `Identity != null` (KTD2), so the default InMemory wiring (typically no Coordination) leaves it null and reclaim is inert.
 
 **Patterns to follow:** the per-row-lock atomic claim already in `_ClaimMessagesOfNeedRetry`; the C# terminal guard at `:710`.
 
-**Test suite design:** `tests/Headless.Messaging.InMemoryStorage.Tests.Unit` for InMemory-specific atomicity; cross-provider behavior in U6.
+**Test suite design:** `tests/Headless.Messaging.Storage.InMemory.Tests.Unit` for InMemory-specific atomicity; cross-provider behavior in U6.
 
 **Test scenarios:**
 - Two concurrent claimers of the same row -> exactly one stamps `Owner` and proceeds (per-row-lock atomicity).

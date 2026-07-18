@@ -2,6 +2,8 @@
 
 using Headless.Checks;
 
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
+
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for common pagination and search parameters.</summary>
