@@ -6,7 +6,7 @@
     <RootNamespace>Headless.DistributedLocks</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.DistributedLocks.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Core.Database" />
