@@ -343,9 +343,11 @@
     <Folder Name="/Orms/">
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />
         <Project Path="src\Headless.Couchbase\Headless.Couchbase.csproj" />
+        <Project Path="src\Headless.EntityFramework.Core\Headless.EntityFramework.Core.csproj" />
         <Project Path="src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
         <Project Path="src\Headless.EntityFramework.Messaging\Headless.EntityFramework.Messaging.csproj" />
         <Project Path="tests\Headless.Couchbase.Tests.Unit\Headless.Couchbase.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Core.Tests.Unit\Headless.EntityFramework.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Unit\Headless.EntityFramework.Messaging.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Integration\Headless.EntityFramework.Messaging.Tests.Integration.csproj" />
         <Project Path="tests\Headless.EntityFramework.Tests.Integration\Headless.EntityFramework.Tests.Integration.csproj" />
