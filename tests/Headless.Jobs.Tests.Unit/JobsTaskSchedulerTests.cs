@@ -51,7 +51,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // OverflowException out of QueueAsync on exactly the enqueue that landed on int.MinValue.
         var indexField = typeof(JobsTaskScheduler).GetField(
             "_nextQueueIndex",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         indexField.Should().NotBeNull();
         indexField!.SetValue(scheduler, int.MaxValue - 1);
@@ -83,8 +83,12 @@ public sealed class JobsTaskSchedulerTests : TestBase
     {
         var method = typeof(JobsTaskScheduler).GetMethod(
             "_GetWorkerFaultRestartDelay",
-            BindingFlags.Static | BindingFlags.NonPublic
+            BindingFlags.Static | BindingFlags.NonPublic,
+            binder: null,
+            [typeof(int)],
+            modifiers: null
         );
+
         method.Should().NotBeNull();
 
         TimeSpan Delay(int consecutiveFaults) => (TimeSpan)method!.Invoke(null, [consecutiveFaults])!;

@@ -15,9 +15,9 @@ internal sealed class AddTimeJobCancellationRequest : Migration
     {
         migrationBuilder.AddColumn<bool>(
             name: "CancelRequested",
-            schema: "jobs",
             table: "TimeJobs",
             type: "bit",
+            schema: "jobs",
             nullable: false,
             defaultValue: false
         );
@@ -25,6 +25,6 @@ internal sealed class AddTimeJobCancellationRequest : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(name: "CancelRequested", schema: "jobs", table: "TimeJobs");
+        migrationBuilder.DropColumn(name: "CancelRequested", table: "TimeJobs", schema: "jobs");
     }
 }
