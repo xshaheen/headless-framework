@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,8 +13,8 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)
     {
-        var utcDateTimeConverter = new JobsUtcDateTimeValueConverter();
-        var nullableUtcDateTimeConverter = new JobsNullableUtcDateTimeValueConverter();
+        var utcDateTimeConverter = new UtcDateTimeValueConverter();
+        var nullableUtcDateTimeConverter = new NullableUtcDateTimeValueConverter();
 
         builder.HasKey("Id");
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,7 +13,7 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
-        var utcDateTimeConverter = new JobsUtcDateTimeValueConverter();
+        var utcDateTimeConverter = new UtcDateTimeValueConverter();
 
         builder.HasKey("Id");
 

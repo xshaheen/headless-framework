@@ -9,7 +9,7 @@ namespace Headless.Jobs.Hubs;
 public partial class JobsNotificationHub(
     ILogger<JobsNotificationHub> logger,
     IAuthService authService,
-    TimeProvider? timeProvider = null
+    TimeProvider timeProvider
 ) : Hub
 {
     public override async Task OnConnectedAsync()
@@ -83,7 +83,7 @@ public partial class JobsNotificationHub(
             connectionId = Context.ConnectionId,
             authenticated = _IsAuthenticated(),
             username = Context.Items["username"]?.ToString() ?? "anonymous",
-            timestamp = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime,
+            timestamp = timeProvider.GetUtcNow().UtcDateTime,
         };
 
         await Clients.Caller.SendAsync("Status", status).ConfigureAwait(false);

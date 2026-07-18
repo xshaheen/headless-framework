@@ -13,19 +13,20 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 {
     private readonly IHubContext<JobsNotificationHub> _hubContext;
     private readonly ILogger<JobsNotificationHubSender> _logger;
-    private readonly Timer _timeJobUpdateTimer;
+    private readonly ITimer _timeJobUpdateTimer;
     private int _hasPendingTimeJobUpdate;
     private static readonly TimeSpan _TimeJobUpdateDebounce = TimeSpan.FromMilliseconds(100);
 
     public JobsNotificationHubSender(
         IHubContext<JobsNotificationHub> hubContext,
-        ILogger<JobsNotificationHubSender> logger
+        ILogger<JobsNotificationHubSender> logger,
+        TimeProvider timeProvider
     )
     {
         _hubContext = Argument.IsNotNull(hubContext);
         _logger = Argument.IsNotNull(logger);
 
-        _timeJobUpdateTimer = new Timer(
+        _timeJobUpdateTimer = timeProvider.CreateTimer(
             _TimeJobUpdateCallback,
             state: null,
             Timeout.InfiniteTimeSpan,

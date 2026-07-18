@@ -1,0 +1,14 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Provider-neutral Entity Framework Core primitives for Headless packages and applications.</Description>
+    <PackageTags>headless;entity-framework;ef-core;dotnet</PackageTags>
+    <RootNamespace>Headless.EntityFramework</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+  </ItemGroup>
+</Project>

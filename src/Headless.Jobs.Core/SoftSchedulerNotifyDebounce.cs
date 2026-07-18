@@ -5,8 +5,6 @@ namespace Headless.Jobs;
 internal sealed class SoftSchedulerNotifyDebounce : IDisposable
 {
     private readonly Action<string> _notifyCoreAction;
-    private readonly Timer _timer;
-
     private int _latest;
     private int _lastNotified = -1;
     private int _disposed;
@@ -14,7 +12,6 @@ internal sealed class SoftSchedulerNotifyDebounce : IDisposable
     public SoftSchedulerNotifyDebounce(Action<string> notifyCoreAction)
     {
         _notifyCoreAction = notifyCoreAction;
-        _timer = new Timer(_Callback, state: null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>
@@ -68,17 +65,5 @@ internal sealed class SoftSchedulerNotifyDebounce : IDisposable
         {
             return;
         }
-
-        try
-        {
-            _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-        }
-        catch
-#pragma warning disable ERP022 // Unobserved exception in generic exception handler
-        {
-            /* ignore */
-        }
-#pragma warning restore ERP022
-        _timer.Dispose();
     }
 }

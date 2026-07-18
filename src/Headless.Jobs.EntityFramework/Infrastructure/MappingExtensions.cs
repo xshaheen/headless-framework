@@ -38,6 +38,8 @@ internal static class MappingExtensions
             TimeZoneId = e.TimeZoneId,
             IsPaused = e.IsPaused,
             ScheduleRevision = e.ScheduleRevision,
+            CreatedAt = e.CreatedAt,
+            UpdatedAt = e.UpdatedAt,
             RetryIntervals = e.RetryIntervals,
             Retries = e.Retries,
         };
@@ -53,6 +55,7 @@ internal static class MappingExtensions
             Retries = e.Retries,
             RetryCount = e.RetryCount,
             RetryIntervals = e.RetryIntervals,
+            CreatedAt = e.CreatedAt,
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
@@ -65,6 +68,8 @@ internal static class MappingExtensions
                     Retries = ch.Retries,
                     RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
+                    CreatedAt = ch.CreatedAt,
+                    UpdatedAt = ch.UpdatedAt,
                     ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
@@ -76,6 +81,8 @@ internal static class MappingExtensions
                             RetryCount = gch.RetryCount,
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
+                            CreatedAt = gch.CreatedAt,
+                            UpdatedAt = gch.UpdatedAt,
                             ParentId = gch.ParentId,
                             RunCondition = gch.RunCondition,
                             OnNodeDeath = gch.OnNodeDeath,
@@ -96,6 +103,7 @@ internal static class MappingExtensions
         return e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
+            CreatedAt = e.CreatedAt,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
             RetryCount = e.RetryCount,
@@ -105,6 +113,8 @@ internal static class MappingExtensions
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
+                CreatedAt = e.CronJob.CreatedAt,
+                UpdatedAt = e.CronJob.UpdatedAt,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
                 OnNodeDeath = e.CronJob.OnNodeDeath,
@@ -122,6 +132,7 @@ internal static class MappingExtensions
         {
             Id = e.Id,
             CreatedAt = e.CreatedAt,
+            UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
             // Carry the stored death policy through the executor-pick projection (mirrors ForQueueCronJobOccurrence,
@@ -135,6 +146,8 @@ internal static class MappingExtensions
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
+                CreatedAt = e.CronJob.CreatedAt,
+                UpdatedAt = e.CronJob.UpdatedAt,
                 Expression = e.CronJob.Expression,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,

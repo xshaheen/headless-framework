@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -28,12 +29,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private readonly object[] _cronDefinitionLocks = [.. Enumerable.Range(0, 256).Select(static _ => new object())];
 
     private readonly TimeProvider _timeProvider;
+    private readonly IGuidGenerator _guidGenerator;
     private readonly string _ownerId;
     private readonly TimeSpan _leaseDuration;
 
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
-        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        _guidGenerator = serviceProvider.GetRequiredService<IGuidGenerator>();
         var optionsBuilder = serviceProvider.GetService<SchedulerOptionsBuilder>();
         _ownerId = optionsBuilder?.NodeId ?? Environment.MachineName;
         _leaseDuration = optionsBuilder?.LeaseDuration ?? TimeSpan.FromMinutes(5);
@@ -1344,7 +1347,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 }
 
                 // Each cron occurrence should have a unique ID
-                var occurrenceId = context.NextCronOccurrence?.Id ?? Guid.NewGuid();
+                var occurrenceId = context.NextCronOccurrence?.Id ?? _guidGenerator.Create();
 
                 // Check if this specific occurrence already exists
                 if (_cronOccurrences.TryGetValue(occurrenceId, out var existingOccurrence))
@@ -1944,6 +1947,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Retries = job.Retries,
             RetryCount = job.RetryCount,
             RetryIntervals = job.RetryIntervals,
+            CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
@@ -1978,6 +1982,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Retries = ch.Retries,
                     RetryCount = ch.RetryCount,
                     RetryIntervals = ch.RetryIntervals,
+                    CreatedAt = ch.CreatedAt,
+                    UpdatedAt = ch.UpdatedAt,
                     ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
@@ -2004,6 +2010,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                                 Retries = gch.Retries,
                                 RetryCount = gch.RetryCount,
                                 RetryIntervals = gch.RetryIntervals,
+                                CreatedAt = gch.CreatedAt,
+                                UpdatedAt = gch.UpdatedAt,
                                 ParentId = gch.ParentId,
                                 RunCondition = gch.RunCondition,
                                 OnNodeDeath = gch.OnNodeDeath,

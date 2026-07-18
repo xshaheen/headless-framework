@@ -16,7 +16,7 @@ public class JobsTaskSchedulerBenchmarks
     [Benchmark(OperationsPerInvoke = _WorkItemCount, Description = "Queue and drain completed work")]
     public async Task QueueAndDrainCompletedWork()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 4);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 4, TimeProvider.System);
 
         for (var i = 0; i < _WorkItemCount; i++)
         {
@@ -29,7 +29,7 @@ public class JobsTaskSchedulerBenchmarks
     [Benchmark(OperationsPerInvoke = _WorkItemCount, Description = "Queue and drain yielding work")]
     public async Task QueueAndDrainYieldingWork()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 4);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 4, TimeProvider.System);
 
         for (var i = 0; i < _WorkItemCount; i++)
         {
@@ -42,7 +42,7 @@ public class JobsTaskSchedulerBenchmarks
     [Benchmark(Description = "Dispose idle scheduler")]
     public async Task DisposeIdleScheduler()
     {
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 4);
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 4, TimeProvider.System);
         await scheduler.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -57,7 +57,7 @@ public class JobsTaskSchedulerBenchmarks
         const int shutdownSampleCount = 100;
         var enqueueSamples = new double[enqueueSampleCount];
 
-        await using (var scheduler = new JobsTaskScheduler(maxConcurrency: 4))
+        await using (var scheduler = new JobsTaskScheduler(maxConcurrency: 4, TimeProvider.System))
         {
             for (var i = 0; i < 32; i++)
             {
@@ -79,7 +79,7 @@ public class JobsTaskSchedulerBenchmarks
         var shutdownSamples = new double[shutdownSampleCount];
         for (var i = 0; i < shutdownSamples.Length; i++)
         {
-            var scheduler = new JobsTaskScheduler(maxConcurrency: 4);
+            var scheduler = new JobsTaskScheduler(maxConcurrency: 4, TimeProvider.System);
             var started = Stopwatch.GetTimestamp();
             await scheduler.DisposeAsync().ConfigureAwait(false);
             shutdownSamples[i] = Stopwatch.GetElapsedTime(started).TotalMicroseconds;

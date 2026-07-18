@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -125,6 +126,7 @@ internal static class ServiceBuilder
         // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
         // 'No service for type TimeProvider' at resolve time.
         services.TryAddSingleton(TimeProvider.System);
+        services.AddHeadlessGuidGenerator();
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
         CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();

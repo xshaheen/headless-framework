@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.Jobs.DashboardDtos;
@@ -20,6 +21,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     IJobsDispatcher dispatcher,
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IServiceProvider serviceProvider
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -36,6 +38,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
+    private readonly IGuidGenerator _guidGenerator = Argument.IsNotNull(guidGenerator);
 
     // Graph endpoints materialize one entry per day across [pastDays, futureDays], so an unclamped span
     // could drive multi-million-object allocation independent of stored row count. Clamp the request-supplied
@@ -440,11 +443,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var onDemandOccurrence = new CronJobOccurrenceEntity<TCronJob>
         {
-            Id = Guid.NewGuid(),
+            Id = _guidGenerator.Create(),
             Status = JobStatus.Idle,
             ExecutionTime = now,
             LockedUntil = null,
             CronJobId = id,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
 
         await _persistenceProvider

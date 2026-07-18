@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -145,6 +146,7 @@ public sealed class CronExpressionCacheTests : TestBase
             new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
                 dbContextFactory,
                 TimeProvider.System,
+                new SequentialGuidGenerator(SequentialGuidType.Version7),
                 ownerIdentity,
                 schedulerOptions
             ),
@@ -295,6 +297,7 @@ public sealed class CronExpressionCacheTests : TestBase
                 new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
                     dbContextFactory,
                     TimeProvider.System,
+                    new SequentialGuidGenerator(SequentialGuidType.Version7),
                     ownerIdentity,
                     schedulerOptions
                 ),

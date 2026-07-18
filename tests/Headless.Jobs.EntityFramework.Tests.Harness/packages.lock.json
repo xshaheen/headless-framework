@@ -697,6 +697,13 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
+      "headless.entityframework.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -762,6 +769,7 @@
         "dependencies": {
           "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"

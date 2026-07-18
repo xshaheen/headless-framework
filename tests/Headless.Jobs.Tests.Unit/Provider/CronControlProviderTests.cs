@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -209,6 +210,7 @@ public sealed class CronControlProviderTests : TestBase
     private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
     {
         var services = new ServiceCollection();
+        services.AddHeadlessGuidGenerator();
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero)));
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _Owner });
         return new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(services.BuildServiceProvider());

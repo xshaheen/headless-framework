@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -120,6 +121,7 @@ public sealed class JobsDashboardRepositoryTests : TestBase
             Substitute.For<IJobsDispatcher>(),
             JobFunctionRegistryBuilder.Build([], [], []),
             timeProvider,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             Substitute.For<IServiceProvider>()
         );
 
