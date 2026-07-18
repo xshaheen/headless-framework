@@ -3,7 +3,7 @@
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 
-namespace Headless.Messaging.InMemoryStorage;
+namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed class MemoryMessage : MediumMessage
 {

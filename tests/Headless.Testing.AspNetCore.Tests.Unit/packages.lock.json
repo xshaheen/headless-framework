@@ -729,16 +729,16 @@
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.inmemorystorage": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )"
-        }
-      },
       "headless.messaging.queue.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
       "headless.messaging.testing": {
@@ -746,7 +746,7 @@
         "dependencies": {
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
-          "Headless.Messaging.InMemoryStorage": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }
       },

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
