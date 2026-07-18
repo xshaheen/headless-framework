@@ -198,7 +198,6 @@ Everything you need to stand up production-grade ASP.NET Core APIs — request/r
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | `AddHeadless()` orchestrator plus Aspire-style defaults (OpenTelemetry, OpenAPI, service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
 | [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
-| [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
@@ -555,7 +554,7 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 | Package | Description |
 |---------|-------------|
 | [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Shared authentication for the Jobs and Messaging dashboards |
-| [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
+| [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | General and file-upload FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |

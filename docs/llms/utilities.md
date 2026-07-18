@@ -87,7 +87,7 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
-- **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
+- **FluentValidation** -- Reusable validators for application rules and API boundaries: phone numbers, national IDs, collections, geo, pagination, URLs, file uploads, relative date/time, enum names, and markup rejection. Use `ErrorDescriptor` for structured API errors.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
@@ -99,7 +99,7 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of
 ## Agent Instructions
 
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
-- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
+- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides general rules plus file-upload validators; do not add a separate API validation package.
 - Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
@@ -111,11 +111,11 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of
 ---
 ## Headless.FluentValidation
 
-Extension library for FluentValidation providing additional validators and utilities.
+FluentValidation extensions for reusable application rules and ASP.NET Core API boundaries.
 
 ### Problem Solved
 
-Provides a comprehensive suite of common validators (phone numbers, national IDs, URLs, pagination) and standardized error handling, eliminating the need to rewrite common validation logic across projects.
+Provides common validators, file-upload rules, and standardized error handling in one package, eliminating repeated boundary-validation logic across projects.
 
 ### Key Features
 
@@ -128,6 +128,7 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
+- ASP.NET Core file-upload validation for size, declared content type, and binary signatures
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 
@@ -161,6 +162,29 @@ public sealed class UserValidator : AbstractValidator<User>
 RuleFor(x => x.Phone).BasicPhoneNumber(); // DataAnnotations check
 RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode); // Country-specific
 RuleFor(x => x.Phone).InternationalPhoneNumber(); // International format
+```
+
+#### API Boundary Validation
+
+```csharp
+using FileSignatures;
+using FileSignatures.Formats;
+using FluentValidation;
+using Microsoft.AspNetCore.Http;
+
+public sealed record ProfileRequest(IFormFile? Avatar);
+
+public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
+{
+    public ProfileRequestValidator(IFileFormatInspector inspector)
+    {
+        RuleFor(x => x.Avatar)
+            .FileNotEmpty()
+            .LessThanOrEqualTo(5 * 1024 * 1024)
+            .ContentTypes(["image/jpeg", "image/png"])
+            .HaveSignatures(inspector, format => format is Jpeg or Png);
+    }
+}
 ```
 
 #### Error Descriptor Integration
@@ -198,6 +222,7 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 | Safe Text | `NoScripts` |
 | Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
+| File Upload | `FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures` |
 
 ### Configuration
 
@@ -206,8 +231,10 @@ No configuration required.
 ### Dependencies
 
 - `FluentValidation`
+- `FileSignatures`
 - `libphonenumber-csharp`
 - `Headless.Extensions`
+- `Microsoft.AspNetCore.App` (framework reference)
 
 ### Side Effects
 

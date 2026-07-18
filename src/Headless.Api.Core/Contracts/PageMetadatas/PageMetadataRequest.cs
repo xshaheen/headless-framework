@@ -7,7 +7,7 @@ namespace Headless.Api.Contracts;
 
 /// <summary>
 /// API request contract for page SEO metadata. All properties are optional; validate with
-/// the <c>PageMetadata</c> extension from <c>Headless.Api.FluentValidation</c> to enforce field length
+/// the included <c>PageMetadata</c> extension to enforce field length
 /// limits. Maps to the domain <see cref="PageMetadata"/> primitive via <see cref="ToPageMetadata"/> or
 /// the implicit conversion.
 /// </summary>

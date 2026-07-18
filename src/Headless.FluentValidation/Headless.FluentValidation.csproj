@@ -1,11 +1,15 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>FluentValidation helpers and reusable validation extensions for Headless Framework packages.</Description>
-    <PackageTags>headless;fluentvalidation;dotnet</PackageTags>
+    <Description>FluentValidation helpers and reusable validation extensions for Headless Framework packages and API boundaries.</Description>
+    <PackageTags>headless;api;fluentvalidation;dotnet</PackageTags>
     <RootNamespace>Headless.FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FileSignatures" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="libphonenumber-csharp" />
   </ItemGroup>
