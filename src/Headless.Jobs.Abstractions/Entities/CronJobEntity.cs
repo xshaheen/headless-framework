@@ -11,6 +11,14 @@ namespace Headless.Jobs.Entities;
 /// </summary>
 public class CronJobEntity : BaseJobEntity
 {
+    internal CronJobEntity Clone()
+    {
+        var clone = (CronJobEntity)MemberwiseClone();
+        clone.Request = Request?.ToArray();
+        clone.RetryIntervals = RetryIntervals?.ToArray();
+        return clone;
+    }
+
     /// <summary>
     /// Six-field (seconds-inclusive) NCrontab expression that drives occurrence generation.
     /// </summary>

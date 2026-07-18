@@ -598,17 +598,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return false;
         }
 
-        var occurrence = new CronJobOccurrenceEntity<TCronJob>
-        {
-            Id = Guid.NewGuid(),
-            CronJobId = definition.Id,
-            CronJob = definition,
-            ExecutionTime = next.Value,
-            Status = JobStatus.Idle,
-            OnNodeDeath = definition.OnNodeDeath,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
+        var occurrence = CronJobOccurrenceFactory.Create(definition, next.Value, now);
         var updated = await persistenceProvider
             .ResumeCronJobAsync(definition.Id, definition.ScheduleRevision, occurrence, now, cancellationToken)
             .ConfigureAwait(false);

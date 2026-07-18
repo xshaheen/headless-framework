@@ -15,7 +15,10 @@ public sealed class CronControlProviderTests : TestBase
 {
     private sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;
 
-    private sealed class FakeCronJob : CronJobEntity;
+    private sealed class FakeCronJob : CronJobEntity
+    {
+        public string? CustomValue { get; set; }
+    }
 
     private const string _Owner = "node-a@incarnation";
     private static readonly DateTime _Now = new(2026, 7, 17, 10, 30, 0, DateTimeKind.Utc);
@@ -37,6 +40,7 @@ public sealed class CronControlProviderTests : TestBase
         accepted.Should().NotBeNull();
         accepted!.IsPaused.Should().BeTrue();
         accepted.ScheduleRevision.Should().Be(5);
+        accepted.CustomValue.Should().Be("custom-state");
         (await provider.PauseCronJobAsync(definition.Id, _Now, AbortToken)).Should().BeNull();
         (await provider.PauseCronJobAsync(Guid.NewGuid(), _Now, AbortToken)).Should().BeNull();
 
@@ -173,6 +177,7 @@ public sealed class CronControlProviderTests : TestBase
             ScheduleRevision = revision,
             CreatedAt = _Now.AddHours(-1),
             UpdatedAt = _Now.AddMinutes(-1),
+            CustomValue = "custom-state",
         };
 
     private static CronJobOccurrenceEntity<FakeCronJob> _Occurrence(

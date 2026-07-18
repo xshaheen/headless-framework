@@ -382,20 +382,21 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
+        var definitionIds = updates.Select(x => x.Definition.Id).ToArray();
+        var currentById = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => definitionIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken)
+            .ConfigureAwait(false);
         var results = new List<TCronJob>(updates.Length);
 
         foreach (var update in updates.OrderBy(x => x.Definition.Id))
         {
-            var current = await dbContext
-                .Set<TCronJob>()
-                .AsNoTracking()
-                .SingleOrDefaultAsync(
-                    x => x.Id == update.Definition.Id && x.ScheduleRevision == update.ExpectedScheduleRevision,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (current is null)
+            if (
+                !currentById.TryGetValue(update.Definition.Id, out var current)
+                || current.ScheduleRevision != update.ExpectedScheduleRevision
+            )
             {
                 return null;
             }

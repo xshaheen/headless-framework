@@ -25,7 +25,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _cronOccurrences = new();
 
-    private readonly ConcurrentDictionary<Guid, object> _cronDefinitionLocks = new();
+    private readonly object[] _cronDefinitionLocks = Enumerable
+        .Range(0, 256)
+        .Select(static _ => new object())
+        .ToArray();
 
     private readonly TimeProvider _timeProvider;
     private readonly string _ownerId;
@@ -2050,28 +2053,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private object _GetCronDefinitionLock(Guid cronJobId)
     {
-        return _cronDefinitionLocks.GetOrAdd(cronJobId, static _ => new object());
+        var index = (int)((uint)cronJobId.GetHashCode() % (uint)_cronDefinitionLocks.Length);
+        return _cronDefinitionLocks[index];
     }
 
     private static TCronJob _CloneCronJob(TCronJob job)
     {
-        return new TCronJob
-        {
-            Id = job.Id,
-            Function = job.Function,
-            Description = job.Description,
-            InitIdentifier = job.InitIdentifier,
-            CreatedAt = job.CreatedAt,
-            UpdatedAt = job.UpdatedAt,
-            Expression = job.Expression,
-            TimeZoneId = job.TimeZoneId,
-            IsPaused = job.IsPaused,
-            ScheduleRevision = job.ScheduleRevision,
-            Request = job.Request?.ToArray(),
-            Retries = job.Retries,
-            RetryIntervals = job.RetryIntervals?.ToArray(),
-            OnNodeDeath = job.OnNodeDeath,
-        };
+        return (TCronJob)job.Clone();
     }
 
     private static TTimeJob _CloneTicker(TTimeJob job)
