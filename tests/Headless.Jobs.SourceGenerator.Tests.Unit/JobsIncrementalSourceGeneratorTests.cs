@@ -624,10 +624,14 @@ public sealed class JobsIncrementalSourceGeneratorTests
     private static string _GeneratedSource(GeneratorDriver driver) =>
         driver.GetRunResult().Results.Single().GeneratedSources.Single().SourceText.ToString();
 
-    private static string[] _RegistrationLines(GeneratorDriver driver) =>
-        _GeneratedSource(driver)
-            .Split('\n')
-            .Where(line => line.Contains("JobMiddlewareRegistry.Register", StringComparison.Ordinal))
-            .Select(line => line.Trim())
-            .ToArray();
+    private static string[] _RegistrationLines(GeneratorDriver driver)
+    {
+        return
+        [
+            .. _GeneratedSource(driver)
+                .Split('\n')
+                .Where(line => line.Contains("JobMiddlewareRegistry.Register", StringComparison.Ordinal))
+                .Select(line => line.Trim()),
+        ];
+    }
 }

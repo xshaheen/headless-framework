@@ -5,13 +5,14 @@ using System.Runtime.Loader;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
 [Collection<JobsHelperCollection>]
-public sealed class JobFunctionProviderTests : IDisposable
+public sealed class JobFunctionProviderTests : TestBase, IDisposable
 {
     public JobFunctionProviderTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
 
@@ -96,7 +97,7 @@ public sealed class JobFunctionProviderTests : IDisposable
     [Fact]
     public async Task should_wait_for_overlapping_host_discovery_callbacks_before_freezing()
     {
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var cancellationToken = AbortToken;
         using var firstCanReturn = new ManualResetEventSlim();
         using var secondCanReturn = new ManualResetEventSlim();
         using var firstEntered = new ManualResetEventSlim();
@@ -193,7 +194,7 @@ public sealed class JobFunctionProviderTests : IDisposable
                 nextCalled = true;
                 return Task.CompletedTask;
             },
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         nextCalled.Should().BeTrue();

@@ -9,7 +9,7 @@ namespace Tests.Helpers;
 public sealed class ServiceBusHelpersTests
 {
     [Fact]
-    public void should_create_client_from_connection_string_when_no_token_credential()
+    public async Task should_create_client_from_connection_string_when_no_token_credentialAsync()
     {
         // given
         var options = new AzureServiceBusMessagingOptions
@@ -19,14 +19,14 @@ public sealed class ServiceBusHelpersTests
         };
 
         // when
-        var client = ServiceBusHelpers.CreateClient(options);
+        await using var client = ServiceBusHelpers.CreateClient(options);
 
         // then
         client.FullyQualifiedNamespace.Should().Be("mynamespace.servicebus.windows.net");
     }
 
     [Fact]
-    public void should_create_client_from_namespace_when_token_credential_set()
+    public async Task should_create_client_from_namespace_when_token_credential_setAsync()
     {
         // given
         var options = new AzureServiceBusMessagingOptions
@@ -36,7 +36,7 @@ public sealed class ServiceBusHelpersTests
         };
 
         // when
-        var client = ServiceBusHelpers.CreateClient(options);
+        await using var client = ServiceBusHelpers.CreateClient(options);
 
         // then
         client.FullyQualifiedNamespace.Should().Be("othernamespace.servicebus.windows.net");
