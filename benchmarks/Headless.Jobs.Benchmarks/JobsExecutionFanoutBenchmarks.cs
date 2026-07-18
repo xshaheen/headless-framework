@@ -14,7 +14,7 @@ public class JobsExecutionFanoutBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _tasks = Enumerable.Repeat(Task.CompletedTask, TaskCount).ToArray();
+        _tasks = [.. Enumerable.Repeat(Task.CompletedTask, TaskCount)];
     }
 
     [Benchmark(Baseline = true, Description = "Span -> array -> Task.WhenAll")]
