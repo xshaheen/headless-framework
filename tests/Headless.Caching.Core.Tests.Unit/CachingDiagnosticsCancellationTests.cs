@@ -15,6 +15,7 @@ namespace Tests;
 /// the in-flight <c>cache.factory</c> span so it is exported and <see cref="Activity.Current"/> is never
 /// left pointing at a stopped span past the cancelled call.
 /// </summary>
+[Collection(CachingDiagnosticsCollection.Name)]
 public sealed class CachingDiagnosticsCancellationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
