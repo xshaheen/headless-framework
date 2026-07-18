@@ -25,6 +25,9 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         manager
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(1));
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
 
         var instrumentation = Substitute.For<IJobsInstrumentation>();
         var activityNames = new ConcurrentBag<string>();
@@ -41,6 +44,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             TimeProvider.System,
             instrumentation,
             manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance
         );

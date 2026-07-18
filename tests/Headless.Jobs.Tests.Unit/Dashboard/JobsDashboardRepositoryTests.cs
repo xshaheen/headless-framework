@@ -118,6 +118,7 @@ public sealed class JobsDashboardRepositoryTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             new DashboardOptionsBuilder(),
             Substitute.For<IJobsDispatcher>(),
+            JobFunctionRegistryBuilder.Build([], [], []),
             timeProvider,
             Substitute.For<IServiceProvider>()
         );
