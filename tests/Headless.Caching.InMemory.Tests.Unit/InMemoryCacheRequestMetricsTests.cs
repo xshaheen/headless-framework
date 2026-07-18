@@ -322,7 +322,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
         // given
         var cacheName = _UniqueName();
         using var cache = _CreateCache(cacheName);
-        var prefix = "order:";
+        const string prefix = "order:";
         await cache.UpsertAsync($"{prefix}1", "a", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}2", "b", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("other-key", "c", TimeSpan.FromMinutes(5), AbortToken);

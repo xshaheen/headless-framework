@@ -11,9 +11,9 @@ public partial class AddTimeJobCancellationRequest : Migration
     {
         migrationBuilder.AddColumn<bool>(
             name: "CancelRequested",
-            schema: "jobs",
             table: "TimeJobs",
             type: "boolean",
+            schema: "jobs",
             nullable: false,
             defaultValue: false
         );
@@ -22,6 +22,6 @@ public partial class AddTimeJobCancellationRequest : Migration
     /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(name: "CancelRequested", schema: "jobs", table: "TimeJobs");
+        migrationBuilder.DropColumn(name: "CancelRequested", table: "TimeJobs", schema: "jobs");
     }
 }
