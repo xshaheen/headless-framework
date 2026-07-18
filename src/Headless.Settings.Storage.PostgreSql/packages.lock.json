@@ -429,15 +429,6 @@
           "libphonenumber-csharp": "[9.0.34, )"
         }
       },
-      "headless.security": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.1.1, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.security.abstractions": {
         "type": "Project"
       },
@@ -465,7 +456,7 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security": "[1.0.0, )",
+          "Headless.Security.Abstractions": "[1.0.0, )",
           "Headless.Settings.Abstractions": "[1.0.0, )"
         }
       },
