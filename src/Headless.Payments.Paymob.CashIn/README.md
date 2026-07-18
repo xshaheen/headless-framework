@@ -20,6 +20,7 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 - `IPaymobCashInAuthenticator` — caches the 60-minute auth token; refreshes 5 minutes before expiry
 - `CashInCallbackTypes` — `TRANSACTION` and `TOKEN` callback type constants
 - `CashInStatuses` — `pending`, `declined`, `success` constants
+- `CashInBillingData` — requires first name, last name, phone number, and email in its constructor; optional address and shipping values are init-only properties that default to `"NA"`
 - `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
 
 ## Design Notes
@@ -58,7 +59,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(long amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
@@ -79,6 +80,26 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
         );
 
         return response!.ClientSecret; // pass to your frontend Paymob.js
+    }
+
+    public Task<CashInPaymentKeyResponse> CreateLegacyPaymentKeyAsync(
+        long integrationId,
+        long orderId,
+        long amountCents,
+        CancellationToken ct
+    )
+    {
+        var billingData = new CashInBillingData("Ahmed", "Ali", "+201001234567", "ahmed@example.com")
+        {
+            Country = "EG",
+            City = "Cairo",
+            Street = "Tahrir Street",
+        };
+
+        return broker.RequestPaymentKeyAsync(
+            new CashInPaymentKeyRequest(integrationId, orderId, billingData, amountCents),
+            ct
+        );
     }
 }
 ```

@@ -505,6 +505,7 @@ Provides geometry manipulation utilities, precision handling, and SQL Server geo
 - Geometry creation helpers (points, polygons, multi-polygons)
 - Coordinate range validation
 - Feature collection conversion
+- Collision-resistant `HeadlessGeometryExtensions` holder in the `NetTopologySuite.Geometries` namespace; ordinary extension-call syntax remains unchanged
 
 ### Installation
 
@@ -537,6 +538,12 @@ var sanitized = polygon.SanitizeForSqlGeography();
 
 // Simplify polygon
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
+```
+
+Extension-call syntax is unchanged after the holder rename. Code that referenced the former `GeoExtensions` class directly must use `HeadlessGeometryExtensions`:
+
+```csharp
+var sanitized = HeadlessGeometryExtensions.SanitizeForSqlGeography(polygon);
 ```
 
 ### Quick Start
