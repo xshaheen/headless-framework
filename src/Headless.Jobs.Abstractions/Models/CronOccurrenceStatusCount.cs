@@ -67,9 +67,11 @@ internal static class CronOccurrenceGraphRangeSelector
         CronOccurrenceGraphRange range
     )
     {
-        return counts
-            .Append(new CronOccurrenceStatusCount { Date = range.StartDate, IsRangeBoundary = true })
-            .Append(new CronOccurrenceStatusCount { Date = range.EndDate, IsRangeBoundary = true })
-            .ToArray();
+        return
+        [
+            .. counts,
+            new CronOccurrenceStatusCount { Date = range.StartDate, IsRangeBoundary = true },
+            new CronOccurrenceStatusCount { Date = range.EndDate, IsRangeBoundary = true },
+        ];
     }
 }
