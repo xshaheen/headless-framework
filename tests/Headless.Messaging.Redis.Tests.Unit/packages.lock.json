@@ -650,6 +650,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
+          "FileSignatures": "[7.2.1, )",
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
           "libphonenumber-csharp": "[9.0.34, )"
@@ -772,6 +773,15 @@
         "requested": "[5.4.1, )",
         "resolved": "5.4.1",
         "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
+      },
+      "FileSignatures": {
+        "type": "CentralTransitive",
+        "requested": "[7.2.1, )",
+        "resolved": "7.2.1",
+        "contentHash": "ULT/TuNUbusDpp5BnpsiSMkGEHPtPva7lbaQbnm32xa/lgZDPGOkpd9xY0b+Z6rLZUJuxBCBjV0egeqR5awARg==",
+        "dependencies": {
+          "OpenMcdf": "3.1.4"
+        }
       },
       "FluentValidation": {
         "type": "CentralTransitive",
@@ -971,6 +981,12 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
+      },
+      "OpenMcdf": {
+        "type": "CentralTransitive",
+        "requested": "[3.1.4, )",
+        "resolved": "3.1.4",
+        "contentHash": "ncchtCh9YKqutHTlUCrr1llXA65ijGOCjXBM0mL1+WaGouApWDEACWbBHGzuYcAvB+rgW6IgO4AKgmZ2v1moNA=="
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",

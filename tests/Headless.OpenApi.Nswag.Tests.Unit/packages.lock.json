@@ -823,6 +823,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
+          "FileSignatures": "[7.2.1, )",
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
           "libphonenumber-csharp": "[9.0.34, )"
@@ -960,6 +961,15 @@
           "LiteDB": "5.0.21",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.3",
           "YamlDotNet": "16.3.0"
+        }
+      },
+      "FileSignatures": {
+        "type": "CentralTransitive",
+        "requested": "[7.2.1, )",
+        "resolved": "7.2.1",
+        "contentHash": "ULT/TuNUbusDpp5BnpsiSMkGEHPtPva7lbaQbnm32xa/lgZDPGOkpd9xY0b+Z6rLZUJuxBCBjV0egeqR5awARg==",
+        "dependencies": {
+          "OpenMcdf": "3.1.4"
         }
       },
       "FluentValidation": {
@@ -1268,6 +1278,12 @@
           "Namotion.Reflection": "3.5.0",
           "Newtonsoft.Json": "13.0.3"
         }
+      },
+      "OpenMcdf": {
+        "type": "CentralTransitive",
+        "requested": "[3.1.4, )",
+        "resolved": "3.1.4",
+        "contentHash": "ncchtCh9YKqutHTlUCrr1llXA65ijGOCjXBM0mL1+WaGouApWDEACWbBHGzuYcAvB+rgW6IgO4AKgmZ2v1moNA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
