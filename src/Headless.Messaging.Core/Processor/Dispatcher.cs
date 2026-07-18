@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-internal sealed class Dispatcher : IDispatcher
+internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
@@ -166,7 +166,7 @@ internal sealed class Dispatcher : IDispatcher
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
         var changed = await _storage
-            .ChangePublishStateAsync(message, statusName, transaction, cancellationToken: CancellationToken.None)
+            .ChangePublishStateAsync(message, statusName, transaction, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!changed)
@@ -178,6 +178,16 @@ internal sealed class Dispatcher : IDispatcher
         {
             _schedulerQueue.Enqueue(message, publishTime.Ticks);
         }
+    }
+
+    void ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
+    {
+        if (message.ExpiresAt is not { } publishTime)
+        {
+            throw new InvalidOperationException("A committed delayed message must have an expiration time.");
+        }
+
+        _schedulerQueue.Enqueue(message, publishTime.Ticks);
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)

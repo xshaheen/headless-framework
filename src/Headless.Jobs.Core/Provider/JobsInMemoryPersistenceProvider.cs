@@ -1508,6 +1508,29 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(results);
     }
 
+    public Task<CronOccurrenceStatusCount[]> GetCronOccurrenceGraphStatusCountsAsync(
+        Guid cronJobId,
+        DateTime today,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var snapshot = _cronOccurrences.Values.Where(x => x.CronJobId == cronJobId).ToArray();
+        var range = CronOccurrenceGraphRangeSelector.Select(snapshot.Select(x => x.ExecutionTime), today);
+        var counts = snapshot
+            .Where(x => x.ExecutionTime.Date >= range.StartDate && x.ExecutionTime.Date <= range.EndDate)
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => new CronOccurrenceStatusCount
+            {
+                Date = group.Key.Date,
+                Status = group.Key.Status,
+                Count = group.Count(),
+            });
+
+        return Task.FromResult(CronOccurrenceGraphRangeSelector.AddRangeBoundaries(counts, range));
+    }
+
     public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,

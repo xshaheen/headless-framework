@@ -53,6 +53,12 @@ public abstract class DataStorageTestsBase : TestBase
         return null;
     }
 
+    /// <summary>Overrides the dispatch timeout when the provider exposes mutable test options.</summary>
+    protected virtual bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        return false;
+    }
+
     /// <summary>Reads the provider's current database UTC time for relational clock conformance.</summary>
     protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
     {
@@ -705,6 +711,200 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then - should complete without exception
         scheduledMessages.Should().NotBeNull();
+    }
+
+    public virtual async Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        var now = TimeProvider.GetUtcNow();
+        var later = await storage.StoreMessageAsync(
+            "delayed-claim-later",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = now.AddSeconds(30),
+            },
+            cancellationToken: AbortToken
+        );
+        var earlier = await storage.StoreMessageAsync(
+            "delayed-claim-earlier",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = now.AddSeconds(20),
+            },
+            cancellationToken: AbortToken
+        );
+        later.ExpiresAt = now.AddSeconds(30);
+        earlier.ExpiresAt = now.AddSeconds(20);
+        (await storage.ChangePublishStateAsync(later, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+        (await storage.ChangePublishStateAsync(earlier, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+
+        claimed.Select(message => message.StorageId).Should().Equal(earlier.StorageId, later.StorageId);
+        claimed.Should().AllSatisfy(message => message.LockedUntil.Should().NotBeNull());
+        (await claimStorage.ClaimDelayedMessagesAsync(AbortToken))
+            .Should()
+            .BeEmpty("the live claim lease must fence an immediate re-poll");
+    }
+
+    public virtual async Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        var dispatchTimeout = TimeSpan.FromSeconds(1);
+        if (!TrySetDispatchTimeout(dispatchTimeout))
+        {
+            Assert.Skip("Storage does not expose mutable dispatch-timeout options");
+            return;
+        }
+
+        var expiresAt = TimeProvider.GetUtcNow().AddSeconds(30);
+        var stored = await storage.StoreMessageAsync(
+            "delayed-claim-short-timeout",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = expiresAt,
+            },
+            cancellationToken: AbortToken
+        );
+        stored.ExpiresAt = expiresAt;
+        (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+
+        var winner = claimed.Should().ContainSingle().Subject;
+        winner.StorageId.Should().Be(stored.StorageId);
+        winner.LockedUntil.Should().NotBeNull();
+        // LockedUntil is persisted at the storage clock's granularity (PostgreSQL truncates to microseconds),
+        // so allow up to 1 microsecond of downward truncation from the tick-precision expected value.
+        winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout) - TimeSpan.FromMicroseconds(1));
+    }
+
+    public virtual async Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        // A long dispatch timeout makes the claim lease clearly future-dated, so a stale (un-cleared) lease would
+        // fence the row from re-claim on restart. The graceful-shutdown flush must release the lease so the row
+        // is immediately re-claimable — otherwise the delayed message is delivered up to DispatchTimeout late.
+        var dispatchTimeout = TimeSpan.FromSeconds(120);
+        if (!TrySetDispatchTimeout(dispatchTimeout))
+        {
+            Assert.Skip("Storage does not expose mutable dispatch-timeout options");
+            return;
+        }
+
+        var expiresAt = TimeProvider.GetUtcNow().AddSeconds(30);
+        var stored = await storage.StoreMessageAsync(
+            "delayed-claim-flush-clears-lease",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = expiresAt,
+            },
+            cancellationToken: AbortToken
+        );
+        stored.ExpiresAt = expiresAt;
+        (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        // Claim it — stamps a future-dated ownership lease and moves it to Queued.
+        var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+        claimed.Should().ContainSingle().Which.StorageId.Should().Be(stored.StorageId);
+
+        // Flush it back to Delayed, exactly as the graceful-shutdown scheduler flush does.
+        await storage.ChangePublishStateToDelayedAsync([stored.StorageId], AbortToken);
+
+        // The flush must clear the lease so the row is immediately re-claimable. With a stale lease this re-poll
+        // returns empty (the message would wait out DispatchTimeout before re-dispatch).
+        var reclaimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
+        reclaimed
+            .Should()
+            .ContainSingle("the graceful-shutdown flush must release the claim lease for immediate re-scheduling")
+            .Which.StorageId.Should()
+            .Be(stored.StorageId);
+    }
+
+    public virtual async Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        var storage = GetStorage();
+        if (storage is not IDelayedMessageClaimStorage claimStorage)
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        const int messageCount = 8;
+        var now = TimeProvider.GetUtcNow();
+        var storageIds = new HashSet<Guid>();
+        for (var index = 0; index < messageCount; index++)
+        {
+            var expiresAt = now.AddSeconds(10 + index);
+            var stored = await storage.StoreMessageAsync(
+                $"concurrent-delayed-claim-{index}",
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = CreateMessage(),
+                    Content = string.Empty,
+                    IntentType = IntentType.Bus,
+                    ExpiresAt = expiresAt,
+                },
+                cancellationToken: AbortToken
+            );
+            stored.ExpiresAt = expiresAt;
+            (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+                .Should()
+                .BeTrue();
+            storageIds.Add(stored.StorageId);
+        }
+
+        var claims = await Task.WhenAll(
+            claimStorage.ClaimDelayedMessagesAsync(AbortToken).AsTask(),
+            claimStorage.ClaimDelayedMessagesAsync(AbortToken).AsTask()
+        );
+        var claimedIds = claims.SelectMany(messages => messages).Select(message => message.StorageId).ToArray();
+
+        claimedIds.Should().HaveCount(messageCount).And.OnlyHaveUniqueItems();
+        claimedIds.Should().BeEquivalentTo(storageIds);
     }
 
     public virtual async Task should_store_message_with_transaction()

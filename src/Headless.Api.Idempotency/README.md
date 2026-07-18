@@ -17,7 +17,7 @@ Legacy "idempotency as a uniqueness guard" (409 on any duplicate key) makes the 
 
 - Byte-equivalent replay of cached responses
 - Two in-flight strategies: `InFlightStrategy.Reject` (default, no extra dependencies) and `InFlightStrategy.WaitAndReplay` (requires `IDistributedLock`)
-- Configurable body cap with `OversizeBehavior.Reject` (413) or `OversizeBehavior.PassThrough` behaviors
+- Independent request-body memory threshold and fingerprinting cap, with `OversizeBehavior.Reject` (413) or `OversizeBehavior.PassThrough` behaviors
 - Header allowlist filters `Set-Cookie`, `traceparent`, and other sensitive or per-request headers from cached responses
 - Tenant-aware default cache key: `idem:{tenant}:{userId}:{METHOD}:{path}{?query}:{key}`
 - Per-endpoint overrides via `.WithIdempotency(o => ...)`
@@ -33,6 +33,10 @@ The middleware uses lock-before-insert ordering under `WaitAndReplay`: the winne
 `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change `HeaderName` globally via `AddIdempotency(o => o.HeaderName = ...)` only.
 
 Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
+
+`RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The default remains 1 MiB + 1 byte: corrected non-seekable request-body benchmarks showed that 30/64/128 KiB thresholds reduced managed allocations but missed the latency gate at concurrency 1/32/128. Lower it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
+
+> **Upgrade note.** These two options were previously coupled: the in-memory buffer threshold was derived from `MaxBodySizeForHashing`, so raising `MaxBodySizeForHashing` above the 1 MiB default also raised the memory-vs-disk spill point for free. They are now independent. A deployment that set a non-default `MaxBodySizeForHashing` will, after upgrading, spill request bodies between 1 MiB + 1 byte and its configured `MaxBodySizeForHashing` to a temporary file during buffering (previously they stayed in memory). This is a latency/temp-file characteristic change only — the fingerprint and oversize behavior are unchanged. To preserve the prior in-memory headroom, set `RequestBodyBufferThreshold` explicitly to match the old effective threshold (`MaxBodySizeForHashing` + 1).
 
 ## Installation
 
@@ -86,6 +90,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. Validator-capped at 1 minute. |
 | `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must be >= `InFlightLockTimeout`. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
+| `RequestBodyBufferThreshold` | 1 MiB + 1 byte | Request bytes retained in memory before buffering spills to a temporary file. Capped at 64 MiB + 1 byte. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
 | `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for pre-handler cache failures; post-handler finalize failures remove the marker and preserve the handler response. `Throw` propagates the exception as 5xx. |
 | `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through. Set `false` for webhook receivers / OAuth callbacks. |
@@ -110,7 +115,7 @@ app.MapPost("/webhooks", HandleWebhook)
 ## Side Effects
 
 - Reads `ICurrentTenant.Id` and authenticated `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
-- Buffers the request body up to `MaxBodySizeForHashing + 1` bytes via `HttpRequest.EnableBuffering`.
+- Buffers the request body via `HttpRequest.EnableBuffering`; bytes beyond `RequestBodyBufferThreshold` spill to a temporary file.
 - On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
 - On cache miss, inserts an `InFlight` sentinel marker before invoking the handler, then promotes it to the `Complete` record afterward using compare-and-swap (`TryReplaceIfEqualAsync`). The marker uses the same TTL as `IdempotencyKeyExpiration`.
 - When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.

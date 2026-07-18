@@ -108,7 +108,7 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         // Wait for concurrent tasks (parent + InProgress children)
-        await Task.WhenAll(tasksToRunNow.AsSpan(0, tasksToRunNowCount).ToArray()).ConfigureAwait(false);
+        await Task.WhenAll(tasksToRunNow.AsSpan(0, tasksToRunNowCount)).ConfigureAwait(false);
 
         // Process deferred children after parent completion
         if (childrenToRunAfterCount > 0)
@@ -155,7 +155,7 @@ internal sealed class JobsExecutionTaskHandler
             // Wait for deferred tasks
             if (taskCount > 0)
             {
-                await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount).ToArray()).ConfigureAwait(false);
+                await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount)).ConfigureAwait(false);
             }
         }
     }
@@ -168,10 +168,7 @@ internal sealed class JobsExecutionTaskHandler
     )
     {
         // Start OpenTelemetry activity for the entire job execution
-        using var jobActivity = _jobsInstrumentation.StartJobActivity(
-            $"job.execute.{context.Type.ToString().ToLowerInvariant()}",
-            context
-        );
+        using var jobActivity = _jobsInstrumentation.StartJobActivity(_GetActivityName(context.Type), context);
 
         // Add additional tags to the activity
         jobActivity?.SetTag("headless.job.is_due", isDue);
@@ -179,7 +176,7 @@ internal sealed class JobsExecutionTaskHandler
 
         // Log job enqueued/started (using the available method)
         _jobsInstrumentation.LogJobEnqueued(
-            context.Type.ToString(),
+            _GetJobTypeName(context.Type),
             context.FunctionName,
             context.JobId,
             "ExecutionTaskHandler"
@@ -643,6 +640,26 @@ internal sealed class JobsExecutionTaskHandler
         {
             await releaseExecutionAsync().ConfigureAwait(false);
         }
+    }
+
+    private static string _GetActivityName(JobType type)
+    {
+        return type switch
+        {
+            JobType.CronJobOccurrence => "job.execute.cronjoboccurrence",
+            JobType.TimeJob => "job.execute.timejob",
+            _ => $"job.execute.{type.ToString().ToLowerInvariant()}",
+        };
+    }
+
+    private static string _GetJobTypeName(JobType type)
+    {
+        return type switch
+        {
+            JobType.CronJobOccurrence => nameof(JobType.CronJobOccurrence),
+            JobType.TimeJob => nameof(JobType.TimeJob),
+            _ => type.ToString(),
+        };
     }
 
     private async ValueTask _ObserveJobExceptionAsync(

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Messages;
@@ -33,6 +34,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     private InMemoryDataStorage? _storage;
     private ISerializer? _serializer;
     private FakeTimeProvider? _fakeTimeProvider;
+    private IOptions<MessagingOptions>? _messagingOptions;
 
     /// <inheritdoc />
     protected override TimeProvider TimeProvider
@@ -46,6 +48,14 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 
     /// <inheritdoc />
     protected override bool SupportsControllableClock => true;
+
+    /// <inheritdoc />
+    protected override bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = dispatchTimeout;
+        return true;
+    }
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -130,12 +140,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 
         var provider = services.BuildServiceProvider();
 
-        var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
+        _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new InMemoryStorageInitializer();
         _storage = new InMemoryDataStorage(
-            messagingOptions,
+            _messagingOptions,
             _serializer,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _fakeTimeProvider,
@@ -263,6 +273,84 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_schedule_messages_of_delayed()
     {
         return base.should_schedule_messages_of_delayed();
+    }
+
+    [Fact]
+    public override Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        return base.should_claim_delayed_messages_atomically_when_capability_supported();
+    }
+
+    [Fact]
+    public override Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        return base.should_keep_early_delayed_claim_lease_alive_until_dispatch();
+    }
+
+    [Fact]
+    public override Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        return base.should_clear_claim_lease_when_flushing_delayed_state();
+    }
+
+    [Fact]
+    public override Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        return base.should_return_disjoint_winners_to_concurrent_delayed_claimers();
+    }
+
+    [Fact]
+    public async Task should_return_committed_claim_when_cancellation_arrives_during_candidate_lock_wait()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var now = TimeProvider.GetUtcNow();
+        var first = await _StoreDelayedAsync("cancelled-claim-first", now.AddSeconds(10));
+        _ = await _StoreDelayedAsync("cancelled-claim-second", now.AddSeconds(20));
+        var firstRow = storage.PublishedMessages[first.StorageId];
+        var lockAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var blocker = Task.Run(() =>
+        {
+            lock (firstRow)
+            {
+                lockAcquired.TrySetResult();
+                releaseLock.Task.GetAwaiter().GetResult();
+            }
+        });
+        await lockAcquired.Task.WaitAsync(AbortToken);
+        using var cancellation = new CancellationTokenSource();
+
+        var claim = Task.Run(async () => await storage.ClaimDelayedMessagesAsync(cancellation.Token));
+        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        await cancellation.CancelAsync();
+        releaseLock.TrySetResult();
+
+        var claimed = await claim.WaitAsync(AbortToken);
+        await blocker.WaitAsync(AbortToken);
+
+        claimed.Should().ContainSingle().Which.StorageId.Should().Be(first.StorageId);
+
+        async Task<MediumMessage> _StoreDelayedAsync(string name, DateTimeOffset expiresAt)
+        {
+            var stored = await storage.StoreMessageAsync(
+                name,
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = CreateMessage(),
+                    Content = string.Empty,
+                    IntentType = IntentType.Bus,
+                    ExpiresAt = expiresAt,
+                },
+                cancellationToken: AbortToken
+            );
+            stored.ExpiresAt = expiresAt;
+            (await storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+                .Should()
+                .BeTrue();
+            return stored;
+        }
     }
 
     [Fact]

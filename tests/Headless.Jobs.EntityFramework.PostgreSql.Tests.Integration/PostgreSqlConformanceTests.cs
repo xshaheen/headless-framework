@@ -206,6 +206,18 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep()
+    {
+        return base.compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep();
+    }
+
+    [Fact]
+    public override Task cron_graph_projection_uses_distinct_dates_and_storage_side_status_aggregation()
+    {
+        return base.cron_graph_projection_uses_distinct_dates_and_storage_side_status_aggregation();
+    }
+
+    [Fact]
     public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated()
     {
         return base.concurrent_missing_cron_occurrence_creation_is_deduplicated();

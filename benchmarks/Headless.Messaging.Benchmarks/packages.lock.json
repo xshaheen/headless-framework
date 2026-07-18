@@ -532,6 +532,12 @@
           "Polly.Core": "[8.7.0, )"
         }
       },
+      "headless.messaging.inmemorystorage": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
+        }
+      },
       "headless.messaging.queue.abstractions": {
         "type": "Project",
         "dependencies": {

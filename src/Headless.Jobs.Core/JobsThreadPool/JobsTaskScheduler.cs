@@ -3,6 +3,8 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Jobs.Enums;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Jobs.JobsThreadPool;
 
@@ -15,9 +17,24 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeSpan _idleWorkerTimeout;
     private readonly int _maxCapacityPerWorker;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<JobsTaskScheduler> _logger;
+    private readonly Func<int, CancellationToken, Task>? _workerStartGate;
+
+    // Worker-fault restart backoff: start at 100ms, double per consecutive fault up to a 30s ceiling, and stop
+    // auto-restarting a slot after this many back-to-back faults so a deterministically-faulting slot cannot spin
+    // (log -> restart -> log) forever while liveness stays green.
+    private static readonly TimeSpan _WorkerFaultRestartDelay = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan _MaxWorkerFaultRestartDelay = TimeSpan.FromSeconds(30);
+    private const int _MaxConsecutiveWorkerFaults = 5;
 
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
+    private readonly Lock _workerSlotsLock = new();
+    private readonly Task?[] _workerTasks;
+
+    // Per-slot consecutive-fault counter; slot-partitioned (one worker task per index at a time) but written via
+    // Interlocked so the reset on the restarting task always observes the prior task's increment.
+    private readonly int[] _workerFaultCounts;
 
     // Global state
     private volatile int _totalQueuedTasks;
@@ -33,25 +50,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly SoftSchedulerNotifyDebounce _notifyDebounce;
 
-    // Thread-local flag to detect if we're on a Jobs worker thread
-    [ThreadStatic]
-#pragma warning disable IDE1006 // ReSharper disable once InconsistentNaming
-    internal static bool IsJobsWorkerThread;
-#pragma warning restore IDE1006
-
-#pragma warning disable CA2019
-    // CA2019: ThreadStatic inline init only runs for the first thread, but this is intentional.
-    // The -1 sentinel is only a backup; the real check is IsJobsWorkerThread at line 415.
-    [ThreadStatic]
-    // ReSharper disable once ThreadStaticFieldHasInitializer
-    private static int _threadWorkerIndex = -1;
-#pragma warning restore CA2019
-
     public JobsTaskScheduler(
         int maxConcurrency,
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ILogger<JobsTaskScheduler>? logger = null,
+        Func<int, CancellationToken, Task>? workerStartGate = null
     )
     {
         _maxConcurrency = Argument.IsPositive(maxConcurrency);
@@ -59,9 +64,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _logger = logger ?? NullLogger<JobsTaskScheduler>.Instance;
+        _workerStartGate = workerStartGate;
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
+        _workerTasks = new Task?[maxConcurrency];
+        _workerFaultCounts = new int[maxConcurrency];
         for (var i = 0; i < maxConcurrency; i++)
         {
             _workerQueues[i] = new WorkerQueue();
@@ -153,9 +162,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     private int _GetNextQueueIndex()
     {
-        // Simple round-robin without complex CAS loop
+        // Simple round-robin without complex CAS loop. Mask the sign bit rather than Math.Abs: when the counter
+        // wraps to int.MinValue after 2^31 enqueues, Math.Abs(int.MinValue) throws OverflowException (it cannot
+        // represent -int.MinValue). Masking keeps the round-robin distribution and never throws.
         var index = Interlocked.Increment(ref _nextQueueIndex);
-        return Math.Abs(index) % _maxConcurrency;
+        return (index & int.MaxValue) % _maxConcurrency;
     }
 
     private async ValueTask _WaitForCapacityAsync(WorkerQueue queue, CancellationToken cancellationToken)
@@ -194,62 +205,124 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     private void _TryStartWorker()
     {
-        if (_shutdownCts.IsCancellationRequested || _disposed)
-        {
-            return;
-        }
+        int activeWorkers;
 
-        // Try to increment active workers
-        var currentWorkers = _activeWorkers;
-        if (currentWorkers >= _maxConcurrency)
+        lock (_workerSlotsLock)
         {
-            return;
-        }
-
-        if (Interlocked.CompareExchange(ref _activeWorkers, currentWorkers + 1, currentWorkers) == currentWorkers)
-        {
-            // Successfully reserved a worker slot
-            var workerId = currentWorkers; // Use the slot we just reserved
-            var thread = new Thread(() => _WorkerLoop(workerId))
+            if (_shutdownCts.IsCancellationRequested || _disposed || _activeWorkers >= _maxConcurrency)
             {
-                IsBackground = true,
-                Name = $"Headless.Jobs.Worker-{workerId.ToString(CultureInfo.InvariantCulture)}",
-            };
-            thread.Start();
+                return;
+            }
 
-            _notifyDebounce.NotifySafely(_activeWorkers);
+            var workerId = -1;
+            for (var i = 0; i < _workerTasks.Length; i++)
+            {
+                if (_workerTasks[i] is not null)
+                {
+                    continue;
+                }
+
+                workerId = i;
+                break;
+            }
+
+            if (workerId < 0)
+            {
+                return;
+            }
+
+            activeWorkers = Interlocked.Increment(ref _activeWorkers);
+            _workerTasks[workerId] = Task.Run(() => _WorkerLoopAsync(workerId));
         }
+
+        _notifyDebounce.NotifySafely(activeWorkers);
     }
 
-    private void _WorkerLoop(int workerId)
+    private async Task _WorkerLoopAsync(int workerId)
     {
-        // Set thread-local state
-        _threadWorkerIndex = workerId;
-        IsJobsWorkerThread = true;
-
-        // Set a simple synchronization context if needed for continuations
-        var originalContext = SynchronizationContext.Current;
-        var jobsContext = new JobsSynchronizationContext(this);
-        SynchronizationContext.SetSynchronizationContext(jobsContext);
+        var permanentlyDegraded = false;
 
         try
         {
-            // Run the async worker loop on the dedicated worker thread.
-#pragma warning disable MA0045 // ThreadStart is sync; the async loop is intentionally bridged here.
-            Task.Run(async () => await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false)).GetAwaiter().GetResult();
-#pragma warning restore MA0045
+            if (_workerStartGate is not null)
+            {
+                await _workerStartGate(workerId, _shutdownCts.Token).ConfigureAwait(false);
+            }
+
+            await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false);
+
+            // A clean exit (idle-timeout retirement) clears the consecutive-fault streak so a recovered slot gets a
+            // full backoff budget next time it faults.
+            Interlocked.Exchange(ref _workerFaultCounts[workerId], 0);
         }
         catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
         {
             // Shutdown cancelled an in-flight await inside the loop (e.g. the idle backoff delay).
-            // Swallow it: an unhandled exception on a manually created thread terminates the process.
+            Interlocked.Exchange(ref _workerFaultCounts[workerId], 0);
         }
+        // ERP022/RCS1075: A scheduler fault must retire this slot without becoming unobserved.
+#pragma warning disable ERP022, RCS1075
+        catch (Exception ex)
+        {
+            var consecutiveFaults = Interlocked.Increment(ref _workerFaultCounts[workerId]);
+            _logger.WorkerLoopFaulted(ex, workerId);
+
+            if (consecutiveFaults >= _MaxConsecutiveWorkerFaults)
+            {
+                // Stop auto-restarting a slot that keeps faulting back-to-back: a deterministic scheduler-internal
+                // fault would otherwise spin (log -> backoff -> restart) forever while liveness stays green. New work
+                // arriving later can still revive the slot through _EnsureWorkerAvailable.
+                permanentlyDegraded = true;
+                _logger.WorkerSlotPermanentlyDegraded(workerId, consecutiveFaults);
+            }
+            else
+            {
+                try
+                {
+                    await Task.Delay(_GetWorkerFaultRestartDelay(consecutiveFaults), _shutdownCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
+                {
+                    // Shutdown cancels the restart backoff; the finally block retires the slot without restarting.
+                }
+            }
+        }
+#pragma warning restore ERP022, RCS1075
         finally
         {
-            SynchronizationContext.SetSynchronizationContext(originalContext);
-            Interlocked.Decrement(ref _activeWorkers);
-            _notifyDebounce.NotifySafely(_activeWorkers);
+            int activeWorkers;
+            bool restartWorker;
+
+            lock (_workerSlotsLock)
+            {
+                _workerTasks[workerId] = null;
+                activeWorkers = Interlocked.Decrement(ref _activeWorkers);
+                restartWorker =
+                    !permanentlyDegraded
+                    && _totalQueuedTasks > 0
+                    && !_shutdownCts.IsCancellationRequested
+                    && !_disposed;
+            }
+
+            _notifyDebounce.NotifySafely(activeWorkers);
+
+            if (restartWorker)
+            {
+                _EnsureWorkerAvailable();
+            }
         }
+    }
+
+    private static TimeSpan _GetWorkerFaultRestartDelay(int consecutiveFaults)
+    {
+        // Exponential backoff from the base delay, doubling per consecutive fault, capped at the ceiling.
+        // consecutiveFaults is >= 1 here, so the first fault waits exactly the base delay.
+        var exponent = Math.Min(consecutiveFaults - 1, 30);
+        var delayMs = _WorkerFaultRestartDelay.TotalMilliseconds * Math.Pow(2, exponent);
+        var cappedMs = Math.Min(delayMs, _MaxWorkerFaultRestartDelay.TotalMilliseconds);
+
+        return TimeSpan.FromMilliseconds(cappedMs);
     }
 
     private async Task _WorkerLoopCoreAsync(int workerId)
@@ -258,7 +331,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         var localQueue = _workerQueues[workerId];
         var consecutiveStealFailures = 0;
 
-        while (!_shutdownCts.Token.IsCancellationRequested && !_disposed)
+        while (!_disposed && !_shutdownCts.Token.IsCancellationRequested)
         {
             var foundWork = false;
 
@@ -428,48 +501,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     }
 
     /// <summary>
-    /// Posts a continuation work item to the scheduler.
-    /// Used by JobsSynchronizationContext.
-    /// </summary>
-    internal void PostContinuation(SendOrPostCallback callback, object? state)
-    {
-        if (_disposed || _shutdownCts.Token.IsCancellationRequested)
-        {
-            return;
-        }
-
-        // Continuations get queued to the current worker's queue if possible
-        var queueIndex = _threadWorkerIndex >= 0 ? _threadWorkerIndex : _GetNextQueueIndex();
-        var targetQueue = _workerQueues[queueIndex];
-
-        var workItem = new WorkItem(
-            ct =>
-            {
-                try
-                {
-                    callback(state);
-                }
-#pragma warning disable ERP022
-                catch
-                {
-                    // Swallow exceptions in continuations
-                }
-#pragma warning restore ERP022
-
-                return Task.CompletedTask;
-            },
-            CancellationToken.None
-        );
-
-        _IncrementQueuedPriority(JobPriority.Normal);
-        Interlocked.Increment(ref _totalQueuedTasks);
-        targetQueue.Enqueue(workItem, JobPriority.Normal);
-
-        // Ensure worker is available
-        _EnsureWorkerAvailable();
-    }
-
-    /// <summary>
     /// Freezes the scheduler - prevents new tasks from being queued.
     /// </summary>
     public void Freeze()
@@ -491,7 +522,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     public bool IsFrozen => _isFrozen;
 
     /// <summary>
-    /// Gets the current number of active worker threads.
+    /// Gets the current number of active logical workers.
     /// </summary>
     public int ActiveWorkers => _activeWorkers;
 
@@ -588,16 +619,50 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _disposed = true;
         _isFrozen = true; // Prevent new tasks
         await _shutdownCts.CancelAsync().ConfigureAwait(false);
+        var shutdownDeadline = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(5);
 
-        // Wait for workers and in-flight work to exit gracefully
-        var timeout = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(5);
-        while ((_activeWorkers > 0 || _activeTasks > 0) && _timeProvider.GetUtcNow().UtcDateTime < timeout)
+        Task[] workerTasks;
+        lock (_workerSlotsLock)
         {
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
+            workerTasks = new Task[_workerTasks.Length];
+            var count = 0;
+
+            foreach (var workerTask in _workerTasks)
+            {
+                if (workerTask is not null)
+                {
+                    workerTasks[count++] = workerTask;
+                }
+            }
+
+            if (count != workerTasks.Length)
+            {
+                Array.Resize(ref workerTasks, count);
+            }
         }
 
-        _notifyDebounce?.Dispose();
-        _shutdownCts?.Dispose();
+        try
+        {
+            var remaining = shutdownDeadline - _timeProvider.GetUtcNow();
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.WhenAll(workerTasks)
+                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (TimeoutException)
+        {
+            // Preserve bounded shutdown when user work ignores cancellation.
+        }
+
+        while (_activeTasks > 0 && _timeProvider.GetUtcNow() < shutdownDeadline)
+        {
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None).ConfigureAwait(false);
+        }
+
+        _notifyDebounce.Dispose();
+        _shutdownCts.Dispose();
     }
 
     private int _GetQueuedPriorityCount(JobPriority priority)
@@ -687,4 +752,23 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             };
         }
     }
+}
+
+internal static partial class JobsTaskSchedulerLog
+{
+    [LoggerMessage(
+        EventId = 3300,
+        EventName = "JobsWorkerLoopFaulted",
+        Level = LogLevel.Error,
+        Message = "Jobs worker slot {WorkerId} faulted outside user work; restart is rate-limited."
+    )]
+    public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
+
+    [LoggerMessage(
+        EventId = 3301,
+        EventName = "JobsWorkerSlotPermanentlyDegraded",
+        Level = LogLevel.Critical,
+        Message = "Jobs worker slot {WorkerId} degraded after {ConsecutiveFaults} consecutive faults; auto-restart stopped until new work arrives."
+    )]
+    public static partial void WorkerSlotPermanentlyDegraded(this ILogger logger, int workerId, int consecutiveFaults);
 }

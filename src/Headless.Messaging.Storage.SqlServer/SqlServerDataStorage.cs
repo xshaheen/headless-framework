@@ -23,7 +23,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// SQL Server implementation of <see cref="IDataStorage"/> for message persistence.
 /// Handles storage, retrieval, and state transitions for published and received messages.
 /// </summary>
-internal sealed class SqlServerDataStorage(
+internal sealed partial class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
@@ -32,7 +32,7 @@ internal sealed class SqlServerDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<SqlServerDataStorage> logger
-) : IDataStorage
+) : IDataStorage, IDelayedMessageClaimStorage
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -82,8 +82,12 @@ internal sealed class SqlServerDataStorage(
         var tvpParam = _BuildIdListTvpParameter(storageIds);
         var statusParam = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
+        // Clear the ownership lease alongside the status flip: the only caller is the graceful-shutdown flush,
+        // which owns these rows via its own claim and is releasing them for immediate re-scheduling. Leaving a
+        // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
+        // delivered up to DispatchTimeout late after restart).
         var sql =
-            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TerminalRowGuardSimple};";
+            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName, [LockedUntil]=NULL, [Owner]=NULL WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TerminalRowGuardSimple};";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
@@ -842,120 +846,6 @@ internal sealed class SqlServerDataStorage(
             TypeName = $"[{options.Value.Schema}].[HeadlessMessagingIdList]",
             Value = idsTable,
         };
-    }
-
-    /// <summary>
-    /// Atomically selects delayed and stale-queued messages within a database transaction and
-    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. Uses branch-bounded ordered
-    /// <c>TOP</c> reads with <c>UPDLOCK, READPAST</c> so concurrent replicas skip rows another
-    /// node is scheduling without locking an unbounded candidate set.
-    /// The transaction is committed after <paramref name="scheduleTask"/> completes.
-    /// </summary>
-    public async ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var sql = $"""
-            WITH DelayedCandidates AS (
-                SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = @DelayedStatusName AND ExpiresAt < @TwoMinutesLater
-                ORDER BY ExpiresAt, Id
-            ),
-            QueuedCandidates AS (
-                SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = @QueuedStatusName AND ExpiresAt < @OneMinutesAgo
-                ORDER BY ExpiresAt, Id
-            ),
-            Candidates AS (
-                SELECT Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt FROM DelayedCandidates
-                UNION ALL
-                SELECT Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt FROM QueuedCandidates
-            )
-            SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
-            FROM Candidates
-            ORDER BY ExpiresAt, Id;
-            """;
-
-        object[] sqlParams =
-        [
-            new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
-            new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
-            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
-            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
-            new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
-        ];
-
-        await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var poisonMessages = new List<PoisonMessage>();
-        var messageList = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, ct) =>
-                {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-
-                        MediumMessage mediumMessage;
-                        try
-                        {
-                            mediumMessage = new MediumMessage
-                            {
-                                StorageId = storageId,
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
-                                Retries = reader.GetInt32(3),
-                                InlineAttempts = reader.GetInt32(4),
-                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
-                                ExpiresAt = await reader
-                                    .GetFieldValueAsync<DateTimeOffset>(6, ct)
-                                    .ConfigureAwait(false),
-                            };
-                        }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                            continue;
-                        }
-
-                        messages.Add(mediumMessage);
-                    }
-
-                    return messages;
-                },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
-
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction,
-                _publishedTable,
-                poisonMessages,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        await scheduleTask(transaction, messageList).ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

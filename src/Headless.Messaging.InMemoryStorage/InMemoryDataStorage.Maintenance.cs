@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.InMemoryStorage;
 
@@ -170,6 +171,75 @@ internal sealed partial class InMemoryDataStorage
             .Cast<MediumMessage>();
 
         return scheduleTask(null, result);
+    }
+
+    public ValueTask<IReadOnlyList<MediumMessage>> ClaimDelayedMessagesAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = timeProvider.GetUtcNow();
+        var delayedBefore = now.AddMinutes(2);
+        var queuedBefore = now.AddMinutes(-1);
+        var owner = nodeMembership.GetOwnerTag();
+        var version = messagingOptions.Value.Version;
+        var batchSize = messagingOptions.Value.SchedulerBatchSize;
+        var claimed = new List<MediumMessage>(batchSize);
+
+        var candidates = PublishedMessages
+            .Values.Where(message =>
+                string.Equals(message.Version, version, StringComparison.Ordinal)
+                && message.ExpiresAt is not null
+                && (
+                    (message.StatusName == StatusName.Delayed && message.ExpiresAt < delayedBefore)
+                    || (message.StatusName == StatusName.Queued && message.ExpiresAt < queuedBefore)
+                )
+            )
+            .OrderBy(message => message.ExpiresAt)
+            .ThenBy(message => message.StorageId);
+
+        foreach (var candidate in candidates)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (claimed.Count == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                break;
+            }
+
+            if (claimed.Count == batchSize)
+            {
+                break;
+            }
+
+            lock (candidate)
+            {
+                if (
+                    !string.Equals(candidate.Version, version, StringComparison.Ordinal)
+                    || candidate.ExpiresAt is null
+                    || (candidate.LockedUntil is not null && candidate.LockedUntil > now)
+                    || (
+                        (candidate.StatusName != StatusName.Delayed || candidate.ExpiresAt >= delayedBefore)
+                        && (candidate.StatusName != StatusName.Queued || candidate.ExpiresAt >= queuedBefore)
+                    )
+                )
+                {
+                    continue;
+                }
+
+                var leaseStart = candidate.ExpiresAt > now ? candidate.ExpiresAt.Value : now;
+                candidate.StatusName = StatusName.Queued;
+                candidate.LockedUntil = leaseStart.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
+                candidate.Owner = owner;
+                claimed.Add(_ToSnapshot(candidate));
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(claimed);
     }
 
     public IMonitoringApi GetMonitoringApi()

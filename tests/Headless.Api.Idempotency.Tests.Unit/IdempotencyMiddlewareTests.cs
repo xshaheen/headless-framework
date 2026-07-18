@@ -6,9 +6,11 @@ using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
+using Headless.IO;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
@@ -1021,6 +1023,59 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
         opts.CurrentValue.Returns(new IdempotencyOptions { MaxBodySizeForHashing = cap, OversizeBehavior = behavior });
         return opts;
+    }
+
+    [Theory]
+    [InlineData(4, 3, true)]
+    [InlineData(4, 4, true)]
+    [InlineData(4, 5, false)]
+    public async Task should_preserve_fingerprint_and_rewind_across_request_buffer_threshold(
+        int bufferThreshold,
+        int bodyLength,
+        bool expectedInMemory
+    )
+    {
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(
+            new IdempotencyOptions { MaxBodySizeForHashing = 16, RequestBodyBufferThreshold = bufferThreshold }
+        );
+        var cache = Substitute.For<ICache>();
+        IdempotencyRecord? insertedMarker = null;
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Do<IdempotencyRecord>(record => insertedMarker = record),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
+        var body = Enumerable.Range(1, bodyLength).Select(static value => (byte)value).ToArray();
+        var middleware = CreateMiddleware(options: options, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+        context.Request.Body = new NonSeekableStream(new MemoryStream(body, writable: false));
+        byte[]? handlerBody = null;
+
+        await middleware.InvokeAsync(
+            context,
+            async ctx =>
+            {
+                var bufferingStream = ctx.Request.Body.Should().BeOfType<FileBufferingReadStream>().Which;
+                bufferingStream.InMemory.Should().Be(expectedInMemory);
+                (bufferingStream.TempFileName is null).Should().Be(expectedInMemory);
+                bufferingStream.Position.Should().Be(0);
+                await using var buffer = new MemoryStream();
+                await bufferingStream.CopyToAsync(buffer, AbortToken);
+                handlerBody = buffer.ToArray();
+            }
+        );
+
+        insertedMarker.Should().NotBeNull();
+        insertedMarker!.Fingerprint.Should().Equal(SHA256.HashData(body));
+        handlerBody.Should().Equal(body);
     }
 
     [Fact]
