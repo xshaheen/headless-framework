@@ -95,6 +95,9 @@
         <Project Path="tests\Headless.Caching.OutputCache.Tests.Integration\Headless.Caching.OutputCache.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Caching.OutputCache.Tests.Unit\Headless.Caching.OutputCache.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Compatibility/">
+        <Project Path="tests/Headless.PublicApi.Contracts.Tests.Unit/Headless.PublicApi.Contracts.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Coordination/">
         <Project Path="src\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
         <Project Path="src\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />

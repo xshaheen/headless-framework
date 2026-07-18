@@ -1,0 +1,33 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Api.Core\Headless.Api.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.Core\Headless.Caching.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Couchbase\Headless.Couchbase.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Domain\Headless.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.SourceGenerator\Headless.Jobs.SourceGenerator.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Redis\Headless.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+</Project>
