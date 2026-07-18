@@ -273,7 +273,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.IsPaused, true)
+                        .SetProperty(x => x.IsPaused, valueExpression: true)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
                         .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
@@ -338,7 +338,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.IsPaused, false)
+                        .SetProperty(x => x.IsPaused, valueExpression: false)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
                         .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
@@ -371,7 +371,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         CancellationToken cancellationToken = default
     )
     {
-        if (updates.Select(x => x.Definition.Id).Distinct().Count() != updates.Length)
+        if (updates.Select(x => x.Definition.Id).ToHashSet().Count != updates.Length)
         {
             return null;
         }

@@ -18,7 +18,7 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
-        builder.Property(e => e.IsPaused).HasDefaultValue(false);
+        builder.Property(e => e.IsPaused).HasDefaultValue(value: false);
 
         builder.Property(e => e.ScheduleRevision).HasDefaultValue(0L);
 

@@ -877,9 +877,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false)
         ).ToDictionary(x => x.Id);
 
-        foreach (var candidate in candidates)
+        foreach (var (cronJob, nextOccurrence) in candidates)
         {
-            var cronJob = candidate.Definition;
             if (!currentById.TryGetValue(cronJob.Id, out var current))
             {
                 errors.Add(new JobValidatorException($"Cannot find cron job with id {cronJob.Id}"));
@@ -891,7 +890,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
             var replacement =
                 scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, candidate.NextOccurrence, now)
+                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now)
                     : null;
             updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement));
             needsRestart |= scheduleChanged;

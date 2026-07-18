@@ -586,7 +586,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         var definition = await persistenceProvider
             .GetCronJobByIdAsync(cronJobId, cancellationToken)
             .ConfigureAwait(false);
-        if (definition is null || !definition.IsPaused)
+        if (definition?.IsPaused != true)
         {
             return false;
         }

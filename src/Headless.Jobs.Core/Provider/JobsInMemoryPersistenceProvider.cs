@@ -25,10 +25,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _cronOccurrences = new();
 
-    private readonly object[] _cronDefinitionLocks = Enumerable
-        .Range(0, 256)
-        .Select(static _ => new object())
-        .ToArray();
+    private readonly object[] _cronDefinitionLocks = [.. Enumerable.Range(0, 256).Select(static _ => new object())];
 
     private readonly TimeProvider _timeProvider;
     private readonly string _ownerId;
@@ -1082,7 +1079,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (updates.Select(x => x.Definition.Id).Distinct().Count() != updates.Length)
+        if (updates.Select(x => x.Definition.Id).ToHashSet().Count != updates.Length)
         {
             return Task.FromResult<TCronJob[]?>(null);
         }
@@ -1147,11 +1144,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 prepared.Add((definition, replacement, changed));
             }
 
-            foreach (var item in prepared)
+            foreach (var (definition, replacement, changed) in prepared)
             {
-                if (item.Changed)
+                if (changed)
                 {
-                    foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == item.Definition.Id).ToArray())
+                    foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == definition.Id).ToArray())
                     {
                         if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
                         {
@@ -1168,16 +1165,16 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         _cronOccurrences[pair.Key] = skipped;
                     }
 
-                    if (item.Replacement is not null)
+                    if (replacement is not null)
                     {
-                        _cronOccurrences[item.Replacement.Id] = item.Replacement;
+                        _cronOccurrences[replacement.Id] = replacement;
                     }
                 }
 
-                _cronJobs[item.Definition.Id] = item.Definition;
+                _cronJobs[definition.Id] = definition;
             }
 
-            return Task.FromResult<TCronJob[]?>(prepared.Select(x => _CloneCronJob(x.Definition)).ToArray());
+            return Task.FromResult<TCronJob[]?>([.. prepared.Select(x => _CloneCronJob(x.Definition))]);
         }
         finally
         {
