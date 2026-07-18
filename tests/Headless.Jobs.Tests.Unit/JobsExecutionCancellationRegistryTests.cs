@@ -190,7 +190,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
         using var source = new CancellationTokenSource();
         using var callbackEntered = new ManualResetEventSlim();
         using var releaseCallback = new ManualResetEventSlim();
-        using var callback = source.Token.Register(() =>
+        await using var callback = source.Token.Register(() =>
         {
             callbackEntered.Set();
             releaseCallback.Wait();
