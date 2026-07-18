@@ -13,7 +13,7 @@ public sealed class FormFileExtensionsTests : TestBase
         byte[] bytes = [1, 2, 3, 4];
         IFormFile file = new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", "file.bin");
 
-        var result = await file.GetAllBytesAsync();
+        var result = await file.GetAllBytesAsync(AbortToken);
 
         result.Should().Equal(bytes);
     }

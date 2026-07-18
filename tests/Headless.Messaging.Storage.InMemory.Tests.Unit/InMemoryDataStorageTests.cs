@@ -310,14 +310,19 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var firstRow = storage.PublishedMessages[first.StorageId];
         var lockAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var blocker = Task.Run(() =>
-        {
-            lock (firstRow)
+
+        var blocker = Task.Run(
+            () =>
             {
-                lockAcquired.TrySetResult();
-                releaseLock.Task.GetAwaiter().GetResult();
-            }
-        });
+                lock (firstRow)
+                {
+                    lockAcquired.TrySetResult();
+                    releaseLock.Task.GetAwaiter().GetResult();
+                }
+            },
+            AbortToken
+        );
+
         await lockAcquired.Task.WaitAsync(AbortToken);
         using var cancellation = new CancellationTokenSource();
 

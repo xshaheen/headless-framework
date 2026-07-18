@@ -11,7 +11,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.Benchmarks.Scenarios;
+namespace Headless.Messaging.Benchmarks;
 
 /// <summary>
 /// Allocation and CPU proxy for the delayed scheduler's bounded claim path. Provider integration
