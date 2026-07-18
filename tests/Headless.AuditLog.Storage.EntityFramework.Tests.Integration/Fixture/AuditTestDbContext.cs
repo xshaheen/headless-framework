@@ -22,10 +22,20 @@ public class AuditTestDbContext(
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.Entity<Order>().Property(e => e.Id).ValueGeneratedNever();
-        modelBuilder.Entity<GeneratedOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
+        modelBuilder.Entity<Order>(b =>
+        {
+            b.IsAudited();
+            b.Property(e => e.Id).ValueGeneratedNever();
+            b.Property(e => e.Email).IsAuditSensitive();
+        });
+        modelBuilder.Entity<GeneratedOrder>(b =>
+        {
+            b.IsAudited();
+            b.Property(e => e.Id).ValueGeneratedOnAdd();
+        });
         modelBuilder.Entity<GeneratedOrderLine>(b =>
         {
+            b.IsAudited();
             b.Property(e => e.Id).ValueGeneratedOnAdd();
             b.HasOne(e => e.Order).WithMany().HasForeignKey(e => e.GeneratedOrderId);
         });

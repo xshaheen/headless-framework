@@ -15,6 +15,7 @@ internal sealed class JobsFallbackBackgroundService(
     JobsExecutionTaskHandler tickerExecutionTaskHandler,
     JobsTaskScheduler jobsTaskScheduler,
     IJobFunctionConcurrencyGate concurrencyGate,
+    JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     ILogger<JobsFallbackBackgroundService> logger
 ) : BackgroundService
@@ -53,7 +54,7 @@ internal sealed class JobsFallbackBackgroundService(
                 {
                     foreach (var function in functions)
                     {
-                        if (JobFunctionProvider.JobFunctions.TryGetValue(function.FunctionName, out var tickerItem))
+                        if (functionRegistry.Functions.TryGetValue(function.FunctionName, out var tickerItem))
                         {
                             function.CachedDelegate = tickerItem.Delegate;
                             function.CachedPriority = tickerItem.Priority;
@@ -62,7 +63,7 @@ internal sealed class JobsFallbackBackgroundService(
 
                         foreach (var child in function.TimeJobChildren)
                         {
-                            if (JobFunctionProvider.JobFunctions.TryGetValue(child.FunctionName, out var childItem))
+                            if (functionRegistry.Functions.TryGetValue(child.FunctionName, out var childItem))
                             {
                                 child.CachedDelegate = childItem.Delegate;
                                 child.CachedPriority = childItem.Priority;
@@ -72,7 +73,7 @@ internal sealed class JobsFallbackBackgroundService(
                             foreach (var grandChild in child.TimeJobChildren)
                             {
                                 if (
-                                    JobFunctionProvider.JobFunctions.TryGetValue(
+                                    functionRegistry.Functions.TryGetValue(
                                         grandChild.FunctionName,
                                         out var grandChildItem
                                     )

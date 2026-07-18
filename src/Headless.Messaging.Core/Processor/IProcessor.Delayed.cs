@@ -30,6 +30,23 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
     {
         try
         {
+            if (
+                connection is IDelayedMessageClaimStorage claimStorage
+                && dispatcher is ICommittedDelayedMessageDispatcher committedDispatcher
+            )
+            {
+                var messages = await claimStorage
+                    .ClaimDelayedMessagesAsync(context.CancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var message in messages)
+                {
+                    committedDispatcher.EnqueueCommittedDelayedMessage(message);
+                }
+
+                return;
+            }
+
             async ValueTask scheduleTask(object? transaction, IEnumerable<MediumMessage> messages)
             {
                 foreach (var message in messages)

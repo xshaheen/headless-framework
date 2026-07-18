@@ -79,12 +79,13 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 
 ## Agent Instructions
 
-- Mark auditable entities with `IAuditTracked`. To audit every entity by default, set `AuditByDefault = true` on `AuditLogOptions` and use `[AuditIgnore]` to opt out.
-- Mark PII/secret fields with `[AuditSensitive]`. Choose the global strategy via `AuditLogOptions.SensitiveDataStrategy`: `Redact` (default), `Exclude`, or `Transform`. When using `Transform`, set `SensitiveValueTransformer` to a pure synchronous function; options validation fails otherwise.
-- Use `[AuditIgnore]` on properties (or entire entities) that must not be captured.
+- Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.EntityFramework`; domain entities need no audit marker or attributes.
+- Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
+- Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` inside `OnModelCreating`. A startup gate validates this at boot and throws if it is missing.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`; the provider creates the audit table at host startup and writes over its own connection.
+- Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
 - Soft-delete and suspend transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` / `entity.suspended` / `entity.unsuspended` actions instead of `entity.updated`.
@@ -101,7 +102,7 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 
 The pipeline produces two kinds of rows:
 
-1. **Automatic property-level entries** — emitted on every `SaveChanges` for entities implementing `IAuditTracked` (or all entities when `AuditByDefault` is `true`). The `EfAuditChangeCapture` service scans `ChangeTracker` entries before the save, records `OldValues`, `NewValues`, and `ChangedFields`, and maps the EF `EntityState` to an `AuditChangeType` (`Created`, `Updated`, `Deleted`).
+1. **Automatic property-level entries** — emitted on `SaveChanges` for entities included by the finalized EF model policy, or for unconfigured entities when `AuditByDefault` is `true`. The `EfAuditChangeCapture` service scans `ChangeTracker` entries before the save, records `OldValues`, `NewValues`, and `ChangedFields`, and maps the EF `EntityState` to an `AuditChangeType` (`Created`, `Updated`, `Deleted`).
 
 2. **Explicit business-event entries** — emitted by calling `IAuditLog<TContext>.LogAsync(request)`. Used for events that have no corresponding entity mutation: data reads, PII reveals, cross-tenant access, authorization failures. These entries have no `OldValues`, no `ChangeType`, and the caller controls every field through `AuditLogWriteRequest`, including the `action` string (e.g., `"pii.revealed"`, `"report.downloaded"`).
 
@@ -117,13 +118,13 @@ Each entry carries:
 
 ### Sensitive data handling
 
-Properties marked `[AuditSensitive]` are subject to a strategy applied at capture time:
+Properties configured with `IsAuditSensitive()` are subject to a strategy applied at capture time:
 
 - `Redact` (default) — replaces the value with `"***"`; the property name still appears in `ChangedFields` so you know it changed.
 - `Exclude` — omits the property entirely from `OldValues`, `NewValues`, and `ChangedFields`.
 - `Transform` — passes the value through `AuditLogOptions.SensitiveValueTransformer` (hash, mask, tokenize). The transformer receives a `SensitiveValueContext` carrying `EntityType`, `PropertyName`, `PropertyClrType`, and `Value`. Must be a pure, synchronous function.
 
-Per-property strategy: `[AuditSensitive(SensitiveDataStrategy.Exclude)]` overrides the global default for that property.
+A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides the global default for that property. Explicit property exclusion and `PropertyFilter` vetoes run first, so an excluded property is never processed as sensitive.
 
 ### Scope and unit-of-work
 
@@ -149,7 +150,7 @@ Raw providers (`PostgreSql`, `SqlServer`) create the audit schema, table, and in
 | **Schema management** | EF migrations. | Self-initializing DDL at startup (idempotent; races serialized via `pg_advisory_xact_lock`). | Self-initializing DDL at startup (idempotent; races serialized via `sp_getapplock`). |
 | **JSON columns** | String columns by default; opt into native `jsonb`/`json` via `AuditLogJsonColumnType`. | `jsonb` by default (native JSONB type; `Json` or `NvarcharMax` also accepted). | `nvarchar(max)` only. |
 | **Extra dependencies** | `Microsoft.EntityFrameworkCore` | `Npgsql` | `Microsoft.Data.SqlClient` |
-| **Change capture** | Built-in via `EfAuditChangeCapture` scanning `ChangeTracker`. | Requires pairing with EF (via `AddHeadlessDbContext<TContext>`) or a custom `IAuditChangeCapture`. | Same as PostgreSql. |
+| **Change capture** | Built-in via `EfAuditChangeCapture` scanning `ChangeTracker` and reading EF model policy. | Storage only; pair with `Headless.EntityFramework` for built-in automatic capture, or log explicit events. | Same as PostgreSql. |
 
 ---
 
@@ -159,13 +160,10 @@ Defines the property-level audit log contracts for tracking entity mutations and
 
 ### Problem Solved
 
-Provides a provider-agnostic audit log API for capturing field-level entity changes and explicit events (PII reveals, cross-tenant access, etc.) without binding consumers to any specific storage implementation.
+Provides a provider-agnostic audit log API for representing field-level entity changes and explicit events (PII reveals, cross-tenant access, etc.) without binding consumers to a capture engine or storage implementation.
 
 ### Key Features
 
-- `IAuditTracked` — marker interface; entities implementing it are audited automatically on `SaveChanges`.
-- `[AuditIgnore]` — excludes a property (on a property) or an entire entity from change capture (on a class, when `AuditByDefault` is enabled).
-- `[AuditSensitive]` — marks a property as PII/secret; value is handled per configured strategy. Accepts an optional `SensitiveDataStrategy` parameter to override the global default per-property.
 - `SensitiveDataStrategy` — `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function).
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
@@ -187,23 +185,7 @@ dotnet add package Headless.AuditLog.Abstractions
 
 ### Quick Start
 
-Mark entities to audit:
-
-```csharp
-public class Patient : AggregateRoot<Guid>, IAuditTracked
-{
-    public string Name { get; set; } = "";
-
-    [AuditSensitive]
-    public string NationalId { get; set; } = "";
-
-    [AuditSensitive(SensitiveDataStrategy.Exclude)]
-    public string CreditCardToken { get; set; } = "";
-
-    [AuditIgnore]
-    public DateTime LastComputedAt { get; set; }
-}
-```
+Automatic capture policy is configured by `Headless.EntityFramework`; see the EF storage provider Quick Start below. This abstractions package stays EF-free and provides the contracts for explicit event logging and audit-history queries.
 
 Log explicit events:
 
@@ -237,8 +219,8 @@ var entries = await readAuditLog.QueryAsync(
 | Option | Default | Description |
 |---|---|---|
 | `IsEnabled` | `true` | Master switch; `false` disables all capture. |
-| `AuditByDefault` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present. |
-| `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties. |
+| `AuditByDefault` | `false` | Controls entities without explicit EF model policy; explicit `IsAudited()` or `ExcludeFromAudit()` takes precedence. |
+| `SensitiveDataStrategy` | `Redact` | Global strategy for properties configured with `IsAuditSensitive()`. |
 | `SensitiveValueTransformer` | `null` | Required when effective strategy is `Transform`; must be pure and synchronous. |
 | `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result cached per type. |
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |
@@ -332,31 +314,29 @@ Storage options (`AuditLogStorageOptions`):
 
 ## Headless.AuditLog.Storage.EntityFramework
 
-EF Core implementation of the audit log subsystem: change capture, persistent storage, and explicit event logging.
+EF Core storage provider for automatic audit entries and explicit event logging.
 
 ### Problem Solved
 
-Wires the audit log pipeline into EF Core's ChangeTracker so entity mutations are captured and persisted atomically with the originating `SaveChanges` — no separate commit, no data loss on rollback.
+Persists audit entries through the application's EF Core `DbContext` so they commit atomically with the originating `SaveChanges` — no separate connection or commit.
 
 ### Key Features
 
-- `EfAuditChangeCapture` — scans ChangeTracker before save, produces `AuditLogEntryData` per changed entity.
 - `EfAuditLogStore` — adds `AuditLogEntry` rows to the same `DbContext` so they commit in the same transaction as entity changes.
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
-- `AuditLogEntry` — EF entity; decorated with `[AuditIgnore]` to prevent recursive capture when `AuditByDefault` is enabled.
+- `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, and correlation ID.
-- Soft-delete detection: emits `entity.soft_deleted` / `entity.restored` on `IsDeleted` transitions.
-- Suspend detection: emits `entity.suspended` / `entity.unsuspended` on `IsSuspended` transitions.
-- Zero overhead when `AuditLogOptions.IsEnabled` is `false` — `CaptureChanges` returns an empty list immediately.
-- Startup gate (`AuditLogEntityValidationStartupGate`) validates that `AuditLogEntry` is registered in the `DbContext` model and throws with a clear message if `modelBuilder.AddHeadlessAuditLog` was omitted.
+- Startup gate (`AuditLogEntityValidationStartupGate`) validates that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
 ### Design Notes
 
 The composite primary key `(CreatedAt, Id)` is a deliberate time-partitioning choice: partitioning the audit table by `CreatedAt` range is a common retention strategy. SQLite does not support `ValueGeneratedOnAdd` on composite keys, so consumers targeting SQLite must override to a single-column PK on `Id`.
 
 `EfAuditLogStore` intentionally does not call `SaveChanges` — audit entries are tracked in the same `DbContext` and commit when the entity save runs. This requires that `AuditLogEntry` is in the same model as the audited entities. If you need to write audit entries to a different database or schema, use the raw ADO.NET providers instead.
+
+`AddHeadlessAuditLog` applies `ExcludeFromAudit()` to `AuditLogEntry`, including when the entity was pre-registered. Calling `IsAudited()` for `AuditLogEntry` later overrides that policy deterministically, but this is unsupported because it can recursively create audit rows.
 
 JSON columns default to string columns (via value converters), universally portable across all EF-supported databases. Override to a native type via `AuditLogStorageOptions.JsonColumnType = AuditLogJsonColumnType.Jsonb` when targeting PostgreSQL for native `jsonb` semantics.
 
@@ -401,8 +381,18 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
     modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
+
+    modelBuilder.Entity<Patient>(patient =>
+    {
+        patient.IsAudited();
+        patient.Property(x => x.NationalId).IsAuditSensitive();
+        patient.Property(x => x.CreditCardToken).IsAuditSensitive(SensitiveDataStrategy.Exclude);
+        patient.Property(x => x.LastComputedAt).ExcludeFromAudit();
+    });
 }
 ```
+
+The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
 
 #### Explicit event logging
 
@@ -450,6 +440,8 @@ Sensitive data strategies:
 | `Exclude` | Omits the property entirely from `OldValues`, `NewValues`, and `ChangedFields`. |
 | `Transform` | Passes value through `AuditLogOptions.SensitiveValueTransformer` (hash, mask, tokenize). |
 
+Entity policy is tri-state: `IsAudited()` and `ExcludeFromAudit()` override `AuditByDefault`; an unconfigured entity follows the option. Default property exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global strategy.
+
 SQLite key override (required when targeting SQLite):
 
 ```csharp
@@ -465,11 +457,11 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 
 ### Side Effects
 
-- Registers `IAuditChangeCapture` as scoped (`EfAuditChangeCapture`).
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`).
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
 - Registers `AuditLogEntityValidationStartupGate<TContext>` as a hosted service (validates model at startup).
+- Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
 
 ---
 

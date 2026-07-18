@@ -29,8 +29,9 @@ public static class SetupAuditLogEntityFramework
         /// This overload uses EF Core migrations for schema management; the startup storage
         /// initializer (<see cref="AuditLogStorageOptions.InitializeOnStartup"/>) has no effect
         /// in EF mode. A startup gate validates that the registered
-        /// <typeparamref name="TContext"/> contains the <c>AuditLogEntry</c> entity and throws
-        /// <see cref="InvalidOperationException"/> when the model does not include it.
+        /// <typeparamref name="TContext"/> fully configured <c>AuditLogEntry</c> through
+        /// <c>modelBuilder.AddHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
+        /// when the model did not run that configuration.
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext

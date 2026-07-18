@@ -8,17 +8,19 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 
 ## Key Features
 
-- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, and schedules immediate, delayed, and recurring jobs without copied function strings or entity construction.
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs, and requests durable cancellation by job ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
 - **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains immutable `[JobFunction]` / descriptor metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
-- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and `RequestCancellation()`.
+- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
 - **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. Rebuild source-generated consumers together with the Jobs runtime when upgrading this contract.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 
 These fields are the durable representation. Runtime retry predicates, delays, and observation are configured with Polly.Core directly by `Headless.Jobs.Core`; Polly objects and delegates are never serialized into job rows.
+- **Dashboard provider projection**: `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync` returns
+  date/status counts plus the exact inclusive graph boundaries without requiring occurrence entities for empty dates.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
 - **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` for defining parent–child–grandchild job chains up to 3 levels / 5 siblings per level.
@@ -103,7 +105,11 @@ JobFunctionDelegate handler = static (serviceProvider, context, cancellationToke
 };
 ```
 
-All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its frozen indexes.
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`.
+
+`IJobScheduler.CancelAsync(jobId)` is job-ID-only and durable. It returns `true` only for the first accepted request: an idle job becomes terminal `Cancelled`, while queued or in-progress work records `CancelRequested` for its owning node to observe. Unknown, already-requested, and terminal jobs return `false`. `CancelRequested` remains audit data even when an in-progress handler ignores its token and completes naturally.
+
+Relational consumers must add and apply a migration for the non-null `TimeJobs.CancelRequested` column with a `false` default before deploying this version. The PostgreSQL demos include reference migrations; SQL Server and custom stores own the equivalent application migration.
 
 Delayed and recurring scheduling keep time and cron expressions explicit:
 
@@ -140,6 +146,11 @@ await timeJobManager.AddAsync(
 ## Configuration
 
 None at the abstractions layer. All configuration is done in `Headless.Jobs.Core` via `AddHeadlessJobs(options => ...)`.
+
+`GetCronOccurrenceGraphStatusCountsAsync` is an additive persistence-provider SPI method. Its default implementation
+preserves third-party provider compatibility by reducing the existing occurrence-list result in memory. Durable
+providers should override it to select distinct UTC dates and aggregate status counts in storage; boundary entries
+have `IsRangeBoundary = true`, a zero count, and a status value that callers must ignore.
 
 ## Dependencies
 

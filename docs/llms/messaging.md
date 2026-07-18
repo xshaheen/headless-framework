@@ -439,12 +439,15 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Publish and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
+- Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 
 ### Design Notes
 
 Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
+
+Storage providers may implement `IDelayedMessageClaimStorage` in addition to `IDataStorage`. Core detects the capability at runtime and uses its committed winner set; providers without it retain the callback-based `ScheduleMessagesOfDelayedAsync(...)` path. Capability implementations must stamp each winner's `LockedUntil` as `max(authoritative store now, ExpiresAt) + DispatchTimeout`, using the same store-clock snapshot that tests lease eligibility, and return only after commit. Extending a future message's lease from its schedule time keeps the ownership grant alive until the first dispatch attempt, while the commit boundary prevents Core's queue-only enqueue from publishing uncommitted state.
 
 The public consumer startup contracts accept trailing optional cancellation tokens: both `IConsumerClientFactory.CreateAsync(...)` overload shapes, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
@@ -1276,7 +1279,7 @@ Provides in-process messaging storage for local development and tests.
 - `setup.UseInMemoryStorage()`.
 - Stores published, received, failed, and monitoring state in memory.
 
-InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity.
+InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity. Delayed scheduling atomically transitions and leases each per-message winner before returning a deterministic bounded batch.
 
 ### Installation
 
@@ -1543,7 +1546,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
-Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one PostgreSQL clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced writes.
+Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue.
 
 ### Installation
 
@@ -1586,7 +1589,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
-Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one SQL Server clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced writes.
+Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue.
 
 ### Installation
 

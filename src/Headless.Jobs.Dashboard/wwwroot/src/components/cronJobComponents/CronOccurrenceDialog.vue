@@ -2,7 +2,6 @@
 import { watch, type PropType, toRef, onMounted, onUnmounted, ref } from 'vue'
 import { cronJobOccurrenceService } from '@/http/services/cronJobOccurrenceService'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
-import { jobsService } from '@/http/services/jobsService'
 import { sleep } from '@/utilities/sleep'
 import { useDialog } from '@/composables/useDialog'
 import { methodName, type JobNotificationHubType } from '@/hub/jobNotificationHub'
@@ -22,7 +21,6 @@ const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
 
 // Use paginated service
 const getByCronJobIdPaginated = cronJobOccurrenceService.getByCronJobIdPaginated()
-const requestCancelJob = jobsService.requestCancel()
 const deleteCronOccurrence = cronJobOccurrenceService.deleteCronJobOccurrence()
 
 // Pagination state
@@ -153,15 +151,6 @@ watch(
 
 const hasStatus = (statusItem: string | number, statusEnum: Status) =>
   statusItem == Status[statusEnum]
-
-const requestCancel = async (id: string) => {
-  await requestCancelJob
-    .requestAsync(id)
-    .then(async () => await sleep(100))
-    .then(async () => {
-      await loadPageData()
-    })
-}
 
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
@@ -407,19 +396,6 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
             <!-- Actions Column -->
             <template #[`item.actions`]="{ item }">
               <div class="actions-cell">
-                <v-btn
-                  @click="requestCancel(item.id)"
-                  :disabled="!hasStatus(item.status, Status.InProgress)"
-                  icon
-                  variant="text"
-                  size="small"
-                  class="action-btn cancel-btn"
-                  :class="{ 'active': hasStatus(item.status, Status.InProgress) }"
-                >
-                  <v-icon size="18">mdi-cancel</v-icon>
-                  <v-tooltip activator="parent" location="top">Cancel Execution</v-tooltip>
-                </v-btn>
-                
                 <v-btn
                   @click="confirmDialog.open({ data: item.id })"
                   :disabled="hasStatus(item.status, Status.InProgress)"
@@ -787,11 +763,6 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
 
 .action-btn:hover {
   transform: scale(1.05);
-}
-
-.cancel-btn.active {
-  background: rgba(100, 181, 246, 0.15);
-  color: #6495ED;
 }
 
 .delete-btn:hover {

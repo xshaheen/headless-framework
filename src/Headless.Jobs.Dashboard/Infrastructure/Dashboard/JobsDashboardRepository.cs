@@ -18,6 +18,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     IJobsNotificationHubSender notificationHubSender,
     DashboardOptionsBuilder dashboardOptions,
     IJobsDispatcher dispatcher,
+    JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     IServiceProvider serviceProvider
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
@@ -30,6 +31,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     );
     private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
+    private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
@@ -472,7 +474,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             };
 
             // Populate cached delegate and priority so the dispatcher can execute the job
-            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (_functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -522,93 +524,33 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        const int maxTotalDays = 14;
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
 
-        // Single DB query — split into past/today/future in memory
-        var allOccurrences = await _persistenceProvider
-            .GetAllCronJobOccurrencesAsync(x => x.CronJobId == guid, cancellationToken)
+        var statusCounts = await _persistenceProvider
+            .GetCronOccurrenceGraphStatusCountsAsync(guid, today, cancellationToken)
             .ConfigureAwait(false);
-
-        var grouped = allOccurrences
-            .GroupBy(x => x.ExecutionTime.Date)
-            .Select(group => new CronOccurrenceJobGraphData
-            {
-                Date = group.Key,
-                Results =
-                [
-                    .. group
-                        .GroupBy(x => x.Status)
-                        .Select(statusGroup => Tuple.Create((int)statusGroup.Key, statusGroup.Count())),
-                ],
-            })
-            .ToList();
-
-        var pastData = grouped.Where(d => d.Date < today).OrderBy(d => d.Date).ToList();
-        var todayData =
-            grouped.FirstOrDefault(d => d.Date == today)
-            ?? new CronOccurrenceJobGraphData { Date = today, Results = [] };
-        var futureData = grouped.Where(d => d.Date > today).OrderBy(d => d.Date).ToList();
-
-        var pastDaysWithData = pastData.Count;
-        var futureDaysWithData = futureData.Count;
-
-        const int remainingSlots = maxTotalDays - 1; // Exclude today
-        var emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
-        var emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
-
-        List<CronOccurrenceJobGraphData> emptyPastDays = [];
-        if (emptyPastSlots > 0)
-        {
-            var firstPastDate = pastData.FirstOrDefault()?.Date ?? today.AddDays(-1);
-            for (var i = 1; i <= emptyPastSlots; i++)
-            {
-                emptyPastDays.Add(new CronOccurrenceJobGraphData { Date = firstPastDate.AddDays(-i), Results = [] });
-            }
-        }
-
-        List<CronOccurrenceJobGraphData> emptyFutureDays = [];
-        if (emptyFutureSlots > 0)
-        {
-            var lastFutureDate = futureData.LastOrDefault()?.Date ?? today.AddDays(1);
-            for (var i = 1; i <= emptyFutureSlots; i++)
-            {
-                emptyFutureDays.Add(new CronOccurrenceJobGraphData { Date = lastFutureDate.AddDays(i), Results = [] });
-            }
-        }
-
-        var completeData = emptyPastDays
-            .Concat(pastData)
-            .Append(todayData)
-            .Concat(futureData)
-            .Concat(emptyFutureDays)
-            .OrderBy(d => d.Date)
-            .Take(maxTotalDays)
-            .ToList();
-
-        if (completeData.Count == 0)
-        {
-            return completeData;
-        }
-
-        var startDate = completeData[0].Date;
-        var endDate = completeData[^1].Date;
+        var boundaries = statusCounts.Where(x => x.IsRangeBoundary).Select(x => x.Date).ToArray();
+        var startDate = boundaries.Min();
+        var endDate = boundaries.Max();
+        var groupedData = statusCounts
+            .Where(x => !x.IsRangeBoundary)
+            .GroupBy(x => x.Date)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => Tuple.Create((int)x.Status, x.Count)).ToArray()
+            );
         var allDates = Enumerable
             .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
-        var finalData = allDates.ConvertAll(date =>
-            completeData.FirstOrDefault(d => d.Date == date)
-            ?? new CronOccurrenceJobGraphData { Date = date, Results = [] }
-        );
+        var finalData = allDates.ConvertAll(date => new CronOccurrenceJobGraphData
+        {
+            Date = date,
+            Results = groupedData.GetValueOrDefault(date, []),
+        });
 
         return finalData;
-    }
-
-    public bool CancelJobById(Guid jobId)
-    {
-        return JobsCancellationTokenManager.RequestTickerCancellationById(jobId);
     }
 
     public async Task DeleteCronJobOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -666,7 +608,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes);
 
-        if (!JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(functionName, out var functionTypeContext))
+        if (!_functionRegistry.RequestTypes.TryGetValue(functionName, out var functionTypeContext))
         {
             return (jsonRequest, 2);
         }
@@ -686,9 +628,9 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public IEnumerable<(string, (string, string, JobPriority))> GetJobFunctions()
     {
-        foreach (var jobFunction in JobFunctionProvider.JobFunctions.Select(x => new { x.Key, x.Value.Priority }))
+        foreach (var jobFunction in _functionRegistry.Functions.Select(x => new { x.Key, x.Value.Priority }))
         {
-            if (JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
+            if (_functionRegistry.RequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
             {
                 JsonExampleGenerator.TryGenerateExampleJson(functionTypeContext.Item2, out var exampleJson);
                 yield return (jobFunction.Key, (functionTypeContext.Item1, exampleJson, jobFunction.Priority));

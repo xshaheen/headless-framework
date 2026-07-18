@@ -18,15 +18,33 @@ namespace Headless.Jobs;
 /// <remarks>
 /// The registration flow is callback-based: each source-generated assembly calls
 /// <c>RegisterFunctions</c>, <c>RegisterRequestType</c>, and <c>RegisterDescriptors</c> to enqueue its entries, then
-/// <see cref="Build"/> executes all callbacks in order and freezes the results. After <c>Build</c> is
-/// called, no further registrations take effect.
+/// Jobs discovery marks collection complete before <see cref="Build"/> executes all callbacks in order and freezes
+/// the results. Registrations attempted after discovery completes fail deterministically.
 /// </remarks>
 public static class JobFunctionProvider
 {
+    private const string _DiscoveryIncompleteMessage =
+        "Jobs discovery must complete before JobFunctionProvider.Build() can freeze the catalog.";
+    private const string _DiscoveryCompleteMessage = "Jobs generated registration is closed after discovery completes.";
+    private const string _FrozenMessage = "Jobs generated registration is frozen after JobFunctionProvider.Build().";
+    private static readonly Lock _Sync = new();
     private static Action<List<KeyValuePair<string, (string, Type)>>>? _requestTypeRegistrations;
     private static Action<List<KeyValuePair<string, JobFunctionRegistration>>>? _functionRegistrations;
     private static Action<List<KeyValuePair<string, JobFunctionDescriptor>>>? _descriptorRegistrations;
-    private static IConfiguration? _configuration;
+    private static TaskCompletionSource<object?> _discoveryCompletion = _CreateDiscoveryCompletion();
+    private static int _activeDiscoveries;
+
+    [ThreadStatic]
+    private static int _discoveryDepth;
+    private static readonly JobFunctionRegistry _EmptyRegistry = new(
+        FrozenDictionary<string, JobFunctionRegistration>.Empty,
+        FrozenDictionary<string, (string, Type)>.Empty,
+        FrozenDictionary<string, JobFunctionDescriptor>.Empty,
+        FrozenDictionary<string, JobFunctionDescriptor>.Empty,
+        FrozenDictionary<Type, JobFunctionDescriptor>.Empty
+    );
+    private static JobFunctionRegistry _canonicalRegistry = _EmptyRegistry;
+    private static RegistryState _state;
 
     /// <summary>
     /// Frozen lookup of all registered job functions, keyed by function name. Each entry is a
@@ -34,58 +52,46 @@ public static class JobFunctionProvider
     /// scheduling priority, execution delegate, and maximum concurrency limit. Available after
     /// <see cref="Build"/> is called.
     /// </summary>
-    public static FrozenDictionary<string, JobFunctionRegistration> JobFunctions { get; private set; } =
-        FrozenDictionary<string, JobFunctionRegistration>.Empty;
+    public static FrozenDictionary<string, JobFunctionRegistration> JobFunctions => _canonicalRegistry.Functions;
 
     /// <summary>
     /// Frozen lookup of request type metadata, keyed by function name. Each entry carries the full type
     /// name and <see cref="Type"/> object for functions that accept a typed request payload. Available
     /// after <see cref="Build"/> is called.
     /// </summary>
-    public static FrozenDictionary<string, (string, Type)> JobFunctionRequestTypes { get; private set; } =
-        FrozenDictionary<string, (string, Type)>.Empty;
+    public static FrozenDictionary<string, (string, Type)> JobFunctionRequestTypes => _canonicalRegistry.RequestTypes;
 
     /// <summary>
     /// Frozen lookup of generated job-function descriptors, keyed by the durable function name.
     /// </summary>
-    public static FrozenDictionary<string, JobFunctionDescriptor> JobFunctionDescriptors { get; private set; } =
-        FrozenDictionary<string, JobFunctionDescriptor>.Empty;
+    public static FrozenDictionary<string, JobFunctionDescriptor> JobFunctionDescriptors =>
+        _canonicalRegistry.Descriptors;
 
     /// <summary>
     /// Frozen inverse lookup of generated job-function descriptors, keyed by the typed request payload.
     /// Requestless functions are intentionally absent.
     /// </summary>
-    public static FrozenDictionary<Type, JobFunctionDescriptor> JobFunctionDescriptorsByRequestType
-    {
-        get;
-        private set;
-    } = FrozenDictionary<Type, JobFunctionDescriptor>.Empty;
+    public static FrozenDictionary<Type, JobFunctionDescriptor> JobFunctionDescriptorsByRequestType =>
+        _canonicalRegistry.DescriptorsByRequestType;
 
     /// <summary>
     /// Registers job functions during application startup by adding to the callback chain.
-    /// This method should only be called during application startup before Build() is called.
+    /// This method should only be called during application startup before Jobs discovery completes.
     /// </summary>
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
-    public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions)
-    {
-        Argument.IsNotNull(functions);
-
-        if (functions.Count == 0)
-        {
-            return;
-        }
-
-        _functionRegistrations += entries => entries.AddRange(functions);
-    }
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions) =>
+        _Register(functions, ref _functionRegistrations);
 
     /// <summary>
     /// Registers job functions with capacity hint during application startup by adding to the callback chain.
-    /// This method should only be called during application startup before Build() is called.
+    /// This method should only be called during application startup before Jobs discovery completes.
     /// </summary>
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions, int _)
     {
         // For callback approach, capacity is calculated automatically in Build()
@@ -94,29 +100,22 @@ public static class JobFunctionProvider
 
     /// <summary>
     /// Registers request types during application startup by adding to the callback chain.
-    /// This method should only be called during application startup before Build() is called.
+    /// This method should only be called during application startup before Jobs discovery completes.
     /// </summary>
     /// <param name="requestTypes">The request types to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when requestTypes parameter is null.</exception>
-    public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes)
-    {
-        Argument.IsNotNull(requestTypes);
-
-        if (requestTypes.Count == 0)
-        {
-            return;
-        }
-
-        _requestTypeRegistrations += entries => entries.AddRange(requestTypes);
-    }
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes) =>
+        _Register(requestTypes, ref _requestTypeRegistrations);
 
     /// <summary>
     /// Registers request types with capacity hint during application startup by adding to the callback chain.
-    /// This method should only be called during application startup before Build() is called.
+    /// This method should only be called during application startup before Jobs discovery completes.
     /// </summary>
     /// <param name="requestTypes">The request types to register. Cannot be null.</param>
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when requestTypes parameter is null.</exception>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes, int _)
     {
         // For callback approach, capacity is calculated automatically in Build()
@@ -128,18 +127,10 @@ public static class JobFunctionProvider
     /// </summary>
     /// <param name="descriptors">The descriptors to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException"><paramref name="descriptors"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public static void RegisterDescriptors(IDictionary<string, JobFunctionDescriptor> descriptors)
-    {
-        Argument.IsNotNull(descriptors);
-
-        if (descriptors.Count == 0)
-        {
-            return;
-        }
-
-        _descriptorRegistrations += entries => entries.AddRange(descriptors);
-    }
+    public static void RegisterDescriptors(IDictionary<string, JobFunctionDescriptor> descriptors) =>
+        _Register(descriptors, ref _descriptorRegistrations);
 
     /// <summary>
     /// Registers generated descriptors with a source-generated capacity hint.
@@ -147,68 +138,312 @@ public static class JobFunctionProvider
     /// <param name="descriptors">The descriptors to register. Cannot be null.</param>
     /// <param name="_">The total expected capacity; retained for generated-call compatibility.</param>
     /// <exception cref="ArgumentNullException"><paramref name="descriptors"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterDescriptors(IDictionary<string, JobFunctionDescriptor> descriptors, int _)
     {
         RegisterDescriptors(descriptors);
     }
 
-    /// <summary>
-    /// Updates cron expressions for registered functions by adding to the callback chain.
-    /// This method should only be called during application startup before Build() is called.
-    /// </summary>
-    /// <param name="configuration">IConfiguration to update based on path</param>
-    /// <exception cref="ArgumentNullException">Thrown when cronUpdates parameter is null.</exception>
-    internal static void UpdateCronExpressionsFromIConfiguration(IConfiguration configuration)
+    /// <summary>Closes generated registration after configured discovery assemblies have loaded.</summary>
+    internal static void MarkDiscoveryComplete()
     {
-        _configuration = configuration;
+        lock (_Sync)
+        {
+            if (_state == RegistryState.Collecting)
+            {
+                _state = RegistryState.DiscoveryComplete;
+            }
+        }
+    }
+
+    internal static DiscoveryParticipation BeginDiscovery()
+    {
+        if (_discoveryDepth > 0)
+        {
+            _discoveryDepth++;
+            return DiscoveryParticipation.Nested;
+        }
+
+        lock (_Sync)
+        {
+            if (_state != RegistryState.Collecting)
+            {
+                return DiscoveryParticipation.ExistingCatalog;
+            }
+
+            _activeDiscoveries++;
+            _discoveryDepth = 1;
+            return DiscoveryParticipation.Participant;
+        }
+    }
+
+    internal static void CompleteDiscovery(DiscoveryParticipation participation)
+    {
+        if (participation == DiscoveryParticipation.Nested)
+        {
+            _discoveryDepth--;
+            return;
+        }
+
+        if (participation == DiscoveryParticipation.ExistingCatalog)
+        {
+            Build();
+            return;
+        }
+
+        _discoveryDepth = 0;
+        Task? pendingDiscovery = null;
+        var shouldFreeze = false;
+        lock (_Sync)
+        {
+            _activeDiscoveries--;
+            if (_activeDiscoveries == 0)
+            {
+                _state = RegistryState.DiscoveryComplete;
+                shouldFreeze = true;
+            }
+            else
+            {
+                pendingDiscovery = _discoveryCompletion.Task;
+            }
+        }
+
+        if (!shouldFreeze)
+        {
+            // AddHeadlessJobs is synchronous, so overlapping discovery callbacks must join synchronously.
+#pragma warning disable MA0045
+            pendingDiscovery!.GetAwaiter().GetResult();
+#pragma warning restore MA0045
+            return;
+        }
+
+        try
+        {
+            Build();
+            _discoveryCompletion.TrySetResult(null);
+        }
+        catch (Exception exception)
+        {
+            _discoveryCompletion.TrySetException(exception);
+            throw;
+        }
+    }
+
+    internal static void AbandonDiscovery(DiscoveryParticipation participation, Exception exception)
+    {
+        if (participation == DiscoveryParticipation.Nested)
+        {
+            _discoveryDepth--;
+            return;
+        }
+
+        if (participation == DiscoveryParticipation.ExistingCatalog)
+        {
+            return;
+        }
+
+        _discoveryDepth = 0;
+        TaskCompletionSource<object?>? abandonedDiscovery = null;
+        lock (_Sync)
+        {
+            _activeDiscoveries--;
+            if (_activeDiscoveries == 0)
+            {
+                abandonedDiscovery = _discoveryCompletion;
+                _discoveryCompletion = _CreateDiscoveryCompletion();
+            }
+        }
+
+        abandonedDiscovery?.TrySetException(exception);
+    }
+
+    internal static void RegisterMiddleware(Action registration)
+    {
+        lock (_Sync)
+        {
+            _ThrowIfRegistrationClosed();
+            registration();
+        }
+    }
+
+    internal static JobFunctionRegistry CreateHostRegistry(IConfiguration? configuration)
+    {
+        JobFunctionRegistry canonicalRegistry;
+        lock (_Sync)
+        {
+            if (_state != RegistryState.Frozen)
+            {
+                throw new InvalidOperationException(_DiscoveryIncompleteMessage);
+            }
+
+            canonicalRegistry = _canonicalRegistry;
+        }
+
+        return JobFunctionRegistryBuilder.Project(
+            canonicalRegistry.Functions,
+            canonicalRegistry.RequestTypes,
+            canonicalRegistry.Descriptors,
+            canonicalRegistry.CanonicalDescriptors,
+            canonicalRegistry.DescriptorsByRequestType,
+            configuration
+        );
     }
 
     /// <summary>
     /// Freezes the registered functions, request types, and descriptors into read-optimized
-    /// <see cref="FrozenDictionary{TKey,TValue}"/> instances. Must be called exactly once after all
-    /// assemblies have had their <c>ModuleInitializer</c> executed and before the first job is dispatched.
-    /// After this call, the function, request-type, and descriptor indexes are populated and subsequent
-    /// <c>Register*</c> calls have no effect.
+    /// <see cref="FrozenDictionary{TKey,TValue}"/> instances after configured discovery completes. Repeated calls
+    /// return without replacing the published dictionaries. Registrations attempted after discovery completes fail.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Jobs discovery has not completed.</exception>
     public static void Build()
     {
-        var functions = new List<KeyValuePair<string, JobFunctionRegistration>>();
-        var requestTypes = new List<KeyValuePair<string, (string, Type)>>();
-        var descriptors = new List<KeyValuePair<string, JobFunctionDescriptor>>();
-        _functionRegistrations?.Invoke(functions);
-        _requestTypeRegistrations?.Invoke(requestTypes);
-        _descriptorRegistrations?.Invoke(descriptors);
+        lock (_Sync)
+        {
+            if (_state == RegistryState.Collecting)
+            {
+                throw new InvalidOperationException(_DiscoveryIncompleteMessage);
+            }
 
-        var registry = JobFunctionRegistryBuilder.Build(functions, requestTypes, descriptors, _configuration);
-        JobFunctions = registry.Functions;
-        JobFunctionRequestTypes = registry.RequestTypes;
-        JobFunctionDescriptors = registry.Descriptors;
-        JobFunctionDescriptorsByRequestType = registry.DescriptorsByRequestType;
+            if (_state == RegistryState.Frozen)
+            {
+                return;
+            }
 
-        _functionRegistrations = null;
-        _requestTypeRegistrations = null;
-        _descriptorRegistrations = null;
-        _configuration = null;
-        JobMiddlewareRegistry.Freeze();
+            var functions = new List<KeyValuePair<string, JobFunctionRegistration>>();
+            var requestTypes = new List<KeyValuePair<string, (string, Type)>>();
+            var descriptors = new List<KeyValuePair<string, JobFunctionDescriptor>>();
+            _functionRegistrations?.Invoke(functions);
+            _requestTypeRegistrations?.Invoke(requestTypes);
+            _descriptorRegistrations?.Invoke(descriptors);
+
+            var registry = JobFunctionRegistryBuilder.Build(functions, requestTypes, descriptors);
+            JobMiddlewareRegistry.FreezeUnderProviderLock();
+            _canonicalRegistry = registry;
+
+            _functionRegistrations = null;
+            _requestTypeRegistrations = null;
+            _descriptorRegistrations = null;
+            _state = RegistryState.Frozen;
+        }
     }
 
-    internal static void ResetForTests()
+    internal static void ResetForTests(bool discoveryComplete = false)
     {
-        _requestTypeRegistrations = null;
-        _functionRegistrations = null;
-        _descriptorRegistrations = null;
-        _configuration = null;
-        JobFunctions = FrozenDictionary<string, JobFunctionRegistration>.Empty;
-        JobFunctionRequestTypes = FrozenDictionary<string, (string, Type)>.Empty;
-        JobFunctionDescriptors = FrozenDictionary<string, JobFunctionDescriptor>.Empty;
-        JobFunctionDescriptorsByRequestType = FrozenDictionary<Type, JobFunctionDescriptor>.Empty;
-        JobMiddlewareRegistry.ResetForTests();
+        lock (_Sync)
+        {
+            _requestTypeRegistrations = null;
+            _functionRegistrations = null;
+            _descriptorRegistrations = null;
+            _activeDiscoveries = 0;
+            _discoveryCompletion = _CreateDiscoveryCompletion();
+            _state = discoveryComplete ? RegistryState.DiscoveryComplete : RegistryState.Collecting;
+            _canonicalRegistry = _EmptyRegistry;
+            JobMiddlewareRegistry.ResetUnderProviderLock();
+        }
+    }
+
+    private static void _Register<T>(
+        IDictionary<string, T> entries,
+        ref Action<List<KeyValuePair<string, T>>>? registrations
+    )
+    {
+        Argument.IsNotNull(entries);
+        lock (_Sync)
+        {
+            _ThrowIfRegistrationClosed();
+            if (entries.Count != 0)
+            {
+                registrations += values => values.AddRange(entries);
+            }
+        }
+    }
+
+    private static void _ThrowIfRegistrationClosed()
+    {
+        if (_state == RegistryState.DiscoveryComplete)
+        {
+            throw new InvalidOperationException(_DiscoveryCompleteMessage);
+        }
+
+        if (_state == RegistryState.Frozen)
+        {
+            throw new InvalidOperationException(_FrozenMessage);
+        }
+    }
+
+    private static TaskCompletionSource<object?> _CreateDiscoveryCompletion() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private enum RegistryState
+    {
+        Collecting,
+        DiscoveryComplete,
+        Frozen,
+    }
+
+    internal enum DiscoveryParticipation
+    {
+        ExistingCatalog,
+        Participant,
+        Nested,
     }
 }
 
 internal static class JobFunctionRegistryBuilder
 {
+    public static JobFunctionRegistry Project(
+        FrozenDictionary<string, JobFunctionRegistration> functions,
+        FrozenDictionary<string, (string, Type)> requestTypes,
+        FrozenDictionary<string, JobFunctionDescriptor> descriptors,
+        FrozenDictionary<string, JobFunctionDescriptor> canonicalDescriptors,
+        FrozenDictionary<Type, JobFunctionDescriptor> descriptorsByRequestType,
+        IConfiguration? configuration
+    )
+    {
+        if (configuration is null)
+        {
+            return new(functions, requestTypes, descriptors, canonicalDescriptors, descriptorsByRequestType);
+        }
+
+        var projectedFunctions = functions.Values.Any(registration =>
+            _IsConfigurationToken(registration.CronExpression)
+        )
+            ? functions
+                .ToDictionary(
+                    entry => entry.Key,
+                    entry =>
+                        entry.Value with
+                        {
+                            CronExpression = _ResolveCronExpression(entry.Value.CronExpression, configuration),
+                        },
+                    StringComparer.Ordinal
+                )
+                .ToFrozenDictionary(StringComparer.Ordinal)
+            : functions;
+        var projectedDescriptors = descriptors.Values.Any(descriptor =>
+            _IsConfigurationToken(descriptor.CronExpression)
+        )
+            ? descriptors
+                .ToDictionary(
+                    entry => entry.Key,
+                    entry => _ResolveCronExpression(entry.Value, configuration),
+                    StringComparer.Ordinal
+                )
+                .ToFrozenDictionary(StringComparer.Ordinal)
+            : descriptors;
+
+        return new(
+            projectedFunctions,
+            requestTypes,
+            projectedDescriptors,
+            canonicalDescriptors,
+            ReferenceEquals(projectedDescriptors, descriptors)
+                ? descriptorsByRequestType
+                : _IndexDescriptorsByRequestType(projectedDescriptors)
+        );
+    }
+
     public static JobFunctionRegistry Build(
         IReadOnlyCollection<KeyValuePair<string, JobFunctionRegistration>> functions,
         IReadOnlyCollection<KeyValuePair<string, (string, Type)>> requestTypes,
@@ -298,32 +533,39 @@ internal static class JobFunctionRegistryBuilder
         );
         var descriptorDictionary = effectiveDescriptors.ToDictionary(
             entry => entry.Key,
-            entry => _ResolveCronExpression(entry.Value, configuration),
+            entry => entry.Value,
             StringComparer.Ordinal
         );
-
-        if (configuration != null)
-        {
-            foreach (var (name, registration) in functionDictionary)
-            {
-                functionDictionary[name] = registration with
-                {
-                    CronExpression = _ResolveCronExpression(registration.CronExpression, configuration),
-                };
-            }
-        }
-
-        var descriptorsByRequestType = descriptorDictionary
-            .Values.Where(descriptor => descriptor.RequestType != null)
-            .ToDictionary(descriptor => descriptor.RequestType!, descriptor => descriptor);
-
-        return new(
-            functionDictionary.ToFrozenDictionary(StringComparer.Ordinal),
-            requestTypeDictionary.ToFrozenDictionary(StringComparer.Ordinal),
-            descriptorDictionary.ToFrozenDictionary(StringComparer.Ordinal),
-            descriptorsByRequestType.ToFrozenDictionary()
+        var frozenFunctions = functionDictionary.ToFrozenDictionary(StringComparer.Ordinal);
+        var frozenRequestTypes = requestTypeDictionary.ToFrozenDictionary(StringComparer.Ordinal);
+        var frozenDescriptors = descriptorDictionary.ToFrozenDictionary(StringComparer.Ordinal);
+        var descriptorsByRequestType = _IndexDescriptorsByRequestType(descriptorDictionary);
+        var canonicalRegistry = new JobFunctionRegistry(
+            frozenFunctions,
+            frozenRequestTypes,
+            frozenDescriptors,
+            frozenDescriptors,
+            descriptorsByRequestType
         );
+
+        return configuration is null
+            ? canonicalRegistry
+            : Project(
+                frozenFunctions,
+                frozenRequestTypes,
+                frozenDescriptors,
+                frozenDescriptors,
+                descriptorsByRequestType,
+                configuration
+            );
     }
+
+    private static FrozenDictionary<Type, JobFunctionDescriptor> _IndexDescriptorsByRequestType(
+        IReadOnlyDictionary<string, JobFunctionDescriptor> descriptors
+    ) =>
+        descriptors
+            .Values.Where(descriptor => descriptor.RequestType != null)
+            .ToFrozenDictionary(descriptor => descriptor.RequestType!, descriptor => descriptor);
 
     private static JobFunctionDescriptor _ResolveCronExpression(
         JobFunctionDescriptor descriptor,
@@ -348,13 +590,18 @@ internal static class JobFunctionRegistryBuilder
 
     private static string _ResolveCronExpression(string cronExpression, IConfiguration configuration)
     {
-        if (!cronExpression.StartsWith('%'))
+        if (!_IsConfigurationToken(cronExpression))
         {
             return cronExpression;
         }
 
         var mappedCronExpression = configuration[cronExpression.Trim('%')];
         return string.IsNullOrEmpty(mappedCronExpression) ? cronExpression : mappedCronExpression;
+    }
+
+    private static bool _IsConfigurationToken(string cronExpression)
+    {
+        return cronExpression.StartsWith('%');
     }
 
     private static string _TypeDisplayName(Type type)
@@ -367,6 +614,7 @@ internal sealed record JobFunctionRegistry(
     FrozenDictionary<string, JobFunctionRegistration> Functions,
     FrozenDictionary<string, (string, Type)> RequestTypes,
     FrozenDictionary<string, JobFunctionDescriptor> Descriptors,
+    FrozenDictionary<string, JobFunctionDescriptor> CanonicalDescriptors,
     FrozenDictionary<Type, JobFunctionDescriptor> DescriptorsByRequestType
 );
 

@@ -19,7 +19,7 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage
+) : IDataStorage, IDelayedMessageClaimStorage
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -68,6 +68,11 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 message.StatusName = StatusName.Delayed;
+
+                // Release the ownership lease so the flushed-back row is immediately re-claimable on restart,
+                // mirroring the relational providers. The graceful-shutdown flush owns these rows via its own claim.
+                message.LockedUntil = null;
+                message.Owner = null;
             }
         }
 

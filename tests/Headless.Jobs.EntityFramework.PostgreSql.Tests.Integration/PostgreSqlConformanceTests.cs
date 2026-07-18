@@ -8,6 +8,18 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     : JobsCoordinationConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
+    public override Task time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state()
+    {
+        return base.time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state();
+    }
+
+    [Fact]
+    public override Task idle_parent_cancellation_applies_terminal_run_conditions_in_one_transaction()
+    {
+        return base.idle_parent_cancellation_applies_terminal_run_conditions_in_one_transaction();
+    }
+
+    [Fact]
     public override Task queued_job_is_stamped_with_the_node_incarnation_owner()
     {
         return base.queued_job_is_stamped_with_the_node_incarnation_owner();
@@ -191,6 +203,18 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     public override Task incompatible_native_model_falls_back_to_ef_cas_through_production_registration()
     {
         return base.incompatible_native_model_falls_back_to_ef_cas_through_production_registration();
+    }
+
+    [Fact]
+    public override Task compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep()
+    {
+        return base.compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep();
+    }
+
+    [Fact]
+    public override Task cron_graph_projection_uses_distinct_dates_and_storage_side_status_aggregation()
+    {
+        return base.cron_graph_projection_uses_distinct_dates_and_storage_side_status_aggregation();
     }
 
     [Fact]

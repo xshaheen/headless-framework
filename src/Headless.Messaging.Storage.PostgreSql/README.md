@@ -16,7 +16,7 @@ Provides durable, transactional message storage using PostgreSQL with automatic 
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
 
-Fresh dispatch and retry pickup accept a lease duration, atomically compare and stamp ownership from one PostgreSQL clock snapshot, and return the persisted `(LockedUntil, Owner)` identity for fenced attempt and state writes.
+Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue.
 
 ## Installation
 

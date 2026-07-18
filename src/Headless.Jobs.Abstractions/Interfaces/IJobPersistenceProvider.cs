@@ -32,6 +32,20 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<byte[]> GetTimeJobRequestAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically requests cooperative cancellation by time-job ID. Idle jobs become terminal Cancelled immediately;
+    /// Queued and InProgress jobs retain their status and set <c>CancelRequested</c>. Duplicate, terminal, and unknown
+    /// requests return <see langword="false"/> without changing audit state.
+    /// </summary>
+    Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads durable cancellation through the provider's current ownership fence. Returns <see langword="true"/> or
+    /// <see langword="false"/> only while this node still owns an InProgress row; <see langword="null"/> means the row
+    /// is absent, reclaimed, terminal, or owned by another node.
+    /// </summary>
+    Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Applies <paramref name="functionContext"/> to still-owned time jobs and returns the IDs that were actually
     /// stamped. Callers must execute only the returned IDs.
     /// </summary>
@@ -164,6 +178,38 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns storage-reduced status counts for the cron-occurrence dashboard graph, plus zero-count boundary
+    /// entries that identify the exact inclusive date range. The default implementation preserves compatibility
+    /// for third-party providers by projecting through <see cref="GetAllCronJobOccurrencesAsync"/>; providers
+    /// should override it to project distinct dates and aggregate counts in storage.
+    /// </summary>
+    /// <param name="cronJobId">Identifier of the cron job whose occurrence history is projected.</param>
+    /// <param name="today">Current UTC calendar date used to balance the graph around today.</param>
+    /// <param name="cancellationToken">Token that can abort the provider query.</param>
+    async Task<CronOccurrenceStatusCount[]> GetCronOccurrenceGraphStatusCountsAsync(
+        Guid cronJobId,
+        DateTime today,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var occurrences = await GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronJobId, cancellationToken)
+            .ConfigureAwait(false);
+        var range = CronOccurrenceGraphRangeSelector.Select(occurrences.Select(x => x.ExecutionTime), today);
+        var counts = occurrences
+            .Where(x => x.ExecutionTime.Date >= range.StartDate && x.ExecutionTime.Date <= range.EndDate)
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => new CronOccurrenceStatusCount
+            {
+                Date = group.Key.Date,
+                Status = group.Key.Status,
+                Count = group.Count(),
+            });
+
+        return CronOccurrenceGraphRangeSelector.AddRangeBoundaries(counts, range);
+    }
+
     Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
         int pageNumber,

@@ -4,13 +4,14 @@ using Azure.Messaging.ServiceBus;
 using Demo.Contracts.DomainEvents;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-public sealed class ServiceBusTransportTests
+public sealed class ServiceBusTransportTests : TestBase
 {
     private readonly IOptions<AzureServiceBusMessagingOptions> _options;
 
@@ -218,7 +219,7 @@ public sealed class ServiceBusTransportTests
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -258,7 +259,7 @@ public sealed class ServiceBusTransportTests
         );
 
         // when
-        var result = await transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
         result.Succeeded.Should().BeFalse();

@@ -12,14 +12,14 @@ public sealed class AuditLogOptions
     public bool IsEnabled { get; set; } = true;
 
     /// <summary>
-    /// When <see langword="true"/>, entities are audited by default unless decorated with
-    /// <see cref="AuditIgnoreAttribute"/> at the class level.
-    /// When <see langword="false"/> (default), only entities implementing <see cref="IAuditTracked"/> are audited.
+    /// Determines whether entities without an explicit Entity Framework audit policy are captured.
+    /// Explicit entity inclusion or exclusion configured on the EF model takes precedence.
+    /// Default: <see langword="false"/>.
     /// </summary>
     public bool AuditByDefault { get; set; }
 
     /// <summary>
-    /// Global default strategy for properties marked with <see cref="AuditSensitiveAttribute"/>.
+    /// Global default strategy for properties configured as sensitive on the Entity Framework model.
     /// Default: <see cref="SensitiveDataStrategy.Redact"/>.
     /// </summary>
     public SensitiveDataStrategy SensitiveDataStrategy { get; set; } = SensitiveDataStrategy.Redact;
@@ -42,7 +42,7 @@ public sealed class AuditLogOptions
     /// Predicate to exclude specific properties from change tracking.
     /// The first result for a given entity type and property name is cached for the capture
     /// service lifetime. Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
-    /// Applied after attribute-based filtering and default excluded property checks.
+    /// Applied after model policy and default excluded property checks.
     /// </summary>
     public Func<Type, string, bool>? PropertyFilter { get; set; }
 

@@ -23,7 +23,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IDataStorage"/> for outbox pattern message persistence.
 /// Handles storage, retrieval, and state management of published and received messages.
 /// </summary>
-internal sealed class PostgreSqlDataStorage(
+internal sealed partial class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -33,7 +33,7 @@ internal sealed class PostgreSqlDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<PostgreSqlDataStorage> logger
-) : IDataStorage
+) : IDataStorage, IDelayedMessageClaimStorage
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -89,8 +89,12 @@ internal sealed class PostgreSqlDataStorage(
             return;
         }
 
+        // Clear the ownership lease alongside the status flip: the only caller is the graceful-shutdown flush,
+        // which owns these rows via its own claim and is releasing them for immediate re-scheduling. Leaving a
+        // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
+        // delivered up to DispatchTimeout late after restart).
         var sql =
-            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
+            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName, \"LockedUntil\"=NULL, \"Owner\"=NULL WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
 
         object[] sqlParams =
         [
@@ -809,99 +813,6 @@ internal sealed class PostgreSqlDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Atomically selects delayed and stale-queued messages within a database transaction and
-    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. The SELECT uses
-    /// <c>FOR UPDATE SKIP LOCKED</c> so concurrent replicas skip rows another node is scheduling.
-    /// The transaction is committed after <paramref name="scheduleTask"/> completes.
-    /// </summary>
-    public async ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var sql =
-            $"SELECT \"Id\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\" FROM {_publishedTable} WHERE \"Version\"=@Version "
-            + $"AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
-
-        var sqlParams = new object[]
-        {
-            new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
-            new NpgsqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
-            new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
-        };
-
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        var poisonMessages = new List<PoisonMessage>();
-        var messageList = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, token) =>
-                {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-
-                        MediumMessage mediumMessage;
-                        try
-                        {
-                            mediumMessage = new MediumMessage
-                            {
-                                StorageId = storageId,
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
-                                Retries = reader.GetInt32(3),
-                                InlineAttempts = reader.GetInt32(4),
-                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
-                                ExpiresAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
-                            };
-                        }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                            continue;
-                        }
-
-                        messages.Add(mediumMessage);
-                    }
-
-                    return messages;
-                },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
-
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction,
-                _publishedTable,
-                poisonMessages,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        await scheduleTask(transaction, messageList).ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
