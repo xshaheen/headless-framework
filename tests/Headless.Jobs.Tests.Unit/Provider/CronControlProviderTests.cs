@@ -24,7 +24,7 @@ public sealed class CronControlProviderTests : TestBase
     private static readonly DateTime _Now = new(2026, 7, 17, 10, 30, 0, DateTimeKind.Utc);
 
     [Fact]
-    public async Task pause_is_one_transition_that_skips_pending_but_preserves_in_progress_work()
+    public async Task should_skip_pending_and_preserve_in_progress_work_when_pause_wins()
     {
         var provider = _Create();
         var definition = _Definition(isPaused: false, revision: 4);
@@ -63,7 +63,7 @@ public sealed class CronControlProviderTests : TestBase
     }
 
     [Fact]
-    public async Task concurrent_resume_has_one_winner_and_one_replacement_occurrence()
+    public async Task should_create_one_replacement_when_resume_runs_concurrently()
     {
         var provider = _Create();
         var definition = _Definition(isPaused: true, revision: 7);
@@ -92,7 +92,7 @@ public sealed class CronControlProviderTests : TestBase
     }
 
     [Fact]
-    public async Task stale_or_paused_dispatch_context_cannot_materialize_an_occurrence()
+    public async Task should_reject_materialization_when_dispatch_context_is_stale_or_paused()
     {
         var provider = _Create();
         var definition = _Definition(isPaused: false, revision: 3);
@@ -113,7 +113,54 @@ public sealed class CronControlProviderTests : TestBase
     }
 
     [Fact]
-    public async Task schedule_edit_retires_pending_work_but_metadata_edit_preserves_it()
+    public async Task should_materialize_one_live_occurrence_when_same_instant_is_queued_concurrently()
+    {
+        var provider = _Create();
+        var definition = _Definition(isPaused: false, revision: 3);
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        var dispatch = _Dispatch(definition, revision: 3);
+        var executionTime = _Now.AddMinutes(1);
+
+        var attempts = await Task.WhenAll(
+            Enumerable
+                .Range(0, 8)
+                .Select(_ =>
+                    provider
+                        .QueueCronJobOccurrencesAsync((executionTime, [dispatch]), AbortToken)
+                        .ToArrayAsync(AbortToken)
+                        .AsTask()
+                )
+        );
+
+        attempts.SelectMany(x => x).Should().ContainSingle();
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken))
+            .Should()
+            .ContainSingle(x => x.ExecutionTime == executionTime && x.Status == JobStatus.Queued);
+    }
+
+    [Fact]
+    public async Task should_retire_pending_seed_work_when_code_defined_expression_changes()
+    {
+        var provider = _Create();
+        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], AbortToken);
+        var definition = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single();
+        var pending = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.AddMinutes(5));
+        await provider.InsertCronJobOccurrencesAsync([pending], AbortToken);
+
+        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], AbortToken);
+
+        var updated = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single();
+        updated.Expression.Should().Be("0 */10 * * * *");
+        updated.ScheduleRevision.Should().Be(1);
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken))
+            .Should()
+            .ContainSingle(x =>
+                x.Id == pending.Id && x.Status == JobStatus.Skipped && x.SkippedReason == "Cron definition updated"
+            );
+    }
+
+    [Fact]
+    public async Task should_retire_pending_work_only_when_schedule_changes()
     {
         var provider = _Create();
         var definition = _Definition(isPaused: false, revision: 2);

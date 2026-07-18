@@ -10,6 +10,7 @@ using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -222,6 +223,33 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut
             .Persistence.DidNotReceive()
             .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_report_cron_update_success_when_post_commit_notification_fails()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var current = _CronJob();
+        current.ScheduleRevision = 4;
+        var update = _CronJob();
+        update.Id = current.Id;
+        update.Expression = current.Expression;
+        sut.Persistence.GetCronJobByIdAsync(current.Id, AbortToken).Returns(current);
+        sut.Persistence.UpdateCronJobsAtomicallyAsync(
+                Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
+                Arg.Any<DateTime>(),
+                AbortToken
+            )
+            .Returns([update]);
+        var failure = new InvalidOperationException("notification offline");
+        sut.Notification.UpdateCronJobNotifyAsync(update).Returns<Task>(_ => throw failure);
+
+        var result = await sut.Cron.UpdateAsync(update, AbortToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        result.Result.Should().BeSameAs(update);
+        result.AffectedRows.Should().Be(1);
+        sut.Logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Warning && x.Exception == failure);
     }
 
     [Fact]

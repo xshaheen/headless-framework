@@ -158,21 +158,33 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     }
 
     [Fact]
-    public override Task cron_pause_skips_pending_preserves_running_and_fences_stale_materialization()
+    public override Task should_pause_skip_pending_preserve_running_and_fence_stale_materialization()
     {
-        return base.cron_pause_skips_pending_preserves_running_and_fences_stale_materialization();
+        return base.should_pause_skip_pending_preserve_running_and_fence_stale_materialization();
     }
 
     [Fact]
-    public override Task two_nodes_resuming_the_same_cron_create_exactly_one_next_utc_occurrence()
+    public override Task should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron()
     {
-        return base.two_nodes_resuming_the_same_cron_create_exactly_one_next_utc_occurrence();
+        return base.should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron();
     }
 
     [Fact]
-    public override Task cron_edits_preserve_metadata_work_and_atomically_replace_active_schedules_only()
+    public override Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
     {
-        return base.cron_edits_preserve_metadata_work_and_atomically_replace_active_schedules_only();
+        return base.should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes();
+    }
+
+    [Fact]
+    public override Task should_preserve_input_order_when_cron_batch_updates_are_applied()
+    {
+        return base.should_preserve_input_order_when_cron_batch_updates_are_applied();
+    }
+
+    [Fact]
+    public override Task should_retire_pending_seed_work_when_code_defined_expression_changes()
+    {
+        return base.should_retire_pending_seed_work_when_code_defined_expression_changes();
     }
 }
 

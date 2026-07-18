@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinationFixture fixture) : TestBase
 {
     [Fact]
-    public async Task cron_control_migration_preserves_existing_rows_and_blocks_destructive_downgrade()
+    public async Task should_preserve_existing_rows_and_block_destructive_downgrade_when_cron_control_migrates()
     {
         var cancellationToken = AbortToken;
         var cronJobId = Guid.NewGuid();

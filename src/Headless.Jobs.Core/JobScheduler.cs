@@ -211,6 +211,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Request = descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request),
             Expression = cronExpression,
             Description = options?.Description,
+            TimeZoneId = options?.TimeZoneId,
             Retries = options?.Retries ?? 0,
             RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,

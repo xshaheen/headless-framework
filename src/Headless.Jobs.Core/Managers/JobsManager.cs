@@ -399,7 +399,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 _jobsHostScheduler.Restart();
             }
 
-            await notificationHubSender.UpdateCronJobNotifyAsync(cronJob).ConfigureAwait(false);
+            await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
 
             return new JobResult<TCronJob>(cronJob, affectedRows: 1);
         }
@@ -921,7 +921,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             foreach (var cronJob in updated)
             {
-                await notificationHubSender.UpdateCronJobNotifyAsync(cronJob).ConfigureAwait(false);
+                await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
             }
 
             return new JobResult<List<TCronJob>>([.. updated], updated.Length);
@@ -929,6 +929,18 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         catch (Exception e)
         {
             return new JobResult<List<TCronJob>>(e);
+        }
+    }
+
+    private async Task _NotifyCronJobUpdatedAsync(TCronJob cronJob)
+    {
+        try
+        {
+            await notificationHubSender.UpdateCronJobNotifyAsync(cronJob).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCronControlNotificationFailed(exception, cronJob.Id, "update");
         }
     }
 

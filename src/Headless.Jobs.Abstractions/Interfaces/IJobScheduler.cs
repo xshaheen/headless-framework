@@ -21,11 +21,17 @@ public interface IJobScheduler
     Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default);
 
     /// <summary>Durably pauses one cron definition and prevents pending occurrences from starting.</summary>
+    /// <param name="cronJobId">The cron-definition identifier.</param>
+    /// <param name="cancellationToken">Cancels the durable pause operation.</param>
     /// <returns><see langword="true"/> only when this call changes the definition to paused.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<bool> PauseCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
 
     /// <summary>Durably resumes one cron definition and schedules exactly its first occurrence after resume time.</summary>
+    /// <param name="cronJobId">The cron-definition identifier.</param>
+    /// <param name="cancellationToken">Cancels the durable resume operation.</param>
     /// <returns><see langword="true"/> only when this call changes the definition to active.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<bool> ResumeCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
 
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>

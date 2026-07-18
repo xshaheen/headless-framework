@@ -928,8 +928,37 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             {
                 if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
                 {
-                    existing.Expression = expression;
-                    existing.UpdatedAt = now;
+                    lock (_GetCronDefinitionLock(id))
+                    {
+                        if (!_cronJobs.TryGetValue(id, out var current))
+                        {
+                            continue;
+                        }
+
+                        var updated = _CloneCronJob(current);
+                        updated.Expression = expression;
+                        updated.ScheduleRevision++;
+                        updated.UpdatedAt = now;
+
+                        foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == id).ToArray())
+                        {
+                            if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
+                            {
+                                continue;
+                            }
+
+                            var skipped = _CloneCronOccurrence(pair.Value);
+                            skipped.Status = JobStatus.Skipped;
+                            skipped.ExecutedAt = now;
+                            skipped.UpdatedAt = now;
+                            skipped.SkippedReason = "Cron definition updated";
+                            skipped.OwnerId = null;
+                            skipped.LockedUntil = null;
+                            _cronOccurrences[pair.Key] = skipped;
+                        }
+
+                        _cronJobs[id] = updated;
+                    }
                 }
 
                 continue;
@@ -1058,8 +1087,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return Task.FromResult<TCronJob[]?>(null);
         }
 
-        var definitionIds = updates.Select(x => x.Definition.Id).Order().ToArray();
-        var locks = definitionIds.Select(_GetCronDefinitionLock).ToArray();
+        var lockIndexes = updates
+            .Select(x => _GetCronDefinitionLockIndex(x.Definition.Id))
+            .Distinct()
+            .Order()
+            .ToArray();
+        var locks = lockIndexes.Select(index => _cronDefinitionLocks[index]).ToArray();
         var acquiredLockCount = 0;
 
         try
@@ -1299,6 +1332,16 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     || context.IsPaused
                     || currentDefinition.ScheduleRevision != context.ScheduleRevision
                 )
+                {
+                    continue;
+                }
+
+                var liveOccurrence = _cronOccurrences.Values.FirstOrDefault(x =>
+                    x.CronJobId == context.Id
+                    && x.ExecutionTime == cronJobOccurrences.Key
+                    && x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress
+                );
+                if (liveOccurrence is not null && liveOccurrence.Id != context.NextCronOccurrence?.Id)
                 {
                     continue;
                 }
@@ -2053,8 +2096,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private object _GetCronDefinitionLock(Guid cronJobId)
     {
-        var index = (int)((uint)cronJobId.GetHashCode() % (uint)_cronDefinitionLocks.Length);
-        return _cronDefinitionLocks[index];
+        return _cronDefinitionLocks[_GetCronDefinitionLockIndex(cronJobId)];
+    }
+
+    private int _GetCronDefinitionLockIndex(Guid cronJobId)
+    {
+        return (int)((uint)cronJobId.GetHashCode() % (uint)_cronDefinitionLocks.Length);
     }
 
     private static TCronJob _CloneCronJob(TCronJob job)

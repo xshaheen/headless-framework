@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class CronDefinitionContractTests
 {
     [Fact]
-    public void cron_definition_defaults_to_active_global_timezone_and_initial_revision()
+    public void should_default_to_active_global_timezone_and_initial_revision_when_cron_definition_is_created()
     {
         var definition = new CronJobEntity();
 
@@ -18,13 +18,13 @@ public sealed class CronDefinitionContractTests
     }
 
     [Fact]
-    public void recurring_options_default_to_the_global_timezone_fallback()
+    public void should_use_global_timezone_fallback_when_recurring_options_are_defaulted()
     {
         new RecurringJobOptions().TimeZoneId.Should().BeNull();
     }
 
     [Fact]
-    public void recurring_options_preserve_the_supplied_iana_timezone_id()
+    public void should_preserve_iana_timezone_id_when_recurring_options_supply_one()
     {
         const string timeZoneId = "America/New_York";
 

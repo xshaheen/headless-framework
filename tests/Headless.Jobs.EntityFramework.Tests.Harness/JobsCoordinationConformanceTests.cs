@@ -1523,7 +1523,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
-    public virtual async Task cron_pause_skips_pending_preserves_running_and_fences_stale_materialization()
+    public virtual async Task should_pause_skip_pending_preserve_running_and_fence_stale_materialization()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
@@ -1584,7 +1584,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
-    public virtual async Task two_nodes_resuming_the_same_cron_create_exactly_one_next_utc_occurrence()
+    public virtual async Task should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
@@ -1639,7 +1639,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
-    public virtual async Task cron_edits_preserve_metadata_work_and_atomically_replace_active_schedules_only()
+    public virtual async Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
@@ -1728,6 +1728,78 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             );
             afterPausedEdit.Should().NotContain(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued);
             afterPausedEdit.Single(x => x.Id == running.Id).Status.Should().Be(JobStatus.InProgress);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_preserve_input_order_when_cron_batch_updates_are_applied()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-order-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var first = _CronDefinition(isPaused: false, revision: 0, timeZoneId: null);
+            first.Id = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+            var second = _CronDefinition(isPaused: false, revision: 0, timeZoneId: null);
+            second.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+            (await persistence.InsertCronJobsAsync([first, second], ct)).Should().Be(2);
+
+            first.Description = "first-updated";
+            second.Description = "second-updated";
+            var result = await persistence.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<CronJobEntity>(first, ExpectedScheduleRevision: 0, NextOccurrence: null),
+                    new CronJobAtomicUpdate<CronJobEntity>(second, ExpectedScheduleRevision: 0, NextOccurrence: null),
+                ],
+                DateTime.UtcNow,
+                ct
+            );
+
+            result.Should().NotBeNull();
+            result!.Select(x => x.Id).Should().Equal(first.Id, second.Id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_retire_pending_seed_work_when_code_defined_expression_changes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-seed-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], ct);
+            var definition = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            var pending = _CronOccurrence(definition.Id, JobStatus.Queued, DateTime.UtcNow.AddMinutes(5));
+            (await persistence.InsertCronJobOccurrencesAsync([pending], ct)).Should().Be(1);
+
+            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], ct);
+
+            var updated = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            updated.Expression.Should().Be("0 */10 * * * *");
+            updated.ScheduleRevision.Should().Be(1);
+            (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
+                .Should()
+                .ContainSingle(x =>
+                    x.Id == pending.Id && x.Status == JobStatus.Skipped && x.SkippedReason == "Cron definition updated"
+                );
         }
         finally
         {

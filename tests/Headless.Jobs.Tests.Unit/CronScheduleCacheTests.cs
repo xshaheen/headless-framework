@@ -67,7 +67,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_shifts_an_explicit_iana_spring_occurrence_through_the_gap()
+    public void should_shift_occurrence_through_gap_when_explicit_iana_time_is_invalid()
     {
         var beforeGap = new DateTime(2026, 3, 8, 5, 0, 0, DateTimeKind.Utc);
 
@@ -78,7 +78,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_uses_the_later_utc_instant_for_an_explicit_iana_fall_occurrence()
+    public void should_use_later_utc_instant_when_explicit_iana_time_is_ambiguous()
     {
         var beforeOverlap = new DateTime(2026, 11, 1, 4, 0, 0, DateTimeKind.Utc);
 
@@ -88,7 +88,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_remains_deterministic_when_origin_is_inside_an_explicit_iana_overlap()
+    public void should_remain_deterministic_when_origin_is_inside_explicit_iana_overlap()
     {
         var betweenOverlapInstants = new DateTime(2026, 11, 1, 5, 45, 0, DateTimeKind.Utc);
 
@@ -98,7 +98,7 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_uses_the_configured_global_timezone_when_definition_timezone_is_null()
+    public void should_use_configured_global_timezone_when_definition_timezone_is_null()
     {
         var cache = new CronScheduleCache(TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"));
         var origin = new DateTime(2026, 1, 1, 16, 30, 0, DateTimeKind.Utc);
@@ -111,7 +111,7 @@ public sealed class CronScheduleCacheTests
     [Theory]
     [InlineData("Eastern Standard Time")]
     [InlineData("Headless/Unknown")]
-    public void get_next_occurrence_or_default_rejects_non_iana_timezone_ids(string timeZoneId)
+    public void should_reject_timezone_when_identifier_is_not_iana(string timeZoneId)
     {
         var act = () => _cache.GetNextOccurrenceOrDefault("0 0 * * * *", DateTime.UnixEpoch, timeZoneId);
 

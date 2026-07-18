@@ -164,6 +164,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// preserved. Returns the updated definition, or <see langword="null"/> when the definition is absent or already
     /// paused.
     /// </summary>
+    /// <param name="cronJobId">The cron-definition identifier.</param>
+    /// <param name="operationTimeUtc">The operation timestamp used for definition and occurrence audit fields.</param>
+    /// <param name="cancellationToken">Cancels the atomic pause operation.</param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
         DateTime operationTimeUtc,
@@ -175,6 +179,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// fences stale callers. Returns the updated definition, or <see langword="null"/> when the transition loses the
     /// fence.
     /// </summary>
+    /// <param name="cronJobId">The cron-definition identifier.</param>
+    /// <param name="expectedScheduleRevision">The exact durable revision the caller observed.</param>
+    /// <param name="nextOccurrence">The single first occurrence strictly after the resume instant.</param>
+    /// <param name="operationTimeUtc">The operation timestamp used for definition audit fields.</param>
+    /// <param name="cancellationToken">Cancels the atomic resume operation.</param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob?> ResumeCronJobAsync(
         Guid cronJobId,
         long expectedScheduleRevision,
@@ -187,6 +197,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Atomically applies a definition batch. Schedule-changing edits retire pending occurrences and insert their
     /// replacement occurrence while metadata-only edits preserve both the schedule revision and pending work.
     /// </summary>
+    /// <param name="updates">The definitions, expected revisions, and optional replacement occurrences.</param>
+    /// <param name="operationTimeUtc">The operation timestamp shared by every accepted update.</param>
+    /// <param name="cancellationToken">Cancels the atomic batch operation.</param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
         CronJobAtomicUpdate<TCronJob>[] updates,
         DateTime operationTimeUtc,

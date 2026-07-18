@@ -409,8 +409,8 @@ public sealed class SlidingLeaseProviderTests : TestBase
             Function = "fn",
             Expression = "* * * * *",
         };
-        await provider.InsertCronJobsAsync([occurrence.CronJob], CancellationToken.None);
-        await provider.InsertCronJobOccurrencesAsync([occurrence], CancellationToken.None);
+        await provider.InsertCronJobsAsync([occurrence.CronJob], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
         return occurrence.Id;
     }
 

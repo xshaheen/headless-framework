@@ -19,7 +19,7 @@ public sealed class InternalJobsManagerTests : TestBase
     public sealed class FakeCronJob : CronJobEntity;
 
     [Fact]
-    public async Task cron_control_notifies_only_accepted_transitions_and_resume_uses_strict_next_utc_occurrence()
+    public async Task should_notify_and_use_strict_next_utc_occurrence_when_cron_control_is_accepted()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
@@ -68,7 +68,7 @@ public sealed class InternalJobsManagerTests : TestBase
     [Theory]
     [InlineData("2026-03-08T05:00:00Z", "0 30 2 * * *", "2026-03-08T07:30:00Z")]
     [InlineData("2026-11-01T04:00:00Z", "0 30 1 * * *", "2026-11-01T06:30:00Z")]
-    public async Task resume_uses_the_definition_iana_timezone_across_dst_transitions(
+    public async Task should_use_definition_iana_timezone_when_resume_crosses_dst_transition(
         string resumeTimeText,
         string expression,
         string expectedOccurrenceText

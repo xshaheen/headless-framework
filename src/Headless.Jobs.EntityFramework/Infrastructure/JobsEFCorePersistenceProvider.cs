@@ -389,9 +389,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .Where(x => definitionIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken)
             .ConfigureAwait(false);
-        var results = new List<TCronJob>(updates.Length);
+        var results = new TCronJob[updates.Length];
 
-        foreach (var update in updates.OrderBy(x => x.Definition.Id))
+        foreach (
+            var (update, inputIndex) in updates
+                .Select((update, index) => (update, index))
+                .OrderBy(x => x.update.Definition.Id)
+        )
         {
             if (
                 !currentById.TryGetValue(update.Definition.Id, out var current)
@@ -474,14 +478,14 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             result.ScheduleRevision = scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
             result.CreatedAt = current.CreatedAt;
             result.UpdatedAt = operationTimeUtc;
-            results.Add(result);
+            results[inputIndex] = result;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
-        return [.. results];
+        return results;
     }
 
     public async Task<TCronJob[]> GetCronJobsAsync(

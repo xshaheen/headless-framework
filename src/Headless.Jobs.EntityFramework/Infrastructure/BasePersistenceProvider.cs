@@ -727,6 +727,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
         var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         var functions = cronJobs.Select(x => x.Function).ToArray();
@@ -747,7 +750,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (seededToDelete.Length > 0)
         {
-            // Delete related occurrences first (if any), then the cron jobs
+            foreach (var definitionId in seededToDelete.Order())
+            {
+                await cronSet
+                    .Where(x => x.Id == definitionId)
+                    .ExecuteUpdateAsync(
+                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            // Parent rows are locked above in canonical order; delete children before parents for FK safety.
             await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
@@ -769,16 +783,43 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var existingByFunction = existing
             .GroupBy(c => c.Function, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var changedDefinitionIds = new List<Guid>();
+        var orderedCronJobs = cronJobs
+            .Select(x =>
+                (
+                    x.Function,
+                    x.Expression,
+                    Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
+                        ? existingDefinition.Id
+                        : JobsSeedId.ForCronSeed(x.Function)
+                )
+            )
+            .OrderBy(x => x.Id)
+            .ToArray();
 
-        foreach (var (function, expression) in cronJobs)
+        foreach (var (function, expression, _) in orderedCronJobs)
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
                 // Update expression if it changed
                 if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
                 {
-                    cron.Expression = expression;
-                    cron.UpdatedAt = now;
+                    await cronSet
+                        .Where(x => x.Id == cron.Id)
+                        .ExecuteUpdateAsync(
+                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
+
+                    if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                    {
+                        cron.Expression = expression;
+                        cron.ScheduleRevision++;
+                        cron.UpdatedAt = now;
+                        changedDefinitionIds.Add(cron.Id);
+                    }
                 }
             }
             else
@@ -803,6 +844,31 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            if (changedDefinitionIds.Count > 0)
+            {
+                await dbContext
+                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                    .Where(x =>
+                        changedDefinitionIds.Contains(x.CronJobId)
+                        && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                    )
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.Status, JobStatus.Skipped)
+                                .SetProperty(x => x.ExecutedAt, now)
+                                .SetProperty(x => x.UpdatedAt, now)
+                                .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                .SetProperty(x => x.OwnerId, _ => null)
+                                .SetProperty(x => x.LockedUntil, _ => null),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         }
         catch (DbUpdateException ex)
         {

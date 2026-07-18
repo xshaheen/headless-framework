@@ -218,6 +218,7 @@ public sealed class JobSchedulerTests : TestBase
             new RecurringJobOptions
             {
                 Description = "Daily invoice",
+                TimeZoneId = "America/New_York",
                 Retries = 2,
                 RetryIntervals = [30],
                 OnNodeDeath = NodeDeathPolicy.Retry,
@@ -230,6 +231,7 @@ public sealed class JobSchedulerTests : TestBase
         captured.Function.Should().Be("typed");
         captured.Expression.Should().Be("0 0 2 * * *");
         captured.Description.Should().Be("Daily invoice");
+        captured.TimeZoneId.Should().Be("America/New_York");
         captured.Retries.Should().Be(2);
         captured.RetryIntervals.Should().Equal(30);
         JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!).Should().Be(request);
@@ -248,11 +250,17 @@ public sealed class JobSchedulerTests : TestBase
                 return Task.FromResult(captured);
             });
 
-        await scheduler.ScheduleRecurringAsync(_RequestlessDescriptor, "0 */5 * * * *", cancellationToken: AbortToken);
+        await scheduler.ScheduleRecurringAsync(
+            _RequestlessDescriptor,
+            "0 */5 * * * *",
+            new RecurringJobOptions { TimeZoneId = "Etc/UTC" },
+            AbortToken
+        );
 
         captured.Should().NotBeNull();
         captured.Function.Should().Be("requestless");
         captured.Request.Should().BeNull();
+        captured.TimeZoneId.Should().Be("Etc/UTC");
     }
 
     [Fact]
@@ -399,7 +407,7 @@ public sealed class JobSchedulerTests : TestBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task cron_control_restarts_only_when_the_transition_is_accepted(bool accepted)
+    public async Task should_restart_cron_control_only_when_transition_is_accepted(bool accepted)
     {
         var internalManager = Substitute.For<IInternalJobManager>();
         var hostScheduler = Substitute.For<IJobsHostScheduler>();
