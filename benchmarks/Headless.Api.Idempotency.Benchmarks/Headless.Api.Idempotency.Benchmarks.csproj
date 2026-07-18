@@ -9,4 +9,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
+  </ItemGroup>
 </Project>

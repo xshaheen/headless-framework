@@ -3,6 +3,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using BenchmarkDotNet.Attributes;
+using Headless.IO;
 using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.Idempotency.Benchmarks;
@@ -62,7 +63,7 @@ public class RequestBufferingBenchmarks
     private async Task<int> _BufferAndFingerprintOneAsync()
     {
         var context = new DefaultHttpContext();
-        context.Request.Body = new NonSeekableReadStream(_payload);
+        context.Request.Body = new NonSeekableStream(new MemoryStream(_payload, writable: false));
         context.Request.EnableBuffering(BufferThreshold);
 
         if (!context.Request.Body.CanSeek)
@@ -92,45 +93,6 @@ public class RequestBufferingBenchmarks
         {
             ArrayPool<byte>.Shared.Return(buffer);
             await context.Request.Body.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    private sealed class NonSeekableReadStream(byte[] payload) : Stream
-    {
-        private readonly MemoryStream _inner = new(payload, writable: false);
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => _inner.Length;
-
-        public override long Position
-        {
-            get => _inner.Position;
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush() { }
-
-        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
-
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            _inner.ReadAsync(buffer, cancellationToken);
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _inner.Dispose();
-            }
-
-            base.Dispose(disposing);
         }
     }
 }

@@ -6,6 +6,7 @@ using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
+using Headless.IO;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -1055,7 +1056,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var body = Enumerable.Range(1, bodyLength).Select(static value => (byte)value).ToArray();
         var middleware = CreateMiddleware(options: options, cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
-        context.Request.Body = new NonSeekableRequestBodyStream(body);
+        context.Request.Body = new NonSeekableStream(new MemoryStream(body, writable: false));
         byte[]? handlerBody = null;
 
         await middleware.InvokeAsync(
@@ -1066,7 +1067,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 bufferingStream.InMemory.Should().Be(expectedInMemory);
                 (bufferingStream.TempFileName is null).Should().Be(expectedInMemory);
                 bufferingStream.Position.Should().Be(0);
-                using var buffer = new MemoryStream();
+                await using var buffer = new MemoryStream();
                 await bufferingStream.CopyToAsync(buffer, AbortToken);
                 handlerBody = buffer.ToArray();
             }
@@ -1795,9 +1796,4 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Received(1)
             .RemoveAsync(Arg.Any<string>(), Arg.Is<CancellationToken>(c => !c.IsCancellationRequested));
     }
-}
-
-file sealed class NonSeekableRequestBodyStream(byte[] bytes) : MemoryStream(bytes)
-{
-    public override bool CanSeek => false;
 }
