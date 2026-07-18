@@ -8,15 +8,14 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.EntityFramework" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
 </Project>

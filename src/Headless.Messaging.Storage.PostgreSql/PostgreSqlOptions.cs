@@ -1,24 +1,49 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Runtime;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
-/// PostgreSQL-specific configuration for the messaging outbox storage backend.
-/// Extends <c>PostgreSqlEntityFrameworkMessagingOptions</c> with the raw-ADO connection
-/// settings used when the storage is not wired through an EF Core <c>DbContext</c>.
+/// PostgreSQL-specific configuration for the raw ADO.NET messaging storage backend.
 /// </summary>
 [PublicAPI]
-public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOptions
+public sealed class PostgreSqlOptions
 {
+    public const string DefaultSchema = "messaging";
+
+    /// <summary>PostgreSQL maximum identifier length for schema names.</summary>
+    public const int MaxSchemaLength = StorageIdentifier.PostgreSql.IdentifierMaxLength;
+
+    /// <summary>Gets or sets the schema used when creating messaging database objects.</summary>
+    public string Schema
+    {
+        get;
+        set
+        {
+            Argument.IsNotNullOrWhiteSpace(value);
+            Argument.IsLessThanOrEqualTo(
+                value.Length,
+                MaxSchemaLength,
+                $"Schema name must not exceed {MaxSchemaLength} chars"
+            );
+            Argument.Matches(
+                value,
+                StorageIdentifier.PostgreSql.IdentifierPattern,
+                $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)"
+            );
+
+            field = value;
+        }
+    } = DefaultSchema;
+
+    /// <summary>Gets or sets the maximum length for the Owner column.</summary>
+    public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
+
     /// <summary>
     /// Gets or sets the database's connection string that will be used to store database entities.
     /// </summary>
@@ -46,6 +71,8 @@ public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOption
     /// </para>
     /// </summary>
     public TimeSpan? DdlCommandTimeout { get; set; }
+
+    internal string Version { get; set; } = null!;
 
     /// <summary>
     /// Creates an Npgsql connection from the configured data source.
@@ -87,59 +114,5 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
             .GreaterThanOrEqualTo(TimeSpan.Zero)
             .When(x => x.DdlCommandTimeout is not null)
             .WithMessage("DdlCommandTimeout must be greater than or equal to zero (zero or null means no timeout).");
-    }
-}
-
-internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceScopeFactory)
-    : IConfigureOptions<PostgreSqlOptions>
-{
-    public void Configure(PostgreSqlOptions options)
-    {
-        if (options.DbContextType == null)
-        {
-            return;
-        }
-
-        if (
-            RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(options.DbContextType)
-            || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(options.DbContextType)
-        )
-        {
-            throw new InvalidOperationException(
-                "We detected that you are using IOutboxBus or IOutboxQueue in DbContext, please change the configuration to use the storage extension directly to avoid circular references! eg:  x.UsePostgreSql()"
-            );
-        }
-
-        using var scope = serviceScopeFactory.CreateScope();
-        var provider = scope.ServiceProvider;
-        using var dbContext = (DbContext)provider.GetRequiredService(options.DbContextType);
-
-        var coreOptions = dbContext.GetService<IDbContextOptions>();
-        var extension = coreOptions.Extensions.First(x => x.Info.IsDatabaseProvider);
-#pragma warning disable REFL003 // The member does not exist
-#pragma warning disable REFL017 // Don't use name of wrong member
-        options.DataSource =
-            extension.GetType().GetProperty(nameof(options.DataSource))?.GetValue(extension) as NpgsqlDataSource;
-        if (options.DataSource == null)
-        {
-            options.ConnectionString =
-                extension.GetType().GetProperty(nameof(options.ConnectionString))?.GetValue(extension) as string;
-        }
-#pragma warning restore REFL017 // Don't use name of wrong member
-#pragma warning restore REFL003 // The member does not exist
-
-        // Fail loud at configure time when the reflection extraction produced neither a DataSource
-        // nor a ConnectionString. Without this the failure surfaces far away as the validator's
-        // generic "requires either a DataSource or ConnectionString" message at ValidateOnStart,
-        // hiding the real cause (the Npgsql EF Core provider renamed/restructured these properties).
-        if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
-        {
-            throw new InvalidOperationException(
-                "Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
-                    + $"'{extension.GetType().FullName}' for DbContext '{options.DbContextType.FullName}'. The reflected "
-                    + $"properties '{nameof(options.DataSource)}'/'{nameof(options.ConnectionString)}' returned null — "
-                    + "the Npgsql EF Core provider may have renamed or restructured them."
-            );
-        }
     }
 }

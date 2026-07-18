@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Storage.SqlServer.EntityFramework;
 using Headless.Testing.Tests;
-using SqlServerEntityFrameworkMessagingOptions = Headless.Messaging.Storage.SqlServer.SqlServerEntityFrameworkMessagingOptions;
 
 namespace Tests;
 

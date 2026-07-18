@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
@@ -82,7 +83,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
-        object? dbTransaction = null,
+        DbTransaction? dbTransaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -390,7 +391,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
-        object? dbTransaction = null,
+        DbTransaction? dbTransaction = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -436,7 +437,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
-        object? dbTransaction = null,
+        DbTransaction? dbTransaction = null,
         CancellationToken cancellationToken = default
     )
     {

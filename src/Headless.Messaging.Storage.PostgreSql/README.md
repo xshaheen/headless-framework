@@ -4,11 +4,11 @@ PostgreSQL outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+Provides durable raw ADO.NET message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
 
 ## Key Features
 
-- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Provider-neutral storage**: no EF Core or commit-coordination dependency
 - **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
@@ -23,6 +23,8 @@ Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stam
 ```bash
 dotnet add package Headless.Messaging.Storage.PostgreSql
 ```
+
+For `UseEntityFramework<TContext>()` and the automatically coordinated transactional outbox, also install `Headless.Messaging.Storage.PostgreSql.EntityFramework`.
 
 ## Quick Start
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -153,7 +154,7 @@ internal sealed partial class InMemoryDataStorage
     }
 
     public ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {

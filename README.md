@@ -365,7 +365,9 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 | Package | Description |
 |---------|-------------|
 | [Headless.Messaging.Storage.PostgreSql](src/Headless.Messaging.Storage.PostgreSql/README.md) | PostgreSQL message persistence |
+| [Headless.Messaging.Storage.PostgreSql.EntityFramework](src/Headless.Messaging.Storage.PostgreSql.EntityFramework/README.md) | Binds PostgreSQL message persistence to an EF Core context and transactional outbox |
 | [Headless.Messaging.Storage.SqlServer](src/Headless.Messaging.Storage.SqlServer/README.md) | SQL Server message persistence |
+| [Headless.Messaging.Storage.SqlServer.EntityFramework](src/Headless.Messaging.Storage.SqlServer.EntityFramework/README.md) | Binds SQL Server message persistence to an EF Core context and transactional outbox |
 | [Headless.Messaging.InMemoryStorage](src/Headless.Messaging.InMemoryStorage/README.md) | Ephemeral storage (dev/testing) |
 
 ### Jobs

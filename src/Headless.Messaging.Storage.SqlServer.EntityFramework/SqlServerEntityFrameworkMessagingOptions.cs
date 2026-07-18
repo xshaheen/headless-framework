@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Messaging.Persistence;
 
-namespace Headless.Messaging.Storage.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer.EntityFramework;
 
 [PublicAPI]
 public partial class SqlServerEntityFrameworkMessagingOptions
@@ -54,11 +54,6 @@ public partial class SqlServerEntityFrameworkMessagingOptions
     public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
 
     /// <summary>
-    /// EF DbContext
-    /// </summary>
-    internal Type? DbContextType { get; set; }
-
-    /// <summary>
     /// Gets or sets whether the transactional (atomic) outbox is enabled for this EF-context storage path.
     /// Default <see langword="true" />: a publish issued inside a coordinated transaction writes its outbox row in
     /// the same DB transaction and is discarded on rollback (commit coordination, the interceptor attach, and the
@@ -67,9 +62,4 @@ public partial class SqlServerEntityFrameworkMessagingOptions
     /// transactional by default.
     /// </summary>
     public bool EnableTransactionalOutbox { get; set; } = true;
-
-    /// <summary>
-    /// Data version
-    /// </summary>
-    internal string Version { get; set; } = null!;
 }

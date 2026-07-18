@@ -425,9 +425,16 @@
       "headless.messaging.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[7.0.2, )"
+        }
+      },
+      "headless.messaging.storage.sqlserver.entityframework": {
+        "type": "Project",
+        "dependencies": {
           "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )",
+          "Headless.Messaging.Storage.SqlServer": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
         }
       },

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 
@@ -29,7 +30,7 @@ public interface IDispatcher : IProcessingServer
     Task EnqueueToScheduler(
         MediumMessage message,
         DateTimeOffset publishTime,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     );
 }
