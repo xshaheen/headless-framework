@@ -3,9 +3,10 @@
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Jobs.Infrastructure;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
-public static class PaginationExtensions
+public static class HeadlessJobsPaginationExtensions
 {
     /// <summary>
     /// Converts an IQueryable to a paginated list

@@ -7,7 +7,7 @@ namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension methods for <see cref="DbContext"/>.</summary>
 [PublicAPI]
-public static class DbContextExtensions
+public static class HeadlessDbContextExtensions
 {
     /// <summary>
     /// Resolves <typeparamref name="T"/> from the EF Core internal service provider, returning

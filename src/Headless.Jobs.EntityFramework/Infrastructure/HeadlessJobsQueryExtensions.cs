@@ -3,9 +3,10 @@
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 
-namespace Headless.Jobs.Infrastructure;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
-public static class JobsQueryExtensions
+public static class HeadlessJobsQueryExtensions
 {
     /// <summary>
     /// Selects acquirable non-terminal rows using the caller-supplied clock. EF runtime claim paths use the internal

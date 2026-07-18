@@ -12,7 +12,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// Extension members for applying dynamic, string-based or <c>OrderBy</c>-descriptor ordering to an
 /// <see cref="IQueryable{T}"/>.
 /// </summary>
-public static class OrderExtensions
+public static class HeadlessOrderExtensions
 {
     extension<T>(IQueryable<T> source)
     {

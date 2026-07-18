@@ -9,7 +9,7 @@ namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension method for materializing a data-grid query result.</summary>
 [PublicAPI]
-public static class DataGridExtensions
+public static class HeadlessDataGridExtensions
 {
     /// <summary>
     /// Applies the ordering and paging from <paramref name="request"/> to the query and materializes the

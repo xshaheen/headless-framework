@@ -1,14 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Permissions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
-public static class PermissionsModelBuilderExtensions
+public static class HeadlessPermissionsModelBuilderExtensions
 {
     extension(ModelBuilder modelBuilder)
     {

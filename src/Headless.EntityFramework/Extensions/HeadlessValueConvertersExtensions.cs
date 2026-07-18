@@ -9,7 +9,7 @@ namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>A static class providing methods to configure EF value converts for Primitive types.</summary>
 [PublicAPI]
-public static class ValueConvertersExtensions
+public static class HeadlessValueConvertersExtensions
 {
     private const string _TypeName = "AddPrimitivesValueConvertersExtensions";
     private const string _MethodName = "AddPrimitivePropertyConversions";
