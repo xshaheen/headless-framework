@@ -24,6 +24,7 @@ public static class SetupEntityFrameworkMessaging
     {
         Argument.IsNotNull(builder);
 
+        builder.AddCommitCoordination();
         builder.Services.TryAddSingleton<IntegrationEventPublishInvokerCache>();
         builder.Services.TryAddScoped<IHeadlessOutboxDispatcher, OutboxIntegrationEventDispatcher>();
 
