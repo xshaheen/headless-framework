@@ -3,6 +3,8 @@
 using FluentValidation.Results;
 using Headless.Primitives;
 
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
+
 namespace FluentValidation;
 
 /// <summary>FluentValidation integration helpers for the Headless error descriptor model.</summary>

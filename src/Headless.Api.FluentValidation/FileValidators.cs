@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FileSignatures;
-using FluentValidation.Resources;
+using Headless.Api.FluentValidation.Resources;
 using Microsoft.AspNetCore.Http;
+
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
 
 namespace FluentValidation;
 

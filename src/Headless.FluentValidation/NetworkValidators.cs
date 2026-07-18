@@ -2,7 +2,9 @@
 
 using System.Net;
 using System.Net.Sockets;
-using FluentValidation.Resources;
+using Headless.FluentValidation;
+
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
 
 namespace FluentValidation;
 

@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation.Resources;
 using Headless.Constants;
+using Headless.FluentValidation;
+
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
 
 namespace FluentValidation;
 

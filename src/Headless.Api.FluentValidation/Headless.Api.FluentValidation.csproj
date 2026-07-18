@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>FluentValidation integration for Headless API.</Description>
     <PackageTags>headless;api;fluentvalidation;dotnet</PackageTags>
-    <RootNamespace>FluentValidation</RootNamespace>
+    <RootNamespace>Headless.Api.FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
+
 namespace FluentValidation;
 
 /// <summary>
