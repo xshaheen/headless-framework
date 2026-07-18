@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class PostgresDistributedLockSetupTests : TestBase
+public sealed class PostgreSqlDistributedLockSetupTests : TestBase
 {
     [Fact]
     public async Task should_register_mutex_and_reader_writer_providers()
@@ -61,7 +61,7 @@ public sealed class PostgresDistributedLockSetupTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () => provider.GetRequiredService<IOptions<PostgresDistributedLockOptions>>().Value;
+        var act = () => provider.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value;
 
         // then
         act.Should().Throw<OptionsValidationException>();

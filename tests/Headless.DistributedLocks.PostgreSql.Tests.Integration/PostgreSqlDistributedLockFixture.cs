@@ -7,9 +7,9 @@ namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class PostgresDistributedLockFixture
+public sealed class PostgreSqlDistributedLockFixture
     : HeadlessPostgreSqlFixture,
-        ICollectionFixture<PostgresDistributedLockFixture>
+        ICollectionFixture<PostgreSqlDistributedLockFixture>
 {
     public string ConnectionString => Container.GetConnectionString();
 
