@@ -18,6 +18,7 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
 using Headless.Jobs.Transactions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -50,7 +51,18 @@ public static class SetupJobs
             tickerExecutionContext,
             schedulerOptionsBuilder
         );
-        optionsBuilder?.Invoke(optionInstance);
+        var discoveryParticipant = JobFunctionProvider.BeginDiscovery();
+        try
+        {
+            optionsBuilder?.Invoke(optionInstance);
+        }
+        catch (Exception exception)
+        {
+            JobFunctionProvider.AbandonDiscovery(discoveryParticipant, exception);
+            throw;
+        }
+
+        JobFunctionProvider.CompleteDiscovery(discoveryParticipant);
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
         // lease that is already expired, defeating duplicate-suppression entirely (KTD2).
@@ -58,6 +70,7 @@ public static class SetupJobs
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
+        _ = schedulerOptionsBuilder.ResolveCancellationObservationInterval();
         Ensure.True(
             schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
             "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
@@ -128,6 +141,7 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
+            services.AddSingleton<JobsExecutionCancellationRegistry>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();
             services.AddSingleton(sp =>
             {
@@ -152,6 +166,9 @@ public static class SetupJobs
 
         services.AddSingleton<IJobFunctionConcurrencyGate, JobFunctionConcurrencyGate>();
         services.AddSingleton<IJobsInstrumentation, LoggerInstrumentation>();
+        services.TryAddSingleton<JobFunctionRegistry>(provider =>
+            JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
+        );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services);

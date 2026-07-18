@@ -16,6 +16,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly RestartThrottleManager _restartThrottle;
     private readonly IInternalJobManager _internalJobsManager;
     private readonly JobsExecutionContext _executionContext;
+    private readonly JobFunctionRegistry _functionRegistry;
     private SafeCancellationTokenSource? _schedulerLoopCancellationTokenSource;
 
 #pragma warning disable CA2213 // Justification = "Owned by the DI container as a singleton; disposed on host shutdown."
@@ -32,6 +33,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
     public JobsSchedulerBackgroundService(
         JobsExecutionContext executionContext,
+        JobFunctionRegistry functionRegistry,
         JobsExecutionTaskHandler taskHandler,
         JobsTaskScheduler taskScheduler,
         IInternalJobManager internalJobsManager,
@@ -42,6 +44,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
+        _functionRegistry = Argument.IsNotNull(functionRegistry);
         _taskHandler = Argument.IsNotNull(taskHandler);
         _taskScheduler = Argument.IsNotNull(taskScheduler);
         _internalJobsManager = Argument.IsNotNull(internalJobsManager);
@@ -113,7 +116,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             }
             finally
             {
-                _executionContext.SetFunctions(functions: null);
+                _executionContext.ClearFunctions();
                 _schedulerLoopCancellationTokenSource?.Dispose();
                 _schedulerLoopCancellationTokenSource = null;
             }
@@ -150,21 +153,21 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         .ConfigureAwait(false);
                 }
 
-                _executionContext.SetFunctions(functions: null);
+                _executionContext.ClearFunctions();
             }
 
             var (timeRemaining, functions) = await _internalJobsManager
                 .GetNextJobs(cancellationToken)
                 .ConfigureAwait(false);
 
-            _executionContext.SetFunctions(functions);
+            _executionContext.SetFunctions(functions, _functionRegistry);
 
             TimeSpan sleepDuration;
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
             {
                 sleepDuration = TimeSpan.FromDays(1);
                 _executionContext.SetNextPlannedOccurrence(dt: null);
-                _executionContext.SetFunctions(functions: null);
+                _executionContext.ClearFunctions();
             }
             else
             {

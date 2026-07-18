@@ -11,10 +11,7 @@ namespace Headless.AuditLog;
 /// The composite primary key <c>(CreatedAt, Id)</c> is designed for time-range partitioning.
 /// JSON columns round-trip CLR values as <see cref="System.Text.Json.JsonElement"/> on read;
 /// use <c>GetDecimal()</c>, <c>GetInt32()</c>, and similar APIs for typed access.
-/// Decorated with <see cref="AuditIgnoreAttribute"/> to prevent recursive capture when
-/// <see cref="AuditLogOptions.AuditByDefault"/> is enabled.
 /// </remarks>
-[AuditIgnore] // Prevent recursive capture when AuditByDefault is enabled
 public sealed class AuditLogEntry
 {
     /// <summary>Auto-generated sequential ID.</summary>

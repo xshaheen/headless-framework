@@ -146,6 +146,7 @@ public static class JobMiddlewareRegistry
     private static ExecuteRegistration[] _execute = [];
 
     /// <summary>Registers generated schedule dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterSchedule(
         string identity,
         string? function,
@@ -153,11 +154,13 @@ public static class JobMiddlewareRegistry
         JobScheduleMiddlewareDispatch dispatch
     )
     {
-        _ThrowIfFrozen();
-        _ScheduleRegistrations.Add(new(identity, function, priority, dispatch));
+        JobFunctionProvider.RegisterMiddleware(() =>
+            _ScheduleRegistrations.Add(new(identity, function, priority, dispatch))
+        );
     }
 
     /// <summary>Registers generated execute dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
+    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
     public static void RegisterExecute(
         string identity,
         string? function,
@@ -165,8 +168,9 @@ public static class JobMiddlewareRegistry
         JobExecuteMiddlewareDispatch dispatch
     )
     {
-        _ThrowIfFrozen();
-        _ExecuteRegistrations.Add(new(identity, function, priority, dispatch));
+        JobFunctionProvider.RegisterMiddleware(() =>
+            _ExecuteRegistrations.Add(new(identity, function, priority, dispatch))
+        );
     }
 
     internal static Task DispatchScheduleAsync(
@@ -181,7 +185,7 @@ public static class JobMiddlewareRegistry
         CancellationToken cancellationToken
     ) => _DispatchExecute(context, next, cancellationToken);
 
-    internal static void Freeze()
+    internal static void FreezeUnderProviderLock()
     {
         _schedule = _Order(_ScheduleRegistrations);
         _execute = _Order(_ExecuteRegistrations);
@@ -190,7 +194,7 @@ public static class JobMiddlewareRegistry
 
     // The generated registrations are process-global. Unit tests that exercise alternate generated chains reset this
     // state inside the non-parallel Jobs helper collection, keeping the production API frozen after startup.
-    internal static void ResetForTests()
+    internal static void ResetUnderProviderLock()
     {
         _frozen = false;
         _ScheduleRegistrations.Clear();
@@ -245,17 +249,7 @@ public static class JobMiddlewareRegistry
 
     private static T[] _Order<T>(IEnumerable<T> registrations)
         where T : IRegistration =>
-        registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal).ToArray();
-
-    private static void _ThrowIfFrozen()
-    {
-        if (_frozen)
-        {
-            throw new InvalidOperationException(
-                "Jobs middleware registration is frozen after JobFunctionProvider.Build()."
-            );
-        }
-    }
+        [.. registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal)];
 
     private interface IRegistration
     {

@@ -19,6 +19,8 @@ internal sealed class JobsExecutionTaskHandler
     private readonly TimeProvider _timeProvider;
     private readonly IJobsInstrumentation _jobsInstrumentation;
     private readonly IInternalJobManager _internalJobsManager;
+    private readonly JobFunctionRegistry _functionRegistry;
+    private readonly JobsExecutionCancellationRegistry _cancellationRegistry;
     private readonly ILogger<JobsExecutionTaskHandler> _logger;
 
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
@@ -27,6 +29,7 @@ internal sealed class JobsExecutionTaskHandler
     // #461: how long a running job may tolerate unestablished coordination membership before the renewal loop treats
     // it as a lost lease — the lease window, after which the row is certainly being reclaimed elsewhere.
     private readonly TimeSpan _leaseDuration;
+    private readonly TimeSpan _cancellationObservationInterval;
     private readonly JobsRetryOptions _retryOptions;
     private readonly JobsRetryPipeline _retryPipeline;
 
@@ -35,6 +38,8 @@ internal sealed class JobsExecutionTaskHandler
         TimeProvider timeProvider,
         IJobsInstrumentation jobsInstrumentation,
         IInternalJobManager internalJobsManager,
+        JobFunctionRegistry functionRegistry,
+        JobsExecutionCancellationRegistry cancellationRegistry,
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
         JobsRetryOptions? retryOptions = null
@@ -44,9 +49,12 @@ internal sealed class JobsExecutionTaskHandler
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
         _internalJobsManager = internalJobsManager;
+        _functionRegistry = functionRegistry;
+        _cancellationRegistry = cancellationRegistry;
         _logger = logger;
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
         _leaseDuration = schedulerOptions.LeaseDuration;
+        _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(_retryOptions, timeProvider, logger);
     }
@@ -187,15 +195,18 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         var stopWatch = new Stopwatch();
-        // CA2000: ownership is registered into JobsCancellationTokenManager and the CTS is disposed on every exit
+        // CA2000: ownership is registered into the per-host execution registry and the CTS is disposed on every exit
         // path below (after StopRenewalAsync stops the renewal loop that references it).
 #pragma warning disable CA2000
-        var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cancellationTokenSource = new CancellationTokenSource();
 #pragma warning restore CA2000
 
         // IMPORTANT: Register the job FIRST, before creating the SkipIfAlreadyRunningAction callback
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
-        JobsCancellationTokenManager.AddTickerCancellationToken(cancellationTokenSource, context, isDue);
+        var cancellationRegistration = _cancellationRegistry.Register(cancellationTokenSource, context);
+        await using var hostShutdownRegistration = cancellationToken.Register(() =>
+            _cancellationRegistry.TrySignalHostShutdown(cancellationRegistration)
+        );
 
         var jobFunctionContext = new JobFunctionContext
         {
@@ -204,9 +215,6 @@ internal sealed class JobsExecutionTaskHandler
             Type = context.Type,
             IsDue = isDue,
             ScheduledFor = context.ExecutionTime,
-            // The running job invokes this action during execution (before any exit path disposes the CTS — see the
-            // CA2000 note above), so the captured cancellationTokenSource is alive whenever the closure runs.
-            RequestCancelOperationAction = () => _ = cancellationTokenSource.CancelAsync(),
             CronOccurrenceOperations = new CronOccurrenceOperations
             {
                 SkipIfAlreadyRunningAction = () =>
@@ -220,10 +228,7 @@ internal sealed class JobsExecutionTaskHandler
                     // Since we're already registered, we need to exclude ourselves from the check
                     var isRunning =
                         context.ParentId.HasValue
-                        && JobsCancellationTokenManager.IsParentRunningExcludingSelf(
-                            context.ParentId.Value,
-                            context.JobId
-                        );
+                        && _cancellationRegistry.IsParentRunningExcludingSelf(context.ParentId.Value, context.JobId);
 
                     if (isRunning)
                     {
@@ -237,7 +242,7 @@ internal sealed class JobsExecutionTaskHandler
         // backoff wait). A renewal affecting 0 rows means the lease was lost (reclaimed / owner changed /
         // terminalized); the loop then cancels cancellationTokenSource, cancelling the running job (U1/U2/KTD3).
         using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = _RenewLeaseLoopAsync(context, cancellationTokenSource, renewalCts.Token);
+        var renewalTask = _RenewLeaseLoopAsync(context, cancellationRegistration, renewalCts.Token);
         var renewalStopped = false;
 
         async Task stopRenewalAsync()
@@ -266,250 +271,375 @@ internal sealed class JobsExecutionTaskHandler
 #pragma warning restore ERP022, VSTHRD003
         }
 
-        Exception? lastException = null;
-        var lastFailureRetryable = false;
-        var success = false;
+        CancellationTokenSource? observationCts = null;
+        var observationTask = Task.CompletedTask;
+        var observationStopped = false;
 
-        try
+        async Task stopObservationAsync()
         {
-            await _retryPipeline
-                .ExecuteAsync(
-                    context,
-                    async (retryCount, attemptToken) =>
-                    {
-                        jobFunctionContext.RetryCount = retryCount;
-                        jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
-                        stopWatch.Start();
-                        await using var scope = _serviceProvider.CreateAsyncScope();
-                        jobFunctionContext.SetServiceScope(scope);
-                        if (
-                            JobFunctionProvider.JobFunctionDescriptors.TryGetValue(
-                                context.FunctionName,
-                                out var descriptor
-                            )
-                        )
-                        {
-                            JobExecuteNext terminal = token =>
-                                context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
-                            await JobMiddlewareRegistry
-                                .DispatchExecuteAsync(
-                                    new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
-                                    terminal,
-                                    attemptToken
-                                )
-                                .ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            // Older generated assemblies can still supply a cached registration without descriptor
-                            // metadata. Preserve their execution path while new generated assemblies use middleware.
-                            await context
-                                .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
-                                .ConfigureAwait(false);
-                        }
-                        success = true;
-                    },
-                    async (retryCount, exception, retryToken) =>
-                    {
-                        context.SetProperty(x => x.RetryCount, retryCount);
-                        var affected = await _internalJobsManager
-                            .UpdateTickerAsync(context, retryToken)
-                            .ConfigureAwait(false);
-                        context.ResetUpdateProps();
-                        if (affected == 0)
-                        {
-                            context.LeaseLost = true;
-                            await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
-                            throw new OperationCanceledException(cancellationTokenSource.Token);
-                        }
-
-                        await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
-                    },
-                    retryable => lastFailureRetryable = retryable,
-                    cancellationTokenSource.Token
-                )
-                .ConfigureAwait(false);
-        }
-        // Only cancellation tied to this job (its own token / lease loss) is classified as Cancelled; a foreign
-        // OperationCanceledException thrown by user code (e.g. a provider timeout) falls through to the generic
-        // failure path below so it terminalizes as Failed instead of Cancelled (PR #643 fix, preserved across the
-        // Polly pipeline rewrite).
-        catch (OperationCanceledException ex)
-            when (context.LeaseLost || cancellationTokenSource.IsCancellationRequested)
-        {
-            if (context.LeaseLost)
+            if (observationStopped)
             {
-                // #1/#463: lease loss leaves the row InProgress for recovery and prevents stale writes.
-                _logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
-                await stopRenewalAsync().ConfigureAwait(false);
-                cancellationTokenSource.Dispose();
-                JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
             }
 
-            context
-                .SetProperty(x => x.Status, JobStatus.Cancelled)
-                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
-                .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-                .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
-
-            // Add cancellation tags to activity
-            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
-            jobActivity?.SetTag("headless.job.cancellation.reason", "Task was cancelled");
-
-            // Log job cancelled
-            _jobsInstrumentation.LogJobCancelled(context.JobId, context.FunctionName, "Task was cancelled");
-
-            if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
+            observationStopped = true;
+            if (observationCts is null)
             {
-                await handler
-                    .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, cancellationToken)
+                return;
+            }
+
+            await observationCts.CancelAsync().ConfigureAwait(false);
+#pragma warning disable ERP022, VSTHRD003 // Teardown is bounded to the locally owned observer task.
+            try
+            {
+                await observationTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // The observer logs store failures itself; teardown must not replace the execution outcome.
+            }
+#pragma warning restore ERP022, VSTHRD003
+        }
+
+        var executionReleased = false;
+
+        async Task releaseExecutionAsync()
+        {
+            if (executionReleased)
+            {
+                return;
+            }
+
+            executionReleased = true;
+            await stopObservationAsync().ConfigureAwait(false);
+            await stopRenewalAsync().ConfigureAwait(false);
+            _cancellationRegistry.TryRemove(cancellationRegistration);
+            cancellationTokenSource.Dispose();
+            observationCts?.Dispose();
+        }
+
+        bool executionOwnsRegistration() =>
+            !context.LeaseLost
+            && cancellationRegistration.Cause != JobsExecutionCancellationCause.LeaseLost
+            && _cancellationRegistry.IsCurrent(cancellationRegistration);
+
+        async Task<bool> beginCompletionAsync()
+        {
+            await stopObservationAsync().ConfigureAwait(false);
+            await stopRenewalAsync().ConfigureAwait(false);
+            return _cancellationRegistry.TryBeginCompletion(cancellationRegistration);
+        }
+
+        try
+        {
+            if (context.Type == JobType.TimeJob)
+            {
+                bool? cancellationRequested;
+                try
+                {
+                    cancellationRequested = await _internalJobsManager
+                        .IsTimeJobCancellationRequestedAsync(context.JobId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogJobCancellationInitialObservationFailed(exception, context.JobId, context.FunctionName);
+                    return;
+                }
+
+                if (cancellationRequested is null)
+                {
+                    context.LeaseLost = true;
+                    _cancellationRegistry.TrySignalLeaseLoss(cancellationRegistration);
+                    _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
+                    return;
+                }
+
+                if (cancellationRequested.Value)
+                {
+                    _cancellationRegistry.TrySignalDurableCancellation(cancellationRegistration);
+                }
+                else
+                {
+#pragma warning disable CA2000 // Disposed by releaseExecutionAsync in the enclosing finally block.
+                    observationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
+                    observationTask = _ObserveDurableCancellationLoopAsync(
+                        context,
+                        cancellationRegistration,
+                        observationCts.Token
+                    );
+                }
+            }
+
+            if (!executionOwnsRegistration())
+            {
+                return;
+            }
+
+            Exception? lastException = null;
+            var lastFailureRetryable = false;
+            var success = false;
+
+            try
+            {
+                await _retryPipeline
+                    .ExecuteAsync(
+                        context,
+                        async (retryCount, attemptToken) =>
+                        {
+                            jobFunctionContext.RetryCount = retryCount;
+                            jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
+                            stopWatch.Start();
+                            await using var scope = _serviceProvider.CreateAsyncScope();
+                            jobFunctionContext.SetServiceScope(scope);
+                            if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
+                            {
+                                Task terminal(CancellationToken token) =>
+                                    context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
+                                await JobMiddlewareRegistry
+                                    .DispatchExecuteAsync(
+                                        new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
+                                        terminal,
+                                        attemptToken
+                                    )
+                                    .ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                // Older generated assemblies can still supply a cached registration without descriptor
+                                // metadata. Preserve their execution path while new generated assemblies use middleware.
+                                await context
+                                    .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
+                                    .ConfigureAwait(false);
+                            }
+                            success = true;
+                        },
+                        async (retryCount, exception, retryToken) =>
+                        {
+                            if (!executionOwnsRegistration())
+                            {
+                                throw new OperationCanceledException(cancellationTokenSource.Token);
+                            }
+
+                            context.SetProperty(x => x.RetryCount, retryCount);
+                            var affected = await _internalJobsManager
+                                .UpdateTickerAsync(context, retryToken)
+                                .ConfigureAwait(false);
+                            context.ResetUpdateProps();
+                            if (affected == 0)
+                            {
+                                context.LeaseLost = true;
+                                _cancellationRegistry.TrySignalLeaseLoss(cancellationRegistration);
+                                throw new OperationCanceledException(cancellationTokenSource.Token);
+                            }
+
+                            await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
+                        },
+                        retryable => lastFailureRetryable = retryable,
+                        cancellationTokenSource.Token
+                    )
                     .ConfigureAwait(false);
             }
+            // Only cooperative exit with this execution's exact token after a durable request becomes Cancelled. Host
+            // shutdown and lease loss leave the row non-terminal for recovery; foreign cancellation remains a failure.
+            catch (OperationCanceledException ex)
+                when (cancellationTokenSource.IsCancellationRequested
+                    && ex.CancellationToken == cancellationTokenSource.Token
+                )
+            {
+                if (!executionOwnsRegistration())
+                {
+                    // #1/#463: lease loss leaves the row InProgress for recovery and prevents stale writes.
+                    _logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
+                    return;
+                }
 
-            // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
-            // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
-            await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+                if (cancellationRegistration.Cause == JobsExecutionCancellationCause.HostShutdown)
+                {
+                    return;
+                }
 
-            // Clean up and exit early on cancellation
-            await stopRenewalAsync().ConfigureAwait(false);
-            cancellationTokenSource?.Dispose();
-            JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
-            return;
-        }
-        catch (TerminateExecutionException ex)
-        {
+                if (cancellationRegistration.Cause == JobsExecutionCancellationCause.DurableCancellation)
+                {
+                    if (!await beginCompletionAsync().ConfigureAwait(false))
+                    {
+                        return;
+                    }
+
+                    context
+                        .SetProperty(x => x.Status, JobStatus.Cancelled)
+                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                        .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
+                        .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
+
+                    jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+                    jobActivity?.SetTag("headless.job.cancellation.reason", "Durable cancellation requested");
+
+                    _jobsInstrumentation.LogJobCancelled(
+                        context.JobId,
+                        context.FunctionName,
+                        "Durable cancellation requested"
+                    );
+
+                    if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
+                    {
+                        await handler
+                            .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+
+                    await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+
+                    return;
+                }
+
+                lastException = ex;
+            }
+            catch (TerminateExecutionException ex)
+            {
+                if (!executionOwnsRegistration() || !await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                context
+                    .SetProperty(x => x.Status, ex.Status)
+                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                    .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
+
+                if (ex.InnerException != null)
+                {
+                    context.SetProperty(x => x.ExceptionDetails, ex.InnerException.Message);
+                    jobActivity?.SetTag("headless.job.skip.reason", ex.InnerException.Message);
+                }
+                else
+                {
+                    context.SetProperty(x => x.ExceptionDetails, ex.Message);
+                    jobActivity?.SetTag("headless.job.skip.reason", ex.Message);
+                }
+
+                // Add skip tags to activity
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+
+                // Log job skipped
+                _jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
+
+                // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
+                // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
+                await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+
+                // Clean up and exit early on termination
+                return;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+            }
+
+            if (!executionOwnsRegistration())
+            {
+                // User delegates are cooperative by contract but can ignore cancellation. The
+                // ownership fence remains authoritative even when such a delegate returns or throws
+                // after renewal detected lease loss: do not attempt terminal writes or callbacks.
+                _logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
+                return;
+            }
+
+            if (!await beginCompletionAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            stopWatch.Stop();
+
             context
-                .SetProperty(x => x.Status, ex.Status)
-                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
-                .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
+                .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
+                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime);
 
-            if (ex.InnerException != null)
+            if (success)
             {
-                context.SetProperty(x => x.ExceptionDetails, ex.InnerException.Message);
-                jobActivity?.SetTag("headless.job.skip.reason", ex.InnerException.Message);
+                context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Succeeded);
+
+                // Add success tags to activity
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+                jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
+
+                // Log job completed successfully
+                _jobsInstrumentation.LogJobCompleted(
+                    context.JobId,
+                    context.FunctionName,
+                    stopWatch.ElapsedMilliseconds,
+                    success: true
+                );
+
+                // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+                var affected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (affected == 0)
+                {
+                    // #462: the success write matched 0 rows — the row was reclaimed/terminalized by a sweep (e.g. a
+                    // GC/thread-pool stall outlasted the lease before this write committed). The job actually succeeded,
+                    // but the durable record now shows the sweep's terminal status (Failed/Skipped). Log so operators can
+                    // reconcile instead of treating the recorded failure as real and manually re-triggering — the very
+                    // double-run that MarkFailed/Skip exist to prevent.
+                    _logger.LogJobCompletionFencedAfterSuccess(context.JobId, context.FunctionName);
+                }
             }
-            else
+            else if (lastException != null)
             {
-                context.SetProperty(x => x.ExceptionDetails, ex.Message);
-                jobActivity?.SetTag("headless.job.skip.reason", ex.Message);
+                context
+                    .SetProperty(x => x.Status, JobStatus.Failed)
+                    .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException));
+
+                // Add failure tags to activity
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+                jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
+                jobActivity?.SetTag("exception.type", lastException.GetType().Name);
+
+                // Log job failed
+                _jobsInstrumentation.LogJobFailed(
+                    context.JobId,
+                    context.FunctionName,
+                    lastException,
+                    context.RetryCount
+                );
+                _jobsInstrumentation.LogJobCompleted(
+                    context.JobId,
+                    context.FunctionName,
+                    stopWatch.ElapsedMilliseconds,
+                    success: false
+                );
+
+                await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
+
+                // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+                var affected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (affected > 0)
+                {
+                    // The terminal row no longer owns a renewable lease. Stop renewal before invoking
+                    // user code so the renewal loop cannot mistake the expected terminal fence for loss.
+                    await stopRenewalAsync().ConfigureAwait(false);
+                }
+
+                var retryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
+                if (affected > 0 && lastFailureRetryable && context.RetryCount >= retryBudget)
+                {
+                    await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                }
             }
-
-            // Add skip tags to activity
-            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
-
-            // Log job skipped
-            _jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
-
-            // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
-            // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
-            await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
-
-            // Clean up and exit early on termination
-            await stopRenewalAsync().ConfigureAwait(false);
-            cancellationTokenSource.Dispose();
-            JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
-            return;
         }
-        catch (Exception ex)
+        finally
         {
-            lastException = ex;
+            await releaseExecutionAsync().ConfigureAwait(false);
         }
-
-        if (context.LeaseLost)
-        {
-            // User delegates are cooperative by contract but can ignore cancellation. The
-            // ownership fence remains authoritative even when such a delegate returns or throws
-            // after renewal detected lease loss: do not attempt terminal writes or callbacks.
-            _logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
-            await stopRenewalAsync().ConfigureAwait(false);
-            cancellationTokenSource.Dispose();
-            JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
-            return;
-        }
-
-        stopWatch.Stop();
-
-        context
-            .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-            .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime);
-
-        if (success)
-        {
-            context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Succeeded);
-
-            // Add success tags to activity
-            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
-            jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
-
-            // Log job completed successfully
-            _jobsInstrumentation.LogJobCompleted(
-                context.JobId,
-                context.FunctionName,
-                stopWatch.ElapsedMilliseconds,
-                success: true
-            );
-
-            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
-            var affected = await _internalJobsManager
-                .UpdateTickerAsync(context, CancellationToken.None)
-                .ConfigureAwait(false);
-            if (affected == 0)
-            {
-                // #462: the success write matched 0 rows — the row was reclaimed/terminalized by a sweep (e.g. a
-                // GC/thread-pool stall outlasted the lease before this write committed). The job actually succeeded,
-                // but the durable record now shows the sweep's terminal status (Failed/Skipped). Log so operators can
-                // reconcile instead of treating the recorded failure as real and manually re-triggering — the very
-                // double-run that MarkFailed/Skip exist to prevent.
-                _logger.LogJobCompletionFencedAfterSuccess(context.JobId, context.FunctionName);
-            }
-        }
-        else if (lastException != null)
-        {
-            context
-                .SetProperty(x => x.Status, JobStatus.Failed)
-                .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException));
-
-            // Add failure tags to activity
-            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
-            jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
-            jobActivity?.SetTag("exception.type", lastException.GetType().Name);
-
-            // Log job failed
-            _jobsInstrumentation.LogJobFailed(context.JobId, context.FunctionName, lastException, context.RetryCount);
-            _jobsInstrumentation.LogJobCompleted(
-                context.JobId,
-                context.FunctionName,
-                stopWatch.ElapsedMilliseconds,
-                success: false
-            );
-
-            await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
-
-            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
-            var affected = await _internalJobsManager
-                .UpdateTickerAsync(context, CancellationToken.None)
-                .ConfigureAwait(false);
-            if (affected > 0)
-            {
-                // The terminal row no longer owns a renewable lease. Stop renewal before invoking
-                // user code so the renewal loop cannot mistake the expected terminal fence for loss.
-                await stopRenewalAsync().ConfigureAwait(false);
-            }
-
-            var retryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
-            if (affected > 0 && lastFailureRetryable && context.RetryCount >= retryBudget)
-            {
-                await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        // Stop renewal before disposing the job CTS it cancels on loss.
-        await stopRenewalAsync().ConfigureAwait(false);
-
-        // IMPORTANT: Always dispose CancellationTokenSource to prevent memory leaks
-        cancellationTokenSource?.Dispose();
-        JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
     }
 
     private static string _GetActivityName(JobType type)
@@ -691,9 +821,48 @@ internal sealed class JobsExecutionTaskHandler
 #pragma warning restore ERP022, VSTHRD003
     }
 
+    private async Task _ObserveDurableCancellationLoopAsync(
+        JobExecutionState context,
+        JobsExecutionCancellationRegistration registration,
+        CancellationToken observationToken
+    )
+    {
+        while (!observationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _timeProvider.Delay(_cancellationObservationInterval, observationToken).ConfigureAwait(false);
+                var cancellationRequested = await _internalJobsManager
+                    .IsTimeJobCancellationRequestedAsync(context.JobId, observationToken)
+                    .ConfigureAwait(false);
+
+                if (cancellationRequested is null)
+                {
+                    context.LeaseLost = true;
+                    _cancellationRegistry.TrySignalLeaseLoss(registration);
+                    return;
+                }
+
+                if (cancellationRequested.Value)
+                {
+                    _cancellationRegistry.TrySignalDurableCancellation(registration);
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (observationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogJobCancellationObservationFailed(exception, context.JobId, context.FunctionName);
+            }
+        }
+    }
+
     private async Task _RenewLeaseLoopAsync(
         JobExecutionState context,
-        CancellationTokenSource jobCts,
+        JobsExecutionCancellationRegistration registration,
         CancellationToken renewalLoopToken
     )
     {
@@ -737,7 +906,7 @@ internal sealed class JobsExecutionTaskHandler
                 // sweep (#1) rather than writing a terminal Cancelled, then best-effort cancel the running job (a job
                 // ignoring its token still relies on OnNodeDeath for correctness).
                 context.LeaseLost = true;
-                await jobCts.CancelAsync().ConfigureAwait(false);
+                _cancellationRegistry.TrySignalLeaseLoss(registration);
                 return;
             }
         }
@@ -1036,5 +1205,31 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string function,
         double timeoutSeconds
+    );
+
+    [LoggerMessage(
+        EventId = 3111,
+        Level = LogLevel.Warning,
+        Message = "Initial durable-cancellation observation failed for job {JobId} ({Function}); user code was not "
+            + "started and the row remains InProgress for recovery."
+    )]
+    public static partial void LogJobCancellationInitialObservationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3112,
+        Level = LogLevel.Warning,
+        Message = "Durable-cancellation observation failed for job {JobId} ({Function}); the bounded observer will "
+            + "retry on its next interval."
+    )]
+    public static partial void LogJobCancellationObservationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
     );
 }
