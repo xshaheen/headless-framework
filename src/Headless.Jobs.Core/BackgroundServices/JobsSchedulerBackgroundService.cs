@@ -52,7 +52,10 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _timeProvider = Argument.IsNotNull(timeProvider);
         _ownerIdentity = Argument.IsNotNull(ownerIdentity);
         _logger = Argument.IsNotNull(logger);
-        _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
+        _restartThrottle = new RestartThrottleManager(
+            () => _schedulerLoopCancellationTokenSource?.Cancel(),
+            timeProvider
+        );
     }
 
     public override Task StartAsync(CancellationToken ct)

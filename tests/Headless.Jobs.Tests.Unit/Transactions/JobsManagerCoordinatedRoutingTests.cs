@@ -48,6 +48,44 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task add_stamps_the_entire_chain_with_injected_identity_and_time_services()
+    {
+        var now = new DateTimeOffset(2026, 7, 18, 9, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(now);
+        var rootId = Guid.Parse("01981f40-29c0-7000-8000-000000000001");
+        var childId = Guid.Parse("01981f40-29c0-7000-8000-000000000002");
+        var grandChildId = Guid.Parse("01981f40-29c0-7000-8000-000000000003");
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(rootId, childId, grandChildId);
+        var sut = _CreateSut(
+            CoordinatorMode.None,
+            withWriter: false,
+            timeProvider: timeProvider,
+            guidGenerator: guidGenerator
+        );
+        TimeJobEntity job = FluentChainJobBuilder<TimeJobEntity>
+            .BeginWith(parent => parent.SetFunction(_FunctionName).SetExecutionTime(now.UtcDateTime.AddHours(1)))
+            .WithFirstChild(child => child.SetFunction(_FunctionName))
+            .WithFirstGrandChild(grandChild => grandChild.SetFunction(_FunctionName));
+
+        var result = await sut.Time.AddAsync(job, AbortToken);
+
+        var child = result.Children.Should().ContainSingle().Subject;
+        var grandChild = child.Children.Should().ContainSingle().Subject;
+        result.Id.Should().Be(rootId);
+        result.ParentId.Should().BeNull();
+        child.Id.Should().Be(childId);
+        child.ParentId.Should().Be(rootId);
+        grandChild.Id.Should().Be(grandChildId);
+        grandChild.ParentId.Should().Be(childId);
+        foreach (var item in new[] { result, child, grandChild })
+        {
+            item.CreatedAt.Should().Be(now.UtcDateTime);
+            item.UpdatedAt.Should().Be(now.UtcDateTime);
+        }
+    }
+
+    [Fact]
     public async Task schedule_middleware_that_omits_next_rejects_before_direct_or_coordinated_write()
     {
         using (_ReplaceScheduleDispatch((_, _, _) => Task.CompletedTask))
@@ -656,6 +694,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         bool withWriter,
         bool dispatcherEnabled = false,
         TimeProvider? timeProvider = null,
+        IGuidGenerator? guidGenerator = null,
         TimeSpan? postCommitDrainTimeout = null
     )
     {
@@ -690,7 +729,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             persistence,
             scheduler,
             timeProvider ?? TimeProvider.System,
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            guidGenerator ?? new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,

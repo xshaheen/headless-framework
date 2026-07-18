@@ -136,12 +136,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        _StampTimeJobTree(entity, now);
 
-        if (entity.Id == Guid.Empty)
-        {
-            entity.Id = guidGenerator.Create();
-        }
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        _StampTimeJobTree(entity, now);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -153,16 +152,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 ? timeProvider.GetUtcNow().UtcDateTime
                 : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
-
         // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a mis-wired
         // provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the write and any
         // persistence fault propagate too, so on the coordinated path the caller's transaction rolls back rather than
         // committing without the job row, the exact divergence this feature prevents.
         var coordinated = _TryCaptureCoordinatedContext();
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         var executionTime = entity.ExecutionTime.Value;
 
         if (coordinated is { } context)
@@ -231,12 +226,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        _StampJob(entity, now);
 
-        if (entity.Id == Guid.Empty)
-        {
-            entity.Id = guidGenerator.Create();
-        }
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        _StampJob(entity, now);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -250,9 +244,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             throw new JobValidatorException($"Cannot parse expression {entity.Expression}");
         }
-
-        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
@@ -526,10 +517,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         List<string>? errors = null;
         foreach (var entity in entities)
         {
-            if (entity.Id == Guid.Empty)
-            {
-                entity.Id = guidGenerator.Create();
-            }
+            _StampTimeJobTree(entity, now);
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
             {
@@ -540,13 +528,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampTimeJobTree(entity, now);
 
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
-
-            // Align with single AddTimeJobAsync: initialize timestamps
-            entity.CreatedAt = now;
-            entity.UpdatedAt = now;
 
             if (entity.ExecutionTime.Value <= now.AddSeconds(1))
             {
@@ -634,10 +619,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         foreach (var entity in entities)
         {
-            if (entity.Id == Guid.Empty)
-            {
-                entity.Id = guidGenerator.Create();
-            }
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+            _StampJob(entity, now);
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
@@ -646,6 +629,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampJob(entity, now);
 
             if (
                 _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
@@ -655,9 +639,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 (errors ??= []).Add($"Cannot parse expression {entity.Expression}");
                 continue;
             }
-
-            entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-            entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
             validEntities.Add(entity);
             nextOccurrences.Add(nextOccurrence);
@@ -705,6 +686,40 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         return validEntities;
+    }
+
+    private void _StampTimeJobTree(TTimeJob root, DateTime now)
+    {
+        var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, null));
+
+        while (pending.TryPop(out var current))
+        {
+            if (!visited.Add(current.Job))
+            {
+                throw new JobValidatorException("A time-job chain cannot contain cycles or reuse one child instance.");
+            }
+
+            _StampJob(current.Job, now);
+            current.Job.ParentId = current.ParentId;
+
+            foreach (var child in current.Job.Children.Reverse())
+            {
+                pending.Push((child, current.Job.Id));
+            }
+        }
+    }
+
+    private void _StampJob(BaseJobEntity entity, DateTime now)
+    {
+        if (entity.Id == Guid.Empty)
+        {
+            entity.Id = guidGenerator.Create();
+        }
+
+        entity.CreatedAt = now;
+        entity.UpdatedAt = now;
     }
 
     private async Task<JobResult<List<TTimeJob>>> _UpdateTimeJobsBatchAsync(

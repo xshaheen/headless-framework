@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -181,6 +182,7 @@ internal static class NativeJobsClaimCompatibility
 internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
@@ -401,7 +403,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             {
                 var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
                 {
-                    Id = Guid.NewGuid(),
+                    Id = guidGenerator.Create(),
                     Status = JobStatus.Idle,
                     OwnerId = null,
                     ExecutionTime = executionTime,
