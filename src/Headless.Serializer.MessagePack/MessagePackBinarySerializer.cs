@@ -45,7 +45,7 @@ namespace Headless.Serializer;
 /// payloads where the MessagePack-CSharp fast path is intentional. Ignored when <paramref name="options"/> are
 /// supplied. Defaults to <see langword="true"/>.
 /// </param>
-public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null, bool untrustedData = true)
+public sealed class MessagePackBinarySerializer(MessagePackSerializerOptions? options = null, bool untrustedData = true)
     : IBinarySerializer
 {
     private readonly MessagePackSerializerOptions _options = _ResolveOptions(options, untrustedData);

@@ -53,7 +53,7 @@ Two contract points are hardened on the now-public surface, both documented in t
 
 ### 4. MessagePack untrustedData: safe default that can never relax an explicit choice
 
-`new MessagePackSerializer()` defaults to `MessagePackSecurity.UntrustedData`, so the public serializer is safe for cross-service caches, external message producers, and other payloads outside the current process trust boundary. For trusted in-process payloads where the MessagePack-CSharp fast path is intentional, construct `new MessagePackSerializer(untrustedData: false)` or supply explicit `MessagePackSerializerOptions` with the desired `Security`.
+`new MessagePackBinarySerializer()` defaults to `MessagePackSecurity.UntrustedData`, so the public serializer is safe for cross-service caches, external message producers, and other payloads outside the current process trust boundary. For trusted in-process payloads where the MessagePack-CSharp fast path is intentional, construct `new MessagePackBinarySerializer(untrustedData: false)` or supply explicit `MessagePackSerializerOptions` with the desired `Security`.
 
 The switch configures **only the default (no-options) path**. When you supply your own `MessagePackSerializerOptions`, the serializer uses them verbatim and `untrustedData` is ignored — so the flag can never override or relax a `Security` level you set explicitly. Set `Security` on your options when you supply them.
 
@@ -115,16 +115,16 @@ return RedisCacheEntryFrame.Encode(new ReadOnlySequence<byte>(buffer.WrittenMemo
 
 ```csharp
 // Default safe path for untrusted payloads.
-services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
+services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>();
 
 // Trusted payload fast path only when the trust boundary is explicit:
-services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: false));
+services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(untrustedData: false));
 
 // Supplied options own security; untrustedData is ignored here and cannot relax your choice:
 var options = MessagePackSerializerOptions.Standard
     .WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);
-services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
+services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(options));
 ```
 
 ## Related

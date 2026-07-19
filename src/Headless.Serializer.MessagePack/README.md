@@ -8,7 +8,7 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 
 ## Key Features
 
-- `MessagePackSerializer` — `IBinarySerializer` implementation
+- `MessagePackBinarySerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
 - Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
 - Applies `MessagePackSecurity.UntrustedData` by default; pass `untrustedData: false` only for trusted payloads where the MessagePack-CSharp fast path is intentional
@@ -29,17 +29,17 @@ dotnet add package Headless.Serializer.MessagePack
 
 ```csharp
 // Default: contractless, no compression, MessagePackSecurity.UntrustedData:
-builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
+builder.Services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>();
 
 // Trusted payload fast path only when the trust boundary is explicit:
-builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: false));
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(untrustedData: false));
 
 // With LZ4 compression:
 var options = MessagePackSerializerOptions
     .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithCompression(MessagePackCompression.Lz4BlockArray);
 
-builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(options));
 
 // Consume via abstraction — use extension helpers to avoid Stream boilerplate:
 public sealed class CacheWriter(IBinarySerializer serializer)
@@ -64,7 +64,7 @@ var options = MessagePackSerializerOptions
     .WithSecurity(MessagePackSecurity.UntrustedData);
 
 // Equivalent, without hand-building options:
-var serializer = new MessagePackSerializer(untrustedData: true);
+var serializer = new MessagePackBinarySerializer(untrustedData: true);
 ```
 
 ## Dependencies

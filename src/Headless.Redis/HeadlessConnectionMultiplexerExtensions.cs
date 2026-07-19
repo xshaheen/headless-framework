@@ -6,7 +6,7 @@ namespace Headless.Redis;
 
 /// <summary>Utility extensions for <see cref="IConnectionMultiplexer"/>.</summary>
 [PublicAPI]
-public static class ConnectionMultiplexerExtensions
+public static class HeadlessConnectionMultiplexerExtensions
 {
     /// <summary>
     /// Returns the total number of keys stored across all writable (non-replica) endpoints.

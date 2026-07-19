@@ -4,13 +4,12 @@ using System.Buffers;
 using System.Reflection;
 using Headless.Serializer;
 using MessagePack;
-using MessagePackSerializer = Headless.Serializer.MessagePackSerializer;
 
 namespace Tests;
 
-public sealed class MessagePackSerializerTests
+public sealed class MessagePackBinarySerializerTests
 {
-    private readonly MessagePackSerializer _serializer = new();
+    private readonly MessagePackBinarySerializer _serializer = new();
 
     public sealed class Person
     {
@@ -314,7 +313,7 @@ public sealed class MessagePackSerializerTests
     public void untrusted_data_serializer_roundtrips()
     {
         // given — the untrustedData default hardens deserialization; it must not change round-trip correctness.
-        var serializer = new MessagePackSerializer(untrustedData: true);
+        var serializer = new MessagePackBinarySerializer(untrustedData: true);
         var person = new Person { Name = "Trusted", Age = 21 };
 
         // when
@@ -331,7 +330,7 @@ public sealed class MessagePackSerializerTests
     public void should_use_untrusted_security_by_default_when_parameterless_serializer()
     {
         // given
-        var serializer = new MessagePackSerializer();
+        var serializer = new MessagePackBinarySerializer();
 
         // when
         var options = _ReadOptions(serializer);
@@ -344,7 +343,7 @@ public sealed class MessagePackSerializerTests
     public void should_use_trusted_security_when_trusted_data_opt_out()
     {
         // given
-        var serializer = new MessagePackSerializer(untrustedData: false);
+        var serializer = new MessagePackBinarySerializer(untrustedData: false);
 
         // when
         var options = _ReadOptions(serializer);
@@ -360,7 +359,7 @@ public sealed class MessagePackSerializerTests
         var suppliedOptions = MessagePackSerializerOptions.Standard.WithSecurity(MessagePackSecurity.TrustedData);
 
         // when
-        var serializer = new MessagePackSerializer(suppliedOptions);
+        var serializer = new MessagePackBinarySerializer(suppliedOptions);
         var resolvedOptions = _ReadOptions(serializer);
 
         // then
@@ -401,9 +400,9 @@ public sealed class MessagePackSerializerTests
         return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
     }
 
-    private static MessagePackSerializerOptions _ReadOptions(MessagePackSerializer serializer)
+    private static MessagePackSerializerOptions _ReadOptions(MessagePackBinarySerializer serializer)
     {
-        var field = typeof(MessagePackSerializer).GetField(
+        var field = typeof(MessagePackBinarySerializer).GetField(
             "_options",
             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
         );
