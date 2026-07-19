@@ -120,7 +120,8 @@ public sealed class JobsDashboardRepositoryTests : TestBase
             Substitute.For<IJobsDispatcher>(),
             JobFunctionRegistryBuilder.Build([], [], []),
             timeProvider,
-            Substitute.For<IServiceProvider>()
+            Substitute.For<IServiceProvider>(),
+            JobsRequestSerializationOptions.Default
         );
 
         return (repository, persistence);

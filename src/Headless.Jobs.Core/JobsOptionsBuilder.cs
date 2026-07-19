@@ -39,7 +39,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     internal bool RequestGZipCompressionEnabled { get; set; }
 
-    internal int RequestGZipMaxDecompressedBytes { get; set; } = JobsHelper.DefaultMaxDecompressedRequestBytes;
+    internal int RequestGZipMaxDecompressedBytes { get; set; } =
+        JobsRequestSerializationOptions.DefaultMaxDecompressedRequestBytes;
 
     /// <summary>
     /// Controls whether code-defined cron jobs are seeded on startup.
@@ -84,7 +85,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.CronSeederAction => CronSeederAction;
 
     internal Action<IServiceCollection>? ExternalProviderConfigServiceAction { get; set; }
-    internal Action<IServiceCollection>? DashboardServiceAction { get; set; }
+
+    /// <summary>
+    /// Deferred Dashboard registration set by the Dashboard package's <c>AddDashboard</c> extension and
+    /// replayed by <c>AddHeadlessJobs</c> with the composed per-host
+    /// <see cref="JobsRequestSerializationOptions"/> so Dashboard components share the host's request
+    /// serialization settings.
+    /// </summary>
+    internal Action<IServiceCollection, JobsRequestSerializationOptions>? DashboardServiceAction { get; set; }
     internal Type? JobExceptionHandlerType { get; private set; }
     internal JobsRetryOptions RetryOptions { get; } = new();
 
@@ -138,7 +146,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> UseGZipCompression()
     {
-        return UseGZipCompression(JobsHelper.DefaultMaxDecompressedRequestBytes);
+        return UseGZipCompression(JobsRequestSerializationOptions.DefaultMaxDecompressedRequestBytes);
     }
 
     /// <summary>

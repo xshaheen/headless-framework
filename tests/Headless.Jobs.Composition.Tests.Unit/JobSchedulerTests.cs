@@ -68,7 +68,10 @@ public sealed class JobSchedulerTests : TestBase
         captured.Retries.Should().Be(3);
         captured.RetryIntervals.Should().Equal(5, 10);
         captured.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
-        JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!).Should().Be(request);
+        JobsHelper
+            .ReadJobRequest<SampleRequest>(captured.Request!, JobsRequestSerializationOptions.Default)
+            .Should()
+            .Be(request);
         await timeManager.Received(1).AddAsync(Arg.Any<TimeJobEntity>(), AbortToken);
     }
 
@@ -96,7 +99,8 @@ public sealed class JobSchedulerTests : TestBase
             cronManager,
             registry,
             Substitute.For<IInternalJobManager>(),
-            Substitute.For<IJobsHostScheduler>()
+            Substitute.For<IJobsHostScheduler>(),
+            JobsRequestSerializationOptions.Default
         );
 
         var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
@@ -136,7 +140,8 @@ public sealed class JobSchedulerTests : TestBase
             cronManager,
             registry,
             Substitute.For<IInternalJobManager>(),
-            Substitute.For<IJobsHostScheduler>()
+            Substitute.For<IJobsHostScheduler>(),
+            JobsRequestSerializationOptions.Default
         );
 
         await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
@@ -232,7 +237,10 @@ public sealed class JobSchedulerTests : TestBase
         captured.Description.Should().Be("Daily invoice");
         captured.Retries.Should().Be(2);
         captured.RetryIntervals.Should().Equal(30);
-        JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!).Should().Be(request);
+        JobsHelper
+            .ReadJobRequest<SampleRequest>(captured.Request!, JobsRequestSerializationOptions.Default)
+            .Should()
+            .Be(request);
     }
 
     [Fact]
@@ -317,65 +325,45 @@ public sealed class JobSchedulerTests : TestBase
     [Fact]
     public async Task should_use_configured_json_options_and_gzip_serialization()
     {
-        var previousOptions = JobsHelper.RequestJsonSerializerOptions;
-        var previousCompression = JobsHelper.UseGZipCompression;
-        var previousMaxDecompressedBytes = JobsHelper.MaxDecompressedRequestBytes;
-
-        try
+        var serializationOptions = new JobsRequestSerializationOptions
         {
-            JobsHelper.RequestJsonSerializerOptions = new JsonSerializerOptions
+            SerializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+            UseGZipCompression = true,
+        };
+        var (scheduler, timeManager, _) = _CreateScheduler(serializationOptions);
+        TimeJobEntity? captured = null;
+        timeManager
+            .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
+            .Returns(call =>
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            };
-            JobsHelper.UseGZipCompression = true;
-            var (scheduler, timeManager, _) = _CreateScheduler();
-            TimeJobEntity? captured = null;
-            timeManager
-                .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
-                .Returns(call =>
-                {
-                    captured = call.Arg<TimeJobEntity>();
-                    return Task.FromResult(captured);
-                });
+                captured = call.Arg<TimeJobEntity>();
+                return Task.FromResult(captured);
+            });
 
-            var request = new SampleRequest("compressed");
-            await scheduler.EnqueueAsync(request, cancellationToken: AbortToken);
+        var request = new SampleRequest("compressed");
+        await scheduler.EnqueueAsync(request, cancellationToken: AbortToken);
 
-            captured.Should().NotBeNull();
-            JobsHelper.ReadJobRequestAsString(captured!.Request!).Should().Contain("\"value\"");
-            JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!).Should().Be(request);
-        }
-        finally
-        {
-            JobsHelper.RequestJsonSerializerOptions = previousOptions;
-            JobsHelper.UseGZipCompression = previousCompression;
-            JobsHelper.MaxDecompressedRequestBytes = previousMaxDecompressedBytes;
-        }
+        captured.Should().NotBeNull();
+        JobsHelper.ReadJobRequestAsString(captured!.Request!, serializationOptions).Should().Contain("\"value\"");
+        JobsHelper.ReadJobRequest<SampleRequest>(captured.Request!, serializationOptions).Should().Be(request);
     }
 
     [Fact]
     public void gzip_request_read_enforces_expanded_size_limit()
     {
-        var previousCompression = JobsHelper.UseGZipCompression;
-        var previousMaxDecompressedBytes = JobsHelper.MaxDecompressedRequestBytes;
-
-        try
+        var writeOptions = new JobsRequestSerializationOptions { UseGZipCompression = true };
+        var atLimit = JobsHelper.CreateJobRequest(new byte[100], writeOptions);
+        var aboveLimit = JobsHelper.CreateJobRequest(new byte[101], writeOptions);
+        var readOptions = new JobsRequestSerializationOptions
         {
-            JobsHelper.UseGZipCompression = true;
-            var atLimit = JobsHelper.CreateJobRequest(new byte[100]);
-            var aboveLimit = JobsHelper.CreateJobRequest(new byte[101]);
-            JobsHelper.MaxDecompressedRequestBytes = 100;
+            UseGZipCompression = true,
+            MaxDecompressedRequestBytes = 100,
+        };
 
-            JobsHelper.ReadJobRequestAsString(atLimit).Should().HaveLength(100);
+        JobsHelper.ReadJobRequestAsString(atLimit, readOptions).Should().HaveLength(100);
 
-            var act = () => JobsHelper.ReadJobRequestAsString(aboveLimit);
-            act.Should().Throw<InvalidDataException>().WithMessage("*100 byte limit*");
-        }
-        finally
-        {
-            JobsHelper.UseGZipCompression = previousCompression;
-            JobsHelper.MaxDecompressedRequestBytes = previousMaxDecompressedBytes;
-        }
+        var act = () => JobsHelper.ReadJobRequestAsString(aboveLimit, readOptions);
+        act.Should().Throw<InvalidDataException>().WithMessage("*100 byte limit*");
     }
 
     [Fact]
@@ -392,7 +380,8 @@ public sealed class JobSchedulerTests : TestBase
             cronManager,
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
-            hostScheduler
+            hostScheduler,
+            JobsRequestSerializationOptions.Default
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeTrue();
@@ -415,7 +404,8 @@ public sealed class JobSchedulerTests : TestBase
             cronManager,
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
-            hostScheduler
+            hostScheduler,
+            JobsRequestSerializationOptions.Default
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeFalse();
@@ -506,7 +496,7 @@ public sealed class JobSchedulerTests : TestBase
         IJobScheduler Scheduler,
         ITimeJobManager<TimeJobEntity> TimeManager,
         ICronJobManager<CronJobEntity> CronManager
-    ) _CreateScheduler()
+    ) _CreateScheduler(JobsRequestSerializationOptions? serializationOptions = null)
     {
         var timeManager = Substitute.For<ITimeJobManager<TimeJobEntity>>();
         var cronManager = Substitute.For<ICronJobManager<CronJobEntity>>();
@@ -519,7 +509,8 @@ public sealed class JobSchedulerTests : TestBase
                     ? _RequestlessDescriptor
                     : null,
             Substitute.For<IInternalJobManager>(),
-            Substitute.For<IJobsHostScheduler>()
+            Substitute.For<IJobsHostScheduler>(),
+            serializationOptions: serializationOptions
         );
 
         return (scheduler, timeManager, cronManager);

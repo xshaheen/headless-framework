@@ -82,7 +82,10 @@ public sealed class JobsDashboardRegistryTests : TestBase
                     {
                         Id = jobId,
                         Function = _FunctionName,
-                        Request = JobsHelper.CreateJobRequest(new DashboardRequest("host-registry")),
+                        Request = JobsHelper.CreateJobRequest(
+                            new DashboardRequest("host-registry"),
+                            JobsRequestSerializationOptions.Default
+                        ),
                     }
                 );
 
@@ -128,7 +131,8 @@ public sealed class JobsDashboardRegistryTests : TestBase
             dispatcher,
             registry,
             TimeProvider.System,
-            serviceProvider
+            serviceProvider,
+            JobsRequestSerializationOptions.Default
         );
 
         return (repository, persistence, dispatcher, serviceProvider);
