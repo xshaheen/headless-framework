@@ -9,7 +9,10 @@ namespace Headless.Captcha;
 [PublicAPI]
 public sealed class ReCaptchaOptions
 {
-    /// <summary>The base URL of the reCAPTCHA API. Defaults to the public Google endpoint.</summary>
+    /// <summary>
+    /// The base URL of the reCAPTCHA API. External endpoints require HTTPS; HTTP is accepted only for loopback
+    /// development and test servers. Defaults to the public Google endpoint.
+    /// </summary>
     public string VerifyBaseUrl { get; set; } = "https://www.google.com/";
 
     /// <summary>The reCAPTCHA site key rendered into the client widget/script.</summary>
@@ -23,7 +26,7 @@ internal sealed class ReCaptchaOptionsValidator : AbstractValidator<ReCaptchaOpt
 {
     public ReCaptchaOptionsValidator()
     {
-        RuleFor(x => x.VerifyBaseUrl).HttpUrl();
+        RuleFor(x => x.VerifyBaseUrl).HttpsOrLoopbackHttpUrl();
         RuleFor(x => x.SiteSecret).NotEmpty();
         RuleFor(x => x.SiteKey).NotEmpty();
     }

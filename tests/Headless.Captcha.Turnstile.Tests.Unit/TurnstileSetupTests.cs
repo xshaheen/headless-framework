@@ -71,6 +71,44 @@ public sealed class TurnstileSetupTests
         act.Should().Throw<OptionsValidationException>();
     }
 
+    [Theory]
+    [InlineData("not-a-url")]
+    [InlineData("http://captcha.example.com/")]
+    [InlineData("http://10.0.0.10/")]
+    [InlineData("https://user:password@captcha.example.com/")]
+    public void unsafe_verify_base_url_fails_options_validation(string verifyBaseUrl)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_Section("Turnstile", "k", "s", verifyBaseUrl)));
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var act = () =>
+            serviceProvider
+                .GetRequiredService<IOptionsMonitor<TurnstileOptions>>()
+                .Get(CaptchaConstants.TurnstileProvider);
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData("http://localhost:5000/")]
+    [InlineData("http://127.0.0.1:5000/")]
+    [InlineData("http://[::1]:5000/")]
+    public void loopback_http_verify_base_url_passes_options_validation(string verifyBaseUrl)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_Section("Turnstile", "k", "s", verifyBaseUrl)));
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<TurnstileOptions>>()
+            .Get(CaptchaConstants.TurnstileProvider);
+
+        options.VerifyBaseUrl.Should().Be(verifyBaseUrl);
+    }
+
     [Fact]
     public void resolving_unregistered_name_throws_actionable_error()
     {
@@ -184,17 +222,24 @@ public sealed class TurnstileSetupTests
             .BeAssignableTo<ITurnstileVerifier>();
     }
 
-    private static IConfigurationSection _Section(string section, string key, string secret)
+    private static IConfigurationSection _Section(
+        string section,
+        string key,
+        string secret,
+        string? verifyBaseUrl = null
+    )
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    [$"{section}:SiteKey"] = key,
-                    [$"{section}:SiteSecret"] = secret,
-                }
-            )
-            .Build()
-            .GetSection(section);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [$"{section}:SiteKey"] = key,
+            [$"{section}:SiteSecret"] = secret,
+        };
+
+        if (verifyBaseUrl is not null)
+        {
+            values[$"{section}:VerifyBaseUrl"] = verifyBaseUrl;
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(values).Build().GetSection(section);
     }
 }

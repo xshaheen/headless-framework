@@ -124,7 +124,7 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - Collection validators (unique elements, min/max counts)
 - Geo validators (latitude/longitude)
 - Pagination validators (page index, page size, search query)
-- URL validators (absolute URLs, HTTP/HTTPS) and IP address validators (IPv4/IPv6)
+- URL validators (absolute URLs, HTTP/HTTPS, and HTTPS-or-loopback credential endpoints) and IP address validators (IPv4/IPv6)
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
@@ -149,6 +149,7 @@ public sealed class UserValidator : AbstractValidator<User>
         RuleFor(x => x.PhoneNumber).InternationalPhoneNumber();
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Roles).MinimumElements(1).UniqueElements();
+        RuleFor(x => x.ApiEndpoint).HttpsOrLoopbackHttpUrl(); // HTTPS externally; HTTP only on loopback; no userinfo
     }
 }
 ```
@@ -190,7 +191,7 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
 | Geo | `Latitude`, `Longitude` |
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
 | Network | `Ipv4`, `Ipv6`, `IpAddress` |
 | String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
 | Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable, `TimeProvider`-based) |

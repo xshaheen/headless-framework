@@ -31,6 +31,8 @@ The package adds `AddStandardResilienceHandler()` to the named HTTP client autom
 
 `PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
 
+All Paymob URL options require HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so API credentials and payment tokens cannot be configured for remote plaintext transport.
+
 ## Installation
 
 ```bash
@@ -145,6 +147,11 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 | `SecretKey` | Yes | — | Secret key for the v2 Intentions API. |
 | `ExpirationPeriod` | No | `3600` | Payment token lifetime in seconds (must be > 60). |
 | `TokenRefreshBuffer` | No | `00:55:00` | How early to refresh the auth token (must be < 60 min). |
+| `ApiBaseUrl` | No | `https://accept.paymobsolutions.com/api` | Legacy API base URL. |
+| `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | v2 Intentions endpoint. |
+| `RefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/refund` | Refund endpoint. |
+| `VoidRefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/void` | Void endpoint. |
+| `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
 ## Dependencies
 
