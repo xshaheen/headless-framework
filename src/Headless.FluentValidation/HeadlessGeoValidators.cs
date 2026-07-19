@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for geographic coordinate values.</summary>
 [PublicAPI]
-public static class GeoValidators
+public static class HeadlessGeoValidators
 {
     /// <summary>Validates that the value is a valid latitude in the range [-90, 90].</summary>
     /// <returns>The rule builder options for chaining.</returns>

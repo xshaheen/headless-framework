@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for common string format constraints.</summary>
 [PublicAPI]
-public static class StringsFluentValidationExtensions
+public static class HeadlessStringsFluentValidationExtensions
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     /// <summary>

@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for <see cref="IEnumerable{T}"/> collection properties.</summary>
 [PublicAPI]
-public static class CollectionValidators
+public static class HeadlessCollectionValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     extension<T, TElement>(IRuleBuilder<T, IEnumerable<TElement>> builder)
