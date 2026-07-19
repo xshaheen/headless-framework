@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.ComponentModel;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -14,9 +13,7 @@ namespace Headless.DistributedLocks;
 /// implementation; this one is correct but only signals waiters in the same process.
 /// </summary>
 /// <param name="timeProvider">Clock used for the polling delay; defaults to <see cref="TimeProvider.System"/>.</param>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IReleaseSignal
+internal sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IReleaseSignal
 {
     private readonly ConcurrentDictionary<string, SignalEntry> _signals = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

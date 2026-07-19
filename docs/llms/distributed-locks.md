@@ -611,11 +611,12 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 
 ### Key Features
 
-- `IConnectionScopedLockStorage` for non-blocking session-held lock acquisition and release.
-- `ConnectionScopedDistributedLock` implements `IDistributedLock` over connection-scoped storage.
-- `ConnectionScopedReadWriteLock` implements `IDistributedReadWriteLock` over shared/exclusive storage.
-- `IFencingTokenSource` lets database providers stamp mutex handles with durable sequence-backed fencing tokens.
-- `IReleaseSignal` provides the wake-up seam for provider push notifications plus polling fallback.
+- Internal `IConnectionScopedLockStorage` seam for non-blocking session-held lock acquisition and release.
+- Internal `ConnectionScopedDistributedLock` engine implements `IDistributedLock` over connection-scoped storage.
+- Internal `ConnectionScopedReadWriteLock` engine implements `IDistributedReadWriteLock` over shared/exclusive storage.
+- Internal `IFencingTokenSource` seam lets database providers stamp mutex handles with durable sequence-backed fencing tokens.
+- Internal `IReleaseSignal` seam provides the wake-up hook for provider push notifications plus polling fallback.
+- The engine and seams are internal implementation shared with the first-party PostgreSQL and SQL Server providers via `InternalsVisibleTo` (mirroring `Headless.Coordination.Core.Database`); a custom backend implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions directly.
 
 ### Design Notes
 
@@ -662,9 +663,7 @@ Provides a no-infrastructure backend for code that depends on `IDistributedLock`
 
 ### Key Features
 
-- `InMemoryDistributedLockStorage` implements `IDistributedLockStorage`.
-- `InMemoryDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
-- `InMemoryDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
+- Internal `InMemoryDistributedLockStorage`, `InMemoryDistributedReadWriteLockStorage`, and `InMemoryDistributedSemaphoreStorage` back the three primitives; `UseInMemory()` is the only registration surface.
 - `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
 - Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.

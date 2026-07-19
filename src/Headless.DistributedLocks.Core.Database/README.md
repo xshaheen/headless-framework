@@ -6,11 +6,11 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 
 ## Key Features
 
-- `IConnectionScopedLockStorage` for non-blocking session-held lock acquisition and release.
-- `ConnectionScopedDistributedLock` implements `IDistributedLock` over connection-scoped storage.
-- `ConnectionScopedReadWriteLock` implements `IDistributedReadWriteLock` over shared/exclusive storage.
-- `IFencingTokenSource` lets database providers stamp mutex handles with durable sequence-backed fencing tokens.
-- `IReleaseSignal` provides the wake-up seam for provider push notifications plus polling fallback.
+- Internal `IConnectionScopedLockStorage` seam for non-blocking session-held lock acquisition and release.
+- Internal `ConnectionScopedDistributedLock` engine implements `IDistributedLock` over connection-scoped storage.
+- Internal `ConnectionScopedReadWriteLock` engine implements `IDistributedReadWriteLock` over shared/exclusive storage.
+- Internal `IFencingTokenSource` seam lets database providers stamp mutex handles with durable sequence-backed fencing tokens.
+- Internal `IReleaseSignal` seam provides the wake-up hook for provider push notifications plus polling fallback.
 
 ## Design Notes
 
@@ -20,15 +20,15 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 - Reader-writer locks do not issue fencing tokens; `FencingToken` is `null` for read and write handles.
 - A composite acquisition (`AcquireAllAsync(...)` / `TryAcquireAllAsync(...)`, mutex or reader-writer) over N resources **pins N database connections for the whole duration of the hold**. Connection-scoped locks live only while their session does, so there is no TTL-backed lease that could hold a resource without a live connection — every child of the composite keeps one. Multiplexing does not remove this: contended children fall back to dedicated connections by design. Size the connection pool for the largest composite the application forms, and prefer small sets. This is an operational cost of the connection-scoped model, not a defect.
 
-## Implementing a custom DB provider
+## Provider seams (internal)
 
-This package is an intentional **public extension point**: a third-party backend implements three seams and wires them into the shared `ConnectionScopedDistributedLock`, which owns all portable concerns (retry loop, acquire-timeout contract, jittered polling, waiter caps, fencing-token stamping). You implement only the backend-specific pieces.
+The connection-scoped engine and its seams are **internal implementation infrastructure** shared by the first-party `Headless.DistributedLocks.PostgreSql` and `Headless.DistributedLocks.SqlServer` providers via `InternalsVisibleTo` — mirroring the sibling `Headless.Coordination.Core.Database` package. The engine (`ConnectionScopedDistributedLock` / `ConnectionScopedReadWriteLock`) owns all portable concerns (retry loop, acquire-timeout contract, jittered polling, waiter caps, fencing-token stamping); each first-party provider supplies three seams:
 
-1. **`IConnectionScopedLockStorage`** — the storage seam. `TryAcquireAsync` does a single, non-blocking acquisition of the native primitive (for example `pg_advisory_lock`, `sp_getapplock`) and returns a live `ConnectionScopedLockHandle`, or `null` when the resource is held in a conflicting mode (the provider retries). It must not block waiting for the lock — blocking-with-timeout is the provider's job. Implement release (idempotent), the lock-count / is-locked queries, and the active-locks enumeration.
-2. **`IReleaseSignal`** — the wake-up seam between retry attempts. Back it with a native push channel (for example Postgres `LISTEN/NOTIFY`) so a blocked acquirer wakes promptly on release. **Polling is the correctness fallback**: `WaitAsync` must return by `pollingFallback` even if no signal arrives, so a dropped or missed `PublishAsync` only costs latency — never a stuck acquirer. If you have no push channel, reuse the in-process `PollingReleaseSignal`.
-3. **`IFencingTokenSource`** *(optional)* — stamps exclusive locks with a monotonic fencing token from a durable, strictly-increasing sequence. `NextAsync` returns `null` when no token applies (the handle is then unfenced). Shared (reader) locks never request a token. Omit the source entirely if your backend has no use for fencing.
+1. **`IConnectionScopedLockStorage`** — the storage seam. `TryAcquireAsync` does a single, non-blocking acquisition of the native primitive (for example `pg_advisory_lock`, `sp_getapplock`) and returns a live `ConnectionScopedLockHandle`, or `null` when the resource is held in a conflicting mode (the engine retries). Blocking-with-timeout is the engine's job.
+2. **`IReleaseSignal`** — the wake-up seam between retry attempts, backed by a native push channel (for example Postgres `LISTEN/NOTIFY`) with **polling as the correctness fallback**: `WaitAsync` returns by `pollingFallback` even if no signal arrives, so a dropped or missed `PublishAsync` only costs latency — never a stuck acquirer. `PollingReleaseSignal` is the in-process default.
+3. **`IFencingTokenSource`** *(optional)* — stamps exclusive locks with a monotonic fencing token from a durable, strictly-increasing sequence. Shared (reader) locks never request a token.
 
-Then compose them: construct a `ConnectionScopedDistributedLock` with your storage, release signal, and (optionally) fencing source, and wrap it in a `ConnectionScopedReadWriteLock` to expose read/write locks. See `Headless.DistributedLocks.PostgreSql` for a complete worked example.
+A third-party backend does not implement these seams; it implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions from `Headless.DistributedLocks.Abstractions` directly.
 
 ## Installation
 

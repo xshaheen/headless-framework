@@ -55,8 +55,9 @@ public interface IDistributedLock : IDistributedLockEnvironment
     );
 
     /// <summary>
-    /// Acquires a resource lock for a specified resource this method will block
-    /// until the lock is acquired or the <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
+    /// Attempts to acquire a resource lock for a specified resource, waiting until the lock is acquired or
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> elapses. Returns <see langword="null"/> on
+    /// timeout instead of throwing <see cref="LockAcquisitionTimeoutException"/>.
     /// </summary>
     /// <param name="resource">The resource to acquire the lock for. Must be non-null and non-whitespace.</param>
     /// <param name="options">

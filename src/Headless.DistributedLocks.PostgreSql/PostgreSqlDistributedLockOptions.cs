@@ -24,6 +24,12 @@ public sealed class PostgreSqlDistributedLockOptions
     /// <see cref="ConnectionString"/>. When set, the provider uses this data source as-is and never
     /// disposes it; configure keepalive and pooling on this instance directly.
     /// </summary>
+    /// <remarks>
+    /// This member is deliberately typed as the provider-native <see cref="NpgsqlDataSource"/> rather than an
+    /// abstraction: the provider needs full-fidelity Npgsql behavior (pooling, keepalive, multi-host, and
+    /// <c>StateChange</c> semantics) that a generic <see cref="System.Data.Common.DbDataSource"/> cannot guarantee, and
+    /// this package is Npgsql-specific by contract, so the coupling is intentional.
+    /// </remarks>
     public NpgsqlDataSource? DataSource { get; set; }
 
     /// <summary>
