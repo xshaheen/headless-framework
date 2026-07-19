@@ -325,15 +325,14 @@ public sealed class JobsTaskSchedulerTests : TestBase
         await scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
         await twoStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
-        var thirdAdmission = scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
+        // The third admission parks on the detached lane; QueueAsync itself returns immediately.
+        await scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
         await Task.Delay(100, AbortToken);
 
-        thirdAdmission.IsCompleted.Should().BeFalse();
         startedCount.Should().Be(2);
         maxObservedActive.Should().Be(2);
 
         release.SetResult();
-        await thirdAdmission.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
 
@@ -358,18 +357,224 @@ public sealed class JobsTaskSchedulerTests : TestBase
         );
         await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
+        // A cancelled parked admission is dropped on the detached lane: the work must never run, and the slot it
+        // was waiting for must remain claimable by later admissions (no leak, no ghost execution).
+        var cancelledRan = false;
         using var capacityCts = new CancellationTokenSource();
-        var pendingAdmission = scheduler.QueueAsync(
-            _ => Task.CompletedTask,
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                cancelledRan = true;
+                return Task.CompletedTask;
+            },
             JobPriority.LongRunning,
             capacityCts.Token
         );
         await capacityCts.CancelAsync();
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() => pendingAdmission);
+        await Task.Delay(100, AbortToken);
 
         release.SetResult();
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+
+        var thirdRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                thirdRan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        await thirdRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        cancelledRan.Should().BeFalse();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task long_running_admission_releases_slot_after_work_faults()
+    {
+        // The dedicated-thread finally in _ExecuteLongRunningWorkAsync must release the permit even when the work
+        // throws; otherwise a faulting long-running job would permanently leak its single slot.
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var secondRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Occupy the only long-running slot with work that faults.
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                await Task.Yield();
+                throw new InvalidOperationException("boom");
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        // The fault is swallowed on the dedicated thread. The real release proof is below: if the finally had not
+        // released the slot, the second admission would park forever and never run.
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10)))
+            .Should()
+            .BeTrue();
+
+        // If the slot had leaked, this second long-running admission would park forever.
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                secondRan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        await secondRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task dispose_drops_a_parked_long_running_admission()
+    {
+        // A second long-running admission parks in the detached admission lane when the only slot is occupied.
+        // DisposeAsync cancels the shutdown token linked into that wait, so the parked admission must be dropped
+        // (its work never runs) and disposal must complete rather than hang on the parked waiter.
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Occupy the only long-running slot with a delegate that blocks until released.
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // With no slot free, this admission parks on the detached lane; QueueAsync returns immediately.
+        var droppedRan = false;
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                droppedRan = true;
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+        await Task.Delay(100, AbortToken);
+
+        // Disposal cancels the shutdown token; the parked admission is dropped, never runs, and cannot block
+        // disposal. Release the occupying delegate so the active-task drain can finish.
+        var dispose = scheduler.DisposeAsync().AsTask();
+        release.SetResult();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        await Task.Delay(100, AbortToken);
+        droppedRan.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task saturated_long_running_admission_does_not_block_queueing_other_work()
+    {
+        // Regression for the head-of-line hazard: sequential dispatch loops await QueueAsync per batch item, so a
+        // saturated long-running pool must not park the caller — ordinary-priority work queued after a blocked
+        // long-running admission has to run while that admission is still waiting for a slot.
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var parkedStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var normalRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Occupy the only long-running slot.
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // Pre-fix, this call parked the caller on the admission semaphore and the Normal job below was never
+        // queued until the slot freed — the exact head-of-line shape of a sequential dispatch batch.
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                parkedStarted.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                normalRan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        // The Normal job runs while the second long-running admission is still parked behind the occupied slot.
+        await normalRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        parkedStarted.Task.IsCompleted.Should().BeFalse();
+
+        // Freeing the slot admits the parked work; everything drains.
+        release.SetResult();
+        await parkedStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task saturated_long_running_admission_backlog_is_bounded()
+    {
+        // The detached admission lane must not accumulate waiters without bound: under sustained saturation the
+        // fallback sweep re-dispatches still-parked jobs every lease cycle, so admissions beyond two per slot are
+        // rejected outright and rely on the sweep's re-dispatch instead of parking another waiter.
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executedCount = 0;
+
+        // Occupy the only long-running slot.
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // Cap is two parked admissions per slot: the first two park, the remaining three are rejected outright.
+        for (var i = 0; i < 5; i++)
+        {
+            await scheduler.QueueAsync(
+                _ =>
+                {
+                    Interlocked.Increment(ref executedCount);
+                    return Task.CompletedTask;
+                },
+                JobPriority.LongRunning,
+                AbortToken
+            );
+        }
+
+        release.SetResult();
+        (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromSeconds(10))).Should().BeTrue();
+        await Task.Delay(100, AbortToken);
+
+        executedCount.Should().Be(2);
     }
 
     [Fact]
