@@ -3,7 +3,7 @@
 using FluentValidation.Results;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // FluentValidation integrations intentionally live in the integrated namespace.
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 
 namespace FluentValidation;
 
