@@ -1,4 +1,4 @@
-# Headless.Messaging.InMemoryStorage
+# Headless.Messaging.Storage.InMemory
 
 In-memory outbox storage for testing and development.
 
@@ -20,7 +20,7 @@ InMemoryStorage uses its injected `TimeProvider` for both application-scheduled 
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ## Quick Start

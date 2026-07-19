@@ -11,7 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.InMemoryStorage;
+namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed partial class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,

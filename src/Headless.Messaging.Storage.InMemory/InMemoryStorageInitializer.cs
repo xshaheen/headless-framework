@@ -2,7 +2,7 @@
 
 using Headless.Messaging.Persistence;
 
-namespace Headless.Messaging.InMemoryStorage;
+namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed class InMemoryStorageInitializer : IStorageInitializer
 {

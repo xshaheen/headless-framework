@@ -5,7 +5,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 
-namespace Headless.Messaging.InMemoryStorage;
+namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed partial class InMemoryDataStorage
 {

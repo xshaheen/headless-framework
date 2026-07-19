@@ -3,11 +3,11 @@
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -23,7 +23,7 @@ namespace Tests;
 /// </summary>
 /// <remarks>
 /// InternalsVisibleTo for this project is declared in
-/// <c>Headless.Messaging.InMemoryStorage.csproj</c>, so the test class can reference the
+/// <c>Headless.Messaging.Storage.InMemory.csproj</c>, so the test class can reference the
 /// <c>internal sealed</c> storage and initializer types directly without going through the
 /// DI Setup. Each test gets a fresh storage instance — InMemory state is per-instance, so
 /// no cross-test cleanup is needed beyond letting the storage go out of scope.

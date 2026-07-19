@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.InMemoryStorage, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.Testing
 ---
 
 # Messaging
@@ -95,7 +95,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Configuration](#configuration-9)
     - [Dependencies](#dependencies-9)
     - [Side Effects](#side-effects-9)
-- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
+- [Headless.Messaging.Storage.InMemory](#headlessmessagingstorageinmemory)
     - [Problem Solved](#problem-solved-10)
     - [Key Features](#key-features-10)
     - [Installation](#installation-10)
@@ -458,7 +458,7 @@ The blessed cross-package SPI (the contracts that storage providers, transports,
 ```bash
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ### Quick Start
@@ -1268,7 +1268,7 @@ None.
 
 Registers in-memory transports and consumer client factory. Messages are lost when the process exits.
 
-## Headless.Messaging.InMemoryStorage
+## Headless.Messaging.Storage.InMemory
 
 ### Problem Solved
 
@@ -1284,7 +1284,7 @@ InMemoryStorage uses its injected `TimeProvider` for both application-scheduled 
 ### Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ### Quick Start
@@ -1658,7 +1658,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The p
 
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
-- `Headless.Messaging.InMemoryStorage`
+- `Headless.Messaging.Storage.InMemory`
 
 ### Side Effects
 

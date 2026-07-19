@@ -43,7 +43,7 @@ For a local, dependency-free first run, install the in-memory transport and stor
 ```bash
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ```csharp

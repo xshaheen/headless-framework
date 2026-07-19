@@ -4,7 +4,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Primitives;
 
-namespace Headless.Messaging.InMemoryStorage;
+namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimeProvider timeProvider) : IMonitoringApi
 {
