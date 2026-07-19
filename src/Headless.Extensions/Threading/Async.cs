@@ -7,7 +7,7 @@ namespace Headless.Threading;
 
 /// <summary>Helpers for running asynchronous code with deterministic disposal and synchronous bridging.</summary>
 [PublicAPI]
-public static class AsyncHelper
+public static class Async
 {
     /// <summary>
     /// Executes an asynchronous method with a provided resource and ensures the resource is disposed of regardless

@@ -103,10 +103,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     internal IBlobContainerManager? ContainerManager { get; }
 
     /// <inheritdoc />
-    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="AsyncHelper.RunSync"/> bridges to the async implementation.</remarks>
+    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
     public IReadOnlyCollection<XElement> GetAllElements()
     {
-        return AsyncHelper.RunSync(_GetAllElementsAsync);
+        return Async.RunSync(_GetAllElementsAsync);
     }
 
     private async Task<IReadOnlyCollection<XElement>> _GetAllElementsAsync()
@@ -226,7 +226,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     /// <inheritdoc />
     /// <remarks>
-    /// Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="AsyncHelper.RunSync"/> bridges to the async implementation.
+    /// Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.
     /// The container ensure (when a manager is wired) and the upload run inside one resilience pipeline that retries
     /// up to 4 times on transient <see cref="IOException"/> or <see cref="HttpRequestException"/> failures.
     /// A terminal failure (retries exhausted or a non-retried exception) is wrapped in an
@@ -246,7 +246,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         // being wrapped as a terminal storage failure below.
         var location = new BlobLocation(ContainerName, fileName);
 
-        AsyncHelper.RunSync(() => _StoreElementAsync(element, location));
+        Async.RunSync(() => _StoreElementAsync(element, location));
     }
 
     private async Task _StoreElementAsync(XElement element, BlobLocation location)
