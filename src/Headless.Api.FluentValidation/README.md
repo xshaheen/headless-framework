@@ -62,7 +62,7 @@ public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 No configuration required.
 
 File-validation extensions remain in the `FluentValidation` namespace. Stable file error-code constants and
-localized descriptor factories live in `Headless.Api.FluentValidation.Resources`.
+localized descriptor factories live in `Headless.FluentValidation.Resources`.
 
 ## Dependencies
 

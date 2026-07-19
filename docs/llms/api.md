@@ -656,7 +656,6 @@ using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
 using Headless.Api.Contracts;
-using Headless.FluentValidation;
 using Microsoft.AspNetCore.Http;
 
 public sealed record ProfileRequest(
@@ -686,6 +685,9 @@ public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 ### Configuration
 
 No configuration required.
+
+File-validation extensions remain in the `FluentValidation` namespace. Stable file error-code constants and
+localized descriptor factories live in `Headless.FluentValidation.Resources`.
 
 ### Dependencies
 
