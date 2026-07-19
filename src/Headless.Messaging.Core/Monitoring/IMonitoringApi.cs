@@ -73,42 +73,44 @@ public interface IMonitoringApi
     /// Returns the total number of published message rows in a failed state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the total number of published message rows in a succeeded state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the total number of received message rows in a failed state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the total number of received message rows in a succeeded state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns per-hour succeeded message counts for the last 24 hours, keyed by UTC hour bucket.
+    /// Returns per-hour succeeded message counts for the last 24 hours, keyed by UTC hour bucket
+    /// (a <see cref="DateTimeOffset"/> with zero offset, truncated to the start of the hour).
     /// </summary>
     /// <param name="type">Whether to query the published or received message table.</param>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+    ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlySucceededJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Returns per-hour failed message counts for the last 24 hours, keyed by UTC hour bucket.
+    /// Returns per-hour failed message counts for the last 24 hours, keyed by UTC hour bucket
+    /// (a <see cref="DateTimeOffset"/> with zero offset, truncated to the start of the hour).
     /// </summary>
     /// <param name="type">Whether to query the published or received message table.</param>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+    ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlyFailedJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     );
