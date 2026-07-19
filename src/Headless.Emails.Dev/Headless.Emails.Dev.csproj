@@ -5,11 +5,11 @@
     <PackageTags>headless;emails;dev;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Emails.Azure.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Emails.Aws.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Emails.Mailkit.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Emails.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Providers.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />

@@ -9,7 +9,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
