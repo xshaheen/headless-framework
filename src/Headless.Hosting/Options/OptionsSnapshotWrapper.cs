@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Hosting.Options;
 
 /// <summary>An <see cref="IOptionsSnapshot{TOptions}"/> that always returns a single fixed value.</summary>
 /// <remarks>

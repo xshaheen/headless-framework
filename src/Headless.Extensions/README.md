@@ -15,7 +15,7 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 - **Collections** — `ParallelForEachAsync` (bounded concurrency) and `ForEachAsync` (ordered sequential, with index/cancellation overloads); `DetectChanges` (added/removed/updated/unchanged classification by key); `EquatableArray<T>` (value-equality array wrapper); `ComparerFactory`; `TypeList` / `ITypeList`; `HeadlessEnumerableExtensions` materialization helpers — `AsList` / `AsArray` / `AsICollection` / `AsIList` (→ `IList<T>`) / `AsIReadOnlyCollection` / `AsIReadOnlyList` (→ `IReadOnlyList<T>`) / `AsISet` / `AsHashSet` / `AsDictionary` (return the source as-is when it already matches the requested type, otherwise materialize a copy).
 - **Threading** — `KeyedAsyncLock` (per-key async mutual exclusion, optional timeout-returns-null, sharded, non-reentrant); `HeadlessTaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `WithAggregatedExceptions`, `DelayedAsync`); `HeadlessAsyncExExtensions` (timeout/safe waits over Nito.AsyncEx primitives); `Async.RunSync` / `Async.Using`; `InterlockedExtensions.InterlockedRaiseTo` (lock-free raise-only max on a `ref long` — a CAS loop that never lowers the stored value).
 - **LINQ** — `PredicateBuilder` for composing EF Core predicates (`True`/`False` seeds, `And`, `Or`, `Not`, `AndNot`, `OrNot`, and `IEnumerable` folds).
-- **IO** — `ReadOnlySequence<byte>.ToStream()`, `NonSeekableStream`, `ActionableStream` (deterministic one-shot dispose action), `ReadSlice` (length-bounded reads), `GetAllText`/`GetAllBytes`(`Async`), `WriteText(Async)`, `CalculateMd5Async`; `FileNames` (untrusted-name sanitization + trusted save names); `FileHelper` (retrying read/write, traversal-safe batch save); `DirectoryHelper` (platform-aware path comparison, sub-directory checks).
+- **IO** — `ReadOnlySequence<byte>.ToStream()`, `NonSeekableStream`, `ActionableStream` (deterministic one-shot dispose action), `ReadSlice` (clean EOF at a fixed length), `SizeLimitedReadStream` (throws `StreamSizeLimitExceededException` on overflow), `GetAllText`/`GetAllBytes`(`Async`), `WriteText`(`Async`), `CalculateMd5Async`; `FileNames` (untrusted-name sanitization + trusted save names); `FileHelper` (retrying read/write, traversal-safe batch save); `DirectoryHelper` (platform-aware path comparison, sub-directory checks).
 - **Constants** — `RegexPatterns` (compiled, ReDoS-hardened: email, URL, IP, slug, national ID, …), `ContentTypes`, `HttpHeaderNames`, `JwtClaimTypes`, `UserClaimTypes`, `LanguageCodes`, `AuthenticationConstants`, `EnvironmentNames` / `EnvironmentVariables`, `HeadlessDiagnostics` (named `ActivitySource` / `Meter` factories), `StorageIdentifier` (per-provider SQL identifier rules), `TimezoneConstants`.
 - **Reflection** — `ReflectionHelper` (attribute lookup, cached open-generic subclass checks), `HeadlessTypeExtensions` (friendly names, nullable/enum/`Task<T>` unwrapping, base-class enumeration), `TypeHelper`, `AssemblyInformation` (entry-assembly metadata + commit number).
 - **Validation helpers** (boolean checks) — `EgyptianNationalIdValidator` (`IsValid` / `TryParse` → birth date + governorate), `MobilePhoneNumberValidator`, `GeoCoordinateValidator`, `EmailValidator` (HTML5 living standard), `EnumNameValidator` (`IsDefinedName` / cached `GetNames` → string-is-a-defined-enum-member). For FluentValidation rules, use `Headless.FluentValidation`.
@@ -36,7 +36,7 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 - **`PhoneNumber` canonicalizes to digits and lazy-caches formats.** The national number is stored digits-only, so `"555-1234"` equals `"5551234"`; computed format representations are cached on first use.
 - **String comparisons are explicit about culture.** Claim *type* matching is `OrdinalIgnoreCase` while role *values* collect into an ordinal `ImmutableHashSet<string>`; `ExtraProperties` keys use `StringComparer.Ordinal`; `DirectoryHelper` path comparison is case-insensitive on Windows/macOS and case-sensitive on Linux. ID/claim parsing uses `CultureInfo.InvariantCulture`.
 - **Reflection assembly loading is trusted-input only.** `AssemblyHelper.LoadAssemblies(...)` loads every matching `.dll`/`.exe` into the default load context, and `InvokeAllStaticMethods(...)` executes public static methods by name. Use these APIs only for application-owned plugin folders or assemblies that have already passed your trust checks; never point them at user-writable upload/cache/temp directories.
-- **IO avoids async-over-sync and guards paths.** `GetAllBytesAsync` / `ReadAllBytesAsync` route through framework `File.*` async APIs and pre-size buffers when the length is known; `FileHelper` retries transient `IOException`s three times with exponential backoff and rejects rooted/traversal paths before writing. `ActionableStream` fires its dispose action exactly once across `Dispose` / `Close` / `DisposeAsync`.
+- **IO avoids async-over-sync and guards paths.** `GetAllBytesAsync` / `ReadAllBytesAsync` route through framework `File.*` async APIs and pre-size buffers when the length is known; `FileHelper` retries transient `IOException`s three times with exponential backoff and rejects rooted/traversal paths before writing. `ActionableStream` fires its dispose action exactly once across `Dispose` / `Close` / `DisposeAsync`. `ReadSlice` returns clean EOF at its boundary; use `SizeLimitedReadStream` when exceeding the boundary must fail, such as when processing untrusted request bodies.
 - **`TimeUnit` parsing is case-sensitive on `m`.** Suffixes are `nanos`, `micros`, `ms`, `s`, `m` (minutes), `h`, `d`; `m` is case-sensitive to avoid minute/month ambiguity, and overflow surfaces as `false` (`TryParse`) or an exception (`Parse`), never a silent wrap.
 - **`EgyptianNationalIdValidator` decodes the century digit and validates a real date.** The leading digit maps `2 → 1900s`, `3 → 2000s` (any other value fails), and the extracted year/month/day are validated through `DateOnly` so impossible dates are rejected.
 - **`XmlHelper` parses with an XXE-hardened reader.** `IsValidXml` / `IsValidXmlAsync` (both a `string` and a `Stream` overload) validate well-formedness through a shared `XmlReaderSettings` with `DtdProcessing.Ignore` and `XmlResolver = null`, so inline DTDs are skipped and entity-expansion (billion-laughs) and external-entity (XXE) payloads are never processed. Malformed input returns `false` rather than throwing, so the check is safe on untrusted input.
@@ -90,6 +90,23 @@ await users.ParallelForEachAsync(degreeOfParallelism: 5, action: async u => awai
 
 // Ordered, sequential, with index + cancellation.
 await users.ForEachAsync(async (u, index, token) => await ProcessAsync(u, index, token), ct);
+```
+
+### Size-limited reads
+
+```csharp
+using Headless.IO;
+
+await using var limited = new SizeLimitedReadStream(source, maximumBytes: 1024 * 1024, leaveOpen: true);
+
+try
+{
+    await limited.CopyToAsync(destination, cancellationToken);
+}
+catch (StreamSizeLimitExceededException)
+{
+    // Reject the oversized input. The stream probes at most one byte beyond the limit.
+}
 ```
 
 ### Keyed async locking (stampede protection)
