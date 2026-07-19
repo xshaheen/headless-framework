@@ -17,8 +17,8 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         throw new InvalidOperationException("L2 store is unavailable");
@@ -26,8 +26,8 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         throw new InvalidOperationException("L2 store is unavailable");

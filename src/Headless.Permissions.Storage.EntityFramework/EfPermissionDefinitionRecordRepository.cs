@@ -16,7 +16,7 @@ namespace Headless.Permissions;
 /// open connection between calls.
 /// </remarks>
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
-public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+internal sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IPermissionDefinitionRecordRepository
     where TContext : DbContext
 {

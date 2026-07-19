@@ -24,7 +24,7 @@ namespace Headless.Features.Seeders;
 /// </list>
 /// Both steps are skipped (and the initializer signals completion immediately) when both options are disabled.
 /// </remarks>
-public sealed class FeaturesInitializationBackgroundService(
+internal sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<FeatureManagementOptions> optionsAccessor,

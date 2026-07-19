@@ -267,6 +267,7 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` (all `TryAddSingleton`)
+- JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
 - `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
 - Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
@@ -332,6 +333,36 @@ app.UseAuthorization();
 
 // Opt out of tenant claim extraction for a single endpoint
 app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
+```
+
+JWT validation uses a request object instead of positional token, key, issuer, audience, and validation arguments:
+
+```csharp
+using System.Security.Claims;
+using Headless.Api.Security.Jwt;
+
+public sealed class TokenValidator(IJwtTokenFactory tokens)
+{
+    public Task<ClaimsPrincipal?> ValidateAsync(
+        string token,
+        string signingKey,
+        string issuer,
+        string audience,
+        CancellationToken cancellationToken
+    ) =>
+        tokens.ParseJwtTokenAsync(
+            new JwtTokenValidationRequest
+            {
+                Token = token,
+                SigningKey = signingKey,
+                Issuer = issuer,
+                Audience = audience,
+                ValidateIssuer = true,
+                ValidateAudience = true,
+            },
+            cancellationToken
+        );
+}
 ```
 
 ### Configuration

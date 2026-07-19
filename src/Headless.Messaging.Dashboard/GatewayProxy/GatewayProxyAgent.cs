@@ -70,7 +70,7 @@ internal sealed class GatewayProxyAgent(
                 if (!cache.TryGetValue(cacheKey, out node))
                 {
                     node = await discoveryProvider
-                        .GetNode(requestNodeName, ns, context.RequestAborted)
+                        .GetNodeAsync(requestNodeName, ns, context.RequestAborted)
                         .ConfigureAwait(false);
                     cache.Set(cacheKey, node);
                 }
@@ -90,7 +90,7 @@ internal sealed class GatewayProxyAgent(
             if (!cache.TryGetValue(requestNodeName, out node))
             {
                 node = await discoveryProvider
-                    .GetNode(requestNodeName, cancellationToken: context.RequestAborted)
+                    .GetNodeAsync(requestNodeName, cancellationToken: context.RequestAborted)
                     .ConfigureAwait(false);
                 cache.Set(requestNodeName, node);
             }

@@ -22,7 +22,7 @@ namespace NetTopologySuite.Geometries;
 /// available wherever NTS geometries are in scope.
 /// </summary>
 [PublicAPI]
-public static class GeoExtensions
+public static class HeadlessGeometryExtensions
 {
     /// <summary>Creates a <see cref="Point"/> at (<paramref name="x"/>, <paramref name="y"/>) using <paramref name="factory"/>.</summary>
     /// <param name="factory">The factory whose SRID and precision model the point inherits.</param>

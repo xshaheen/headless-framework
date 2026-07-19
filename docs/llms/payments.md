@@ -65,7 +65,7 @@ Register via:
 - Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
 - Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the Services layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
 - Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
-- CashOut `Disburse(...)` (not `DisburseAsync`) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
+- CashOut `DisburseAsync(...)` (with the standard async suffix) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
 - Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
 - `IPaymobCashInAuthenticator` and `IPaymobCashOutAuthenticator` are singletons that cache tokens in memory. They handle token refresh automatically (CashIn refreshes 5 minutes before the 60-minute Paymob token expiry; CashOut caches tokens for `TokenRefreshBuffer`, default 10 minutes).
 - `CashOutTransaction.IsSuccess()`, `.IsFailed()`, `.IsPending()` are helper methods that interpret the `DisbursementStatus` / `StatusCode` pair — use them instead of raw string comparisons.
@@ -109,6 +109,7 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 - `IPaymobCashInAuthenticator` — caches the 60-minute auth token; refreshes 5 minutes before expiry
 - `CashInCallbackTypes` — `TRANSACTION` and `TOKEN` callback type constants
 - `CashInStatuses` — `pending`, `declined`, `success` constants
+- `CashInBillingData` — requires first name, last name, phone number, and email in its constructor; optional address and shipping values are init-only properties that default to `"NA"`
 - `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
 
 ### Design Notes
@@ -147,7 +148,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(long amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
@@ -168,6 +169,26 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
         );
 
         return response!.ClientSecret; // pass to your frontend Paymob.js
+    }
+
+    public Task<CashInPaymentKeyResponse> CreateLegacyPaymentKeyAsync(
+        long integrationId,
+        long orderId,
+        long amountCents,
+        CancellationToken ct
+    )
+    {
+        var billingData = new CashInBillingData("Ahmed", "Ali", "+201001234567", "ahmed@example.com")
+        {
+            Country = "EG",
+            City = "Cairo",
+            Street = "Tahrir Street",
+        };
+
+        return broker.RequestPaymentKeyAsync(
+            new CashInPaymentKeyRequest(integrationId, orderId, billingData, amountCents),
+            ct
+        );
     }
 }
 ```
@@ -245,7 +266,7 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 ### Key Features
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
-  - `Disburse(request)` — execute disbursement, returns `CashOutTransaction`
+  - `DisburseAsync(request)` — execute disbursement, returns `CashOutTransaction`
   - `GetBudgetAsync()` — query available balance, returns `CashOutBudgetResponse` (rate-limited to 5 req/min)
   - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup, returns `CashOutGetTransactionsResponse`
 - `IPaymobCashOutAuthenticator` — OAuth2 password-grant token management with in-memory caching
@@ -266,7 +287,7 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 ### Design Notes
 
-`IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `Disburse(...)` (synchronous name, async implementation) — not `DisburseAsync`. `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
+`IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (standard async naming). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
 The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprietary API-key flow. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
 
@@ -303,7 +324,7 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
     )
     {
         var request = CashOutDisburseRequest.Vodafone(amount, phoneNumber);
-        var result = await broker.Disburse(request, ct);
+        var result = await broker.DisburseAsync(request, ct);
 
         if (result.IsFailed())
         {
@@ -327,7 +348,7 @@ var request = CashOutDisburseRequest.BankCard(
     transactionType: BankTransactionTypes.CashTransfer,
     fullName: "Ahmed Ali"
 );
-var result = await broker.Disburse(request, cancellationToken);
+var result = await broker.DisburseAsync(request, cancellationToken);
 ```
 
 ### Configuration

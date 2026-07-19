@@ -17,7 +17,7 @@ namespace Headless.Settings.Seeders;
 /// on application startup. Implements <see cref="IInitializer"/> so dependents can await
 /// <see cref="WaitForInitializationAsync"/> before serving requests.
 /// </summary>
-public sealed class SettingsInitializationBackgroundService(
+internal sealed class SettingsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<SettingManagementOptions> optionsAccessor,

@@ -92,20 +92,20 @@ public enum SmsFailureKind
     None = 0,
 
     /// <summary>The failure cause is unknown or could not be classified.</summary>
-    Unknown,
+    Unknown = 1,
 
     /// <summary>A transient transport/network fault (timeout, connection reset). May succeed on retry.</summary>
-    Transient,
+    Transient = 2,
 
     /// <summary>The provider rejected the request because of rate limiting.</summary>
-    RateLimited,
+    RateLimited = 3,
 
     /// <summary>The recipient address was invalid, unreachable, or rejected by the provider.</summary>
-    InvalidRecipient,
+    InvalidRecipient = 4,
 
     /// <summary>Authentication or authorization with the provider failed.</summary>
-    AuthFailure,
+    AuthFailure = 5,
 
     /// <summary>The provider account has insufficient credit or balance.</summary>
-    OutOfCredit,
+    OutOfCredit = 6,
 }

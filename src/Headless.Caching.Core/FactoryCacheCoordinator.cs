@@ -619,7 +619,7 @@ public sealed partial class FactoryCacheCoordinator(
     {
         try
         {
-            return await store.TryGetEntryAsync<T>(key, cancellationToken, readOptions).ConfigureAwait(false);
+            return await store.TryGetEntryAsync<T>(key, readOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
         {

@@ -251,7 +251,7 @@ public static class MessagingDashboardEndpoints
             {
                 var discoveryProvider = sp.GetRequiredService<INodeDiscoveryProvider>();
                 var nodes = await discoveryProvider
-                    .GetNodes(cancellationToken: httpContext.RequestAborted)
+                    .GetNodesAsync(cancellationToken: httpContext.RequestAborted)
                     .ConfigureAwait(false);
                 result.Servers = nodes.Count;
             }
@@ -702,7 +702,8 @@ public static class MessagingDashboardEndpoints
         }
 
         var result =
-            await discoveryProvider.GetNodes(cancellationToken: httpContext.RequestAborted).ConfigureAwait(false) ?? [];
+            await discoveryProvider.GetNodesAsync(cancellationToken: httpContext.RequestAborted).ConfigureAwait(false)
+            ?? [];
         return Results.Json(result);
     }
 
@@ -714,7 +715,7 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<string>());
         }
 
-        var nsList = await discoveryProvider.GetNamespaces(httpContext.RequestAborted).ConfigureAwait(false);
+        var nsList = await discoveryProvider.GetNamespacesAsync(httpContext.RequestAborted).ConfigureAwait(false);
         if (nsList == null)
         {
             return Results.NotFound();
@@ -731,11 +732,9 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = discoveryProvider is ICancellableNodeDiscoveryProvider cancellableDiscoveryProvider
-            ? await cancellableDiscoveryProvider
-                .ListServices(@namespace, httpContext.RequestAborted)
-                .ConfigureAwait(false)
-            : await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
+        var result = await discoveryProvider
+            .ListServicesAsync(@namespace, httpContext.RequestAborted)
+            .ConfigureAwait(false);
 
         return Results.Json(result);
     }
@@ -760,7 +759,7 @@ public static class MessagingDashboardEndpoints
         }
 
         var nodes = await discoveryProvider
-            .GetNodes(cancellationToken: httpContext.RequestAborted)
+            .GetNodesAsync(cancellationToken: httpContext.RequestAborted)
             .ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
             endpoint.StartsWith(

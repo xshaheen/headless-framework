@@ -2,7 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
-using Headless.Permissions.Seeders;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -31,7 +30,7 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
 
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is not PermissionsInitializationBackgroundService);
+            .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -64,7 +63,7 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             hosts
                 .Select(h =>
                     h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is not PermissionsInitializationBackgroundService)
+                        .Single(x => x is IHostedLifecycleService)
                         .IsInitialized
                 )
                 .Should()

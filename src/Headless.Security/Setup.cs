@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless;
+namespace Headless.Security;
 
 /// <summary>Registration helpers for the string encryption and hashing services.</summary>
 /// <remarks>

@@ -4,6 +4,6 @@ namespace Headless.Jobs.Customizer;
 
 public enum ConfigurationType
 {
-    UseModelCustomizer,
-    IgnoreModelCustomizer,
+    UseModelCustomizer = 0,
+    IgnoreModelCustomizer = 1,
 }

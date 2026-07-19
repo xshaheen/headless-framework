@@ -133,7 +133,7 @@ public sealed class HybridCacheTests : TestBase
 
         // when — write through the composite store (both tiers), then read it back
         await ((IFactoryCacheStore)cache).SetEntryAsync(key, in entry, AbortToken);
-        var roundTripped = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
+        var roundTripped = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         // then — the composite read surfaces the metadata unchanged
         roundTripped.Found.Should().BeTrue();
@@ -144,13 +144,13 @@ public sealed class HybridCacheTests : TestBase
         roundTripped.Tags.Should().BeEquivalentTo("tenant:1", "products");
 
         // and — both tiers persisted the metadata, not just the one that served the read
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry.ETag.Should().Be(entry.ETag);
         l1Entry.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
         l1Entry.LastModifiedAt.Should().Be(entry.LastModifiedAt);
         l1Entry.Tags.Should().BeEquivalentTo("tenant:1", "products");
 
-        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l2Entry.ETag.Should().Be(entry.ETag);
         l2Entry.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
         l2Entry.LastModifiedAt.Should().Be(entry.LastModifiedAt);

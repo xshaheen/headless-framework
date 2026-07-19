@@ -11,7 +11,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` for Couchbase Transactions
 - `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
 - `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `(ICluster, Transactions)` tuple per `GetClusterAsync`
-- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
+- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
 - `ICouchbaseManager` / `CouchbaseManager` — idempotent scope, collection, and index bootstrapping with Polly retry; `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, `BuildDeferredIndexesAsync`
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
@@ -95,6 +95,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 ## Cancellation
 
 - The async provider seams (`ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`) and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
+- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica and accepts `GetAllReplicasOptions`; pass the caller token through `GetAllReplicasOptions.CancellationToken(...)`.
 - Because clusters are created once and statically cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
 - `ICluster.BucketAsync` exposes no cancellation overload, so `IBucketContextProvider.GetAsync` honors the token before opening the bucket, not during.
 - The Couchbase transactions SDK (`Transactions.RunAsync`) exposes no `CancellationToken` hook, so `ExecuteTransactionAsync` observes the token only before the transaction begins; once the SDK transaction loop starts it runs to completion, SDK timeout, or failure. Bound in-transaction duration with `PerTransactionConfig` (timeout / durability) instead.

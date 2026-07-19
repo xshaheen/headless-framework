@@ -17,10 +17,10 @@ public enum PermissionGrantStatus
     Undefined = 0,
 
     /// <summary>The permission has been explicitly granted.</summary>
-    Granted,
+    Granted = 1,
 
     /// <summary>The permission has been explicitly denied; takes precedence over grants.</summary>
-    Prohibited,
+    Prohibited = 2,
 }
 
 public static class PermissionGrantStatusExtensions

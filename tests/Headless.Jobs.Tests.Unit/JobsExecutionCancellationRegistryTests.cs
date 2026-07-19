@@ -85,7 +85,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
             FunctionName = "cross-host-cancellation",
             Type = JobType.TimeJob,
             Status = JobStatus.InProgress,
-            CachedDelegate = async (cancellationToken, _, _) =>
+            CachedDelegate = async (_, _, cancellationToken) =>
             {
                 started.TrySetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);

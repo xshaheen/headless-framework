@@ -966,7 +966,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Real-Time Monitoring**: Live message throughput and latency metrics
 - **Message Explorer**: Search, filter, and inspect messages
 - **Failure Management**: View and retry failed messages
-- **Node Discovery**: Multi-instance cluster visibility
+- **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **Five authentication modes** (shared with the Jobs Dashboard via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom.
 

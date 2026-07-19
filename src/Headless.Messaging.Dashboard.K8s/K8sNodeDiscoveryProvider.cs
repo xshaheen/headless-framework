@@ -15,13 +15,16 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
-    : INodeDiscoveryProvider,
-        ICancellableNodeDiscoveryProvider
+    : INodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
 
-    public async Task<Node?> GetNode(string nodeName, string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNodeAsync(
+        string nodeName,
+        string? ns = null,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -51,7 +54,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         return null;
     }
 
-    public async Task<IList<Node>> GetNodes(string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<IList<Node>> GetNodesAsync(string? ns = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -82,7 +85,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         }
     }
 
-    public async Task<List<string>> GetNamespaces(CancellationToken cancellationToken)
+    public async Task<List<string>> GetNamespacesAsync(CancellationToken cancellationToken = default)
     {
         using var client = new Kubernetes(options.K8sClientConfig);
 
@@ -111,12 +114,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 #pragma warning restore ERP022
     }
 
-    public Task<IList<Node>> ListServices(string? ns = null)
-    {
-        return _ListServices(ns, CancellationToken.None);
-    }
-
-    Task<IList<Node>> ICancellableNodeDiscoveryProvider.ListServices(string? ns, CancellationToken cancellationToken)
+    public Task<IList<Node>> ListServicesAsync(string? ns = null, CancellationToken cancellationToken = default)
     {
         return _ListServices(ns, cancellationToken);
     }

@@ -45,7 +45,13 @@ public interface ICommitScope : IDisposable, IAsyncDisposable
     /// signal task faults with an <see cref="AggregateException" /> after all callbacks have run.
     /// </para>
     /// </remarks>
-    /// <param name="outcome">The terminal outcome: <see cref="CommitOutcome.Committed" /> or <see cref="CommitOutcome.RolledBack" />.</param>
+    /// <param name="outcome">
+    /// The terminal outcome: <see cref="CommitOutcome.Committed" /> or <see cref="CommitOutcome.RolledBack" />.
+    /// </param>
     /// <returns>A task that completes when all registered callbacks have been drained.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="outcome" /> is not <see cref="CommitOutcome.Committed" /> or
+    /// <see cref="CommitOutcome.RolledBack" />.
+    /// </exception>
     ValueTask SignalAsync(CommitOutcome outcome);
 }

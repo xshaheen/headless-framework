@@ -134,6 +134,7 @@ Defines the public commit coordination contracts without provider dependencies.
 
 - `ICommitCoordinator`, `ICurrentCommitCoordinator`, `ICommitScope`, and `ICommitSignalSource`.
 - Outcome callbacks for commit and rollback.
+- `CommitOutcome` has explicit values (`Unspecified = 0`, `Committed = 1`, `RolledBack = 2`); `Unspecified` is the default sentinel and is rejected by `ICommitScope.SignalAsync`.
 - Typed scope-local work buffers.
 - Capability lookup through `ICommitCapability`.
 

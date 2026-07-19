@@ -3,7 +3,7 @@
 #pragma warning disable CA1720 // Identifier contains type name
 namespace Headless.Generator.Primitives.Shared;
 
-public static class TypeNames
+internal static class TypeNames
 {
     public const string Guid = "global::System.Guid";
     public const string TimeSpan = "global::System.TimeSpan";

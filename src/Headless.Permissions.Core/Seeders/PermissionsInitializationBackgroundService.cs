@@ -23,7 +23,7 @@ namespace Headless.Permissions.Seeders;
 /// dependents receive it rather than hanging indefinitely.
 /// </para>
 /// </summary>
-public sealed class PermissionsInitializationBackgroundService(
+internal sealed class PermissionsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<PermissionManagementOptions> optionsAccessor,

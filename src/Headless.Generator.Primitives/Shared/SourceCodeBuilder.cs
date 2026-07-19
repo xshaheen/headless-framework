@@ -5,7 +5,7 @@ using System.Text;
 namespace Headless.Generator.Primitives.Shared;
 
 /// <summary>A utility class for building source code with proper indentation.</summary>
-public sealed class SourceCodeBuilder
+internal sealed class SourceCodeBuilder
 {
     private const string _SourceHeader1 = """
         //------------------------------------------------------------------------------

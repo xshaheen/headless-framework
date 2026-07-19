@@ -18,7 +18,7 @@ namespace Headless.Settings;
 /// The setting-value cache shared with <c>SettingValueStore</c>. A write here removes the affected cache key
 /// so a direct repository write (bypassing <c>ISettingManager</c>) is reflected on the next read.
 /// </param>
-public sealed class EfSettingValueRecordRepository<TContext>(
+internal sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ICache<SettingValueCacheItem> cache
 ) : ISettingValueRecordRepository
