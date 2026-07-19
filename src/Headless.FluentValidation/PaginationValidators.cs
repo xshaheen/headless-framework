@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for common pagination and search parameters.</summary>

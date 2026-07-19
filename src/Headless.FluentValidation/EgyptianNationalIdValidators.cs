@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation.Resources;
+using Headless.FluentValidation.Resources;
 using Headless.Validators;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for Egyptian national ID numbers.</summary>

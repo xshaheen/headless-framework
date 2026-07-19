@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation.Resources;
 using Headless.Constants;
+using Headless.FluentValidation.Resources;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>

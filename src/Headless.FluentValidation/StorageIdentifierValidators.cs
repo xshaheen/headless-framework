@@ -2,6 +2,7 @@
 
 using Headless.Constants;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>

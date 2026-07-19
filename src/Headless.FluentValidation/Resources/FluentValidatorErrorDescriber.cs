@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace FluentValidation.Resources;
+namespace Headless.FluentValidation.Resources;
 
 /// <summary>
 /// Factory methods that return the <see cref="ErrorDescriptor"/> instances used by the Headless

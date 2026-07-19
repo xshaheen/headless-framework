@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation.Resources;
 using FluentValidation.Results;
+using Headless.FluentValidation.Resources;
 using Headless.Primitives;
 using Headless.Validators;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for phone number and country code properties.</summary>
