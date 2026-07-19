@@ -1381,6 +1381,8 @@ Shard symmetry is required: when a message uses `SubjectShard(...)` on the produ
 
 Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. As a backstop, a run of `NatsMessagingOptions.MaxConsecutiveConsumeFailures` (default `10`) consecutive consume-loop failures of any exception type also terminates the listener for a supervised restart — bounding in-place spinning when a permanently dead connection surfaces an error that is not one of the classified connection-failure types (consumer connections set `MaxReconnectRetry = 0` and never reconnect on their own). The streak resets on any forward progress (a successful consumer bind or fetch). Consumer connection faults are owned by the health watchdog, not the per-message circuit breaker, which never observes connection-level failures. `NatsMessagingOptions.ConnectionPoolSize` defaults to `1` — a single connection multiplexes all publishers, so raise it only as a throughput knob. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
+Commit uses JetStream double acknowledgement and waits for the broker's settlement confirmation before returning. This keeps immediate consumer replacement from racing an unconfirmed `ACK` and redelivering an already-successful message.
+
 ### Installation
 
 ```bash
@@ -1422,6 +1424,7 @@ Provides Apache Pulsar transport support.
 - `setup.UsePulsar(...)`.
 - Pulsar bus and queue transport support.
 - TLS-related options through provider configuration.
+- Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 
 ### Installation
@@ -1438,11 +1441,11 @@ setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 ### Configuration
 
-Configure service URL, authentication, and TLS through `PulsarMessagingOptions`.
+Configure service URL, authentication, TLS, and negative-ack redelivery through `PulsarMessagingOptions`. `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 
 ### Dependencies
 
-Pulsar client packages, `Headless.Messaging.Core`.
+`Pulsar.Client`, `Headless.Messaging.Core`.
 
 ### Side Effects
 

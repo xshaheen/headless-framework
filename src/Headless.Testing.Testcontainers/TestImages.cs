@@ -20,6 +20,12 @@ public static class TestImages
     /// <summary>NATS image tag.</summary>
     public const string Nats = "nats:2-alpine@sha256:c11af972c99ae542de8925e6a7d9c533aa1eb039660420d2074beed6089b3bf0";
 
+    /// <summary>Confluent Kafka image tag.</summary>
+    public const string Kafka = "confluentinc/cp-kafka:7.5.12";
+
+    /// <summary>Apache Pulsar image tag.</summary>
+    public const string Pulsar = "apachepulsar/pulsar:3.0.9";
+
     /// <summary>RabbitMQ image tag.</summary>
     public const string RabbitMq =
         "rabbitmq:3-alpine@sha256:d7af1c87c5f1eda13fcfca06db452bf3aeab6619fc3358b68535c0c02c4e52bc";

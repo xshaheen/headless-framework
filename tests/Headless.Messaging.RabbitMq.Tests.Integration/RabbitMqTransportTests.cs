@@ -26,7 +26,8 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
             SupportsDeadLetter = true,
             SupportsPriority = false,
             SupportsDelayedDelivery = false,
-            SupportsBatchSend = true,
+            SupportsBusTransport = true,
+            SupportsQueueTransport = true,
             SupportsHeaders = true,
         };
 
@@ -94,15 +95,15 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     }
 
     [Fact]
-    public override Task should_include_headers_in_sent_message()
+    public override Task should_accept_message_with_application_headers()
     {
-        return base.should_include_headers_in_sent_message();
+        return base.should_accept_message_with_application_headers();
     }
 
     [Fact]
-    public override Task should_send_batch_of_messages()
+    public override Task should_send_multiple_messages_individually()
     {
-        return base.should_send_batch_of_messages();
+        return base.should_send_multiple_messages_individually();
     }
 
     [Fact]
@@ -130,15 +131,15 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     }
 
     [Fact]
-    public override Task should_include_message_id_in_headers()
+    public override Task should_accept_message_with_id()
     {
-        return base.should_include_message_id_in_headers();
+        return base.should_accept_message_with_id();
     }
 
     [Fact]
-    public override Task should_include_message_name_in_headers()
+    public override Task should_accept_message_with_name()
     {
-        return base.should_include_message_name_in_headers();
+        return base.should_accept_message_with_name();
     }
 
     [Fact]

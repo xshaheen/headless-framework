@@ -20,6 +20,8 @@ Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnection
 
 Consumer connections disable client-side reconnect (`MaxReconnectRetry = 0`) so a connection fault surfaces to the consume loop and the consumer register's health watchdog — not the per-message circuit breaker, which never observes connection-level failures — owns the rebuild. The publish path pools connections independently and does not disable reconnect.
 
+Commit uses JetStream double acknowledgement and waits for the broker's settlement confirmation before returning. This keeps immediate consumer replacement from racing an unconfirmed `ACK` and redelivering an already-successful message.
+
 ## Installation
 
 ```bash
@@ -92,7 +94,7 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 
 - Publish writes the serialized body and headers to JetStream.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
-- Commit sends `ACK`.
+- Commit sends a double `ACK` and waits for JetStream to confirm settlement before returning.
 - Reject sends `NAK` so JetStream can redeliver.
 - `FetchMessageNamesAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
 - Consumer startup creates filtered durable consumers for each subscribed subject.
