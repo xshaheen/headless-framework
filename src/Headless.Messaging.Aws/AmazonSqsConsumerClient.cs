@@ -41,6 +41,12 @@ internal sealed class AmazonSqsConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("aws_sqs", _queueUrl);
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(

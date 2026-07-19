@@ -22,8 +22,7 @@ namespace Headless.Messaging;
 /// <param name="error">Additional error details, or null if no structured error information is available.</param>
 [PublicAPI]
 public readonly struct OperateResult(bool succeeded, Exception? exception = null, OperateError? error = null)
-    : IEqualityComparer<OperateResult>,
-        IEquatable<OperateResult>
+    : IEquatable<OperateResult>
 {
     private readonly OperateError? _operateError = error;
 
@@ -66,28 +65,16 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     }
 
     /// <summary>
-    /// Determines whether two <see cref="OperateResult"/> instances are equal based on success status,
+    /// Determines whether this result equals another based on success status,
     /// the wrapped exception reference, and the structured error.
     /// </summary>
-    /// <param name="x">The first result to compare.</param>
-    /// <param name="y">The second result to compare.</param>
+    /// <param name="other">The result to compare with.</param>
     /// <returns>true if both results match on all three fields; otherwise false.</returns>
-    public bool Equals(OperateResult x, OperateResult y)
+    public bool Equals(OperateResult other)
     {
-        return x.Succeeded == y.Succeeded
-            && ReferenceEquals(x.Exception, y.Exception)
-            && Nullable.Equals(x._operateError, y._operateError);
-    }
-
-    /// <summary>
-    /// Serves as the default hash function for the <see cref="OperateResult"/> struct.
-    /// Hashes the same fields <see cref="Equals(OperateResult, OperateResult)"/> compares.
-    /// </summary>
-    /// <param name="o">The result to compute the hash code for.</param>
-    /// <returns>A hash code combining the error, success status, and exception information.</returns>
-    public int GetHashCode(OperateResult o)
-    {
-        return HashCode.Combine(o._operateError, o.Succeeded, o.Exception);
+        return Succeeded == other.Succeeded
+            && ReferenceEquals(Exception, other.Exception)
+            && Nullable.Equals(_operateError, other._operateError);
     }
 
     public override bool Equals(object? obj)
@@ -95,19 +82,19 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
         return obj is OperateResult other && Equals(other);
     }
 
+    /// <summary>
+    /// Serves as the default hash function for the <see cref="OperateResult"/> struct.
+    /// Hashes the same fields <see cref="Equals(OperateResult)"/> compares.
+    /// </summary>
+    /// <returns>A hash code combining the error, success status, and exception information.</returns>
     public override int GetHashCode()
     {
-        return GetHashCode(this);
+        return HashCode.Combine(_operateError, Succeeded, Exception);
     }
 
     public static bool operator ==(OperateResult left, OperateResult right) => left.Equals(right);
 
     public static bool operator !=(OperateResult left, OperateResult right) => !(left == right);
-
-    public bool Equals(OperateResult other)
-    {
-        return Equals(this, other);
-    }
 }
 
 /// <summary>
@@ -115,17 +102,17 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
 /// This record provides a standardized way to report operation errors with code and description.
 /// </summary>
 [PublicAPI]
-public record struct OperateError
+public readonly record struct OperateError
 {
     /// <summary>
-    /// Gets or sets the error code identifying the type or source of the error.
+    /// Gets the error code identifying the type or source of the error.
     /// This might be a string representation of a numeric error code, a category name, or other identifier.
     /// </summary>
-    public string Code { get; set; }
+    public required string Code { get; init; }
 
     /// <summary>
-    /// Gets or sets a human-readable description of the error.
+    /// Gets a human-readable description of the error.
     /// This typically explains what went wrong and may include suggestions for resolution.
     /// </summary>
-    public string Description { get; set; }
+    public required string Description { get; init; }
 }
