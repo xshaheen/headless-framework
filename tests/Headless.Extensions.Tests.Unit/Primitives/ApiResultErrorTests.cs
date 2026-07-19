@@ -4,7 +4,7 @@ using Headless.Primitives;
 
 namespace Tests.Primitives;
 
-public sealed class ResultErrorTests
+public sealed class ApiResultErrorTests
 {
     [Fact]
     public void should_create_not_found_error_with_correct_code()
@@ -76,7 +76,7 @@ public sealed class ResultErrorTests
     public void should_create_aggregate_error()
     {
         // given
-        var errors = new ResultError[]
+        var errors = new ApiResultError[]
         {
             new NotFoundError { Entity = "User", Key = "1" },
             new NotFoundError { Entity = "Order", Key = "2" },
@@ -95,7 +95,7 @@ public sealed class ResultErrorTests
     public void should_create_custom_error()
     {
         // when
-        var error = ResultError.Custom("custom:error", "Custom error message");
+        var error = ApiResultError.Custom("custom:error", "Custom error message");
 
         // then
         error.Code.Should().Be("custom:error");

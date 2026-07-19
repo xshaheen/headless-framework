@@ -82,7 +82,7 @@ public static class FluentValidationExtensions
                         if (
                             // Is fluent validation error code
                             !string.Equals(errorCode, failure.ErrorCode, StringComparison.Ordinal)
-                            && paramsDictionary.Count > 0
+                            && paramsDictionary is { Count: > 0 }
                             && paramsDictionary.TryGetValue("PropertyPath", out var value)
                             && value is string propertyPath
                         )
@@ -91,12 +91,18 @@ public static class FluentValidationExtensions
                         }
                     }
 
-                    return new ErrorDescriptor(
-                        code: errorCode,
-                        description: failure.ErrorMessage,
-                        paramsDictionary: paramsDictionary,
-                        severity: _ToValidationSeverity(failure.Severity)
-                    );
+                    var severity = _ToValidationSeverity(failure.Severity);
+
+                    // FormattedMessagePlaceholderValues is null when the failure was constructed manually
+                    // (no message formatting ran), so fall back to the parameterless-descriptor constructor.
+                    return paramsDictionary is null
+                        ? new ErrorDescriptor(code: errorCode, description: failure.ErrorMessage, severity: severity)
+                        : new ErrorDescriptor(
+                            code: errorCode,
+                            description: failure.ErrorMessage,
+                            paramsDictionary: paramsDictionary,
+                            severity: severity
+                        );
                 },
                 StringComparer.Ordinal
             )

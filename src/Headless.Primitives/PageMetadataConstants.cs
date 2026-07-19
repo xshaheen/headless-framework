@@ -3,6 +3,7 @@
 namespace Headless.Primitives;
 
 /// <summary>Length and element-count limits for the fields of <see cref="PageMetadata"/>.</summary>
+[PublicAPI]
 public static class PageMetadataConstants
 {
     /// <summary>Limits for <see cref="PageMetadata.Slug"/>.</summary>

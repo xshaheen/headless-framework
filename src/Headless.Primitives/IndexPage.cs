@@ -4,6 +4,7 @@ namespace Headless.Primitives;
 
 /// <summary>A single page of items returned by zero-based offset (index/size) pagination.</summary>
 /// <typeparam name="T">The item type.</typeparam>
+[PublicAPI]
 public sealed class IndexPage<T>
 {
     /// <summary>Initializes a new page and computes <see cref="TotalPages"/> from <paramref name="totalItems"/> and <paramref name="size"/>.</summary>
