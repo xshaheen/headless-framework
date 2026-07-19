@@ -72,6 +72,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
 - `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
+- `Headless.Extensions`
 
 ## Side Effects
 

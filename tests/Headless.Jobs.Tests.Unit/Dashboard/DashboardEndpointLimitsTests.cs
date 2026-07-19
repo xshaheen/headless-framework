@@ -31,26 +31,6 @@ public sealed class DashboardEndpointLimitsTests : TestBase
     }
 
     [Fact]
-    public async Task should_allow_request_body_at_the_byte_limit()
-    {
-        await using var source = new MemoryStream(new byte[16]);
-        await using var limited = new DashboardRequestBodyReader.SizeLimitedReadStream(source, 16);
-
-        await limited.CopyToAsync(Stream.Null, AbortToken);
-    }
-
-    [Fact]
-    public async Task should_reject_chunked_request_body_above_the_byte_limit()
-    {
-        await using var source = new MemoryStream(new byte[17]);
-        await using var limited = new DashboardRequestBodyReader.SizeLimitedReadStream(source, 16);
-
-        var act = async () => await limited.CopyToAsync(Stream.Null, AbortToken);
-
-        await act.Should().ThrowAsync<DashboardRequestBodyReader.RequestBodyTooLargeException>();
-    }
-
-    [Fact]
     public async Task should_return_payload_too_large_before_reading_declared_oversize_body()
     {
         var context = new DefaultHttpContext();
@@ -59,6 +39,27 @@ public sealed class DashboardEndpointLimitsTests : TestBase
         context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream("{}"u8.ToArray());
         context.Request.ContentLength = DashboardOptionsBuilder.MaxRequestBodyBytes + 1;
+
+        var (value, error) = await DashboardRequestBodyReader.ReadAsync<object>(context, null, AbortToken);
+        await error!.ExecuteAsync(context);
+
+        value.Should().BeNull();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+    }
+
+    [Fact]
+    public async Task should_return_payload_too_large_when_chunked_body_exceeds_limit()
+    {
+        var body = new byte[DashboardOptionsBuilder.MaxRequestBodyBytes + 1];
+        Array.Fill(body, (byte)' ');
+        body[0] = (byte)'{';
+        body[1] = (byte)'}';
+
+        var context = new DefaultHttpContext();
+        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        context.RequestServices = services;
+        context.Response.Body = new MemoryStream();
+        context.Request.Body = new MemoryStream(body);
 
         var (value, error) = await DashboardRequestBodyReader.ReadAsync<object>(context, null, AbortToken);
         await error!.ExecuteAsync(context);
