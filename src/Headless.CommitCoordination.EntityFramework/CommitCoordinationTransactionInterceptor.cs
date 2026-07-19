@@ -32,8 +32,7 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// are silently ignored by <see cref="EntityFrameworkCommitSignalSource" />.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed partial class CommitCoordinationTransactionInterceptor(
+internal sealed partial class CommitCoordinationTransactionInterceptor(
     EntityFrameworkCommitSignalSource signalSource,
     ILogger<CommitCoordinationTransactionInterceptor>? logger = null
 ) : DbTransactionInterceptor

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
+
 namespace Headless.CommitCoordination;
 
 /// <summary>
@@ -19,6 +21,13 @@ public sealed class CommitContext
     /// <summary>
     /// Initializes a new <see cref="CommitContext" /> with no capabilities, for use in tests.
     /// </summary>
+    /// <remarks>
+    /// This constructor exists solely so consumers can build a <see cref="CommitContext" /> when unit-testing
+    /// their own commit/rollback callbacks without the drain infrastructure. Production instances are always
+    /// created by the framework with the capabilities the enlisting provider attached; do not use this
+    /// constructor outside test code.
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public CommitContext()
         : this(new Dictionary<Type, ICommitCapability>()) { }
 
