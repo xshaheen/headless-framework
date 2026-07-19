@@ -99,7 +99,10 @@ internal sealed class GatewayProxyAgent(
                 node = await discoveryProvider
                     .GetNodeAsync(requestNodeName, cancellationToken: context.RequestAborted)
                     .ConfigureAwait(false);
-                cache.Set(requestNodeName, node);
+                if (node != null)
+                {
+                    cache.Set(requestNodeName, node, TimeSpan.FromSeconds(30));
+                }
             }
         }
 
