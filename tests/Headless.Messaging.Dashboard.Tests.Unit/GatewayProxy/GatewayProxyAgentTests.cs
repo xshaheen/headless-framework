@@ -104,6 +104,48 @@ public sealed class GatewayProxyAgentTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_cache_failed_consul_lookup_when_invoke()
+    {
+        // A transient Consul failure returns null; that result must not be cached, so the next request retries
+        // discovery and reaches the node once it is available again instead of failing until process restart.
+        var firstContext = _CreateHttpContext();
+        var secondContext = _CreateHttpContext();
+        firstContext.Request.Headers.Cookie = $"{GatewayProxyAgent.CookieNodeName}=node1";
+        secondContext.Request.Headers.Cookie = $"{GatewayProxyAgent.CookieNodeName}=node1";
+
+        var node = new Node
+        {
+            Id = "1",
+            Name = "node1",
+            Address = "http://10.0.0.1",
+            Port = 8080,
+            Tags = "web",
+        };
+
+        var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
+        discoveryProvider
+            .GetNodeAsync("node1", null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Node?>(null), Task.FromResult<Node?>(node));
+
+        var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
+        using var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(httpMessageHandler);
+        httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
+
+        var agent = _CreateAgent(firstContext, discoveryProvider, httpClientFactory);
+
+        // when
+        var firstResult = await agent.Invoke(firstContext);
+        var secondResult = await agent.Invoke(secondContext);
+
+        // then
+        firstResult.Should().BeFalse();
+        secondResult.Should().BeTrue();
+        await discoveryProvider.Received(2).GetNodeAsync("node1", null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_return_false_when_invoke_same_node_as_current()
     {
         // given
