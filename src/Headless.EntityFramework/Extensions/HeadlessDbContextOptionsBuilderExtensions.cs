@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
-public static class DbContextOptionsBuilderExtensions
+public static class HeadlessDbContextOptionsBuilderExtensions
 {
     /// <summary>
     /// Replaces EF Core's default string primary-key value generation (a hyphenated <c>Guid.ToString()</c>) with a

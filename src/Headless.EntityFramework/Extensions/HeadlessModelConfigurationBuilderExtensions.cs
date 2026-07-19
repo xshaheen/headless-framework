@@ -16,7 +16,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// Extension methods for registering Headless building-block primitive type converter mappings on a
 /// <see cref="ModelConfigurationBuilder"/>.
 /// </summary>
-public static class ModelConfigurationBuilderExtensions
+public static class HeadlessModelConfigurationBuilderExtensions
 {
     /// <summary>
     /// Registers default column precision rules and value converters for the Headless primitive types

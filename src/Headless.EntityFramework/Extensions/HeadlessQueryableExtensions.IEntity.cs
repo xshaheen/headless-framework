@@ -6,7 +6,7 @@ using Headless.Exceptions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
-public static partial class QueryableExtensions
+public static partial class HeadlessQueryableExtensions
 {
     /// <summary>
     /// Returns the first entity with the specified <paramref name="id"/>, or throws

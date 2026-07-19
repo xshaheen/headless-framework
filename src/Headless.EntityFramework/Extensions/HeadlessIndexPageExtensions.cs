@@ -17,7 +17,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// <c>size</c> are <see langword="null"/> the full result set is returned as a single page.
 /// </remarks>
 [PublicAPI]
-public static class IndexPageExtensions
+public static class HeadlessIndexPageExtensions
 {
     extension<T>(IQueryable<T> source)
     {

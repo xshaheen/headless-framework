@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
-public static class EntityTypeBuilderExtensions
+public static class HeadlessEntityTypeBuilderExtensions
 {
     /// <summary>
     /// It allows you to add a query filter to an entity type, combining it with

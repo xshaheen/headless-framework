@@ -3,6 +3,7 @@
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Tests.Infrastructure;
 

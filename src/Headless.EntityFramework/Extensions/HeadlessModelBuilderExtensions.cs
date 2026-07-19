@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
-public static class ModelBuilderExtensions
+public static class HeadlessModelBuilderExtensions
 {
     /// <summary>
     /// Applies configuration from all <see cref="IEntityTypeConfiguration{T}" />
