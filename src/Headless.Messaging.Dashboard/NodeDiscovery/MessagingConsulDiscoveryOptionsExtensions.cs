@@ -27,7 +27,7 @@ internal sealed class ConsulDiscoveryOptionsExtension(Action<ConsulDiscoveryOpti
     }
 }
 
-public static class MessagingDiscoveryOptionsExtensions
+public static class MessagingConsulDiscoveryOptionsExtensions
 {
     /// <summary>
     /// Enables Consul-based node discovery for the Messaging Dashboard using default options.
