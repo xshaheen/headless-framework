@@ -7,6 +7,10 @@ using System.Text.Json.Nodes;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Serializer;
 
+/// <summary>
+/// Extension methods that convert loosely-typed values (primitives, enums, and
+/// <c>System.Text.Json</c> node types) to a requested target type.
+/// </summary>
 [PublicAPI]
 public static class ToObjectExtensions
 {

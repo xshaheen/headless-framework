@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Serilog;
 
 namespace Headless.Logging;
@@ -27,7 +28,13 @@ public sealed class SerilogOptions
     /// Gets the directory path where log files are written. Defaults to <c>"Logs"</c> (relative
     /// to the process working directory).
     /// </summary>
-    public string LogDirectory { get; init; } = "Logs";
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The initialized value is empty or consists only of white-space characters.</exception>
+    public string LogDirectory
+    {
+        get;
+        init => field = Argument.IsNotNullOrWhiteSpace(value);
+    } = "Logs";
 
     /// <summary>
     /// Gets a value indicating whether the file sink buffers log events before flushing to disk.
@@ -52,12 +59,22 @@ public sealed class SerilogOptions
     /// Gets the maximum number of rolled log files to retain per severity level before the oldest
     /// is deleted. Defaults to 5. Pass <see langword="null"/> to retain files indefinitely.
     /// </summary>
-    public int? RetainedFileCountLimit { get; init; } = 5;
+    /// <exception cref="ArgumentOutOfRangeException">The initialized value is zero or negative.</exception>
+    public int? RetainedFileCountLimit
+    {
+        get;
+        init => field = Argument.IsPositive(value);
+    } = 5;
 
     /// <summary>
     /// Gets the maximum length in bytes of HTTP request headers captured in structured log
     /// properties. Defaults to 512. Values longer than this limit are truncated before being
     /// attached to the log event.
     /// </summary>
-    public int MaxHeaderLength { get; init; } = 512;
+    /// <exception cref="ArgumentOutOfRangeException">The initialized value is zero or negative.</exception>
+    public int MaxHeaderLength
+    {
+        get;
+        init => field = Argument.IsPositive(value);
+    } = 512;
 }

@@ -7,7 +7,7 @@ using StackExchange.Redis;
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
-public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixture)
+public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixture fixture)
 {
     private ConnectionMultiplexer Multiplexer => fixture.ConnectionMultiplexer;
     private IDatabase Db => Multiplexer.GetDatabase();
