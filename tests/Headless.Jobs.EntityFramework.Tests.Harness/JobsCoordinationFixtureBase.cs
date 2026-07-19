@@ -515,11 +515,14 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
-            + $"VALUES (@id, @function, @function, @expression, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
+            + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
 
         _AddParameter(command, "@id", id);
         _AddParameter(command, "@function", function);
         _AddParameter(command, "@expression", expression);
+        _AddParameter(command, "@timeZoneId", DBNull.Value);
+        _AddParameter(command, "@isPaused", false);
+        _AddParameter(command, "@scheduleRevision", 0L);
         _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -718,7 +721,8 @@ public static class JobsCoordinationFixtureExtensions
         + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
     private const string _CronInsertColumns =
-        "\"Id\", \"Function\", \"Description\", \"Expression\", \"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
+        "\"Id\", \"Function\", \"Description\", \"Expression\", \"TimeZoneId\", \"IsPaused\", \"ScheduleRevision\", "
+        + "\"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
 
     private const string _CronOccurrenceInsertColumns =
         "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "

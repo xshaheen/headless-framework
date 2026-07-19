@@ -715,6 +715,13 @@
           "Headless.DistributedLocks.Core": "[1.0.0, )"
         }
       },
+      "headless.entityframework.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -784,22 +791,12 @@
           "Headless.Jobs.Core": "[1.0.0, )"
         }
       },
-      "headless.jobs.discoveryfixture": {
-        "type": "Project",
-        "dependencies": {
-          "AwesomeAssertions": "[9.4.0, )",
-          "AwesomeAssertions.Json": "[9.0.0, )",
-          "Bogus": "[35.6.5, )",
-          "DeepCloner": "[0.10.4, )",
-          "Headless.Jobs.Core": "[1.0.0, )",
-          "NSubstitute": "[5.3.0, )"
-        }
-      },
       "headless.jobs.entityframework": {
         "type": "Project",
         "dependencies": {
           "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"

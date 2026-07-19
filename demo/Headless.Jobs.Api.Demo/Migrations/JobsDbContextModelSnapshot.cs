@@ -45,6 +45,11 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsPaused")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("OnNodeDeath")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -58,6 +63,15 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.PrimitiveCollection<int[]>("RetryIntervals")
                         .HasColumnType("integer[]");
+
+                    b.Property<long>("ScheduleRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -131,7 +145,8 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.HasIndex("CronJobId", "ExecutionTime")
                         .IsUnique()
-                        .HasDatabaseName("UQ_CronJobId_ExecutionTime");
+                        .HasDatabaseName("UQ_CronJobId_ExecutionTime")
+                        .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
 
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");

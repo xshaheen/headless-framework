@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,11 +13,20 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)
     {
+        var utcDateTimeConverter = new UtcDateTimeValueConverter();
+        var nullableUtcDateTimeConverter = new NullableUtcDateTimeValueConverter();
+
         builder.HasKey("Id");
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
         builder.Property(x => x.OwnerId).IsRequired(false);
+
+        builder.Property(x => x.ExecutionTime).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.ExecutedAt).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.CreatedAt).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.UpdatedAt).HasConversion(utcDateTimeConverter);
 
         // Persist enums by name (not ordinal) — see TimeJobConfigurations.
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
@@ -36,7 +46,11 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 
         builder.HasOne(x => x.CronJob).WithMany().HasForeignKey(x => x.CronJobId).OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex("CronJobId", "ExecutionTime").IsUnique().HasDatabaseName("UQ_CronJobId_ExecutionTime");
+        builder
+            .HasIndex("CronJobId", "ExecutionTime")
+            .IsUnique()
+            .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')")
+            .HasDatabaseName("UQ_CronJobId_ExecutionTime");
 
         builder.ToTable("CronJobOccurrences", schema);
     }

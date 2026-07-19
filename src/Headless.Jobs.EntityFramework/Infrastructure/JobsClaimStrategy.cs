@@ -317,10 +317,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var cronJobsToUpdate = await context
             .AsNoTracking()
+            .Where(x => !x.CronJob.IsPaused)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
             .OrderBy(x => x.ExecutionTime)
@@ -389,15 +389,30 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
-        var newOccurrenceIds = new List<Guid>();
+        var claimableOccurrenceIds = new List<Guid>();
 
         for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var item = cronJobOccurrences.Items[index];
+
+            var definitionAccepted = await dbContext
+                .Set<TCronJob>()
+                .Where(x => x.Id == item.Id && !x.IsPaused && x.ScheduleRevision == item.ScheduleRevision)
+                .ExecuteUpdateAsync(
+                    setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (definitionAccepted == 0)
+            {
+                continue;
+            }
 
             if (item.NextCronOccurrence is null)
             {
@@ -414,23 +429,23 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     UpdatedAt = now,
                 };
 
-                var affected = await context
-                    .Upsert(itemToAdd)
-                    .On(x => new { x.ExecutionTime, x.CronJobId })
-                    .NoUpdate()
-                    .RunAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (affected <= 0)
+                await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
+                try
                 {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (DbUpdateException)
+                {
+                    dbContext.Entry(itemToAdd).State = EntityState.Detached;
                     continue;
                 }
 
+                dbContext.Entry(itemToAdd).State = EntityState.Detached;
                 itemToAdd.Status = JobStatus.Queued;
                 itemToAdd.OwnerId = owner;
                 itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
                 claimResults[index] = itemToAdd;
-                newOccurrenceIds.Add(itemToAdd.Id);
+                claimableOccurrenceIds.Add(itemToAdd.Id);
                 continue;
             }
 
@@ -440,13 +455,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .WhereCanAcquireUsingDatabaseClock(owner)
                 .ExecuteUpdateAsync(
                     prop =>
-                        prop.SetProperty(y => y.OwnerId, owner)
-                            .SetProperty(
-                                y => y.LockedUntil,
-                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
-                            )
-                            .SetProperty(y => y.UpdatedAt, _ => DateTime.UtcNow)
-                            .SetProperty(y => y.Status, JobStatus.Queued)
+                        prop.SetProperty(y => y.Status, y => y.Status)
                             .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
                     cancellationToken
                 )
@@ -468,12 +477,15 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 CreatedAt = item.NextCronOccurrence.CreatedAt,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             };
+            claimableOccurrenceIds.Add(item.NextCronOccurrence.Id);
         }
 
-        if (newOccurrenceIds.Count > 0)
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        if (claimableOccurrenceIds.Count > 0)
         {
             await context
-                .Where(x => newOccurrenceIds.Contains(x.Id))
+                .Where(x => claimableOccurrenceIds.Contains(x.Id))
                 .WhereCanAcquireUsingDatabaseClock(owner)
                 .ExecuteUpdateAsync(
                     setter =>

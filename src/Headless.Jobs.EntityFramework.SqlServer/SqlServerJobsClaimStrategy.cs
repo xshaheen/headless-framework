@@ -228,10 +228,19 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+            var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
             foreach (var item in cronJobOccurrences.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (
+                    !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, cancellationToken)
+                        .ConfigureAwait(false)
+                )
+                {
+                    continue;
+                }
+
                 var occurrence = item.NextCronOccurrence is null
                     ? await _InsertCronOccurrenceAsync(
                             dbContext,
@@ -294,6 +303,35 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
+    }
+
+    private static async Task<bool> _LockActiveCronDefinitionAsync(
+        IDbContextTransaction transaction,
+        CronDefinitionRelationalMapping mapping,
+        JobManagerDispatchContext item,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = (SqlConnection)transaction.GetDbTransaction().Connection!;
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
+        await using var command = new SqlCommand(
+            $"""
+            SELECT 1
+            FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+            WHERE {mapping.Id} = @id
+              AND {mapping.IsPaused} = 0
+              AND {mapping.ScheduleRevision} = @scheduleRevision
+            """,
+            connection,
+            (SqlTransaction)transaction.GetDbTransaction()
+        );
+#pragma warning restore CA2100
+        command.Parameters.Add(new SqlParameter("id", SqlDbType.UniqueIdentifier) { Value = item.Id });
+        command.Parameters.Add(
+            new SqlParameter("scheduleRevision", SqlDbType.BigInt) { Value = item.ScheduleRevision }
+        );
+
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(

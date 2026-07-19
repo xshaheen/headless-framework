@@ -423,6 +423,13 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
+      "headless.entityframework.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {

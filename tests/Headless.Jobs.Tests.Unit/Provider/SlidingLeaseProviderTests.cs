@@ -404,9 +404,15 @@ public sealed class SlidingLeaseProviderTests : TestBase
             OnNodeDeath = policy,
             ExecutionTime = _Now.AddMinutes(-2),
             CronJobId = Guid.NewGuid(),
-            CronJob = new FakeCronJob { Function = "fn", Expression = "* * * * *" },
         };
-        await provider.InsertCronJobOccurrencesAsync([occurrence], CancellationToken.None);
+        occurrence.CronJob = new FakeCronJob
+        {
+            Id = occurrence.CronJobId,
+            Function = "fn",
+            Expression = "* * * * *",
+        };
+        await provider.InsertCronJobsAsync([occurrence.CronJob], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
         return occurrence.Id;
     }
 
@@ -527,7 +533,8 @@ public sealed class SlidingLeaseProviderTests : TestBase
             NodeDeathPolicy.Retry
         );
 
-        var context = new JobManagerDispatchContext(Guid.NewGuid())
+        var storedBeforeQueue = await provider.GetAllCronJobOccurrencesAsync(x => x.Id == occId, AbortToken);
+        var context = new JobManagerDispatchContext(storedBeforeQueue.Single().CronJobId)
         {
             FunctionName = "fn",
             Expression = "* * * * *",
