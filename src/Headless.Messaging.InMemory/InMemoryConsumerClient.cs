@@ -57,6 +57,12 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// </summary>
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     /// <summary>
     /// Gets the broker address information.
     /// </summary>

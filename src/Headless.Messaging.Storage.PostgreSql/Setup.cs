@@ -6,6 +6,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -33,19 +34,70 @@ public static class SetupPostgreSqlMessaging
         }
 
         /// <summary>
+        /// Configures PostgreSQL as the message storage, binding and validating
+        /// <see cref="PostgreSqlOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">Configuration section containing <see cref="PostgreSqlOptions"/> values.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UsePostgreSql(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            return _AddPostgreSqlStorageCore(
+                setup,
+                services =>
+                    services
+                        .AddOptions<PostgreSqlOptions, PostgreSqlOptionsValidator>()
+                        .Bind(configuration)
+                        .Configure(x => x.Version = setup.Options.Version),
+                outboxProbe: options => configuration.Bind(options)
+            );
+        }
+
+        /// <summary>
         /// Configures PostgreSQL as the message storage with custom options.
         /// </summary>
         /// <param name="configure">Action to configure PostgreSQL options.</param>
         /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions> configure)
         {
             Argument.IsNotNull(configure);
 
             configure += x => x.Version = setup.Options.Version;
 
-            setup.RegisterExtension(new PostgreSqlMessagesOptionsExtension(configure));
+            return _AddPostgreSqlStorageCore(
+                setup,
+                services => services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure),
+                outboxProbe: configure
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Configures PostgreSQL as the message storage, configuring <see cref="PostgreSqlOptions"/>
+        /// with access to the resolved service provider (for example to resolve secrets or connection
+        /// settings from DI).
+        /// </summary>
+        /// <remarks>
+        /// This overload targets the raw ADO.NET storage path. The transactional outbox auto-wiring
+        /// requires <c>UseEntityFramework&lt;TContext&gt;()</c>, whose configuration is inspectable at
+        /// registration time; a service-provider-dependent configure cannot be probed then.
+        /// </remarks>
+        /// <param name="configure">A delegate that configures <see cref="PostgreSqlOptions"/> using the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            configure += (x, _) => x.Version = setup.Options.Version;
+
+            return _AddPostgreSqlStorageCore(
+                setup,
+                services => services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure),
+                outboxProbe: null
+            );
         }
 
         /// <summary>
@@ -72,26 +124,41 @@ public static class SetupPostgreSqlMessaging
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(
-                new PostgreSqlMessagesOptionsExtension(x =>
-                {
-                    configure(x);
-                    x.Version = setup.Options.Version;
-                    x.DbContextType = typeof(TContext);
-                })
-            );
+            Action<PostgreSqlOptions> combined = x =>
+            {
+                configure(x);
+                x.Version = setup.Options.Version;
+                x.DbContextType = typeof(TContext);
+            };
 
-            return setup;
+            return _AddPostgreSqlStorageCore(
+                setup,
+                services => services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(combined),
+                outboxProbe: combined
+            );
         }
     }
 
-    private sealed class PostgreSqlMessagesOptionsExtension(Action<PostgreSqlOptions> configure)
-        : IMessagesOptionsExtension
+    private static MessagingSetupBuilder _AddPostgreSqlStorageCore(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions,
+        Action<PostgreSqlOptions>? outboxProbe
+    )
+    {
+        setup.RegisterExtension(new PostgreSqlMessagesOptionsExtension(configureOptions, outboxProbe));
+
+        return setup;
+    }
+
+    private sealed class PostgreSqlMessagesOptionsExtension(
+        Action<IServiceCollection> configureOptions,
+        Action<PostgreSqlOptions>? outboxProbe
+    ) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("PostgreSql"));
-            services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure);
+            configureOptions(services);
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions>();
 
             services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
@@ -111,11 +178,19 @@ public static class SetupPostgreSqlMessaging
         // attach the interceptor to and stays opt-in.
         private void _AddTransactionalOutbox(IServiceCollection services)
         {
+            if (outboxProbe is null)
+            {
+                // Service-provider-dependent configuration cannot be probed at registration time. Only the EF
+                // overloads (which always supply a probe) set DbContextType, so this is the raw-ADO path —
+                // never auto-register.
+                return;
+            }
+
             // DbContextType / EnableTransactionalOutbox are set inside the captured configure action (only the EF
             // overload sets DbContextType), so materialize a throwaway options instance to read them without
             // depending on the DI-built options.
             var probe = new PostgreSqlOptions();
-            configure(probe);
+            outboxProbe(probe);
 
             if (probe.DbContextType is null)
             {

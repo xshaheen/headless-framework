@@ -3,6 +3,11 @@
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Security;
 
@@ -68,15 +73,35 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void should_always_be_anonymous_when_ping_endpoint()
+    public async Task should_require_configured_host_policy_when_ping_endpoint()
     {
-        // The ping endpoint is always anonymous regardless of auth mode.
-        // In MessagingDashboardEndpoints: MapGet("/api/ping", _PingServices).AllowAnonymous()
+        // given
+        var config = new MessagingDashboardOptionsBuilder().WithHostAuthentication("AdminOnly");
+        await using var app = _CreateEndpointApp(config);
 
-        // SECURITY CONCERN: Anonymous access + potential SSRF
-        // Mitigated by validating endpoint against registered discovery nodes.
+        // when
+        var endpoint = _GetPingEndpoint(app);
+        var authorization = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
 
-        true.Should().BeTrue("Ping endpoint allows anonymous access");
+        // then
+        authorization.Should().ContainSingle(data => data.Policy == "AdminOnly");
+        endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_remain_unprotected_when_ping_endpoint_uses_explicit_no_auth()
+    {
+        // given
+        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
+        await using var app = _CreateEndpointApp(config);
+
+        // when
+        var endpoint = _GetPingEndpoint(app);
+
+        // then
+        endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty();
+        config.AuthConfigured.Should().BeTrue();
+        config.Auth.Mode.Should().Be(AuthMode.None);
     }
 
     [Fact]
@@ -111,6 +136,7 @@ public sealed class AuthorizationTests : TestBase
         // GET  /api/nodes
         // GET  /api/list-ns
         // GET  /api/list-svc/{namespace}
+        // GET  /api/ping
 
         // When Host auth is configured, RequireAuthorization() is applied to the group.
         var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("DashboardAdmin");
@@ -152,5 +178,35 @@ public sealed class AuthorizationTests : TestBase
         // In MessagingDashboardEndpoints: MapPost("/api/auth/validate", _ValidateAuth).AllowAnonymous()
 
         true.Should().BeTrue("Auth validate endpoint must be anonymous for login flow");
+    }
+
+    private static WebApplication _CreateEndpointApp(MessagingDashboardOptionsBuilder config)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Services.AddRouting();
+        builder.Services.AddAuthorization(options =>
+            options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true))
+        );
+        builder.Services.AddCors(options =>
+            options.AddPolicy("HeadlessMessagingDashboardCORS", policy => policy.AllowAnyOrigin())
+        );
+
+        var app = builder.Build();
+        app.MapMessagingDashboardEndpoints(config);
+
+        return app;
+    }
+
+    private static Endpoint _GetPingEndpoint(WebApplication app)
+    {
+        return ((IEndpointRouteBuilder)app)
+            .DataSources.SelectMany(source => source.Endpoints)
+            .Single(endpoint =>
+                string.Equals(
+                    endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName,
+                    "Messaging_PingServices",
+                    StringComparison.Ordinal
+                )
+            );
     }
 }

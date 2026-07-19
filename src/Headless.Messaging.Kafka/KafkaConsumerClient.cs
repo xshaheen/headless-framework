@@ -59,6 +59,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("kafka", BrokerAddressDisplay.FormatMany(_kafkaOptions.Servers));
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
@@ -160,7 +166,13 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 lock (_lock)
                 {
-                    consumerResult = _consumerClient!.Consume(timeout);
+                    var consumerClient = _consumerClient;
+                    if (consumerClient is null)
+                    {
+                        return;
+                    }
+
+                    consumerResult = consumerClient.Consume(timeout);
                 }
 
                 if (!readyReported)
@@ -183,7 +195,26 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 if (_semaphore is not null)
                 {
-                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+                    {
+                        // Shutdown raced the concurrency-gate wait: stop cleanly. The offset for this
+                        // delivery is never committed, so Kafka redelivers it to a replacement
+                        // consumer. Mirrors the ObjectDisposedException guard already on
+                        // _semaphore.Release() in _ReleaseSemaphore.
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConsumeError,
+                                Reason = $"Consumer stopped during shutdown before dispatch: {e.Message}",
+                            }
+                        );
+
+                        return;
+                    }
 
                     _ObserveBackgroundHandler(
                         Task.Run(

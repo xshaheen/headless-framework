@@ -4,6 +4,7 @@ using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Tests.Capabilities;
 
 namespace Tests;
 
@@ -15,6 +16,15 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     // Each instance (= each test invocation) gets a unique topic prefix to avoid stream/subject
     // collisions across tests that run in parallel under the same NATS fixture.
     private readonly string _topicPrefix = $"h{Guid.NewGuid():N}";
+
+    protected override ConsumerClientCapabilities Capabilities =>
+        new()
+        {
+            SupportsFetchTopics = true,
+            SupportsConcurrentProcessing = true,
+            SupportsReject = true,
+            SupportsGracefulShutdown = true,
+        };
 
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -83,15 +93,15 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     }
 
     [Fact]
-    public override Task should_commit_message_successfully()
+    public override Task should_delegate_commit_callback_value()
     {
-        return base.should_commit_message_successfully();
+        return base.should_delegate_commit_callback_value();
     }
 
     [Fact]
-    public override Task should_reject_message_successfully()
+    public override Task should_delegate_reject_callback_value()
     {
-        return base.should_reject_message_successfully();
+        return base.should_delegate_reject_callback_value();
     }
 
     [Fact]

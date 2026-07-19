@@ -5,6 +5,7 @@ namespace Headless.Dashboard.Authentication;
 /// <summary>
 /// Authentication modes supported by dashboards.
 /// </summary>
+[PublicAPI]
 public enum AuthMode
 {
     /// <summary>

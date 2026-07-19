@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Headless.Hosting.Options;
 using Headless.Sms;
 using Headless.Sms.Twilio;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 using Twilio.Clients;
 using Twilio.Http;

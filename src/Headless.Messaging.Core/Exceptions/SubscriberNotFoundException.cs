@@ -6,4 +6,4 @@ namespace Headless.Messaging.Exceptions;
 /// Thrown when a message is dispatched to a subscriber that has not been registered with the consumer registry.
 /// </summary>
 [PublicAPI]
-public class SubscriberNotFoundException(string message) : Exception(message);
+public sealed class SubscriberNotFoundException(string message) : Exception(message);

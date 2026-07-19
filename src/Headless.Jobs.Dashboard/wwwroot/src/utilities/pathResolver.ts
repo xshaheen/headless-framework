@@ -137,6 +137,33 @@ export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'none' {
 }
 
 /**
+ * Consume a fragment-delivered access token for Host authentication.
+ * The fragment is removed before the token is returned so it does not remain in browser history.
+ */
+export function consumeHostAccessTokenFromFragment(
+  authMode: 'basic' | 'apikey' | 'host' | 'none' = getAuthMode(),
+): string | null {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+
+  if (!fragment.has('access_token')) {
+    return null;
+  }
+
+  const token = fragment.get('access_token')?.trim();
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${window.location.pathname}${window.location.search}`,
+  );
+
+  if (authMode !== 'host' || !token) {
+    return null;
+  }
+
+  return token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+}
+
+/**
  * Get protocol from domain based on prefix
  * @param domain - The domain with optional protocol prefix
  * @returns The protocol (https:// or http://)

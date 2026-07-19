@@ -11,6 +11,38 @@ namespace Tests.Internal;
 public sealed class ScheduledMediumMessageQueueTests : TestBase
 {
     [Fact]
+    public async Task should_reject_overflow_until_a_due_item_is_consumed()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        using var queue = new ScheduledMediumMessageQueue(timeProvider, capacity: 1);
+        var first = _CreateMediumMessage(1);
+        var second = _CreateMediumMessage(2);
+
+        queue.TryEnqueue(first, timeProvider.GetUtcNow().Ticks).Should().BeTrue();
+        queue.TryEnqueue(second, timeProvider.GetUtcNow().Ticks).Should().BeFalse();
+
+        await using var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
+        (await enumerator.MoveNextAsync()).Should().BeTrue();
+        enumerator.Current.Should().BeSameAs(first);
+
+        queue.TryEnqueue(second, timeProvider.GetUtcNow().Ticks).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_treat_an_identical_entry_as_already_enqueued_when_at_capacity()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        using var queue = new ScheduledMediumMessageQueue(timeProvider, capacity: 1);
+        var message = _CreateMediumMessage(1);
+        var sendTime = timeProvider.GetUtcNow().Ticks;
+
+        queue.TryEnqueue(message, sendTime).Should().BeTrue();
+        queue.TryEnqueue(_CreateMediumMessage(1), sendTime).Should().BeTrue();
+
+        queue.Count.Should().Be(1);
+    }
+
+    [Fact]
     public void should_reflect_all_enqueued_messages_without_removing_them_when_unordered_items()
     {
         // given
@@ -20,8 +52,8 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var second = _CreateMediumMessage(2);
 
         // when
-        queue.Enqueue(first, timeProvider.GetUtcNow().Ticks);
-        queue.Enqueue(second, timeProvider.GetUtcNow().Ticks + TimeSpan.FromSeconds(1).Ticks);
+        queue.TryEnqueue(first, timeProvider.GetUtcNow().Ticks).Should().BeTrue();
+        queue.TryEnqueue(second, timeProvider.GetUtcNow().Ticks + TimeSpan.FromSeconds(1).Ticks).Should().BeTrue();
 
         // then
         queue.Count.Should().Be(2);
@@ -40,9 +72,9 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var third = _CreateMediumMessage(3);
         var dueAt = timeProvider.GetUtcNow().Ticks;
 
-        queue.Enqueue(second, dueAt);
-        queue.Enqueue(first, dueAt);
-        queue.Enqueue(third, dueAt + TimeSpan.FromMilliseconds(10).Ticks);
+        queue.TryEnqueue(second, dueAt).Should().BeTrue();
+        queue.TryEnqueue(first, dueAt).Should().BeTrue();
+        queue.TryEnqueue(third, dueAt + TimeSpan.FromMilliseconds(10).Ticks).Should().BeTrue();
 
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
@@ -72,7 +104,10 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var message = _CreateMediumMessage(7);
-        queue.Enqueue(message, timeProvider.GetUtcNow().Ticks + TimeSpan.FromMilliseconds(200).Ticks);
+        queue
+            .TryEnqueue(message, timeProvider.GetUtcNow().Ticks + TimeSpan.FromMilliseconds(200).Ticks)
+            .Should()
+            .BeTrue();
 
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
@@ -105,7 +140,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var early = _CreateMediumMessage(9);
         var now = timeProvider.GetUtcNow().Ticks;
 
-        queue.Enqueue(late, now + TimeSpan.FromSeconds(10).Ticks);
+        queue.TryEnqueue(late, now + TimeSpan.FromSeconds(10).Ticks).Should().BeTrue();
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
         // when
@@ -114,7 +149,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         moveNextTask.IsCompleted.Should().BeFalse();
 
-        queue.Enqueue(early, now + TimeSpan.FromSeconds(2).Ticks);
+        queue.TryEnqueue(early, now + TimeSpan.FromSeconds(2).Ticks).Should().BeTrue();
         await Task.Delay(25, AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         await moveNextTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
