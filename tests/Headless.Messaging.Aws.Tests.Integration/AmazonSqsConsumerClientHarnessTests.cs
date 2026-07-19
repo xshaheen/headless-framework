@@ -5,12 +5,22 @@ using Headless.Messaging.Aws;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Tests.Capabilities;
 
 namespace Tests;
 
 [Collection<LocalStackTestFixture>]
 public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fixture) : ConsumerClientTestsBase
 {
+    protected override ConsumerClientCapabilities Capabilities =>
+        new()
+        {
+            SupportsFetchTopics = true,
+            SupportsConcurrentProcessing = true,
+            SupportsReject = true,
+            SupportsGracefulShutdown = true,
+        };
+
     protected override Task<IConsumerClient> GetConsumerClientAsync()
     {
         return Task.FromResult<IConsumerClient>(
@@ -50,22 +60,6 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
     public override Task should_receive_messages_via_listen_callback()
     {
         return base.should_receive_messages_via_listen_callback();
-    }
-
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "SQS commit requires a real receipt handle and initialized queue state.")]
-#pragma warning restore xUnit1004
-    public override Task should_commit_message_successfully()
-    {
-        return Task.CompletedTask;
-    }
-
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "SQS reject requires a real receipt handle and initialized queue state.")]
-#pragma warning restore xUnit1004
-    public override Task should_reject_message_successfully()
-    {
-        return Task.CompletedTask;
     }
 
     [Fact]

@@ -157,7 +157,7 @@ Additional packages:
 
 ### Problem details and error codes
 
-`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `FluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `IdempotencyErrorCodes`) — branch on these constants. Clients should route on the stable `error.code` and `status` values, not on `title` or `detail` which are human-readable and may be localized.
+`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `HeadlessFluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `IdempotencyErrorCodes`) — branch on these constants. Clients should route on the stable `error.code` and `status` values, not on `title` or `detail` which are human-readable and may be localized.
 
 The exception table (see `# Headless.Api.Core` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
@@ -688,7 +688,6 @@ using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
 using Headless.Api.Contracts;
-using Headless.FluentValidation;
 using Microsoft.AspNetCore.Http;
 
 public sealed record ProfileRequest(
@@ -718,6 +717,9 @@ public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 ### Configuration
 
 No configuration required.
+
+File-validation extensions remain in the `FluentValidation` namespace. Stable file error-code constants and
+localized descriptor factories live in `Headless.FluentValidation.Resources`.
 
 ### Dependencies
 

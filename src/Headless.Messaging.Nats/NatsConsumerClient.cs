@@ -713,7 +713,7 @@ internal sealed class NatsConsumerClient(
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.AckAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                await msg.AckAsync(new AckOpts { DoubleAck = true }, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)

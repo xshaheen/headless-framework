@@ -430,7 +430,11 @@ public sealed class NatsConsumerClientTests : TestBase
 
         await client.CommitAsync(msg, AbortToken);
 
-        await msg.Received(1).AckAsync(cancellationToken: Arg.Any<CancellationToken>());
+        await msg.Received(1)
+            .AckAsync(
+                Arg.Is<AckOpts?>(options => options.HasValue && options.Value.DoubleAck == true),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -488,7 +492,7 @@ public sealed class NatsConsumerClientTests : TestBase
         client.OnLogCallback = args => loggedArgs = args;
 
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
-        msg.AckAsync(cancellationToken: Arg.Any<CancellationToken>())
+        msg.AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(x => throw new InvalidOperationException("ack failed"));
 
         await client.CommitAsync(msg, AbortToken);

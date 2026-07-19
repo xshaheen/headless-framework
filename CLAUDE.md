@@ -180,6 +180,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- Broker conformance fixtures need protocol-specific anti-flake controls: Kafka container reuse stays disabled because stale log readiness can false-pass, while Pulsar.Client requires a trailing-slash-free broker URL, an explicit short negative-ack delay in tests, and cancellation of the in-flight receive when pausing. (2026-07-16)
 - Workflow trigger changes must stay synchronized with `main` branch protection: removing the CodeQL `pull_request` trigger while `Analyze (csharp)` remains required leaves PRs permanently waiting. Package publication is gated by a published GitHub Release; Release Drafter updates drafts but does not publish them. (2026-07-16)
 - Jobs generated registration freezes once only after the `AddHeadlessJobs` options callback has loaded every `AddJobsDiscovery` assembly; public descriptors remain configuration-independent, while all live runtime and Dashboard reads must use the immutable per-`IHost` registry. (2026-07-15)
 - Messaging retry ceilings require an atomic durable attempt reservation before transport or consumer invocation; persisting progress only after failure lets a crash reset an inline burst. Recovery of a consumed reservation advances Messaging-owned persisted state without applying domain exception classification. (2026-07-10)

@@ -99,11 +99,14 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 
 `ToErrorDescriptors()` preserves each failure's severity and normalizes its `ErrorCode` to the
 framework-standard `g:snake_case` shape. FluentValidation built-in codes are mapped by
-`FluentValidationErrorCodeMapper` (for example
+`HeadlessFluentValidationErrorCodeMapper` (for example
 `EmailValidator` → `g:invalid_email`), and the Headless validators in this package emit `g:`-prefixed
 codes via `FluentValidatorErrorDescriber` (for example `Ipv4()` → `g:invalid_ipv4`). Clients therefore
 see a single consistent code namespace in `errors[].code`. Codes you supply yourself through
 `WithErrorDescriptor(...)` are passed through unchanged.
+
+Extension methods remain in the `FluentValidation` namespace for fluent discovery. Stable Headless error-code
+constants and localized descriptor factories live in `Headless.FluentValidation.Resources`.
 
 ## Available Validators
 

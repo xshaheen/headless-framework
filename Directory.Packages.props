@@ -200,8 +200,10 @@
     <PackageVersion Include="Testcontainers.Azurite" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.LocalStack" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.Kafka" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.Nats" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.Pulsar" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.XunitV3" Version="4.13.0" />
