@@ -183,7 +183,7 @@ defineOptions({ name: 'LoginView' })
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
-import { getAuthMode } from '@/utilities/pathResolver'
+import { consumeHostAccessTokenFromFragment, getAuthMode } from '@/utilities/pathResolver'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -248,19 +248,23 @@ const clearError = () => {
 }
 
 onMounted(async () => {
+  const token = consumeHostAccessTokenFromFragment(authMode.value)
+
   if (authStore.isLoggedIn) {
     router.push('/')
     return
   }
 
-  // Auto-fill from ?access_token= query param (useful for host auth with JWT)
-  const token = router.currentRoute.value.query.access_token as string
-  if (token && authMode.value === 'host') {
-    authStore.credentials.hostAccessKey = token.startsWith('Bearer ') ? token : `Bearer ${token}`
-    const success = await authStore.login()
-    if (success) {
-      router.push('/')
-    }
+  if (!token) {
+    return
+  }
+
+  authStore.credentials.hostAccessKey = token
+  const success = await authStore.login()
+  authStore.credentials.hostAccessKey = ''
+
+  if (success) {
+    router.push('/')
   }
 })
 </script>
