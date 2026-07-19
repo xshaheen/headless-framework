@@ -5,7 +5,6 @@ using Headless.Domain;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
@@ -119,170 +118,6 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
 
     #endregion
 
-    #region Publish (Synchronous) Tests
-
-    [Fact]
-    public void should_invoke_all_handlers()
-    {
-        // given
-        var handler1 = new TrackingHandler();
-        var handler2 = new TrackingHandler();
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler1);
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler2);
-        var publisher = _CreatePublisher(services);
-        var message = new TestLocalMessage("test-value");
-
-        // when
-        publisher.Publish(message);
-
-        // then
-        handler1.ReceivedMessages.Should().ContainSingle().Which.Should().Be("test-value");
-        handler2.ReceivedMessages.Should().ContainSingle().Which.Should().Be("test-value");
-    }
-
-    [Fact]
-    public void should_invoke_handlers_in_order_attribute_order()
-    {
-        // given
-        var invocationOrder = new List<string>();
-        var services = new ServiceCollection();
-        // Register in wrong order intentionally
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        var publisher = _CreatePublisher(services);
-
-        // when
-        publisher.Publish(new TestLocalMessage("test"));
-
-        // then - should be ordered: -10, 0, 10
-        invocationOrder.Should().ContainInOrder("Negative10", "Default0", "Positive10");
-    }
-
-    [Fact]
-    public void should_invoke_handlers_with_default_order_zero()
-    {
-        // given
-        var invocationOrder = new List<string>();
-        var services = new ServiceCollection();
-        // Two handlers with default order (0) - should maintain registration order
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        var publisher = _CreatePublisher(services);
-
-        // when
-        publisher.Publish(new TestLocalMessage("test"));
-
-        // then - Negative10 (-10) should come before Default0 (0)
-        invocationOrder.Should().ContainInOrder("Negative10", "Default0");
-    }
-
-    [Fact]
-    public void should_pass_message_to_handler()
-    {
-        // given
-        var handler = new TrackingHandler();
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
-        var publisher = _CreatePublisher(services);
-        var message = new TestLocalMessage("expected-value");
-
-        // when
-        publisher.Publish(message);
-
-        // then
-        handler.ReceivedMessages.Should().ContainSingle().Which.Should().Be("expected-value");
-    }
-
-    [Fact]
-    public void should_throw_single_exception_when_one_handler_fails()
-    {
-        // given
-        var failingHandler = new FailingHandler("Single failure");
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
-        var publisher = _CreatePublisher(services);
-
-        // when
-        var act = () => publisher.Publish(new TestLocalMessage("test"));
-
-        // then - single exception should be re-thrown directly, not wrapped
-        act.Should().Throw<InvalidOperationException>().WithMessage("Single failure");
-    }
-
-    [Fact]
-    public void should_throw_aggregate_exception_when_multiple_handlers_fail()
-    {
-        // given
-        var failingHandler1 = new FailingHandler("Failure 1");
-        var failingHandler2 = new FailingHandler("Failure 2");
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler1);
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler2);
-        var publisher = _CreatePublisher(services);
-
-        // when
-        var act = () => publisher.Publish(new TestLocalMessage("test"));
-
-        // then
-        var exception = act.Should().Throw<AggregateException>().Which;
-        exception.InnerExceptions.Should().HaveCount(2);
-        exception.InnerExceptions.Should().AllBeOfType<InvalidOperationException>();
-        exception.InnerExceptions.Select(e => e.Message).Should().Contain("Failure 1", "Failure 2");
-    }
-
-    [Fact]
-    public void should_continue_invoking_handlers_after_failure()
-    {
-        // given
-        var failingHandler = new FailingHandler();
-        var trackingHandler = new TrackingAfterFailureHandler();
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(trackingHandler);
-        var publisher = _CreatePublisher(services);
-
-        // when
-        var act = () => publisher.Publish(new TestLocalMessage("test"));
-
-        // then - exception thrown but both handlers were invoked
-        act.Should().Throw<Exception>();
-        failingHandler.WasInvoked.Should().BeTrue();
-        trackingHandler.WasInvoked.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_unwrap_target_invocation_exception()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new TargetInvocationExceptionHandler());
-        var publisher = _CreatePublisher(services);
-
-        // when
-        var act = () => publisher.Publish(new TestLocalMessage("test"));
-
-        // then - inner exception should be thrown, not TargetInvocationException
-        act.Should().Throw<ArgumentException>().WithMessage("Inner exception message");
-    }
-
-    [Fact]
-    public void should_handle_no_registered_handlers()
-    {
-        // given
-        var services = new ServiceCollection();
-        var publisher = _CreatePublisher(services);
-
-        // when
-        var act = () => publisher.Publish(new TestLocalMessage("test"));
-
-        // then - no exception
-        act.Should().NotThrow();
-    }
-
-    #endregion
-
     #region PublishAsync Tests
 
     [Fact]
@@ -321,6 +156,39 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
 
         // then
         invocationOrder.Should().ContainInOrder("Negative10", "Default0", "Positive10");
+    }
+
+    [Fact]
+    public async Task should_invoke_handlers_with_default_order_zero_async()
+    {
+        // given
+        var invocationOrder = new List<string>();
+        var services = new ServiceCollection();
+        // Two handlers where one keeps the default order (0) - explicit orders still win
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
+        var publisher = _CreatePublisher(services);
+
+        // when
+        await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
+
+        // then - Negative10 (-10) should come before Default0 (0)
+        invocationOrder.Should().ContainInOrder("Negative10", "Default0");
+    }
+
+    [Fact]
+    public async Task should_unwrap_target_invocation_exception_async()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new TargetInvocationExceptionHandler());
+        var publisher = _CreatePublisher(services);
+
+        // when
+        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
+
+        // then - inner exception should be thrown, not TargetInvocationException
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("Inner exception message");
     }
 
     [Fact]
@@ -456,28 +324,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     #region Non-generic runtime-typed dispatch (invoker cache)
 
     [Fact]
-    public void should_dispatch_to_runtime_type_handlers_via_non_generic_publish()
-    {
-        // given — referenced through IDomainEvent so the non-generic Publish(IDomainEvent) overload
-        // (compiled invoker) is selected. Handlers fire only if it routes by runtime type to
-        // Publish<TestLocalMessage>; a wrong IDomainEvent-typed dispatch would resolve zero handlers.
-        var handler = new TrackingHandler();
-        var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
-        var publisher = _CreatePublisher(services);
-        IDomainEvent message = new TestLocalMessage("runtime-typed");
-
-        // when
-        publisher.Publish(message);
-
-        // then
-        handler.ReceivedMessages.Should().ContainSingle().Which.Should().Be("runtime-typed");
-    }
-
-    [Fact]
     public async Task should_dispatch_to_runtime_type_handlers_via_non_generic_publish_async()
     {
-        // given
+        // given — referenced through IDomainEvent so the non-generic PublishAsync(IDomainEvent) overload
+        // (compiled invoker) is selected. Handlers fire only if it routes by runtime type to
+        // PublishAsync<TestLocalMessage>; a wrong IDomainEvent-typed dispatch would resolve zero handlers.
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
         services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
@@ -494,7 +345,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     }
 
     [Fact]
-    public void should_cache_and_reuse_runtime_typed_invoker_across_calls()
+    public async Task should_cache_and_reuse_runtime_typed_invoker_across_calls()
     {
         // given
         var handler = new TrackingHandler();
@@ -505,15 +356,15 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         // when — repeated non-generic dispatch of the same runtime type reuses the cached invoker
         IDomainEvent first = new TestLocalMessage("first");
         IDomainEvent second = new TestLocalMessage("second");
-        publisher.Publish(first);
-        publisher.Publish(second);
+        await publisher.PublishAsync(first, AbortToken);
+        await publisher.PublishAsync(second, AbortToken);
 
         // then
         handler.ReceivedMessages.Should().ContainInOrder("first", "second");
     }
 
     [Fact]
-    public void should_propagate_handler_failure_through_non_generic_publish()
+    public async Task should_propagate_handler_failure_through_non_generic_publish()
     {
         // given — the generic path's exception semantics must flow through the compiled invoker.
         var services = new ServiceCollection();
@@ -522,10 +373,10 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         IDomainEvent message = new TestLocalMessage("test");
 
         // when
-        var act = () => publisher.Publish(message);
+        var act = async () => await publisher.PublishAsync(message, AbortToken);
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("non-generic failure");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("non-generic failure");
     }
 
     #endregion
@@ -533,7 +384,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     #region Handler Order Caching Tests
 
     [Fact]
-    public void should_cache_handler_order()
+    public async Task should_cache_handler_order()
     {
         // given
         var invocationOrder = new List<string>();
@@ -543,9 +394,9 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when - publish multiple times
-        publisher.Publish(new TestLocalMessage("test1"));
+        await publisher.PublishAsync(new TestLocalMessage("test1"), AbortToken);
         invocationOrder.Clear();
-        publisher.Publish(new TestLocalMessage("test2"));
+        await publisher.PublishAsync(new TestLocalMessage("test2"), AbortToken);
 
         // then - order should be consistent (cached)
         invocationOrder.Should().ContainInOrder("Negative10", "Positive10");
@@ -561,12 +412,10 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
         var publisher = _CreatePublisher(services);
 
-        // when - mix sync and async calls
-        // ReSharper disable once MethodHasAsyncOverload
-        publisher.Publish(new TestLocalMessage("sync1"));
-        await publisher.PublishAsync(new TestLocalMessage("async1"), AbortToken);
-        // ReSharper disable once MethodHasAsyncOverload
-        publisher.Publish(new TestLocalMessage("sync2"));
+        // when - publish repeatedly against the same cached order
+        await publisher.PublishAsync(new TestLocalMessage("first"), AbortToken);
+        await publisher.PublishAsync(new TestLocalMessage("second"), AbortToken);
+        await publisher.PublishAsync(new TestLocalMessage("third"), AbortToken);
 
         // then - all should maintain same order (cache is shared)
         // Expected: Default0, Positive10 repeated 3 times
