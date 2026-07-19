@@ -9,7 +9,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for IP address string properties.</summary>
 [PublicAPI]
-public static class NetworkValidators
+public static class HeadlessNetworkValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     extension<T>(IRuleBuilder<T, string> rule)

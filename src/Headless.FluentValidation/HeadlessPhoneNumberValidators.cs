@@ -12,7 +12,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for phone number and country code properties.</summary>
 [PublicAPI]
-public static class PhoneNumberValidators
+public static class HeadlessPhoneNumberValidators
 {
     private static readonly DataAnnotationsPhoneAttribute _PhoneAttribute = new();
     private static readonly PhoneNumberUtil _PhoneNumberUtil = PhoneNumberUtil.GetInstance();

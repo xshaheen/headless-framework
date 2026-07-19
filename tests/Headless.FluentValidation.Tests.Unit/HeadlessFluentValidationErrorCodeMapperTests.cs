@@ -34,7 +34,7 @@ public sealed class FluentValidationErrorCodeMapperTests
     [InlineData("AsyncPredicateValidator", "g:invalid_condition")]
     public void should_map_built_in_validators_to_headless_codes(string fluentCode, string expectedCode)
     {
-        var result = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(fluentCode);
+        var result = HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode(fluentCode);
 
         result.Should().Be(expectedCode);
     }
@@ -46,7 +46,7 @@ public sealed class FluentValidationErrorCodeMapperTests
     [Fact]
     public void should_return_null_when_error_code_is_null()
     {
-        var result = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(null);
+        var result = HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode(null);
 
         result.Should().BeNull();
     }
@@ -59,7 +59,7 @@ public sealed class FluentValidationErrorCodeMapperTests
     [InlineData("")]
     public void should_return_original_code_when_not_mapped(string unknownCode)
     {
-        var result = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(unknownCode);
+        var result = HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode(unknownCode);
 
         result.Should().Be(unknownCode);
     }
@@ -75,7 +75,7 @@ public sealed class FluentValidationErrorCodeMapperTests
     public void should_not_map_when_case_differs(string wrongCaseCode)
     {
         // The mapper is case-sensitive, so wrong case returns original
-        var result = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(wrongCaseCode);
+        var result = HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode(wrongCaseCode);
 
         result.Should().Be(wrongCaseCode);
     }

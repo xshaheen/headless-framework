@@ -13,7 +13,7 @@ namespace FluentValidation;
 /// validators stay one-line each and never drift apart on rule order or message wording.
 /// </summary>
 [PublicAPI]
-public static class StorageIdentifierValidators
+public static class HeadlessStorageIdentifierValidators
 {
     /// <summary>
     /// Validates a PostgreSQL unquoted identifier (schema/table name): leading letter or

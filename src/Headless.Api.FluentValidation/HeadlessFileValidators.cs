@@ -22,7 +22,7 @@ namespace FluentValidation;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public static class FileValidators
+public static class HeadlessFileValidators
 {
     /*
      * A virus/malware scanner API MUST be used on the file before making the file available to users or other systems.

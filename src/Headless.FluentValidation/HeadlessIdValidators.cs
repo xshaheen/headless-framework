@@ -5,7 +5,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for identifier properties.</summary>
 [PublicAPI]
-public static class IdValidators
+public static class HeadlessIdValidators
 {
     /// <summary>Validates that the <see cref="Guid"/> value is not <see cref="Guid.Empty"/>.</summary>
     /// <returns>The rule builder options for chaining.</returns>

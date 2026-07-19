@@ -7,7 +7,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for common pagination and search parameters.</summary>
 [PublicAPI]
-public static class PaginationValidators
+public static class HeadlessPaginationValidators
 {
     /// <summary>Validates that the nullable page index, when present, is zero or greater.</summary>
     /// <returns>The rule builder options for chaining.</returns>
