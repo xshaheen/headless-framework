@@ -6,14 +6,14 @@ namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Builds the provider-owned <see cref="NpgsqlDataSource"/> from
-/// <see cref="PostgresDistributedLockOptions.ConnectionString"/>, defaulting a TCP keepalive when the
+/// <see cref="PostgreSqlDistributedLockOptions.ConnectionString"/>, defaulting a TCP keepalive when the
 /// connection string does not already specify one.
 /// </summary>
 /// <remarks>
 /// Keepalive is complementary to the active connection monitor: TCP keepalive makes Npgsql's
 /// <c>StateChange</c> event surface a silently-dropped idle holder faster, while the monitor's
 /// bounded-timeout server-side probe is the authoritative active check. An injected
-/// <see cref="PostgresDistributedLockOptions.DataSource"/> is the consumer's own object and is never
+/// <see cref="PostgreSqlDistributedLockOptions.DataSource"/> is the consumer's own object and is never
 /// rebuilt here.
 /// </remarks>
 internal static class PostgresDataSourceFactory
@@ -22,7 +22,7 @@ internal static class PostgresDataSourceFactory
     /// Returns the injected data source unchanged, or builds a new one from the connection string with a
     /// keepalive default applied when the string does not already set one.
     /// </summary>
-    public static NpgsqlDataSource CreateDataSource(PostgresDistributedLockOptions options)
+    public static NpgsqlDataSource CreateDataSource(PostgreSqlDistributedLockOptions options)
     {
         if (options.DataSource is not null)
         {

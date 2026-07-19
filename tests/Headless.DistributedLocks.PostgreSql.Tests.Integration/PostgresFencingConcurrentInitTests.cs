@@ -7,8 +7,8 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresFencingConcurrentInitTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresFencingConcurrentInitTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
 

@@ -10,13 +10,13 @@ namespace Tests;
 /// against the PostgreSQL advisory-lock provider. Backend-specific behavior lives in the sibling
 /// test classes; this class only wires the provider and exposes the portable scenarios as facts.
 /// </summary>
-[Collection<PostgresDistributedLockFixture>]
+[Collection<PostgreSqlDistributedLockFixture>]
 public sealed class PostgresReaderWriterLockConformanceTests : DistributedReadWriteLockTestsBase
 {
     private readonly ServiceProvider _services;
     private readonly IDistributedReadWriteLock _provider;
 
-    public PostgresReaderWriterLockConformanceTests(PostgresDistributedLockFixture fixture)
+    public PostgresReaderWriterLockConformanceTests(PostgreSqlDistributedLockFixture fixture)
     {
         var services = new ServiceCollection();
         services.AddLogging();

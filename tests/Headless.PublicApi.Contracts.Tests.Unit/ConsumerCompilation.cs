@@ -101,7 +101,7 @@ internal static class ConsumerCompilation
             typeof(IEntity).Assembly,
             typeof(JobFunctionDelegate).Assembly,
             typeof(JobsIncrementalSourceGenerator).Assembly,
-            typeof(Microsoft.EntityFrameworkCore.QueryableExtensions).Assembly,
+            typeof(Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions).Assembly,
             typeof(DictionaryExtensions).Assembly,
             typeof(IDocumentSet<>).Assembly,
             typeof(IConnectionMultiplexer).Assembly,

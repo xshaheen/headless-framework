@@ -15,8 +15,8 @@ namespace Tests;
 /// is the PostgreSQL backend process id of the session holding each granted advisory lock — two locks on the same pid
 /// prove they ride the same physical connection.
 /// </summary>
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresMultiplexingTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_share_one_backend_connection_when_two_distinct_resources_are_locked()
@@ -149,7 +149,7 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
     /// </summary>
     private async Task<IReadOnlyList<int>> _GetBackendPidsHoldingAsync(string keyMaterial, bool? isShared = null)
     {
-        var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
         var (key1, key2) = key.Keys;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

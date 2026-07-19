@@ -23,7 +23,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination)
 - Value converters: `MoneyAmountValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
-- `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
+- `HeadlessDataGridExtensions` for pagination and ordering on `IQueryable<T>`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
 ## Design Notes

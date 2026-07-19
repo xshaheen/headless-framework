@@ -10,7 +10,7 @@
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
   </ItemGroup>

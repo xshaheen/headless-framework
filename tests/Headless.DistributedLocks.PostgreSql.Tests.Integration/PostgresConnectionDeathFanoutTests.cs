@@ -15,8 +15,8 @@ namespace Tests;
 /// happened to read. The single-lock StateChange path is already covered by <c>PostgresConnectionDeathTests</c>; this
 /// adds the multiplexed fan-out, which is the capability the optimistic engine newly activates.
 /// </summary>
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresConnectionDeathFanoutTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const string _KeyPrefix = "death-fanout:";
 
@@ -91,7 +91,7 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
 
     private async Task<IReadOnlyList<int>> _GetBackendPidsHoldingAsync(string keyMaterial)
     {
-        var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
         var (key1, key2) = key.Keys;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

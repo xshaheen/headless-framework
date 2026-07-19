@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Imaging;
 
 [PublicAPI]
-public static class SetupCore
+public static class SetupImaging
 {
     extension(IServiceCollection services)
     {

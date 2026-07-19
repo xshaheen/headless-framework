@@ -116,12 +116,12 @@ public sealed class ConsumerContractCompileTests : TestBase
                     _ = DocumentSetExtensions.GetAsync<ConsumerEntity, string>(set, "consumer", CancellationToken.None);
                     _ = DocumentSetExtensions.GetAllReplicasAsync<ConsumerEntity, string>(set, "consumer");
                     _ = DocumentSetExtensions.GetAsync<ConsumerIntEntity, int>(intSet, 42, CancellationToken.None);
-                    _ = Microsoft.EntityFrameworkCore.QueryableExtensions.FirstByIdAsync<ConsumerEntity, string>(
+                    _ = Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions.FirstByIdAsync<ConsumerEntity, string>(
                         query,
                         "consumer",
                         CancellationToken.None
                     );
-                    _ = Microsoft.EntityFrameworkCore.QueryableExtensions.FirstByIdAsync<ConsumerIntEntity, int>(
+                    _ = Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions.FirstByIdAsync<ConsumerIntEntity, int>(
                         intQuery,
                         42,
                         CancellationToken.None
@@ -238,7 +238,7 @@ public sealed class ConsumerContractCompileTests : TestBase
             public static class ContractUsage
             {
                 public static void Use(IQueryable<ConsumerEntity> query, NonEquatableKey id)
-                    => _ = Microsoft.EntityFrameworkCore.QueryableExtensions.FirstByIdAsync<ConsumerEntity, NonEquatableKey>(
+                    => _ = Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions.FirstByIdAsync<ConsumerEntity, NonEquatableKey>(
                         query,
                         id
                     );
@@ -246,7 +246,7 @@ public sealed class ConsumerContractCompileTests : TestBase
             """
         );
 
-        _AssertOnlyExpectedError(diagnostics, "CS0311", "QueryableExtensions.FirstByIdAsync");
+        _AssertOnlyExpectedError(diagnostics, "CS0311", "HeadlessQueryableExtensions.FirstByIdAsync");
     }
 
     [Fact]

@@ -12,7 +12,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// </summary>
 /// <remarks>
 /// Disposal ownership is centralized here: when the data source was built from a connection string it
-/// is owned and disposed on container teardown; when a <see cref="PostgresDistributedLockOptions.DataSource"/>
+/// is owned and disposed on container teardown; when a <see cref="PostgreSqlDistributedLockOptions.DataSource"/>
 /// is injected it is the consumer's object and is never disposed. Consumers inject
 /// <see cref="DataSource"/> directly and must not dispose it.
 /// </remarks>
@@ -21,11 +21,11 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// building one from the configured connection string (owned and disposed on teardown).
 /// </remarks>
 /// <param name="options">
-/// Resolved options. When <see cref="PostgresDistributedLockOptions.DataSource"/> is set, it is
+/// Resolved options. When <see cref="PostgreSqlDistributedLockOptions.DataSource"/> is set, it is
 /// used directly and is not owned; otherwise a new <see cref="NpgsqlDataSource"/> is built from
-/// <see cref="PostgresDistributedLockOptions.ConnectionString"/> and is owned.
+/// <see cref="PostgreSqlDistributedLockOptions.ConnectionString"/> and is owned.
 /// </param>
-internal sealed class PostgresLockDataSource(IOptions<PostgresDistributedLockOptions> options)
+internal sealed class PostgresLockDataSource(IOptions<PostgreSqlDistributedLockOptions> options)
     : IAsyncDisposable,
         IDisposable
 {
