@@ -1,15 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension methods on <see cref="ModelBuilder"/> for registering Headless settings entities.</summary>
 [PublicAPI]
-public static class SettingsModelBuilderExtensions
+public static class HeadlessSettingsModelBuilderExtensions
 {
     extension(ModelBuilder modelBuilder)
     {

@@ -22,7 +22,7 @@ public static class SetupAuditLogEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <c>DbContext</c> subclass that owns the audit log table. The context must call
-        /// <see cref="AuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
+        /// <see cref="Microsoft.EntityFrameworkCore.HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
         /// <c>OnModelCreating</c>, which is validated at application startup.
         /// </typeparam>
         /// <remarks>

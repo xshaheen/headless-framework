@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.AuditLog;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>ModelBuilder extensions for configuring the audit log schema.</summary>
 [PublicAPI]
-public static class AuditLogModelBuilderExtensions
+public static class HeadlessAuditLogModelBuilderExtensions
 {
     /// <summary>
     /// Registers and configures the <see cref="AuditLogEntry"/> entity type.

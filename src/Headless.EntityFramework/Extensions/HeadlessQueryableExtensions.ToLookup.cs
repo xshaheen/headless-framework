@@ -4,7 +4,7 @@
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
-public static partial class QueryableExtensions
+public static partial class HeadlessQueryableExtensions
 {
     /// <summary>
     /// Asynchronously materializes the query and groups the results into an <see cref="ILookup{TKey,TElement}"/>.

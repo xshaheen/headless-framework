@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// </summary>
 /// <remarks>
 /// <para>
-/// When <see cref="PostgresDistributedLockOptions.EnablePushWakeup"/> is <see langword="true"/>, a
+/// When <see cref="PostgreSqlDistributedLockOptions.EnablePushWakeup"/> is <see langword="true"/>, a
 /// background <see cref="Task"/> runs a persistent <c>LISTEN</c> loop on a dedicated connection from the
 /// shared <see cref="NpgsqlDataSource"/>. Release notifications sent via <see cref="PublishAsync"/> call
 /// <c>pg_notify</c> on the <c>headless_distributed_locks_release</c> channel. Each arriving notification
@@ -46,7 +46,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
     /// <summary>
     /// Initializes the release signal, wrapping a local <see cref="PollingReleaseSignal"/> and, when
-    /// <see cref="PostgresDistributedLockOptions.EnablePushWakeup"/> is set, starting a background
+    /// <see cref="PostgreSqlDistributedLockOptions.EnablePushWakeup"/> is set, starting a background
     /// LISTEN/NOTIFY listener that wakes waiters early.
     /// </summary>
     /// <param name="options">Provider options supplying command timeout and push-wakeup toggle.</param>
@@ -56,7 +56,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// <param name="timeProvider">Time source used for reconnect backoff delays.</param>
     /// <param name="logger">Logger for listener reconnect and fanout-failure warnings.</param>
     public PostgresReleaseSignal(
-        IOptions<PostgresDistributedLockOptions> options,
+        IOptions<PostgreSqlDistributedLockOptions> options,
         NpgsqlDataSource dataSource,
         TimeProvider timeProvider,
         ILogger<PostgresReleaseSignal> logger
@@ -76,7 +76,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         }
     }
 
-    private PostgresDistributedLockOptions Options { get; }
+    private PostgreSqlDistributedLockOptions Options { get; }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -97,7 +97,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// When <see cref="PostgresDistributedLockOptions.EnablePushWakeup"/> is <see langword="true"/>,
+    /// When <see cref="PostgreSqlDistributedLockOptions.EnablePushWakeup"/> is <see langword="true"/>,
     /// publishes a <c>pg_notify</c> on the <c>headless_distributed_locks_release</c> channel in addition
     /// to notifying local waiters. Cross-process waiters listening on the channel are woken promptly.
     /// Underlying Npgsql errors from the <c>pg_notify</c> command propagate to the caller.

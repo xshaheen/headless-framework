@@ -9,7 +9,7 @@ using Headless.Linq;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
-public static partial class QueryableExtensions
+public static partial class HeadlessQueryableExtensions
 {
     /// <summary>
     /// Count number of entities per each month in the interval from <paramref name="start"/>

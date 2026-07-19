@@ -11,7 +11,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// <see cref="DataSource"/> is used as-is and is never disposed by the provider.
 /// </summary>
 [PublicAPI]
-public sealed class PostgresDistributedLockOptions
+public sealed class PostgreSqlDistributedLockOptions
 {
     /// <summary>
     /// Gets or sets the Npgsql connection string used to build the provider-owned
@@ -72,9 +72,9 @@ public sealed class PostgresDistributedLockOptions
     public TimeSpan KeepAlive { get; set; } = TimeSpan.FromSeconds(30);
 }
 
-internal sealed class PostgresDistributedLockOptionsValidator : AbstractValidator<PostgresDistributedLockOptions>
+internal sealed class PostgreSqlDistributedLockOptionsValidator : AbstractValidator<PostgreSqlDistributedLockOptions>
 {
-    public PostgresDistributedLockOptionsValidator()
+    public PostgreSqlDistributedLockOptionsValidator()
     {
         RuleFor(x => x.KeyPrefix).NotEmpty();
         RuleFor(x => x.PollingFallback).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromSeconds(30));
@@ -83,7 +83,7 @@ internal sealed class PostgresDistributedLockOptionsValidator : AbstractValidato
         RuleFor(x => x)
             .Must(x => x.DataSource is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
             .WithMessage(
-                $"{nameof(PostgresDistributedLockOptions.ConnectionString)} or {nameof(PostgresDistributedLockOptions.DataSource)} is required."
+                $"{nameof(PostgreSqlDistributedLockOptions.ConnectionString)} or {nameof(PostgreSqlDistributedLockOptions.DataSource)} is required."
             );
     }
 }

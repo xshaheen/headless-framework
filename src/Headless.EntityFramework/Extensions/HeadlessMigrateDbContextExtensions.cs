@@ -17,7 +17,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// the context is not registered in DI or the factory lifetime differs.
 /// </remarks>
 [PublicAPI]
-public static class MigrateDbContextExtensions
+public static class HeadlessMigrateDbContextExtensions
 {
     extension(IServiceProvider services)
     {

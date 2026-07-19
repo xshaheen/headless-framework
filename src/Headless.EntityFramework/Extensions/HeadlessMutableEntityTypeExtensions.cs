@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]
-public static class MutableEntityTypeExtensions
+public static class HeadlessMutableEntityTypeExtensions
 {
     /// <summary>
     /// Makes the application-side generator the single source of an <see cref="IEntity{TId}.Id"/> of type

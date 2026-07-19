@@ -17,7 +17,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// <see cref="Npgsql.NpgsqlException"/>) propagate to the caller.
 /// </remarks>
 [PublicAPI]
-public static class PostgresDistributedLock
+public static class PostgreSqlDistributedLock
 {
     /// <summary>
     /// Acquires a transaction-scoped exclusive advisory lock for <paramref name="key"/> on the connection
@@ -37,7 +37,7 @@ public static class PostgresDistributedLock
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before the server grants the lock.
     /// </exception>
     public static async ValueTask AcquireWithTransactionAsync(
-        PostgresAdvisoryLockKey key,
+        PostgreSqlAdvisoryLockKey key,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken = default
     )
@@ -77,7 +77,7 @@ public static class PostgresDistributedLock
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before the command completes.
     /// </exception>
     public static async ValueTask<bool> TryAcquireWithTransactionAsync(
-        PostgresAdvisoryLockKey key,
+        PostgreSqlAdvisoryLockKey key,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken = default
     )

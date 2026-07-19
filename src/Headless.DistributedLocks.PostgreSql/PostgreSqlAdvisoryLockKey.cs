@@ -50,7 +50,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// </remarks>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
-public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLockKey>
+public readonly struct PostgreSqlAdvisoryLockKey : IEquatable<PostgreSqlAdvisoryLockKey>
 {
     private const int _AsciiCharBits = 7;
     private const int _MaxAsciiValue = (1 << _AsciiCharBits) - 1;
@@ -64,7 +64,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     // Memoizes the SHA256-hashed keys for long names so the provider's retry loop (one FromString per
     // poll) does not re-hash the same resource string every attempt. The soft cap avoids retaining
     // unbounded high-cardinality resource names for the process lifetime.
-    private static readonly ConcurrentDictionary<string, PostgresAdvisoryLockKey> _HashedKeyCache = new(
+    private static readonly ConcurrentDictionary<string, PostgreSqlAdvisoryLockKey> _HashedKeyCache = new(
         StringComparer.Ordinal
     );
 
@@ -73,7 +73,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     /// <summary>Initializes a key in the bigint (<c>int8</c>) advisory-lock key space.</summary>
     /// <param name="key">The 64-bit advisory-lock key value.</param>
-    public PostgresAdvisoryLockKey(long key)
+    public PostgreSqlAdvisoryLockKey(long key)
     {
         _key = key;
         _keyEncoding = KeyEncoding.Int64;
@@ -82,14 +82,14 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// <summary>Initializes a key in the two-int (<c>int4, int4</c>) advisory-lock key space.</summary>
     /// <param name="key1">The first 32-bit component of the advisory-lock key pair.</param>
     /// <param name="key2">The second 32-bit component of the advisory-lock key pair.</param>
-    public PostgresAdvisoryLockKey(int key1, int key2)
+    public PostgreSqlAdvisoryLockKey(int key1, int key2)
     {
         _key = _CombineKeys(key1, key2);
         _keyEncoding = KeyEncoding.Int32Pair;
     }
 
     /// <summary>
-    /// Derives a <see cref="PostgresAdvisoryLockKey"/> from an arbitrary resource name string using the
+    /// Derives a <see cref="PostgreSqlAdvisoryLockKey"/> from an arbitrary resource name string using the
     /// encoding priority described on the type: ASCII packing → hash-string passthrough → SHA-256 hash.
     /// </summary>
     /// <param name="name">The resource name to encode. Must not be <see langword="null"/>.</param>
@@ -98,24 +98,24 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// When <see langword="false"/>, a name that does not fit ASCII or hash-string encoding throws
     /// <see cref="FormatException"/>.
     /// </param>
-    /// <returns>The derived <see cref="PostgresAdvisoryLockKey"/>.</returns>
+    /// <returns>The derived <see cref="PostgreSqlAdvisoryLockKey"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="FormatException">
     /// Thrown when <paramref name="allowHashing"/> is <see langword="false"/> and <paramref name="name"/>
     /// cannot be encoded as ASCII or a hash-string key.
     /// </exception>
-    public static PostgresAdvisoryLockKey FromString(string name, bool allowHashing = true)
+    public static PostgreSqlAdvisoryLockKey FromString(string name, bool allowHashing = true)
     {
         Argument.IsNotNull(name);
 
         if (_TryEncodeAscii(name, out var key))
         {
-            return new PostgresAdvisoryLockKey(key, KeyEncoding.Ascii);
+            return new PostgreSqlAdvisoryLockKey(key, KeyEncoding.Ascii);
         }
 
         if (_TryEncodeHashString(name, out key, out var hasSeparator))
         {
-            return new PostgresAdvisoryLockKey(key, hasSeparator ? KeyEncoding.Int32Pair : KeyEncoding.Int64);
+            return new PostgreSqlAdvisoryLockKey(key, hasSeparator ? KeyEncoding.Int32Pair : KeyEncoding.Int64);
         }
 
         if (allowHashing)
@@ -123,10 +123,10 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
             return _GetOrHashString(name);
         }
 
-        throw new FormatException($"Name '{name}' could not be encoded as a {nameof(PostgresAdvisoryLockKey)}.");
+        throw new FormatException($"Name '{name}' could not be encoded as a {nameof(PostgreSqlAdvisoryLockKey)}.");
     }
 
-    private PostgresAdvisoryLockKey(long key, KeyEncoding encoding)
+    private PostgreSqlAdvisoryLockKey(long key, KeyEncoding encoding)
     {
         _key = key;
         _keyEncoding = encoding;
@@ -160,7 +160,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// occupies the same key space (<see cref="HasSingleKey"/>).
     /// </summary>
     /// <param name="other">The key to compare against.</param>
-    public bool Equals(PostgresAdvisoryLockKey other)
+    public bool Equals(PostgreSqlAdvisoryLockKey other)
     {
         return (_key, HasSingleKey).Equals((other._key, other.HasSingleKey));
     }
@@ -168,7 +168,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     /// <inheritdoc/>
     public override bool Equals(object? obj)
     {
-        return obj is PostgresAdvisoryLockKey other && Equals(other);
+        return obj is PostgreSqlAdvisoryLockKey other && Equals(other);
     }
 
     /// <inheritdoc/>
@@ -194,10 +194,12 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     }
 
     /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are equal.</summary>
-    public static bool operator ==(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => left.Equals(right);
+    public static bool operator ==(PostgreSqlAdvisoryLockKey left, PostgreSqlAdvisoryLockKey right) =>
+        left.Equals(right);
 
     /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are not equal.</summary>
-    public static bool operator !=(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => !left.Equals(right);
+    public static bool operator !=(PostgreSqlAdvisoryLockKey left, PostgreSqlAdvisoryLockKey right) =>
+        !left.Equals(right);
 
     // Advisory-key SQL helpers shared by every command-emitting call site (the transaction API on
     // NpgsqlCommand, and the multiplexing engine on DatabaseCommand). Co-located with the key encoding
@@ -395,14 +397,14 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
         }
     }
 
-    private static PostgresAdvisoryLockKey _GetOrHashString(string name)
+    private static PostgreSqlAdvisoryLockKey _GetOrHashString(string name)
     {
         if (_HashedKeyCache.TryGetValue(name, out var cached))
         {
             return cached;
         }
 
-        var hashed = new PostgresAdvisoryLockKey(_HashString(name));
+        var hashed = new PostgreSqlAdvisoryLockKey(_HashString(name));
 
         if (_HashedKeyCache.Count >= _MaxHashedKeyCacheEntries)
         {

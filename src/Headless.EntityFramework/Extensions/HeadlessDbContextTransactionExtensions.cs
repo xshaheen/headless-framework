@@ -9,7 +9,7 @@ namespace Microsoft.EntityFrameworkCore;
 /// Extension methods for executing operations within a resilient transaction that is
 /// coordinated with the <see cref="DbContext"/>'s execution strategy.
 /// </summary>
-public static class DbContextTransactionExtensions
+public static class HeadlessDbContextTransactionExtensions
 {
     /// <summary>
     /// Executes <paramref name="operation"/> inside a resilient transaction. The entire block is

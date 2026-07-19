@@ -11,13 +11,13 @@ namespace Tests;
 /// LISTEN/NOTIFY, fencing sequence, transaction coupling, connection death) lives in the sibling
 /// test classes; this class only wires the provider and exposes the portable scenarios as facts.
 /// </summary>
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresDistributedLockConformanceTests : DistributedLockTestsBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockTestsBase
 {
     private readonly ServiceProvider _services;
     private readonly IDistributedLock _provider;
 
-    public PostgresDistributedLockConformanceTests(PostgresDistributedLockFixture fixture)
+    public PostgreSqlDistributedLockConformanceTests(PostgreSqlDistributedLockFixture fixture)
     {
         var services = new ServiceCollection();
         services.AddLogging();
