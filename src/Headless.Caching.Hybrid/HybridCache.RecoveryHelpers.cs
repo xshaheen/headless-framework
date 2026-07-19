@@ -17,7 +17,7 @@ public sealed partial class HybridCache
             return null;
         }
 
-        var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+        var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
         return current.Found ? current.PhysicalExpiresAt : null;
     }
 
@@ -35,7 +35,7 @@ public sealed partial class HybridCache
         {
             if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
             {
-                var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+                var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
 
                 return current.Found && current.PhysicalExpiresAt == l1PhysicalStamp;
             }
@@ -60,7 +60,7 @@ public sealed partial class HybridCache
         {
             if (LocalCache is IFactoryCacheStore l1Store)
             {
-                var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
+                var current = await l1Store.TryGetEntryAsync<object>(key, cancellationToken: ct).ConfigureAwait(false);
 
                 return !(current.Found && current.PhysicalExpiresAt > baseline);
             }

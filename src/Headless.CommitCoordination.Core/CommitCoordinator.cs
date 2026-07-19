@@ -227,6 +227,8 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
     /// <returns><see langword="true" /> when this caller won the claim and must drain; otherwise <see langword="false" />.</returns>
     internal bool TryClaimTerminal(CommitOutcome outcome, out CommitTerminalClaim claim)
     {
+        CommitOutcomeValidation.ThrowIfNotTerminal(outcome);
+
         claim = default;
 
         if (_parent is not null)

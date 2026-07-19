@@ -6,11 +6,11 @@ namespace Headless.AuditLog;
 public enum AuditChangeType
 {
     /// <summary>Entity was inserted.</summary>
-    Created,
+    Created = 0,
 
     /// <summary>Entity was modified.</summary>
-    Updated,
+    Updated = 1,
 
     /// <summary>Entity was hard-deleted.</summary>
-    Deleted,
+    Deleted = 2,
 }

@@ -244,9 +244,12 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         var entries = await readAuditLog.QueryAsync(
-            action: AuditActionNames.Created,
-            entityType: typeof(Order).FullName,
-            limit: 10,
+            new()
+            {
+                Action = AuditActionNames.Created,
+                EntityType = typeof(Order).FullName,
+                Limit = 10,
+            },
             cancellationToken: AbortToken
         );
 
@@ -295,9 +298,12 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         var entries = await readAuditLog.QueryAsync(
-            action: AuditActionNames.Created,
-            entityType: typeof(Order).FullName,
-            limit: 2,
+            new()
+            {
+                Action = AuditActionNames.Created,
+                EntityType = typeof(Order).FullName,
+                Limit = 2,
+            },
             cancellationToken: AbortToken
         );
 
@@ -403,9 +409,12 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         await auditLog.LogAsync(
-            "pii.revealed",
-            entityType: "User",
-            entityId: "user-999",
+            new()
+            {
+                Action = "pii.revealed",
+                EntityType = "User",
+                EntityId = "user-999",
+            },
             cancellationToken: AbortToken
         );
         await db.SaveChangesAsync(AbortToken);
@@ -441,9 +450,12 @@ public sealed class AuditLogIntegrationTests : TestBase
         };
 
         await auditLog.LogAsync(
-            "pii.revealed",
-            entityType: "User",
-            entityId: "user-999",
+            new()
+            {
+                Action = "pii.revealed",
+                EntityType = "User",
+                EntityId = "user-999",
+            },
             cancellationToken: AbortToken
         );
         db.Orders.Add(order);

@@ -16,6 +16,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private const int _MaxFallbackClaimBatchSize = 100;
+
     private readonly ConcurrentDictionary<Guid, TTimeJob> _timeJobs = new();
 
     // Index of parent -> child ids for fast hierarchy lookup in memory
@@ -138,6 +140,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 && _CanFallbackClaim(x.Status, x.LockedUntil, now)
                 && x.ExecutionTime <= fallbackThreshold
             ) // Only tasks older than 1 second
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(_MaxFallbackClaimBatchSize)
             .ToArray();
 
         foreach (var job in timeJobsToUpdate)
@@ -1161,6 +1166,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         var occurrencesToUpdate = _cronOccurrences
             .Values.Where(x => _CanFallbackClaim(x.Status, x.LockedUntil, now) && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(_MaxFallbackClaimBatchSize)
             .ToArray();
 
         foreach (var occurrence in occurrencesToUpdate)

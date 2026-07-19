@@ -470,17 +470,6 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
-        public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent
-        {
-            LocalEmitters.Add(domainEvent);
-        }
-
-        public void Publish(IDomainEvent domainEvent)
-        {
-            LocalEmitters.Add(domainEvent);
-        }
-
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
         {
@@ -524,17 +513,6 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         private int _publishCount;
 
         public int PublishCount => _publishCount;
-
-        public void Publish<T>(T domainEvent)
-            where T : class, IDomainEvent
-        {
-            Interlocked.Increment(ref _publishCount);
-        }
-
-        public void Publish(IDomainEvent domainEvent)
-        {
-            Interlocked.Increment(ref _publishCount);
-        }
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent

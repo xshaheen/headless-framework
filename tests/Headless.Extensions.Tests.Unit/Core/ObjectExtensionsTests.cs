@@ -1,4 +1,4 @@
-using ObjectExtensions = System.ObjectExtensions;
+using HeadlessObjectExtensions = System.HeadlessObjectExtensions;
 
 namespace Tests.Core;
 
@@ -24,9 +24,9 @@ public sealed class ObjectExtensionsTests
     public void as_tests()
     {
         object o1 = new ObjectExtensionsTests();
-        ObjectExtensions.As<ObjectExtensionsTests>(o1).Should().NotBe(null);
+        HeadlessObjectExtensions.As<ObjectExtensionsTests>(o1).Should().NotBe(null);
 
         object? o2 = null;
-        ObjectExtensions.As<ObjectExtensionsTests>(o2).Should().Be(null);
+        HeadlessObjectExtensions.As<ObjectExtensionsTests>(o2).Should().Be(null);
     }
 }

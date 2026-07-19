@@ -414,6 +414,7 @@
         "dependencies": {
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )"
         }

@@ -142,7 +142,10 @@ internal static class JobsDashboardServiceCollectionExtensions
                     {
                         await next().ConfigureAwait(false);
 
-                        if (context.Response.StatusCode == 404)
+                        if (
+                            context.Response.StatusCode == StatusCodes.Status404NotFound
+                            && !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                        )
                         {
                             var file = embeddedFileProvider.GetFileInfo("index.html");
                             if (file.Exists)

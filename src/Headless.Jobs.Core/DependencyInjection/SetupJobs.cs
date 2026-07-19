@@ -79,6 +79,14 @@ public static class SetupJobs
             schedulerOptionsBuilder.PostCommitDrainTimeout <= _MaximumPostCommitDrainTimeout,
             "SchedulerOptionsBuilder.PostCommitDrainTimeout must not exceed 5 minutes."
         );
+        Ensure.True(
+            schedulerOptionsBuilder.MaxConcurrency > 0,
+            "SchedulerOptionsBuilder.MaxConcurrency must be greater than zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.MaxLongRunningConcurrency > 0,
+            "SchedulerOptionsBuilder.MaxLongRunningConcurrency must be greater than zero."
+        );
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
         {
@@ -98,6 +106,7 @@ public static class SetupJobs
 
         // Configure whether job request payloads should use GZip compression
         JobsHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
+        JobsHelper.MaxDecompressedRequestBytes = optionInstance.RequestGZipMaxDecompressedBytes;
 
         // Persisted job/cron primary keys are stamped via IGuidGenerator (Version7 default) instead of random
         // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
@@ -150,6 +159,7 @@ public static class SetupJobs
 
                 return new JobsTaskScheduler(
                     schedulerOptionsBuilder.MaxConcurrency,
+                    schedulerOptionsBuilder.MaxLongRunningConcurrency,
                     schedulerOptionsBuilder.IdleWorkerTimeOut,
                     notifyDebounce,
                     sp.GetRequiredService<TimeProvider>(),

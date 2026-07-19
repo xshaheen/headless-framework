@@ -8,7 +8,7 @@ internal sealed class ConsulProcessingNodeServer(INodeDiscoveryProvider discover
 {
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        await discoveryProvider.RegisterNode(stoppingToken).ConfigureAwait(false);
+        await discoveryProvider.RegisterNodeAsync(stoppingToken).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync()

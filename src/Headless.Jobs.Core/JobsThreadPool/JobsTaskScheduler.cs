@@ -19,6 +19,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<JobsTaskScheduler> _logger;
     private readonly Func<int, CancellationToken, Task>? _workerStartGate;
+    private readonly SemaphoreSlim _longRunningSlots;
 
     // Worker-fault restart backoff: start at 100ms, double per consecutive fault up to a 30s ceiling, and stop
     // auto-restarting a slot after this many back-to-back faults so a deterministically-faulting slot cannot spin
@@ -43,6 +44,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private volatile int _queuedHighPriority;
     private volatile int _queuedNormalPriority;
     private volatile int _queuedLowPriority;
+    private readonly int _maxPendingLongRunningAdmissions;
+    private volatile int _outstandingLongRunningOperations;
+    private volatile int _pendingLongRunningAdmissions;
+    private volatile int _longRunningSlotsDisposed;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
     private volatile int _nextQueueIndex;
@@ -52,6 +57,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     public JobsTaskScheduler(
         int maxConcurrency,
+        int? maxLongRunningConcurrency = null,
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
         TimeProvider? timeProvider = null,
@@ -66,6 +72,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger<JobsTaskScheduler>.Instance;
         _workerStartGate = workerStartGate;
+        var longRunningSlotCount = Argument.IsPositive(maxLongRunningConcurrency ?? Math.Min(maxConcurrency, 4));
+        _longRunningSlots = new SemaphoreSlim(longRunningSlotCount);
+        _maxPendingLongRunningAdmissions = longRunningSlotCount * 2;
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new WorkerQueue[maxConcurrency];
@@ -83,6 +92,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// <summary>
     /// Queues work to be executed by the scheduler.
     /// High-priority work is dequeued before normal and low-priority work on the shared worker pool.
+    /// <see cref="JobPriority.LongRunning"/> work returns as soon as the admission is registered: the bounded
+    /// dedicated-thread permit is awaited on a detached lane so a saturated long-running pool never blocks the
+    /// caller's dispatch loop. The detached backlog is capped at two parked admissions per slot; beyond the cap
+    /// the admission is rejected outright. A rejected or dropped (cancellation/shutdown) admission never runs;
+    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses.
     /// </summary>
     public Task QueueAsync(
         Func<CancellationToken, Task> work,
@@ -114,25 +128,28 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         // Handle long-running tasks specially
         if (priority == JobPriority.LongRunning)
         {
-            // Bypass pool for long-running tasks
-            Interlocked.Increment(ref _activeTasks);
+            // Bound the detached admission backlog at two parked waiters per slot. Under sustained saturation the
+            // fallback sweep re-claims a still-parked job every time its pickup lease lapses and dispatches it
+            // again, so an unbounded backlog would grow by one waiter per job per lease cycle. Beyond the cap the
+            // admission is rejected outright — the job stays claimed until its lease lapses and the reclaim sweep
+            // re-dispatches it, so nothing is lost.
+            var pendingAdmissions = Interlocked.Increment(ref _pendingLongRunningAdmissions);
+            if (pendingAdmissions > _maxPendingLongRunningAdmissions)
+            {
+                Interlocked.Decrement(ref _pendingLongRunningAdmissions);
+                _logger.LongRunningAdmissionRejected(pendingAdmissions - 1, _maxPendingLongRunningAdmissions);
+                return;
+            }
 
-            try
-            {
-                _ = Task
-                    .Factory.StartNew(
-                        () => _ExecuteLongRunningWorkAsync(work, executionCancellationToken),
-                        CancellationToken.None,
-                        TaskCreationOptions.LongRunning,
-                        TaskScheduler.Default
-                    )
-                    .Unwrap();
-            }
-            catch
-            {
-                Interlocked.Decrement(ref _activeTasks);
-                throw;
-            }
+            // Reserve the outstanding-operation count synchronously so a disposal that starts after this method
+            // returns cannot dispose the slot semaphore before the detached admission below observes it.
+            Interlocked.Increment(ref _outstandingLongRunningOperations);
+
+            // Admission is decoupled from the caller: a saturated long-running pool must not head-of-line-block a
+            // sequential dispatch batch that still has ordinary-priority work to queue. A dropped admission
+            // (caller cancellation or shutdown while parked) never runs; the claimed job is recovered by the
+            // fallback reclaim sweep once its pickup lease lapses.
+            _ = _AdmitAndStartLongRunningAsync(work, capacityCancellationToken, executionCancellationToken);
 
             return;
         }
@@ -471,6 +488,71 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
     }
 
+    private async Task _AdmitAndStartLongRunningAsync(
+        Func<CancellationToken, Task> work,
+        CancellationToken capacityCancellationToken,
+        CancellationToken executionCancellationToken
+    )
+    {
+        var admitted = false;
+
+        // ERP022: a detached admission has no caller to observe a failure; cancellation, shutdown, and dispose
+        // races all resolve to dropping the admission so the reclaim sweep can recover the job.
+#pragma warning disable ERP022
+        try
+        {
+            using var admissionCts = CancellationTokenSource.CreateLinkedTokenSource(
+                capacityCancellationToken,
+                _shutdownCts.Token
+            );
+            await _longRunningSlots.WaitAsync(admissionCts.Token).ConfigureAwait(false);
+            admitted = true;
+        }
+        catch
+        {
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
+            _logger.LongRunningAdmissionDropped(_pendingLongRunningAdmissions, _maxPendingLongRunningAdmissions);
+            _TryDisposeLongRunningSlots();
+        }
+        finally
+        {
+            // The waiter has resolved either way; free its backlog slot (running work is bounded by the slot
+            // semaphore, not the admission backlog).
+            Interlocked.Decrement(ref _pendingLongRunningAdmissions);
+        }
+#pragma warning restore ERP022
+
+        if (!admitted)
+        {
+            return;
+        }
+
+        // Bypass the shared pool only after reserving a bounded dedicated-thread slot.
+        Interlocked.Increment(ref _activeTasks);
+
+        try
+        {
+            _ = Task
+                .Factory.StartNew(
+                    () => _ExecuteLongRunningWorkAsync(work, executionCancellationToken),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
+                )
+                .Unwrap();
+        }
+        // ERP022: same as the admission wait above — no caller can observe a detached start failure.
+#pragma warning disable ERP022
+        catch
+        {
+            Interlocked.Decrement(ref _activeTasks);
+            _longRunningSlots.Release();
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
+            _TryDisposeLongRunningSlots();
+        }
+#pragma warning restore ERP022
+    }
+
     private async Task _ExecuteLongRunningWorkAsync(
         Func<CancellationToken, Task> work,
         CancellationToken cancellationToken
@@ -496,7 +578,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 #pragma warning restore ERP022, RCS1075
         finally
         {
+            _longRunningSlots.Release();
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
             Interlocked.Decrement(ref _activeTasks);
+            _TryDisposeLongRunningSlots();
         }
     }
 
@@ -662,7 +747,21 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 
         _notifyDebounce.Dispose();
+        _TryDisposeLongRunningSlots();
         _shutdownCts.Dispose();
+    }
+
+    private void _TryDisposeLongRunningSlots()
+    {
+        if (!_disposed || _outstandingLongRunningOperations != 0)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _longRunningSlotsDisposed, 1) == 0)
+        {
+            _longRunningSlots.Dispose();
+        }
     }
 
     private int _GetQueuedPriorityCount(JobPriority priority)
@@ -771,4 +870,28 @@ internal static partial class JobsTaskSchedulerLog
         Message = "Jobs worker slot {WorkerId} degraded after {ConsecutiveFaults} consecutive faults; auto-restart stopped until new work arrives."
     )]
     public static partial void WorkerSlotPermanentlyDegraded(this ILogger logger, int workerId, int consecutiveFaults);
+
+    [LoggerMessage(
+        EventId = 3302,
+        EventName = "JobsLongRunningAdmissionRejected",
+        Level = LogLevel.Debug,
+        Message = "Long-running admission rejected at backlog cap ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep re-dispatches the still-claimed job when its pickup lease lapses."
+    )]
+    public static partial void LongRunningAdmissionRejected(
+        this ILogger logger,
+        int pendingAdmissions,
+        int maxPendingAdmissions
+    );
+
+    [LoggerMessage(
+        EventId = 3303,
+        EventName = "JobsLongRunningAdmissionDropped",
+        Level = LogLevel.Debug,
+        Message = "Parked long-running admission dropped by cancellation or shutdown ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep recovers the claimed job when its pickup lease lapses."
+    )]
+    public static partial void LongRunningAdmissionDropped(
+        this ILogger logger,
+        int pendingAdmissions,
+        int maxPendingAdmissions
+    );
 }

@@ -93,7 +93,7 @@ public sealed partial class HybridCache
         {
             var l2EntryRead = await _ReadFromL2Async(
                     key,
-                    ct => l2Store.TryGetEntryAsync<T>(key, ct),
+                    ct => l2Store.TryGetEntryAsync<T>(key, cancellationToken: ct),
                     _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                     DistributedCacheTimeoutKind.Soft,
                     cancellationToken
@@ -279,7 +279,7 @@ public sealed partial class HybridCache
         var distributedRead = await _ReadFromL2Async(
                 // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields.
                 $"[bulk:{missedKeys.Count}]",
-                ct => l2Store.TryGetAllEntriesAsync<T>(missedKeys, ct),
+                ct => l2Store.TryGetAllEntriesAsync<T>(missedKeys, cancellationToken: ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken

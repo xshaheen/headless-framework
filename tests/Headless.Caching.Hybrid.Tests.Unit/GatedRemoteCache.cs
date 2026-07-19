@@ -47,26 +47,26 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
 
     public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         await _WaitReadGateAsync(cancellationToken);
 
-        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, readOptions, cancellationToken);
     }
 
     public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         // One gate wait for the whole bulk read (mirrors the single MGET boundary the real store issues), then
         // delegate to the inner cache's bulk primitive.
         await _WaitReadGateAsync(cancellationToken);
 
-        return await ((IFactoryCacheStore)_cache).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+        return await ((IFactoryCacheStore)_cache).TryGetAllEntriesAsync<T>(keys, readOptions, cancellationToken);
     }
 
     private async ValueTask _WaitReadGateAsync(CancellationToken cancellationToken)

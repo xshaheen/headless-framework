@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Headless.Security;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -25,7 +26,7 @@ public static class SetupSettings
         /// <param name="configure">Delegate that configures the storage provider and management options via <see cref="HeadlessSettingsSetupBuilder"/>.</param>
         /// <returns>A <see cref="HeadlessSettingsBuilder"/> for further optional configuration.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        /// <exception cref="InvalidOperationException"><see cref="Headless.Abstractions.IStringEncryptionService"/> has not been registered, or more than one storage provider extension is registered.</exception>
+        /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> has not been registered, or more than one storage provider extension is registered.</exception>
         public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -124,7 +125,7 @@ public static class SetupSettings
     }
 
     /// <summary>Registers all core settings services. Guards against missing <c>IStringEncryptionService</c> and is idempotent when called multiple times via the <c>ISettingManager</c> guard in the caller.</summary>
-    /// <exception cref="InvalidOperationException"><see cref="Headless.Abstractions.IStringEncryptionService"/> is not registered in <paramref name="services"/>.</exception>
+    /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> is not registered in <paramref name="services"/>.</exception>
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))

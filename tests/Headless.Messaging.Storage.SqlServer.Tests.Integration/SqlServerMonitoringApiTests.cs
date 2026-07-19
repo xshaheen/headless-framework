@@ -133,7 +133,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreatePublishedMessage(StatusName.Succeeded);
 
         // when
-        var count = await _monitoringApi.PublishedFailedCount(AbortToken);
+        var count = await _monitoringApi.GetPublishedFailedCountAsync(AbortToken);
 
         // then
         count.Should().Be(2);
@@ -147,7 +147,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreatePublishedMessage(StatusName.Failed);
 
         // when
-        var count = await _monitoringApi.PublishedSucceededCount(AbortToken);
+        var count = await _monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
 
         // then
         count.Should().Be(1);
@@ -162,7 +162,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreateReceivedMessage(StatusName.Failed);
 
         // when
-        var count = await _monitoringApi.ReceivedFailedCount(AbortToken);
+        var count = await _monitoringApi.GetReceivedFailedCountAsync(AbortToken);
 
         // then
         count.Should().Be(3);
@@ -175,7 +175,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreateReceivedMessage(StatusName.Succeeded);
 
         // when
-        var count = await _monitoringApi.ReceivedSucceededCount(AbortToken);
+        var count = await _monitoringApi.GetReceivedSucceededCountAsync(AbortToken);
 
         // then
         count.Should().Be(1);
@@ -395,7 +395,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreatePublishedMessage(StatusName.Failed);
 
         // when
-        var timeline = await _monitoringApi.HourlyFailedJobs(MessageType.Publish, AbortToken);
+        var timeline = await _monitoringApi.GetHourlyFailedJobsAsync(MessageType.Publish, AbortToken);
 
         // then
         timeline.Should().NotBeEmpty();
@@ -409,7 +409,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _CreateReceivedMessage(StatusName.Succeeded);
 
         // when
-        var timeline = await _monitoringApi.HourlySucceededJobs(MessageType.Subscribe, AbortToken);
+        var timeline = await _monitoringApi.GetHourlySucceededJobsAsync(MessageType.Subscribe, AbortToken);
 
         // then
         timeline.Should().NotBeEmpty();

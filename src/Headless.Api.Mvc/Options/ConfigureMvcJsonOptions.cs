@@ -17,8 +17,7 @@ namespace Headless.Api.Options;
 /// serialization, etc.) and additionally enables indented JSON output in Development and Test environments
 /// for easier debugging.
 /// </remarks>
-[PublicAPI]
-public sealed class ConfigureMvcJsonOptions(IWebHostEnvironment environment) : IConfigureOptions<JsonOptions>
+internal sealed class ConfigureMvcJsonOptions(IWebHostEnvironment environment) : IConfigureOptions<JsonOptions>
 {
     /// <summary>Applies Headless JSON serialization defaults to <paramref name="options"/>.</summary>
     /// <param name="options">The <see cref="JsonOptions"/> instance to configure.</param>

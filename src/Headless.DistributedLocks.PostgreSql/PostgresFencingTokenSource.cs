@@ -35,7 +35,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// disposal is owned by <see cref="PostgresLockDataSource"/>.
 /// </param>
 internal sealed class PostgresFencingTokenSource(
-    IOptions<PostgresDistributedLockOptions> options,
+    IOptions<PostgreSqlDistributedLockOptions> options,
     NpgsqlDataSource dataSource
 ) : IFencingTokenSource, IAsyncDisposable
 {

@@ -13,6 +13,7 @@ namespace Headless.Dashboard.Authentication;
 /// <remarks>Initializes a new instance of <see cref="AuthMiddleware"/>.</remarks>
 /// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
 /// <param name="logger">The logger used to record authentication failures.</param>
+[PublicAPI]
 public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
 {
     /// <summary>Key used to store the authenticated username in <see cref="HttpContext.Items"/>.</summary>

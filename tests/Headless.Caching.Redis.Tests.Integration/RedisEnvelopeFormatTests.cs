@@ -51,7 +51,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
             CreatedAt = now,
         };
         await store.SetEntryAsync(key, in originalEntry, AbortToken);
-        var snapshot = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var snapshot = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
 
         var concurrentEntry = originalEntry with { Value = "concurrent", CreatedAt = now.AddSeconds(1) };
         await store.SetEntryAsync(key, in concurrentEntry, AbortToken);
@@ -254,7 +254,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 
         await store.SetEntryAsync(key, in entry, AbortToken);
 
-        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var roundTripped = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         roundTripped.Found.Should().BeTrue();
         roundTripped.Value.Should().Be(value);
         roundTripped.EagerRefreshAt.Should().BeCloseTo(entry.EagerRefreshAt!.Value, TimeSpan.FromMilliseconds(1));
@@ -312,7 +312,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 
         // when — one bulk read; keys include a duplicate and a genuine miss.
         var keys = new[] { presentKey, missingKey, invalidatedKey, presentKey };
-        var entries = await store.TryGetAllEntriesAsync<string>(keys, AbortToken);
+        var entries = await store.TryGetAllEntriesAsync<string>(keys, cancellationToken: AbortToken);
         var readNow = DateTime.UtcNow;
 
         // then — position-aligned, one element per key.

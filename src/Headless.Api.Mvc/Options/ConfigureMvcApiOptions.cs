@@ -25,8 +25,7 @@ namespace Headless.Api.Options;
 ///   <item>Suppresses the automatic 400 model-state filter added by <c>[ApiController]</c>, deferring validation to application-level handlers.</item>
 /// </list>
 /// </remarks>
-[PublicAPI]
-public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IConfigureOptions<ApiBehaviorOptions>
+internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IConfigureOptions<ApiBehaviorOptions>
 {
     /// <summary>Applies Headless MVC defaults to <paramref name="options"/>.</summary>
     /// <param name="options">The <see cref="MvcOptions"/> instance to configure.</param>

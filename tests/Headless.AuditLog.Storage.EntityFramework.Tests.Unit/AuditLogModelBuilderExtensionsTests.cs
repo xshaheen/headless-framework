@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Tests;
 
-public sealed class AuditLogModelBuilderExtensionsTests : TestBase
+public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
 {
     [Fact]
     public void should_configure_and_exclude_audit_log_entry()

@@ -66,7 +66,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
 - **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
-- **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
+- **`Headless.Security.Abstractions`** — security contracts and options in the `Headless.Security` namespace: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, and `StringHashOptions`. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use `IDomainEvent` + `IDomainEventEmitter`; integration (distributed) events use `IIntegrationEvent` + `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
@@ -88,7 +88,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
-- For string encryption, inject `IStringEncryptionService` (from `Headless.Security.Abstractions`) and register the implementation once with `AddStringEncryptionService(...)` (from `Headless.Security`). The first registration wins — do not call it twice.
+- For string encryption, import `Headless.Security`, inject `IStringEncryptionService` from the abstractions package, and register the implementation once with `AddStringEncryptionService(...)` from the implementation package. The first registration wins — do not call it twice.
 - `IStringHashService` is a deterministic keyed lookup digest (PBKDF2), **not** a password hasher. Use it for blind indexes over encrypted columns. For password storage use ASP.NET Core's `PasswordHasher<T>`.
 - `StringEncryptionOptions.DefaultPassPhrase` and `DefaultSalt` are required; both are validated at startup. A missing or empty value is a startup error.
 
@@ -387,14 +387,15 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 ### Key Features
 
 - `ILocalEventBus` implementation (`ServiceProviderLocalEventBus`) backed by DI
-- Generic and non-generic publish overloads (`Publish`, `PublishAsync`)
+- Generic and non-generic async publish overloads (`PublishAsync`)
 - Handler resolution per publish from the active scope
 - Handler ordering via `DomainEventHandlerOrderAttribute`
 - Handler exception aggregation and cooperative cancellation
 
 ### Design Notes
 
-- **Non-generic runtime-typed dispatch.** `Publish(IDomainEvent)` / `PublishAsync(IDomainEvent)` dispatch to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overloads (`Publish<T>` / `PublishAsync<T>`) dispatch against the static type argument `T`.
+- **Async-only contract.** `ILocalEventBus` deliberately exposes no synchronous `Publish`: a public sync member would dispatch the async handlers sync-over-async, which can deadlock on threads that carry a synchronization context (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path (for example the EF sync `SaveChanges` pipeline) owns and contains that bridge internally.
+- **Non-generic runtime-typed dispatch.** `PublishAsync(IDomainEvent)` dispatches to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overload (`PublishAsync<T>`) dispatches against the static type argument `T`.
 - **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
 - **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
 - **Namespace unchanged.** The package/assembly was renamed from `Headless.Domain.LocalPublisher`, but the namespace stays `Headless.Domain` — no `using` changes are needed.
@@ -473,6 +474,8 @@ No configuration required.
 
 Security contracts and option models for string encryption and hashing — no implementation, no DI coupling.
 
+All public contracts and options use the `Headless.Security` namespace.
+
 ### Problem Solved
 
 Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings.Core` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
@@ -496,6 +499,8 @@ dotnet add package Headless.Security.Abstractions
 ### Quick Start
 
 ```csharp
+using Headless.Security;
+
 // Inject the contract; the implementation is registered by Headless.Security.
 public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {
@@ -527,6 +532,8 @@ None.
 ## Headless.Security
 
 Default implementations of `IStringEncryptionService` and `IStringHashService`, plus idempotent DI registration helpers.
+
+Contracts, options, implementations, and registration extensions all use the `Headless.Security` namespace.
 
 ### Problem Solved
 

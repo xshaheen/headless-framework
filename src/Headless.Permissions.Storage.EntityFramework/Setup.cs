@@ -24,8 +24,8 @@ public static class SetupPermissionsEntityFramework
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Registers <see cref="EfPermissionGrantRepository{TContext}"/> and
-        /// <see cref="EfPermissionDefinitionRecordRepository{TContext}"/> as singletons, both backed by
+        /// Registers the <see cref="IPermissionGrantRepository"/> and
+        /// <see cref="IPermissionDefinitionRecordRepository"/> implementations as singletons, both backed by
         /// <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c>. Ensure the factory is registered
         /// (e.g., <c>services.AddDbContextFactory&lt;TContext&gt;()</c>).
         /// </para>

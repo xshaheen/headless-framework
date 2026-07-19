@@ -5,26 +5,17 @@ namespace Headless.Domain;
 
 /// <summary>
 /// Publishes in-process domain events to their <see cref="IDomainEventHandler{TEvent}"/> handlers.
-/// Dispatched synchronously within the active unit of work / transaction.
+/// Dispatched inline within the active unit of work / transaction.
 /// </summary>
+/// <remarks>
+/// The contract is async-only by design: a public synchronous publish would invite sync-over-async
+/// dispatch of the async handlers, which can deadlock on threads that carry a synchronization context
+/// (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path
+/// owns and contains that bridge itself.
+/// </remarks>
 [PublicAPI]
 public interface ILocalEventBus
 {
-    /// <summary>Publishes a domain event to its handlers, blocking the calling thread until they all complete.</summary>
-    /// <param name="domainEvent">The domain event to dispatch.</param>
-    /// <remarks>
-    /// Dispatches the async handlers synchronously (sync-over-async). Do not call from a thread that carries a
-    /// synchronization context (classic ASP.NET, Blazor Server, WPF), or it may deadlock; prefer
-    /// <c>PublishAsync</c> in asynchronous code.
-    /// </remarks>
-    void Publish<T>(T domainEvent)
-        where T : class, IDomainEvent;
-
-    /// <summary>Publishes a domain event resolved by its runtime type, blocking the calling thread until all handlers complete.</summary>
-    /// <param name="domainEvent">The domain event to dispatch.</param>
-    /// <remarks>Sync-over-async; see <c>Publish</c> for the synchronization-context deadlock caveat.</remarks>
-    void Publish(IDomainEvent domainEvent);
-
     /// <summary>Publishes a domain event to its handlers asynchronously.</summary>
     /// <param name="domainEvent">The domain event to dispatch.</param>
     /// <param name="cancellationToken">Token to cancel the dispatch operation.</param>

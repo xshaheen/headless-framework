@@ -57,6 +57,12 @@ internal sealed class NatsConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
@@ -713,7 +719,7 @@ internal sealed class NatsConsumerClient(
         {
             if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                await msg.AckAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                await msg.AckAsync(new AckOpts { DoubleAck = true }, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)

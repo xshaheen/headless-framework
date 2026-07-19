@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>FluentValidation helpers and reusable validation extensions for Headless Framework packages.</Description>
     <PackageTags>headless;fluentvalidation;dotnet</PackageTags>
-    <RootNamespace>FluentValidation</RootNamespace>
+    <RootNamespace>Headless.FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FluentValidation" />

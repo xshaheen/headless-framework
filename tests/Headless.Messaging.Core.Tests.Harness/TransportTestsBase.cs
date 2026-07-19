@@ -124,7 +124,7 @@ public abstract class TransportTestsBase : TestBase
         transport.BrokerAddress.Name.Should().NotBeNullOrEmpty();
     }
 
-    public virtual async Task should_include_headers_in_sent_message()
+    public virtual async Task should_accept_message_with_application_headers()
     {
         // Skip if transport doesn't support headers
         if (!Capabilities.SupportsHeaders)
@@ -146,21 +146,13 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        message.Headers.Should().ContainKey("CustomHeader1");
-        message.Headers.Should().ContainKey("CustomHeader2");
     }
 
-    public virtual async Task should_send_batch_of_messages()
+    public virtual async Task should_send_multiple_messages_individually()
     {
-        // Skip if transport doesn't support batch send
-        if (!Capabilities.SupportsBatchSend)
-        {
-            Assert.Skip("Transport does not support batch send");
-        }
-
         // given
         await using var transport = _GetPrimaryTransport();
-        var messages = Enumerable.Range(0, 10).Select(i => CreateMessage(messageId: $"batch-msg-{i}")).ToList();
+        var messages = Enumerable.Range(0, 10).Select(i => CreateMessage(messageId: $"multi-msg-{i}")).ToList();
 
         // when
         var results = new List<OperateResult>();
@@ -248,7 +240,7 @@ public abstract class TransportTestsBase : TestBase
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
     }
 
-    public virtual async Task should_include_message_id_in_headers()
+    public virtual async Task should_accept_message_with_id()
     {
         // given
         await using var transport = _GetPrimaryTransport();
@@ -260,10 +252,9 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        message.Id.Should().Be(expectedId);
     }
 
-    public virtual async Task should_include_message_name_in_headers()
+    public virtual async Task should_accept_message_with_name()
     {
         // given
         await using var transport = _GetPrimaryTransport();
@@ -275,7 +266,6 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        message.Name.Should().Be(expectedName);
     }
 
     public virtual async Task should_handle_special_characters_in_message_body()

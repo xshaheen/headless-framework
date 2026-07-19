@@ -6,6 +6,7 @@ using Headless.Api;
 using Headless.Api.Middlewares;
 using Headless.Api.ServiceDefaults;
 using Headless.Constants;
+using Headless.Security;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

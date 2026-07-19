@@ -2,7 +2,7 @@
 
 namespace Headless.Jobs.SourceGenerator.Validation;
 
-public static class CronValidator
+internal static class CronValidator
 {
     // Format with seconds (6 parts only): seconds, minutes, hours, day, month, day-of-week
     private static readonly int[] _MinValues = [0, 0, 0, 1, 1, 0];

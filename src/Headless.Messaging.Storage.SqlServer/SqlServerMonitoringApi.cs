@@ -80,7 +80,7 @@ internal sealed class SqlServerMonitoringApi(
     /// Returns a dictionary of UTC hour buckets to <c>Failed</c> message counts for the past 24 hours,
     /// from the published or received table depending on <paramref name="type"/>.
     /// </summary>
-    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+    public async ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlyFailedJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
@@ -94,7 +94,7 @@ internal sealed class SqlServerMonitoringApi(
     /// Returns a dictionary of UTC hour buckets to <c>Succeeded</c> message counts for the past 24 hours,
     /// from the published or received table depending on <paramref name="type"/>.
     /// </summary>
-    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+    public async ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlySucceededJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
@@ -247,25 +247,25 @@ internal sealed class SqlServerMonitoringApi(
     }
 
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
-    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     /// <summary>Returns the total count of published messages in the <c>Succeeded</c> state.</summary>
-    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     /// <summary>Returns the total count of received messages in the <c>Failed</c> state.</summary>
-    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     /// <summary>Returns the total count of received messages in the <c>Succeeded</c> state.</summary>
-    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
@@ -325,50 +325,57 @@ internal sealed class SqlServerMonitoringApi(
             .ConfigureAwait(false);
     }
 
-    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
+    private Task<IReadOnlyDictionary<DateTimeOffset, int>> _GetHourlyTimelineStats(
         string tableName,
         string statusName,
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow();
-        var dates = new List<DateTime>();
-        // Hourly buckets are label keys, not persisted instants: keep them DateTime.
-        var nowUtc = now.UtcDateTime;
+        // Buckets cover the current UTC hour and the 23 preceding hours, keyed by hour start
+        // (a DateTimeOffset with zero offset), newest first.
+        var currentHour = timeProvider.GetUtcNow().TruncateToHours();
+
+        var keyMaps = new Dictionary<string, DateTimeOffset>(capacity: 24, StringComparer.Ordinal);
 
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(nowUtc.AddHours(-i));
+            var bucket = currentHour.AddHours(-i);
+            keyMaps[bucket.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture)] = bucket;
         }
 
-        var keyMaps = dates.ToDictionary(
-            x => x.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
-            x => x,
-            StringComparer.Ordinal
-        );
+        var oldestHour = currentHour.AddHours(-23);
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], nowUtc, cancellationToken);
+        return _GetTimelineStats(
+            tableName,
+            statusName,
+            keyMaps,
+            oldestHour,
+            currentHour.AddHours(1),
+            cancellationToken
+        );
     }
 
-    private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
+    private async Task<IReadOnlyDictionary<DateTimeOffset, int>> _GetTimelineStats(
         string tableName,
         string statusName,
-        Dictionary<string, DateTime> keyMaps,
-        DateTime minAdded,
-        DateTime maxAdded,
+        Dictionary<string, DateTimeOffset> keyMaps,
+        DateTimeOffset minAdded,
+        DateTimeOffset maxAddedExclusive,
         CancellationToken cancellationToken = default
     )
     {
-        // Use CONVERT instead of FORMAT to avoid CLR dependency (Azure SQL Edge doesn't support CLR)
+        // SWITCHOFFSET(Added, 0) normalizes the datetimeoffset column to UTC before formatting, so the
+        // SQL bucket keys match the UTC hour-bucket keys built in C# even when rows carry a non-zero offset.
+        // Use CONVERT instead of FORMAT to avoid CLR dependency (Azure SQL Edge doesn't support CLR).
         var sqlQuery = $"""
             WITH Aggr AS (
             -- COUNT (int) not COUNT_BIG: the reader maps [Count] via GetInt32 into a Dictionary<string,int>, and
             -- a single-hour bucket can never overflow int. SqlClient.GetInt32 rejects a bigint column outright.
-            SELECT CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2) AS [Key],
+            SELECT CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2) AS [Key],
                 COUNT(Id) [Count]
             FROM  {tableName}
-            WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added <= @MaxAdded
-            GROUP BY CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2)
+            WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added < @MaxAdded
+            GROUP BY CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2)
             )
             SELECT [Key], [Count] FROM Aggr WITH (NOLOCK);
             """;
@@ -377,7 +384,7 @@ internal sealed class SqlServerMonitoringApi(
         [
             new SqlParameter("@StatusName", statusName),
             new SqlParameter("@MinAdded", minAdded),
-            new SqlParameter("@MaxAdded", maxAdded),
+            new SqlParameter("@MaxAdded", maxAddedExclusive),
         ];
 
         Dictionary<string, int> valuesMap;
@@ -407,10 +414,10 @@ internal sealed class SqlServerMonitoringApi(
                 .ConfigureAwait(false);
         }
 
-        var result = new Dictionary<DateTime, int>(keyMaps.Count);
-        foreach (var (key, dateTime) in keyMaps)
+        var result = new Dictionary<DateTimeOffset, int>(keyMaps.Count);
+        foreach (var (key, hourBucket) in keyMaps)
         {
-            result[dateTime] = valuesMap.TryGetValue(key, out var count) ? count : 0;
+            result[hourBucket] = valuesMap.TryGetValue(key, out var count) ? count : 0;
         }
 
         return result;

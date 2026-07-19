@@ -100,7 +100,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
 - Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `GetAsync` returns a `SettingValue` with a `null` `Value` regardless of lower-priority providers.
-- `SettingDefinition` instances are minted through the `ISettingDefinitionContext.Add(name, ...)` factory (the constructor is `internal`). The factory returns the created definition so you can then mutate `Providers` or `ExtraProperties` on it.
+- `SettingDefinition` instances are minted through the `ISettingDefinitionContext.Add(options)` factory (the constructor is `internal`). The factory returns the created definition so you can then mutate `Providers` or `ExtraProperties` on it.
 - Custom value providers must implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write). Register with `services.AddSettingValueProvider<T>()`. The last-registered provider has the highest resolution priority.
 
 ## Core Concepts
@@ -127,7 +127,7 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Startup Initialization
 
-`SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent, guarded by a distributed lock; retries up to 10 times with exponential back-off), then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Dependents can await `WaitForInitializationAsync()` to block until initialization completes. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
+`SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 
 ## Choosing a Provider
 
@@ -153,9 +153,10 @@ Provides a storage-independent API for managing application settings with suppor
 - `ISettingDefinitionManager` — looks up and enumerates all registered setting definitions
 - `ISettingDefinitionProvider` — contributes setting definitions at startup via `ISettingDefinitionContext`
 - `SettingDefinition` — describes a setting's name, default value, display metadata, encryption flag, inheritance flag, client-visibility flag, allowed providers, and custom properties
+- `SettingDefinitionCreateOptions` — initializer-based setting metadata with a required `Name`; optional values remain additive without constructor churn
 - `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
 - `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
-- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(name, defaultValue?, displayName?, description?, isVisibleToClients?, isInherited?, isEncrypted?)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
+- `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(SettingDefinitionCreateOptions options)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
@@ -203,14 +204,20 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size");
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.MaxFileSize",
+            DefaultValue = "10485760",
+            DisplayName = "Maximum File Size",
+        });
 
-        context.Add(
-            name: "App.ApiKey",
-            displayName: "API Key",
-            isEncrypted: true,
-            isVisibleToClients: false
-        );
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.ApiKey",
+            DisplayName = "API Key",
+            IsEncrypted = true,
+            IsVisibleToClients = false,
+        });
     }
 }
 ```
@@ -244,7 +251,7 @@ Provides the full settings management implementation including hierarchical valu
 - Built-in value providers (lowest to highest priority): `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider`
 - `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
 - `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
-- `SettingsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled
+- `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
@@ -257,7 +264,7 @@ Value providers are registered with the last-added provider having the highest r
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
-`SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
+`SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 
 ### Installation
 
@@ -291,9 +298,19 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760");
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.MaxFileSize",
+            DisplayName = "Maximum File Size",
+            DefaultValue = "10485760",
+        });
 
-        context.Add(name: "App.ApiKey", displayName: "API Key", isEncrypted: true);
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.ApiKey",
+            DisplayName = "API Key",
+            IsEncrypted = true,
+        });
     }
 }
 ```

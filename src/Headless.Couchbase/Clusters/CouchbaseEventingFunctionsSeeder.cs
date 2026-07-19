@@ -30,7 +30,7 @@ public static class CouchbaseEventingFunctionsSeeder
         this ICluster cluster,
         CouchbaseKeyspace dataKeyspace,
         CouchbaseKeyspace eventsKeyspace,
-        Dictionary<string, CouchbaseKeyspace> aliases,
+        IReadOnlyDictionary<string, CouchbaseKeyspace> aliases,
         string functionName,
         string javaScriptCode,
         int workers = 1,
@@ -97,6 +97,11 @@ public static class CouchbaseEventingFunctionsSeeder
         return binding;
     }
 
+    // Fragile: the [UnsafeAccessor] members below bind to non-public Couchbase SDK surface by exact
+    // signature — EventingFunctionKeyspace's internal constructor and the internal setters of
+    // EventingFunction.DeploymentConfig and EventingFunctionBucketBinding.BucketName/ScopeName/CollectionName.
+    // A Couchbase SDK upgrade that renames or reshapes any of these members breaks the accessors at RUNTIME
+    // (MissingMethodException), not at compile time — re-verify them on every SDK version bump.
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     private static extern EventingFunctionKeyspace _CreateKeyspace(string bucket, string scope, string collection);
 

@@ -45,7 +45,10 @@ public interface IPaymobCashOutBroker
     /// <c>IsPending</c>, and <c>IsFailed</c> to determine the disbursement outcome.
     /// </returns>
     /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    Task<CashOutTransaction> Disburse(CashOutDisburseRequest request, CancellationToken cancellationToken = default);
+    Task<CashOutTransaction> DisburseAsync(
+        CashOutDisburseRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Retrieves the current available balance (budget) of the Paymob CashOut account.
@@ -88,7 +91,7 @@ public interface IPaymobCashOutBroker
 internal sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
     : IPaymobCashOutBroker
 {
-    public async Task<CashOutTransaction> Disburse(
+    public async Task<CashOutTransaction> DisburseAsync(
         CashOutDisburseRequest request,
         CancellationToken cancellationToken = default
     )

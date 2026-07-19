@@ -7,71 +7,71 @@ public enum DeliveryStatus
     /// <summary>
     /// Successfully placed a new delivery on the courier’s system.
     /// </summary>
-    Scheduled,
+    Scheduled = 0,
 
     /// <summary>
     /// The courier agent is in touch with your administration through provided contact
     /// info to pick up the package to be delivered.
     /// </summary>
-    ContactingMerchant,
+    ContactingMerchant = 1,
 
     /// <summary>
     /// Courier agent is headed towards your pick up address to receive the package.
     /// </summary>
-    PickingUp,
+    PickingUp = 2,
 
     /// <summary>
     /// The courier agent picked up the package.
     /// </summary>
-    CourierReceived,
+    CourierReceived = 3,
 
     /// <summary>
     /// The package is placed at the courier’s storage, pending client’s scheduling
     /// </summary>
-    AtWarehouse,
+    AtWarehouse = 4,
 
     /// <summary>
     /// Courier agent is out with your customer added on their list
     /// (not necessarily headed towards your client first).
     /// </summary>
-    AgentOut,
+    AgentOut = 5,
 
     /// <summary>
     /// The courier agent is currently headed towards your client.
     /// </summary>
-    OnRoute,
+    OnRoute = 6,
 
     /// <summary>
     /// The courier agent arrived at the customer’s address.
     /// </summary>
-    AtCustomer,
+    AtCustomer = 7,
 
     /// <summary>
     /// Courier completed their task successfully.
     /// </summary>
-    Delivered,
+    Delivered = 8,
 
     /// <summary>
     /// Customer / Merchant canceled courier’s delivery.
     /// </summary>
-    Canceled,
+    Canceled = 9,
 
     /// <summary>
     /// Courier agent was not able to fulfill their task. For example, the customer
     /// was not at home, the customer refused to pay or did not have enough money,
     /// package was malformed.
     /// </summary>
-    DeliveryFailed,
+    DeliveryFailed = 10,
 
     /// <summary>
     /// Courier is set to return the package back to you for exchange or a canceled delivery.
     /// </summary>
-    ReturnScheduled,
+    ReturnScheduled = 11,
 
     /// <summary>
     /// Courier returned the package to you successfully.
     /// </summary>
-    PackageReturned,
+    PackageReturned = 12,
 }
 
 public static class DeliveryStatusExtensions

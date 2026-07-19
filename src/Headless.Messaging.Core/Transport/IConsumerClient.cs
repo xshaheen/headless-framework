@@ -3,6 +3,13 @@
 namespace Headless.Messaging.Transport;
 
 /// <summary>Message queue consumer client interface that defines operations for consuming messages from various message brokers</summary>
+/// <remarks>
+/// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively.
+/// New members ship as default interface methods with a behavior-preserving fallback (see
+/// <see cref="ShutdownAsync"/> and <see cref="WaitUntilReadyAsync"/>); existing member signatures
+/// do not change within a major version, so custom transport implementations keep compiling
+/// across minor releases and may override new defaults when they can do better.
+/// </remarks>
 [PublicAPI]
 public interface IConsumerClient : IAsyncDisposable
 {
@@ -77,7 +84,13 @@ public interface IConsumerClient : IAsyncDisposable
     /// <summary>
     /// Manually commits message offset when the message consumption is complete
     /// </summary>
-    /// <param name="sender">The message or context object to commit</param>
+    /// <param name="sender">
+    /// The transport-specific settlement token for the message being committed. This is the exact
+    /// opaque value the client passed as the second argument to <see cref="OnMessageCallback"/>
+    /// (e.g., a Kafka consume result, a RabbitMQ delivery tag, an SQS receipt handle); callers must
+    /// round-trip it unchanged and must not interpret it. <see langword="null"/> when the transport
+    /// needs no per-message token, in which case implementations settle their current delivery.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the commit operation. Implementations may treat commit as must-complete.</param>
     /// <returns>A task that represents the asynchronous commit operation</returns>
     ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default);
@@ -85,7 +98,13 @@ public interface IConsumerClient : IAsyncDisposable
     /// <summary>
     /// Rejects the message and optionally returns it to the queue for reprocessing
     /// </summary>
-    /// <param name="sender">The message or context object to reject</param>
+    /// <param name="sender">
+    /// The transport-specific settlement token for the message being rejected. This is the exact
+    /// opaque value the client passed as the second argument to <see cref="OnMessageCallback"/>;
+    /// callers must round-trip it unchanged and must not interpret it. <see langword="null"/> when
+    /// the transport needs no per-message token, in which case implementations reject their
+    /// current delivery.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the reject operation. Implementations may treat reject as must-complete.</param>
     /// <returns>A task that represents the asynchronous reject operation</returns>
     ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default);
@@ -105,12 +124,24 @@ public interface IConsumerClient : IAsyncDisposable
     ValueTask ResumeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Callback that is invoked when a message is received from the broker
+    /// Gets the callback invoked when a message is received from the broker. The second argument is
+    /// the transport-specific settlement token to round-trip into <see cref="CommitAsync"/> or
+    /// <see cref="RejectAsync"/>. Attached via <see cref="AttachCallbacks"/>.
     /// </summary>
-    Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+    Func<TransportMessage, object?, Task>? OnMessageCallback { get; }
 
     /// <summary>
-    /// Callback that is invoked when logging events occur in the consumer client
+    /// Gets the callback invoked when logging events occur in the consumer client.
+    /// Attached via <see cref="AttachCallbacks"/>.
     /// </summary>
-    Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+    Action<LogMessageEventArgs>? OnLogCallback { get; }
+
+    /// <summary>
+    /// Attaches the message and log callbacks in one operation, replacing any previously attached
+    /// callbacks (<see langword="null"/> detaches). Attach before <see cref="ListeningAsync"/>;
+    /// swapping callbacks while the client is listening is not supported.
+    /// </summary>
+    /// <param name="onMessage">The callback invoked for each received message, or <see langword="null"/> for a client that does not consume (e.g., topology-only usage).</param>
+    /// <param name="onLog">The callback invoked for transport log events, or <see langword="null"/> to drop them.</param>
+    void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog);
 }

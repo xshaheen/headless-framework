@@ -371,11 +371,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
@@ -411,11 +413,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
@@ -445,11 +449,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            differentKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = differentKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
@@ -477,11 +483,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            issuer: "wrong-issuer",
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = "wrong-issuer",
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
@@ -509,11 +517,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            audience: "wrong-audience",
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = "wrong-audience",
+            },
             cancellationToken: AbortToken
         );
 
@@ -541,12 +551,14 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            issuer: "wrong-issuer",
-            _TestAudience,
-            validateIssuer: false,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = "wrong-issuer",
+                Audience = _TestAudience,
+                ValidateIssuer = false,
+            },
             cancellationToken: AbortToken
         );
 
@@ -574,13 +586,14 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            audience: "wrong-audience",
-            validateIssuer: true,
-            validateAudience: false,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = "wrong-audience",
+                ValidateAudience = false,
+            },
             cancellationToken: AbortToken
         );
 
@@ -608,11 +621,14 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            _TestEncryptingKey,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+                EncryptingKey = _TestEncryptingKey,
+            },
             cancellationToken: AbortToken
         );
 
@@ -647,11 +663,13 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            token,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = token,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
@@ -672,16 +690,39 @@ public sealed class JwtTokenFactoryTests : TestBase
 
         // when
         var result = await factory.ParseJwtTokenAsync(
-            malformedToken,
-            _TestSigningKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience,
+            new()
+            {
+                Token = malformedToken,
+                SigningKey = _TestSigningKey,
+                Issuer = _TestIssuer,
+                Audience = _TestAudience,
+            },
             cancellationToken: AbortToken
         );
 
         // then
         result.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_not_expose_jwt_material_in_validation_request_string()
+    {
+        const string token = "private-token";
+        const string signingKey = "private-signing-key";
+        const string encryptingKey = "private-encrypting-key";
+        var request = new JwtTokenValidationRequest
+        {
+            Token = token,
+            SigningKey = signingKey,
+            Issuer = _TestIssuer,
+            Audience = _TestAudience,
+            EncryptingKey = encryptingKey,
+        };
+
+        var text = request.ToString();
+
+        text.Should().Be(nameof(JwtTokenValidationRequest));
+        text.Should().NotContain(token).And.NotContain(signingKey).And.NotContain(encryptingKey);
     }
 
     #endregion

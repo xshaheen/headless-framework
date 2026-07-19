@@ -20,7 +20,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Argument validation and guard clauses
 
-- Use `Argument.*` (e.g., `Argument.IsNotNull(value)`, `Argument.IsNotNullOrWhiteSpace(value)`, `Argument.IsPositive(value)`) and `Ensure.*` (e.g., `Ensure.True(condition)`, `Ensure.NotDisposed(this, _disposed)`) from `Headless.Checks`.
+- Use `Argument.*` (e.g., `Argument.IsNotNull(value)`, `Argument.IsNotNullOrWhiteSpace(value)`, `Argument.IsPositive(value)`) and `Ensure.*` (e.g., `Ensure.True(condition)`, `Ensure.NotDisposed(_disposed, this)`) from `Headless.Checks`.
 - Do not use `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, or other `*.ThrowIf*` static helpers.
 - For request payloads, use FluentValidation rules rather than manual `if` guards.
 
@@ -395,7 +395,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
-- `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
+- `Headless.Messaging.Storage.InMemory` — Ephemeral storage (dev/testing).
 - `Headless.Messaging.Testing` — In-process test harness for asserting dispatch/consume behavior (documented in [testing.md](testing.md)).
 
 ### OpenAPI

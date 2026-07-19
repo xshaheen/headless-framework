@@ -6,7 +6,7 @@ namespace Headless.Primitives;
 /// Base class for all result errors. Extend this to create domain-specific errors.
 /// </summary>
 [PublicAPI]
-public abstract record ResultError
+public abstract record ApiResultError
 {
     /// <summary>
     /// Machine-readable error code for logging and client handling.
@@ -29,13 +29,13 @@ public abstract record ResultError
     /// </summary>
     /// <param name="code">The machine-readable error code.</param>
     /// <param name="message">The human-readable error message.</param>
-    /// <returns>A <see cref="ResultError"/> carrying the supplied code and message.</returns>
-    public static ResultError Custom(string code, string message)
+    /// <returns>A <see cref="ApiResultError"/> carrying the supplied code and message.</returns>
+    public static ApiResultError Custom(string code, string message)
     {
         return new SimpleError(code, message);
     }
 
-    private sealed record SimpleError(string Code, string Message) : ResultError
+    private sealed record SimpleError(string Code, string Message) : ApiResultError
     {
         public override string Code { get; } = Code;
         public override string Message { get; } = Message;
@@ -46,10 +46,10 @@ public abstract record ResultError
 /// Multiple errors occurred. Useful for batch operations.
 /// </summary>
 [PublicAPI]
-public sealed record AggregateError : ResultError
+public sealed record AggregateError : ApiResultError
 {
     /// <summary>The individual errors that were aggregated.</summary>
-    public required IReadOnlyList<ResultError> Errors { get; init; }
+    public required IReadOnlyList<ApiResultError> Errors { get; init; }
 
     /// <inheritdoc/>
     public override string Code => "aggregate:multiple_errors";
@@ -62,7 +62,7 @@ public sealed record AggregateError : ResultError
 /// The requested resource was not found.
 /// </summary>
 [PublicAPI]
-public sealed record NotFoundError : ResultError
+public sealed record NotFoundError : ApiResultError
 {
     /// <summary>The logical name of the entity that could not be found.</summary>
     public required string Entity { get; init; }
@@ -87,7 +87,7 @@ public sealed record NotFoundError : ResultError
 /// Caller is not authenticated.
 /// </summary>
 [PublicAPI]
-public sealed record UnauthorizedError : ResultError
+public sealed record UnauthorizedError : ApiResultError
 {
     /// <summary>
     /// Cached singleton instance for common case.
@@ -105,7 +105,7 @@ public sealed record UnauthorizedError : ResultError
 /// Operation not permitted for current user/context.
 /// </summary>
 [PublicAPI]
-public sealed record ForbiddenError : ResultError
+public sealed record ForbiddenError : ApiResultError
 {
     /// <summary>The reason the operation is not permitted; also surfaced as the <see cref="Message"/>.</summary>
     public required string Reason { get; init; }
@@ -123,7 +123,7 @@ public sealed record ForbiddenError : ResultError
 /// <param name="Code">A machine-readable code describing the type of conflict.</param>
 /// <param name="Message">A human-readable message describing the conflict.</param>
 [PublicAPI]
-public sealed record ConflictError(string Code, string Message) : ResultError
+public sealed record ConflictError(string Code, string Message) : ApiResultError
 {
     /// <inheritdoc/>
     public override string Code { get; } = Code;
@@ -136,7 +136,7 @@ public sealed record ConflictError(string Code, string Message) : ResultError
 /// Input validation failed. Contains field-level errors.
 /// </summary>
 [PublicAPI]
-public sealed record ValidationError : ResultError
+public sealed record ValidationError : ApiResultError
 {
     /// <summary>The field-level errors, keyed by field name, each mapping to one or more error messages.</summary>
     public required IReadOnlyDictionary<string, IReadOnlyList<string>> FieldErrors { get; init; }

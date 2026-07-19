@@ -7,6 +7,11 @@ using Headless.Checks.Internals;
 namespace Headless.Checks;
 
 /// <summary>Common runtime checks that throw exceptions upon failure.</summary>
+/// <remarks>
+/// The auto-captured <c>expression</c> parameter is the source text of the checked condition or value and is
+/// embedded in the exception <em>message</em>; unlike <see cref="Argument"/>'s <c>paramName</c>, it is not an
+/// <see cref="ArgumentException.ParamName"/> (state checks throw exceptions that carry no parameter name).
+/// </remarks>
 [PublicAPI]
 public static class Ensure
 {
@@ -97,13 +102,20 @@ public static class Ensure
     /// <param name="disposed">Whether the object has already been disposed.</param>
     /// <param name="disposedValue">The disposed instance; its runtime type name is used as the object name in the exception.</param>
     /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="expression">The captured text of <paramref name="disposed"/> (auto generated, no need to pass it); used as the object name when <paramref name="disposedValue"/> is null.</param>
     /// <exception cref="ObjectDisposedException">if <paramref name="disposed"/> is <see langword="true"/>.</exception>
     [DebuggerStepThrough]
-    public static void NotDisposed([DoesNotReturnIf(true)] bool disposed, object? disposedValue, string? message = null)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void NotDisposed(
+        [DoesNotReturnIf(true)] bool disposed,
+        object? disposedValue,
+        string? message = null,
+        [CallerArgumentExpression(nameof(disposed))] string? expression = null
+    )
     {
         if (disposed)
         {
-            _ThrowObjectDisposed(disposedValue, message);
+            _ThrowObjectDisposed(disposedValue, message, expression);
         }
     }
 
@@ -126,9 +138,9 @@ public static class Ensure
     }
 
     [DoesNotReturn]
-    private static void _ThrowObjectDisposed(object? disposedValue, string? message)
+    private static void _ThrowObjectDisposed(object? disposedValue, string? message, string? expression)
     {
-        var objectName = disposedValue != null ? (disposedValue.GetType().FullName ?? string.Empty) : string.Empty;
+        var objectName = disposedValue?.GetType().FullName ?? expression ?? string.Empty;
         if (message != null)
         {
             throw new ObjectDisposedException(objectName, message);
