@@ -366,7 +366,7 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 |---------|-------------|
 | [Headless.Messaging.Storage.PostgreSql](src/Headless.Messaging.Storage.PostgreSql/README.md) | PostgreSQL message persistence |
 | [Headless.Messaging.Storage.SqlServer](src/Headless.Messaging.Storage.SqlServer/README.md) | SQL Server message persistence |
-| [Headless.Messaging.InMemoryStorage](src/Headless.Messaging.InMemoryStorage/README.md) | Ephemeral storage (dev/testing) |
+| [Headless.Messaging.Storage.InMemory](src/Headless.Messaging.Storage.InMemory/README.md) | Ephemeral storage (dev/testing) |
 
 ### Jobs
 

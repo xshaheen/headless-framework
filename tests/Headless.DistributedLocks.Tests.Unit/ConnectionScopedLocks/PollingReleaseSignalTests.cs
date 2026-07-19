@@ -43,6 +43,27 @@ public sealed class PollingReleaseSignalTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_reuse_a_completed_signal_for_a_later_waiter()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var signal = new PollingReleaseSignal(timeProvider);
+        var fallback = TimeSpan.FromSeconds(5);
+        var first = signal.WaitAsync("resource", TimeSpan.FromMinutes(10), AbortToken).AsTask();
+
+        await signal.PublishAsync("resource", AbortToken);
+        await first;
+
+        var later = signal.WaitAsync("resource", fallback, AbortToken).AsTask();
+
+        later.IsCompleted.Should().BeFalse();
+
+        timeProvider.Advance(fallback);
+        await later;
+
+        later.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_not_deadlock_when_a_signal_precedes_the_wait()
     {
         var timeProvider = new FakeTimeProvider();

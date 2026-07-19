@@ -12,6 +12,8 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Base;
 using Jobs.SourceGenerator.Tests;
 
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.cleanup")]
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create")]
 namespace Jobs.SourceGenerator.Tests
 {
     internal static class JobsInstanceFactoryExtensions
@@ -20,12 +22,12 @@ namespace Jobs.SourceGenerator.Tests
         public static void Initialize()
         {
             var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>(2);
-            jobFunctionDelegateDict.Add("invoice.create", new JobFunctionRegistration { CronExpression = "0 */5 * * * *", Priority = (JobPriority)1, Delegate = new JobFunctionDelegate(async (cancellationToken, serviceProvider, context) =>
+            jobFunctionDelegateDict.Add("invoice.create", new JobFunctionRegistration { CronExpression = "0 */5 * * * *", Priority = (JobPriority)1, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
             {
                 var genericContext = await ToGenericContextWithRequest<Demo.CreateInvoice>(context, cancellationToken);
                 await CreateDemoInvoiceJobs(serviceProvider).CreateAsync(genericContext, cancellationToken);
             }), MaxConcurrency = 3 });
-            jobFunctionDelegateDict.Add("invoice.cleanup", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate((cancellationToken, serviceProvider, context) =>
+            jobFunctionDelegateDict.Add("invoice.cleanup", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate((serviceProvider, context, cancellationToken) =>
             {
                 CreateDemoInvoiceJobs(serviceProvider).Cleanup();
                 return Task.CompletedTask;

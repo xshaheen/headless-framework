@@ -3,8 +3,10 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Headless.Coordination;
 using Headless.Jobs;
+using Headless.Jobs.Base;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -289,47 +291,6 @@ public static class JobsCoordinationFixtureExtensions
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
-        JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-            {
-                [CoordinatedFunctionName] = new JobFunctionRegistration
-                {
-                    CronExpression = string.Empty,
-                    Priority = JobPriority.LongRunning,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 1,
-                },
-                [CoordinatedFacadeFunctionName] = new JobFunctionRegistration
-                {
-                    CronExpression = string.Empty,
-                    Priority = JobPriority.LongRunning,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 1,
-                },
-            }
-        );
-        JobFunctionProvider.RegisterRequestType(
-            new Dictionary<string, (string, Type)>(StringComparer.Ordinal)
-            {
-                [CoordinatedFacadeFunctionName] = (
-                    typeof(CoordinatedFacadeRequest).FullName!,
-                    typeof(CoordinatedFacadeRequest)
-                ),
-            }
-        );
-        JobFunctionProvider.RegisterDescriptors(
-            new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
-            {
-                [CoordinatedFacadeFunctionName] = new(
-                    CoordinatedFacadeFunctionName,
-                    typeof(CoordinatedFacadeRequest),
-                    string.Empty,
-                    JobPriority.LongRunning,
-                    1
-                ),
-            }
-        );
-
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
@@ -783,6 +744,83 @@ public static class JobsCoordinationFixtureExtensions
 
 /// <summary>Typed payload registered as a generated-equivalent job-function request by the relational harness.</summary>
 public sealed record CoordinatedFacadeRequest(Guid Id, string Value);
+
+internal static class CoordinatedEnqueueJobs
+{
+    public static Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public static Task RunAsync(
+        JobFunctionContext<CoordinatedFacadeRequest> context,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
+}
+
+internal static class CoordinatedEnqueueJobsRegistration
+{
+    [ModuleInitializer]
+    internal static void Initialize()
+    {
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+            {
+                [JobsCoordinationFixtureExtensions.CoordinatedFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = (_, context, cancellationToken) =>
+                        CoordinatedEnqueueJobs.RunAsync(context, cancellationToken),
+                    MaxConcurrency = 1,
+                },
+                [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = async (_, context, cancellationToken) =>
+                    {
+                        var request = await JobsRequestProvider
+                            .GetRequestAsync<CoordinatedFacadeRequest>(context, cancellationToken)
+                            .ConfigureAwait(false);
+                        await CoordinatedEnqueueJobs
+                            .RunAsync(
+                                new JobFunctionContext<CoordinatedFacadeRequest>(context, request),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    },
+                    MaxConcurrency = 1,
+                },
+            }
+        );
+        JobFunctionProvider.RegisterRequestType(
+            new Dictionary<string, (string, Type)>(StringComparer.Ordinal)
+            {
+                [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = (
+                    typeof(CoordinatedFacadeRequest).FullName!,
+                    typeof(CoordinatedFacadeRequest)
+                ),
+            }
+        );
+        JobFunctionProvider.RegisterDescriptors(
+            new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
+            {
+                [JobsCoordinationFixtureExtensions.CoordinatedFunctionName] = new(
+                    JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+                    null,
+                    string.Empty,
+                    JobPriority.LongRunning,
+                    1
+                ),
+                [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = new(
+                    JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName,
+                    typeof(CoordinatedFacadeRequest),
+                    string.Empty,
+                    JobPriority.LongRunning,
+                    1
+                ),
+            }
+        );
+    }
+}
 
 /// <summary>Observes scheduler wake-ups so conformance tests can distinguish pre-commit from post-commit effects.</summary>
 internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificationHubSender

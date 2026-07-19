@@ -9,12 +9,16 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Polly.Retry;
 
 namespace Tests;
 
+[Collection<JobsHelperCollection>]
 public sealed class RetryBehaviorTests : TestBase
 {
+    private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);
+
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
 
@@ -115,9 +119,7 @@ public sealed class RetryBehaviorTests : TestBase
             [],
             retries: 3,
             retryOptions: options,
-#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
-            exceptionFactory: static () => new ArgumentException("permanent", "request")
-#pragma warning restore MA0015
+            exceptionFactory: static () => new InvalidOperationException("permanent")
         );
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -214,7 +216,7 @@ public sealed class RetryBehaviorTests : TestBase
             }
         );
         var scopes = new List<RetryScopeMarker>();
-        context.CachedDelegate = (_, provider, jobContext) =>
+        context.CachedDelegate = (provider, jobContext, _) =>
         {
             attempts.Add(new Attempt(DateTime.UtcNow, jobContext.RetryCount));
             scopes.Add(provider.GetRequiredService<RetryScopeMarker>());
@@ -228,6 +230,109 @@ public sealed class RetryBehaviorTests : TestBase
         await exceptionHandler
             .Received(2)
             .HandleExceptionAsync(Arg.Any<Exception>(), context.JobId, context.Type, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task execute_task_async_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
+    {
+        JobFunctionProvider.ResetForTests();
+        try
+        {
+            var descriptor = new JobFunctionDescriptor("TestFunction", null, "", JobPriority.Normal, 0);
+            JobFunctionProvider.RegisterFunctions(
+                new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                {
+                    [descriptor.FunctionName] = new()
+                    {
+                        CronExpression = string.Empty,
+                        Priority = JobPriority.Normal,
+                        Delegate = static (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 0,
+                    },
+                }
+            );
+            JobFunctionProvider.RegisterDescriptors(
+                new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
+                {
+                    [descriptor.FunctionName] = descriptor,
+                }
+            );
+
+            var attempts = new List<(int Attempt, RetryScopeMarker Scope, CancellationToken Token)>();
+            var observedErrors = new List<string>();
+            var terminalInvocations = 0;
+            JobMiddlewareRegistry.RegisterExecute(
+                "Consumer:ConsumerMiddleware",
+                null,
+                10,
+                async (middlewareContext, next, token) =>
+                {
+                    try
+                    {
+                        attempts.Add(
+                            (
+                                middlewareContext.Attempt,
+                                middlewareContext.Services.GetRequiredService<RetryScopeMarker>(),
+                                token
+                            )
+                        );
+                        await next(token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observedErrors.Add("consumer");
+                        throw;
+                    }
+                }
+            );
+            JobMiddlewareRegistry.RegisterExecute(
+                "Producer:ProducerMiddleware",
+                null,
+                -10,
+                async (_, next, token) =>
+                {
+                    try
+                    {
+                        await next(token);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observedErrors.Add("producer");
+                        throw;
+                    }
+                }
+            );
+            JobFunctionProvider.MarkDiscoveryComplete();
+            JobFunctionProvider.Build();
+
+            var options = _ZeroDelayRetryOptions();
+            var (handler, context, manager, _) = _SetupRetryTestFixture(
+                [],
+                retries: 1,
+                retryOptions: options,
+                configureServices: static services => services.AddScoped<RetryScopeMarker>(),
+                functionRegistry: JobFunctionProvider.CreateHostRegistry(configuration: null)
+            );
+            context.CachedDelegate = (_, functionContext, _) =>
+            {
+                terminalInvocations++;
+                return functionContext.RetryCount == 0 ? throw new TimeoutException("transient") : Task.CompletedTask;
+            };
+
+            await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+            attempts.Select(attempt => attempt.Attempt).Should().Equal(0, 1);
+            terminalInvocations.Should().Be(2);
+            attempts[0].Scope.Should().NotBeSameAs(attempts[1].Scope);
+            attempts.Should().OnlyContain(attempt => attempt.Token.CanBeCanceled);
+            observedErrors.Should().Equal("consumer", "producer");
+            context.Status.Should().Be(JobStatus.DueDone);
+            await manager.Received(2).UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            JobFunctionProvider.ResetForTests();
+        }
     }
 
     [Fact]
@@ -350,6 +455,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         await using var serviceProvider = services.BuildServiceProvider();
@@ -375,6 +483,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
@@ -416,17 +526,23 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task execute_task_async_marks_cooperative_base_operation_cancellation_as_cancelled()
+    public async Task execute_task_async_observes_pre_registration_durable_cancellation_before_user_code()
     {
         var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
-        context.CachedDelegate = (cancellationToken, _, functionContext) =>
+        context.Type = JobType.TimeJob;
+        var invoked = false;
+        context.CachedDelegate = (_, _, _) =>
         {
-            functionContext.RequestCancellation();
-            throw new OperationCanceledException(cancellationToken);
+            invoked = true;
+            return Task.CompletedTask;
         };
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(true));
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
+        invoked.Should().BeFalse();
         context.Status.Should().Be(JobStatus.Cancelled);
         await manager
             .Received(1)
@@ -434,10 +550,304 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task execute_task_async_keeps_host_shutdown_distinct_from_durable_cancellation()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
+        context.Type = JobType.TimeJob;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        using var hostStopping = new CancellationTokenSource();
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
+        await started.Task.WaitAsync(AbortToken);
+        await hostStopping.CancelAsync();
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.InProgress);
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Cancelled), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_observes_durable_cancellation_on_the_configured_interval()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 0,
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false), Task.FromResult<bool?>(true));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        await manager.Received(2).IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task execute_task_async_preserves_an_uncooperative_handlers_natural_result()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 0,
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false), Task.FromResult<bool?>(true));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            using var registration = token.Register(() => cancellationObserved.TrySetResult());
+            started.TrySetResult();
+            await complete.Task;
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await cancellationObserved.Task.WaitAsync(AbortToken);
+        complete.TrySetResult();
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Succeeded);
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Succeeded), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_preserves_an_uncooperative_handlers_natural_failure()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 0,
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false), Task.FromResult<bool?>(true));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fail = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            using var registration = token.Register(() => cancellationObserved.TrySetResult());
+            started.TrySetResult();
+            await fail.Task;
+            throw new InvalidOperationException("natural failure after cancellation request");
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await cancellationObserved.Task.WaitAsync(AbortToken);
+        fail.TrySetResult();
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Failed);
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed), CancellationToken.None);
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Cancelled), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_aborts_on_initial_observation_failure_and_allows_later_recovery_execution()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
+        context.Type = JobType.TimeJob;
+        var invoked = false;
+        context.CachedDelegate = (_, _, _) =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        };
+        var observationCount = 0;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref observationCount) == 1
+                    ? Task.FromException<bool?>(new TimeoutException("store unavailable"))
+                    : Task.FromResult<bool?>(false)
+            );
+
+        await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+
+        invoked.Should().BeFalse();
+        context.Status.Should().Be(JobStatus.InProgress);
+        await manager.DidNotReceive().UpdateTickerAsync(Arg.Any<JobExecutionState>(), CancellationToken.None);
+
+        await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+
+        invoked.Should().BeTrue();
+        context.Status.Should().Be(JobStatus.Succeeded);
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Succeeded), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_retries_transient_periodic_observation_failures()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 0,
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        var observationCount = 0;
+        var transientFailureObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                return Interlocked.Increment(ref observationCount) switch
+                {
+                    1 => Task.FromResult<bool?>(false),
+                    2 => _TransientFailure(),
+                    _ => Task.FromResult<bool?>(true),
+                };
+            });
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await transientFailureObserved.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        Volatile.Read(ref observationCount).Should().Be(3);
+
+        Task<bool?> _TransientFailure()
+        {
+            transientFailureObserved.TrySetResult();
+            return Task.FromException<bool?>(new TimeoutException("transient observation failure"));
+        }
+    }
+
+    [Fact]
+    public async Task execute_task_async_cancels_and_awaits_a_blocked_observation_before_disposal()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 0,
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        var observationCount = 0;
+        var observationBlocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(call => observeCancellationAsync(call.Arg<CancellationToken>()));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, _) =>
+        {
+            started.TrySetResult();
+            await complete.Task;
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await observationBlocked.Task.WaitAsync(AbortToken);
+        complete.TrySetResult();
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Succeeded);
+        Volatile.Read(ref observationCount).Should().Be(2);
+
+        async Task<bool?> observeCancellationAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref observationCount) == 1)
+            {
+                return false;
+            }
+
+            observationBlocked.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return false;
+        }
+    }
+
+    [Fact]
     public async Task execute_task_async_treats_foreign_operation_cancellation_as_failure()
     {
         var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 0);
-        context.CachedDelegate = (_, _, _) => throw new OperationCanceledException("provider timeout");
+        using var foreignCancellation = new CancellationTokenSource();
+        await foreignCancellation.CancelAsync();
+        context.CachedDelegate = (_, _, _) => throw new OperationCanceledException(foreignCancellation.Token);
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
@@ -456,6 +866,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -475,6 +888,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -494,7 +909,7 @@ public sealed class RetryBehaviorTests : TestBase
             RetryCount = 0,
             Status = JobStatus.Idle,
             // Runs until cancel-on-loss fires; the infinite delay observes the job token and throws on cancellation.
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -518,6 +933,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -543,6 +961,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -561,7 +981,7 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = 0,
             RetryCount = 0,
             Status = JobStatus.Idle,
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -579,6 +999,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -592,6 +1015,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -632,6 +1057,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -646,6 +1074,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -688,6 +1118,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -719,6 +1152,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
@@ -738,7 +1173,7 @@ public sealed class RetryBehaviorTests : TestBase
             RetryCount = 0,
             Status = JobStatus.Idle,
             // Completes only after the renewal loop has ticked twice — deterministic, not timing-dependent.
-            CachedDelegate = async (ct, _, _) =>
+            CachedDelegate = async (_, _, ct) =>
                 await secondRenewalReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
         };
 
@@ -758,6 +1193,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -772,6 +1210,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder
             {
                 LeaseDuration = TimeSpan.FromMilliseconds(250),
@@ -792,7 +1232,7 @@ public sealed class RetryBehaviorTests : TestBase
             Status = JobStatus.Idle,
             // Runs until cancel-on-loss fires — deterministic: the lease-window bound WILL trip once membership has
             // been unknown for LeaseDuration (load only delays the moment, never changes the outcome).
-            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -812,6 +1252,9 @@ public sealed class RetryBehaviorTests : TestBase
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -833,6 +1276,8 @@ public sealed class RetryBehaviorTests : TestBase
             TimeProvider.System,
             instrumentation,
             internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             logger
         );
@@ -906,12 +1351,17 @@ public sealed class RetryBehaviorTests : TestBase
         JobsRetryOptions? retryOptions = null,
         Func<Exception>? exceptionFactory = null,
         Action<IServiceCollection>? configureServices = null,
-        SchedulerOptionsBuilder? schedulerOptions = null
+        SchedulerOptionsBuilder? schedulerOptions = null,
+        JobFunctionRegistry? functionRegistry = null,
+        TimeProvider? timeProvider = null
     )
     {
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
 
         // The renewal loop cancels the job when RenewLeaseAsync returns 0 (lease lost). NSubstitute defaults a
         // Task<int> to 0, so without this stub every retry test is one renewal interval away from a spurious
@@ -930,9 +1380,11 @@ public sealed class RetryBehaviorTests : TestBase
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             instrumentation,
             internalManager,
+            functionRegistry ?? _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
             schedulerOptions ?? new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
             retryOptions
@@ -950,7 +1402,7 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = retries,
             RetryCount = 0,
             Status = JobStatus.Idle,
-            CachedDelegate = (ct, sp, tctx) =>
+            CachedDelegate = (sp, tctx, ct) =>
             {
                 attempts.Add(new Attempt(DateTime.UtcNow, tctx.RetryCount));
 

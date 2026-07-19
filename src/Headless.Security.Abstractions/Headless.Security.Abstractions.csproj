@@ -3,6 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Description>Contracts and shared abstractions for Headless security packages.</Description>
     <PackageTags>headless;security;dotnet</PackageTags>
-    <RootNamespace>Headless.Abstractions</RootNamespace>
+    <RootNamespace>Headless.Security</RootNamespace>
   </PropertyGroup>
 </Project>

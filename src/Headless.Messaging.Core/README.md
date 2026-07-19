@@ -16,6 +16,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Atomic Delayed Claim SPI**: `IDelayedMessageClaimStorage` lets capable providers claim, lease, and transition a bounded delayed batch before Core enqueues committed winners; legacy providers retain the callback path
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
@@ -24,6 +25,8 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+
+Storage providers that implement `IDelayedMessageClaimStorage` must stamp each winner's `LockedUntil` as `max(authoritative store now, ExpiresAt) + DispatchTimeout`, using the same store-clock snapshot that tests lease eligibility, and return only after the claim commits. Extending a future message's lease from its schedule time keeps the ownership grant alive until the first dispatch attempt.
 
 Consumer providers implement trailing optional cancellation tokens on both `IConsumerClientFactory.CreateAsync(...)` contract shapes and on `IConsumerClient.FetchMessageNamesAsync(...)` / `SubscribeAsync(...)`. Core passes the host-stopping token through metadata startup and a linked group token through worker creation and subscription. Providers preserve `OperationCanceledException` so shutdown is not reported as a broker connection failure.
 
@@ -40,7 +43,7 @@ For a local, dependency-free first run, install the in-memory transport and stor
 ```bash
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ```csharp
@@ -251,7 +254,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 ```
 
 - `Version` is validated non-empty and at most 20 characters: the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
+- `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
+- `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
 
 ## Middleware
 

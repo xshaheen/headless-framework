@@ -66,24 +66,24 @@ public sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         TryGetEntryCalls++;
-        return ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+        return ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, readOptions, cancellationToken);
     }
 
     // Delegates to the inner cache's bulk primitive (not this adapter's single-key path), so a bulk cold read
     // registers exactly one TryGetAllEntriesCalls and zero TryGetEntryCalls at the L2 boundary.
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         TryGetAllEntriesCalls++;
-        return ((IFactoryCacheStore)cache).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+        return ((IFactoryCacheStore)cache).TryGetAllEntriesAsync<T>(keys, readOptions, cancellationToken);
     }
 
     public ValueTask<bool> SetEntryAsync<T>(

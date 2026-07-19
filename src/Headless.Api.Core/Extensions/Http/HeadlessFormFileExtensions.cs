@@ -97,11 +97,18 @@ public static class HeadlessFormFileExtensions
 
     /// <summary>Reads all bytes from the uploaded file's content stream asynchronously.</summary>
     /// <param name="file">The uploaded file.</param>
+    /// <param name="cancellationToken">A token to observe while reading the file stream.</param>
     /// <returns>A byte array containing the full file content.</returns>
-    public static async Task<byte[]> GetAllBytesAsync(this IFormFile file)
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled.
+    /// </exception>
+    public static async Task<byte[]> GetAllBytesAsync(
+        this IFormFile file,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var stream = file.OpenReadStream();
 
-        return await stream.GetAllBytesAsync().ConfigureAwait(false);
+        return await stream.GetAllBytesAsync(cancellationToken).ConfigureAwait(false);
     }
 }

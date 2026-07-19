@@ -10,6 +10,7 @@ using Polly.Retry;
 #pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
+[Collection<JobsHelperCollection>]
 public sealed class JobsOptionsBuilderTests
 {
     private sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;
@@ -224,6 +225,36 @@ public sealed class JobsOptionsBuilderTests
         var schedulerOptions = new SchedulerOptionsBuilder();
 
         schedulerOptions.LeaseDuration.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void cancellation_observation_interval_defaults_to_the_effective_lease_renewal_interval()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(3),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(45),
+        };
+
+        schedulerOptions.ResolveCancellationObservationInterval().Should().Be(TimeSpan.FromSeconds(45));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(301)]
+    public void add_headless_jobs_rejects_an_invalid_cancellation_observation_interval(int seconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.CancellationObservationInterval = TimeSpan.FromSeconds(seconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]

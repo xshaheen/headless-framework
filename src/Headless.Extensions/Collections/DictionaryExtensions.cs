@@ -14,7 +14,7 @@ public static class DictionaryExtensions
     /// Determines whether two dictionaries contain the same keys mapped to equal values. Two <see langword="null"/>
     /// references are considered equal.
     /// </summary>
-    /// <typeparam name="TKey">The type of keys in the dictionaries.</typeparam>
+    /// <typeparam name="TKey">The non-null type of keys in the dictionaries.</typeparam>
     /// <typeparam name="TValue">The type of values in the dictionaries.</typeparam>
     /// <param name="first">The first dictionary to compare.</param>
     /// <param name="second">The second dictionary to compare.</param>
@@ -30,6 +30,7 @@ public static class DictionaryExtensions
         IDictionary<TKey, TValue>? second,
         IEqualityComparer<TValue>? valueComparer = null
     )
+        where TKey : notnull
     {
         if (Equals(first, second))
         {

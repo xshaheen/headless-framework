@@ -15,18 +15,15 @@ namespace Tests;
 // Test entities
 // ---------------------------------------------------------------------------
 
-public class Order : IAuditTracked
+public class Order
 {
     public Guid Id { get; set; }
     public string CustomerName { get; set; } = "";
 
-    [AuditSensitive]
     public string Email { get; set; } = "";
 
-    [AuditSensitive(SensitiveDataStrategy.Exclude)]
     public string Phone { get; set; } = "";
 
-    [AuditIgnore]
     public DateTime LastComputedAt { get; set; }
     public bool IsDeleted { get; set; }
     public bool IsSuspended { get; set; }
@@ -39,52 +36,78 @@ public class Product
     public string Name { get; set; } = "";
 }
 
-[AuditIgnore]
 public class InternalLog
 {
     public Guid Id { get; set; }
     public string Message { get; set; } = "";
 }
 
-public class Customer : IAuditTracked
+public class Customer
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
     public Address Address { get; set; } = new();
 }
 
-public class PropertyTransformOrder : IAuditTracked
+public class PropertyTransformOrder
 {
     public Guid Id { get; set; }
 
-    [AuditSensitive(SensitiveDataStrategy.Transform)]
     public string Secret { get; set; } = "";
 }
 
-public class FrameworkManagedOrder : IAuditTracked
+public class FrameworkManagedOrder
 {
     public Guid Id { get; set; }
     public DateTimeOffset DateCreated { get; set; }
     public string Name { get; set; } = "";
 }
 
-public class CompositeKeyOrder : IAuditTracked
+public class CompositeKeyOrder
 {
     public string TenantId { get; set; } = "";
     public string OrderId { get; set; } = "";
     public string Name { get; set; } = "";
 }
 
-public class GeneratedKeyOrder : IAuditTracked
+public class GeneratedKeyOrder
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
+}
+
+public class ShadowPropertyOrder
+{
+    public Guid Id { get; set; }
 }
 
 public class Address
 {
     public string Street { get; set; } = "";
     public string City { get; set; } = "";
+    public AddressDetails Details { get; set; } = new();
+}
+
+public class AddressDetails
+{
+    public string Secret { get; set; } = "";
+}
+
+public abstract class AuditedBaseEntity
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public OwnedAuditDetails? Details { get; set; }
+    public OwnedAuditDetails? AdditionalDetails { get; set; }
+}
+
+public sealed class InheritedAuditEntity : AuditedBaseEntity { }
+
+public sealed class ExcludedDerivedAuditEntity : AuditedBaseEntity { }
+
+public sealed class OwnedAuditDetails
+{
+    public string Value { get; set; } = "";
 }
 
 // ---------------------------------------------------------------------------
@@ -101,11 +124,49 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<FrameworkManagedOrder> FrameworkManagedOrders => Set<FrameworkManagedOrder>();
     public DbSet<CompositeKeyOrder> CompositeKeyOrders => Set<CompositeKeyOrder>();
     public DbSet<GeneratedKeyOrder> GeneratedKeyOrders => Set<GeneratedKeyOrder>();
+    public DbSet<ShadowPropertyOrder> ShadowPropertyOrders => Set<ShadowPropertyOrder>();
+    public DbSet<InheritedAuditEntity> InheritedAuditEntities => Set<InheritedAuditEntity>();
+    public DbSet<ExcludedDerivedAuditEntity> ExcludedDerivedAuditEntities => Set<ExcludedDerivedAuditEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Customer>().OwnsOne(c => c.Address);
-        modelBuilder.Entity<Order>().Property(e => e.Id).ValueGeneratedNever();
+        var order = modelBuilder.Entity<Order>();
+        order.IsAudited();
+        order.Property(e => e.Email).IsAuditSensitive();
+        order.Property(e => e.Phone).IsAuditSensitive(SensitiveDataStrategy.Exclude);
+        order.Property(e => e.LastComputedAt).ExcludeFromAudit();
+        order.Property(e => e.Id).ValueGeneratedNever();
+
+        var customer = modelBuilder.Entity<Customer>();
+        customer.IsAudited();
+        customer.OwnsOne(
+            c => c.Address,
+            address =>
+            {
+                address.Property(a => a.City).IsAuditSensitive().ExcludeFromAudit();
+                address.OwnsOne(a => a.Details, details => details.Property(d => d.Secret).IsAuditSensitive());
+            }
+        );
+
+        modelBuilder.Entity<InternalLog>().ExcludeFromAudit();
+        modelBuilder.Entity<PropertyTransformOrder>().IsAudited();
+        modelBuilder
+            .Entity<PropertyTransformOrder>()
+            .Property(e => e.Secret)
+            .IsAuditSensitive(SensitiveDataStrategy.Transform);
+        modelBuilder.Entity<FrameworkManagedOrder>().IsAudited();
+        modelBuilder.Entity<CompositeKeyOrder>().IsAudited();
+        modelBuilder.Entity<GeneratedKeyOrder>().IsAudited();
+        modelBuilder.Entity<ShadowPropertyOrder>().IsAudited();
+        modelBuilder.Entity<ShadowPropertyOrder>().Property<string>("Secret").IsAuditSensitive();
+
+        modelBuilder.Entity<AuditedBaseEntity>().IsAudited();
+        modelBuilder.Entity<AuditedBaseEntity>().Property(e => e.Id).ValueGeneratedNever();
+        modelBuilder.Entity<AuditedBaseEntity>().OwnsOne(e => e.Details);
+        modelBuilder.Entity<AuditedBaseEntity>().OwnsOne(e => e.AdditionalDetails);
+        modelBuilder.Entity<InheritedAuditEntity>();
+        modelBuilder.Entity<ExcludedDerivedAuditEntity>().ExcludeFromAudit();
+
         modelBuilder.Entity<Product>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<InternalLog>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<Customer>().Property(e => e.Id).ValueGeneratedNever();
@@ -113,6 +174,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         modelBuilder.Entity<FrameworkManagedOrder>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<CompositeKeyOrder>().HasKey(e => new { e.TenantId, e.OrderId });
         modelBuilder.Entity<GeneratedKeyOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
+        modelBuilder.Entity<ShadowPropertyOrder>().Property(e => e.Id).ValueGeneratedNever();
     }
 }
 
@@ -120,7 +182,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
 // Tests
 // ---------------------------------------------------------------------------
 
-public sealed class EfAuditChangeCaptureTests : TestBase
+public sealed partial class EfAuditChangeCaptureTests : TestBase
 {
     private static readonly DateTimeOffset _Timestamp = new(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
     private const string _UserId = "user-1";
@@ -162,7 +224,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         return new EfAuditChangeCapture(Options.Create(opts), logger);
     }
 
-    private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
+    private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, DbContext db)
     {
         var entries = db.ChangeTracker.Entries().Cast<object>();
         return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
@@ -276,7 +338,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task audit_ignore_property_excluded_from_all_dictionaries()
+    public async Task property_exclusion_metadata_omits_property_from_all_dictionaries()
     {
         // given
         var (db, conn) = _CreateDb();
@@ -315,7 +377,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task audit_sensitive_redact_replaces_value_with_stars()
     {
-        // given - Email has [AuditSensitive] with default Redact strategy
+        // given - Email uses sensitive metadata with the default Redact strategy
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -344,7 +406,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task audit_sensitive_exclude_omits_property_entirely()
     {
-        // given - Phone has [AuditSensitive(Strategy = Exclude)]
+        // given - Phone uses a property-specific Exclude strategy
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -399,7 +461,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // then
             result.Should().ContainSingle();
             var entry = result[0];
-            // Email uses [AuditSensitive] without explicit strategy, so falls back to global Transform
+            // Email has no property-specific strategy, so it falls back to global Transform
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("[MASKED:Email]");
         }
     }
@@ -426,9 +488,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task non_audit_tracked_entity_skipped_in_opt_in_mode()
+    public async Task unconfigured_entity_skipped_when_audit_by_default_is_disabled()
     {
-        // given - Product does not implement IAuditTracked
+        // given - Product has no explicit audit policy
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -447,7 +509,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task all_entities_mode_captures_non_marker_entities()
+    public async Task audit_by_default_captures_entity_without_explicit_policy()
     {
         // given
         var (db, conn) = _CreateDb();
@@ -469,9 +531,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task audit_ignore_class_excluded_in_all_entities_mode()
+    public async Task entity_exclusion_metadata_wins_when_audit_by_default_is_enabled()
     {
-        // given - InternalLog has [AuditIgnore] on the class
+        // given - InternalLog has explicit exclusion metadata
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -549,7 +611,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task owned_entity_inherits_auditability_from_owner()
     {
-        // given - Customer (IAuditTracked) owns Address
+        // given - the explicitly audited Customer owns Address
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -577,9 +639,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task owned_entity_update_captured_when_owner_is_audit_tracked()
+    public async Task owned_entity_update_captured_when_root_owner_has_audit_metadata()
     {
-        // given - Customer (IAuditTracked) owns Address; modifying Address should emit an audit entry.
+        // given - Customer is explicitly audited; modifying Address should emit an audit entry.
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -602,11 +664,66 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // when
             var result = _Capture(sut, db);
 
-            // then - address update is captured because owner (Customer) is IAuditTracked
+            // then - address update is captured because its root owner is audited
             result.Should().ContainSingle();
             var addressEntry = result[0];
             addressEntry.EntityType.Should().Contain(nameof(Address));
             addressEntry.EntityId.Should().Be(customerId.ToString());
+        }
+    }
+
+    [Fact]
+    public async Task nested_owned_entity_inherits_root_policy_and_uses_local_sensitive_metadata()
+    {
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.Customers.Add(
+                new Customer
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Alice",
+                    Address = new Address
+                    {
+                        Street = "Main",
+                        City = "Town",
+                        Details = new AddressDetails { Secret = "private" },
+                    },
+                }
+            );
+
+            var result = _Capture(_CreateSut(), db);
+
+            var detailsEntry = result.Single(entry =>
+                entry.EntityType?.Contains(nameof(AddressDetails), StringComparison.Ordinal) == true
+            );
+            detailsEntry.NewValues.Should().ContainKey(nameof(AddressDetails.Secret)).WhoseValue.Should().Be("***");
+        }
+    }
+
+    [Fact]
+    public async Task property_exclusion_wins_over_sensitive_metadata_on_owned_property()
+    {
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            var customer = new Customer
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice",
+                Address = new Address { Street = "Main", City = "Town" },
+            };
+            db.Customers.Add(customer);
+            await db.SaveChangesAsync(AbortToken);
+
+            customer.Address.City = "Elsewhere";
+            db.ChangeTracker.DetectChanges();
+
+            var result = _Capture(_CreateSut(), db);
+
+            result.Should().BeEmpty();
         }
     }
 
@@ -741,17 +858,19 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task audit_log_entry_class_not_captured_in_all_entities_mode()
     {
-        // given - AuditLogEntry has [AuditIgnore] to prevent recursive capture
-        // We can't add AuditLogEntry to TestDbContext directly (different assembly), but
-        // we verify via InternalLog which also has [AuditIgnore].
-        // (This test is a duplicate of audit_ignore_class_excluded_in_all_entities_mode for AuditLogEntry specifically,
-        // but since AuditLogEntry is not in our test DbContext, we verify the mechanism via InternalLog.)
-        var (db, conn) = _CreateDb();
+        // given - use the real storage entity and its finalized model configuration.
+        var (db, conn) = AuditStoreDbContext.Create();
         await using (conn)
         await using (db)
         {
-            var log = new InternalLog { Id = Guid.NewGuid(), Message = "audit log entry" };
-            db.InternalLogs.Add(log);
+            db.Add(
+                new AuditLogEntry
+                {
+                    Id = 1,
+                    CreatedAt = _Timestamp.UtcDateTime,
+                    Action = "audit.created",
+                }
+            );
 
             var sut = _CreateSut(opts => opts.AuditByDefault = true);
 
@@ -1156,9 +1275,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task updated_entity_with_only_ignored_property_change_produces_no_entry()
+    public async Task updated_entity_with_only_excluded_property_change_produces_no_entry()
     {
-        // given - LastComputedAt is [AuditIgnore] and is the only modified property
+        // given - LastComputedAt is excluded in model metadata and is the only modified property
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -1190,7 +1309,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task updated_entity_with_only_excluded_sensitive_property_change_produces_no_entry()
     {
-        // given - Phone is [AuditSensitive(Exclude)] and is the only modified property
+        // given - Phone has a property-specific sensitive Exclude strategy and is the only modified property
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -1221,7 +1340,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     [Fact]
     public async Task audit_sensitive_redact_on_update_masks_old_and_new_values_but_keeps_changed_field()
     {
-        // given - Email has [AuditSensitive] with the default Redact strategy
+        // given - Email uses sensitive metadata with the default Redact strategy
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)

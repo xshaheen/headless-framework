@@ -395,7 +395,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
-- `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
+- `Headless.Messaging.Storage.InMemory` — Ephemeral storage (dev/testing).
 - `Headless.Messaging.Testing` — In-process test harness for asserting dispatch/consume behavior (documented in [testing.md](testing.md)).
 
 ### OpenAPI

@@ -5,6 +5,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
 
@@ -12,7 +13,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
-    CronScheduleCache cronScheduleCache
+    CronScheduleCache cronScheduleCache,
+    ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -530,6 +532,31 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
     }
 
+    public async Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        var accepted = await persistenceProvider
+            .RequestTimeJobCancellationAsync(jobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!accepted)
+        {
+            return false;
+        }
+
+        try
+        {
+            await notificationHubSender.CanceledJobNotifyAsync(jobId).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogDurableCancellationNotificationFailed(exception, jobId);
+        }
+
+        return true;
+    }
+
+    public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+        persistenceProvider.IsTimeJobCancellationRequestedAsync(jobId, cancellationToken);
+
     public async Task UpdateSkipTimeJobsWithUnifiedContextAsync(
         JobExecutionState[] resources,
         CancellationToken cancellationToken = default
@@ -711,4 +738,18 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         return results[0] + results[1];
     }
+}
+
+internal static partial class InternalJobsManagerLog
+{
+    [LoggerMessage(
+        EventId = 3212,
+        Level = LogLevel.Warning,
+        Message = "Durable cancellation for time job {JobId} was committed, but the dashboard notification failed."
+    )]
+    public static partial void LogDurableCancellationNotificationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId
+    );
 }

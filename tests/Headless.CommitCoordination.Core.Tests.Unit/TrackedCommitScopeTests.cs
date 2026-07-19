@@ -9,6 +9,34 @@ namespace Tests;
 public sealed class TrackedCommitScopeTests : TestBase
 {
     [Fact]
+    public async Task should_reject_unspecified_outcome_before_tracking_signal_or_disposing_owned_services()
+    {
+        using var ownedScope = new FakeServiceScope();
+        await using var tracked = _CreateTrackedScope(ownedScope);
+        var calls = 0;
+
+        tracked.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                calls++;
+
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        var act = () => tracked.SignalAsync(CommitOutcome.Unspecified).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("outcome");
+        tracked.Coordinator.State.Should().Be(CommitCoordinatorState.Active);
+        ownedScope.Disposed.Should().BeFalse();
+
+        await tracked.SignalAsync(CommitOutcome.Committed);
+
+        calls.Should().Be(1);
+        ownedScope.Disposed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_not_dispose_owned_services_on_redundant_signal_while_claiming_drain_is_in_flight()
     {
         // The SqlServer helper signals explicitly after the diagnostic already claimed the scope: the redundant

@@ -784,6 +784,17 @@
           "Headless.Jobs.Core": "[1.0.0, )"
         }
       },
+      "headless.jobs.discoveryfixture": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.4.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Jobs.Core": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
       "headless.jobs.entityframework": {
         "type": "Project",
         "dependencies": {

@@ -259,6 +259,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .Where(x => x.ExecutionTime != null)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
             .ToArrayAsync(cancellationToken)
@@ -316,9 +319,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var cronJobsToUpdate = await context
             .AsNoTracking()
-            .Include(x => x.CronJob)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
+            .Include(x => x.CronJob)
             .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

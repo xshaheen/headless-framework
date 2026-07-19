@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -48,7 +49,7 @@ public sealed class EfAuditLogTests : TestBase
             await cts.CancelAsync();
 
             // when
-            var act = () => sut.LogAsync("user.login", cancellationToken: cts.Token);
+            var act = () => sut.LogAsync(new() { Action = "user.login" }, cancellationToken: cts.Token);
 
             // then - cancellation wins over the IsEnabled short-circuit and nothing is tracked
             await act.Should().ThrowAsync<OperationCanceledException>();
@@ -67,11 +68,41 @@ public sealed class EfAuditLogTests : TestBase
             var sut = _CreateSut(db, Options.Create(new AuditLogOptions { IsEnabled = false }));
 
             // when
-            await sut.LogAsync("user.login", cancellationToken: AbortToken);
+            await sut.LogAsync(new() { Action = "user.login" }, cancellationToken: AbortToken);
 
             // then
             db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
         }
+    }
+
+    [Fact]
+    public async Task should_reject_null_read_query()
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () => sut.QueryAsync(null!, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task should_reject_non_positive_read_query_limit(int limit)
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () => sut.QueryAsync(new() { Limit = limit }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -92,12 +123,14 @@ public sealed class EfAuditLogTests : TestBase
 
             // when
             await sut.LogAsync(
-                action,
-                entityType,
-                entityId,
-                data: null,
-                success: false,
-                errorCode: errorCode,
+                new()
+                {
+                    Action = action,
+                    EntityType = entityType,
+                    EntityId = entityId,
+                    Success = false,
+                    ErrorCode = errorCode,
+                },
                 cancellationToken: AbortToken
             );
 
@@ -110,5 +143,18 @@ public sealed class EfAuditLogTests : TestBase
             entity.Success.Should().BeFalse();
             entity.CreatedAt.Should().Be(_Timestamp.UtcDateTime);
         }
+    }
+
+    [Fact]
+    public void should_not_include_audit_payload_in_request_string()
+    {
+        var request = new AuditLogWriteRequest
+        {
+            Action = "pii.revealed",
+            EntityId = "customer-secret",
+            Data = new(StringComparer.Ordinal) { ["email"] = "private@example.com" },
+        };
+
+        request.ToString().Should().Be(nameof(AuditLogWriteRequest));
     }
 }

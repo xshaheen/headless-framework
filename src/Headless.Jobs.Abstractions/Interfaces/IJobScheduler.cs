@@ -11,6 +11,15 @@ namespace Headless.Jobs.Interfaces;
 [PublicAPI]
 public interface IJobScheduler
 {
+    /// <summary>
+    /// Durably requests cooperative cancellation of the one-shot job identified by <paramref name="jobId"/>.
+    /// </summary>
+    /// <param name="jobId">The time-job identifier.</param>
+    /// <param name="cancellationToken">Cancels only the durable request operation.</param>
+    /// <returns><see langword="true"/> only when this call records a new cancellation transition.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default);
+
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>
     Task<Guid> EnqueueAsync<TArgs>(
         TArgs request,

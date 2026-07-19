@@ -13,7 +13,7 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - Collection validators (unique elements, min/max counts)
 - Geo validators (latitude/longitude)
 - Pagination validators (page index, page size, search query)
-- URL validators (absolute URLs, HTTP/HTTPS) and IP address validators (IPv4/IPv6)
+- URL validators (absolute URLs, HTTP/HTTPS, and HTTPS-or-loopback credential endpoints) and IP address validators (IPv4/IPv6)
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) with an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
@@ -63,6 +63,7 @@ RuleFor(x => x.Locale).Culture();          // "en", "en-US"
 RuleFor(x => x.ServerIp).Ipv4();           // also Ipv6() / IpAddress()
 RuleFor(x => x.Status).EnumName(typeof(OrderStatus)); // string must be a defined member name
 RuleFor(x => x.Bio).NoScripts();           // reject <script> elements
+RuleFor(x => x.ApiEndpoint).HttpsOrLoopbackHttpUrl(); // HTTPS externally; HTTP only on loopback; no userinfo
 ```
 
 ### Date/Time Validation (testable via `TimeProvider`)
@@ -113,7 +114,7 @@ see a single consistent code namespace in `errors[].code`. Codes you supply your
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
 | Geo | `Latitude`, `Longitude` (`double`, `double?`, and `string` overloads) |
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
 | Network | `Ipv4`, `Ipv6`, `IpAddress` |
 | Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
 | String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |

@@ -51,29 +51,20 @@ public sealed class FeatureGroupDefinition : ICanAddChildFeature, IHasExtraPrope
     }
 
     /// <summary>Adds a top-level feature to this group.</summary>
-    /// <param name="name">Unique name of the feature. Must not be null or white space.</param>
-    /// <param name="defaultValue">Default string value for the feature. <see langword="null"/> means no default.</param>
-    /// <param name="displayName">Human-readable display name. Defaults to <paramref name="name"/> when <see langword="null"/>.</param>
-    /// <param name="description">Optional description of the feature's purpose.</param>
-    /// <param name="isVisibleToClients">Whether clients can see this feature and its value. Default: <see langword="true"/>.</param>
-    /// <param name="isAvailableToHost">Whether the host can use this feature. Default: <see langword="true"/>.</param>
+    /// <param name="options">The feature name and optional metadata.</param>
     /// <returns>The newly created <see cref="FeatureDefinition"/> added to this group.</returns>
-    public FeatureDefinition AddChild(
-        string name,
-        string? defaultValue = null,
-        string? displayName = null,
-        string? description = null,
-        bool isVisibleToClients = true,
-        bool isAvailableToHost = true
-    )
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    public FeatureDefinition AddChild(FeatureDefinitionCreateOptions options)
     {
+        Argument.IsNotNull(options);
+
         var feature = new FeatureDefinition(
-            name,
-            defaultValue,
-            displayName,
-            description,
-            isVisibleToClients,
-            isAvailableToHost
+            options.Name,
+            options.DefaultValue,
+            options.DisplayName,
+            options.Description,
+            options.IsVisibleToClients,
+            options.IsAvailableToHost
         );
 
         _features.Add(feature);

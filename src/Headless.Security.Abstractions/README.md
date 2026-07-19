@@ -2,6 +2,8 @@
 
 Security contracts and option models for string encryption and hashing — no implementation, no DI coupling.
 
+All public contracts and options use the `Headless.Security` namespace.
+
 ## Problem Solved
 
 Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings.Core` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
@@ -25,6 +27,8 @@ dotnet add package Headless.Security.Abstractions
 ## Quick Start
 
 ```csharp
+using Headless.Security;
+
 // Inject the contracts; the implementations are registered by Headless.Security.
 public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {

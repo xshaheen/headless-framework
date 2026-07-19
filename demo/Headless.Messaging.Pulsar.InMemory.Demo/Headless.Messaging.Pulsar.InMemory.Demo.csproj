@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Pulsar\Headless.Messaging.Pulsar.csproj" />
   </ItemGroup>
 </Project>

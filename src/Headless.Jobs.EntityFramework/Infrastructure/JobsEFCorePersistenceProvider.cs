@@ -372,6 +372,49 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
+    public async Task<CronOccurrenceStatusCount[]> GetCronOccurrenceGraphStatusCountsAsync(
+        Guid cronJobId,
+        DateTime today,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+
+        var occurrenceDates = await occurrences
+            .Where(x => x.CronJobId == cronJobId)
+            .Select(x => x.ExecutionTime.Date)
+            .Distinct()
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var range = CronOccurrenceGraphRangeSelector.Select(occurrenceDates, today);
+        var exclusiveEnd = range.EndDate.AddDays(1);
+
+        var aggregateRows = await occurrences
+            .Where(x => x.CronJobId == cronJobId)
+            .Where(x => x.ExecutionTime >= range.StartDate && x.ExecutionTime < exclusiveEnd)
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => new
+            {
+                group.Key.Date,
+                group.Key.Status,
+                Count = group.Count(),
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var counts = aggregateRows.Select(x => new CronOccurrenceStatusCount
+        {
+            Date = x.Date,
+            Status = x.Status,
+            Count = x.Count,
+        });
+
+        return CronOccurrenceGraphRangeSelector.AddRangeBoundaries(counts, range);
+    }
+
     public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         int pageNumber,

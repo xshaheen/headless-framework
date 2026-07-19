@@ -50,6 +50,33 @@ public static class UrlValidators
         }
 
         /// <summary>
+        /// Validates that the value is an absolute <c>https://</c> URL, or an <c>http://</c> URL whose host is
+        /// loopback. User information is rejected for both schemes. Passes <see langword="null"/> through without
+        /// failure.
+        /// </summary>
+        /// <remarks>
+        /// Use this rule for credential-bearing remote endpoints that must support local development or test servers.
+        /// </remarks>
+        /// <returns>The rule builder options for chaining.</returns>
+        public IRuleBuilderOptions<T, string> HttpsOrLoopbackHttpUrl()
+        {
+            return rule.Must(maybeUrl =>
+                    maybeUrl is null
+                    || (
+                        Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uri)
+                        && string.IsNullOrEmpty(uri.UserInfo)
+                        && (
+                            string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+                            || (
+                                string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) && uri.IsLoopback
+                            )
+                        )
+                    )
+                )
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+        }
+
+        /// <summary>
         /// Validates that the value is an absolute <c>file://</c> URL.
         /// Passes <see langword="null"/> through without failure.
         /// </summary>

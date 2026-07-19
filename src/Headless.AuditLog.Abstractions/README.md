@@ -4,18 +4,16 @@ Defines the property-level audit log contracts for tracking entity mutations and
 
 ## Problem Solved
 
-Provides a provider-agnostic audit log API for capturing field-level entity changes and explicit events (PII reveals, cross-tenant access, etc.) without binding consumers to any specific storage implementation.
+Provides a provider-agnostic audit log API for representing field-level entity changes and explicit events (PII reveals, cross-tenant access, etc.) without binding consumers to a capture engine or storage implementation.
 
 ## Key Features
 
-- `IAuditTracked` — marker interface; entities implementing it are audited automatically on `SaveChanges`.
-- `[AuditIgnore]` — excludes a property (on a property) or an entire entity from change capture (on a class, when `AuditByDefault` is enabled).
-- `[AuditSensitive]` — marks a property as PII/secret; value is handled per configured strategy. Accepts an optional `SensitiveDataStrategy` parameter to override the global default per-property.
 - `SensitiveDataStrategy` — `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function).
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
+- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
@@ -32,32 +30,19 @@ dotnet add package Headless.AuditLog.Abstractions
 
 ## Quick Start
 
-Mark entities to audit:
-
-```csharp
-public class Patient : AggregateRoot<Guid>, IAuditTracked
-{
-    public string Name { get; set; } = "";
-
-    [AuditSensitive]
-    public string NationalId { get; set; } = "";
-
-    [AuditSensitive(SensitiveDataStrategy.Exclude)]
-    public string CreditCardToken { get; set; } = "";
-
-    [AuditIgnore]
-    public DateTime LastComputedAt { get; set; }
-}
-```
+Automatic capture policy is configured by `Headless.EntityFramework`; see that package's Quick Start. This abstractions package stays EF-free and provides the contracts for explicit event logging and audit-history queries.
 
 Log explicit events:
 
 ```csharp
 await auditLog.LogAsync(
-    "pii.revealed",
-    entityType: typeof(Patient).FullName,
-    entityId: id.ToString(),
-    data: new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId }
+    new AuditLogWriteRequest
+    {
+        Action = "pii.revealed",
+        EntityType = typeof(Patient).FullName,
+        EntityId = id.ToString(),
+        Data = new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId },
+    }
 );
 ```
 
@@ -65,10 +50,13 @@ Query audit history:
 
 ```csharp
 var entries = await readAuditLog.QueryAsync(
-    entityType: typeof(Patient).FullName,
-    entityId: patientId.ToString(),
-    limit: 50,
-    cancellationToken: ct
+    new AuditLogQuery
+    {
+        EntityType = typeof(Patient).FullName,
+        EntityId = patientId.ToString(),
+        Limit = 50,
+    },
+    ct
 );
 ```
 
@@ -79,8 +67,8 @@ var entries = await readAuditLog.QueryAsync(
 | Option | Default | Description |
 |---|---|---|
 | `IsEnabled` | `true` | Master switch; `false` disables all capture. |
-| `AuditByDefault` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present. |
-| `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties. |
+| `AuditByDefault` | `false` | Controls entities without explicit EF model policy; explicit `IsAudited()` or `ExcludeFromAudit()` takes precedence. |
+| `SensitiveDataStrategy` | `Redact` | Global strategy for properties configured with `IsAuditSensitive()`. |
 | `SensitiveValueTransformer` | `null` | Required when effective strategy is `Transform`; must be pure and synchronous. |
 | `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result cached per type. |
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |

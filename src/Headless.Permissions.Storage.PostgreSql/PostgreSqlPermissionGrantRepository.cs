@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using Headless.Abstractions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
@@ -17,9 +20,13 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     TimeProvider timeProvider
 ) : IPermissionGrantRepository
 {
+    // Keep statements bounded for predictable parse and lock duration; 100 rows use 700 parameters.
+    private const int _MaxRowsPerInsert = 100;
     private const string _GrantColumns =
         @"""Id"",""Name"",""ProviderName"",""ProviderKey"",""TenantId"",""IsGranted"",""DateCreated"",""DateUpdated""";
     private const string _TenantFilter = @"""TenantId"" IS NOT DISTINCT FROM @TenantId";
+
+    private readonly ConcurrentDictionary<int, string> _insertBatchSql = new();
 
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
@@ -102,17 +109,29 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
+        var records = _Materialize(permissionGrants, cancellationToken);
+        if (records.Count == 0)
+        {
+            return;
+        }
+
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var sql =
-            $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ("Id","Name","ProviderName","ProviderKey","TenantId","IsGranted","DateCreated") VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@DateCreated);""";
 
-        foreach (var permissionGrant in permissionGrants)
+        for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
+            var sql = _insertBatchSql.GetOrAdd(rowCount, _BuildInsertSql);
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.CommandTimeout = _CommandTimeout();
-            command.Parameters.AddRange(_Parameters(permissionGrant));
+
+            for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+            {
+                _AddBatchParameters(command.Parameters, records[offset + rowIndex], rowIndex);
+            }
+
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -211,11 +230,6 @@ internal sealed class PostgreSqlPermissionGrantRepository(
 
     private NpgsqlParameter[] _Parameters(PermissionGrantRecord permissionGrant)
     {
-        // Preserve caller-supplied DateCreated when present; otherwise stamp from the TimeProvider.
-        // Grants are insert-only (revocation deletes then re-inserts), so DateUpdated is never written here.
-        var dateCreated =
-            permissionGrant.DateCreated == default ? timeProvider.GetUtcNow() : permissionGrant.DateCreated;
-
         return
         [
             _Param("Id", permissionGrant.Id),
@@ -224,8 +238,84 @@ internal sealed class PostgreSqlPermissionGrantRepository(
             _Param("ProviderKey", permissionGrant.ProviderKey),
             _Param("TenantId", permissionGrant.TenantId),
             _Param("IsGranted", permissionGrant.IsGranted),
-            _Param("DateCreated", dateCreated),
+            _Param("DateCreated", _DateCreated(permissionGrant)),
         ];
+    }
+
+    private void _AddBatchParameters(
+        NpgsqlParameterCollection parameters,
+        PermissionGrantRecord permissionGrant,
+        int rowIndex
+    )
+    {
+        parameters.Add(_Param(_ParameterName("Id", rowIndex), permissionGrant.Id));
+        parameters.Add(_Param(_ParameterName("Name", rowIndex), permissionGrant.Name));
+        parameters.Add(_Param(_ParameterName("ProviderName", rowIndex), permissionGrant.ProviderName));
+        parameters.Add(_Param(_ParameterName("ProviderKey", rowIndex), permissionGrant.ProviderKey));
+        parameters.Add(_Param(_ParameterName("TenantId", rowIndex), permissionGrant.TenantId));
+        parameters.Add(_Param(_ParameterName("IsGranted", rowIndex), permissionGrant.IsGranted));
+        parameters.Add(_Param(_ParameterName("DateCreated", rowIndex), _DateCreated(permissionGrant)));
+    }
+
+    private string _BuildInsertSql(int rowCount)
+    {
+        var builder = new StringBuilder(192 + (rowCount * 144));
+        builder.Append("INSERT INTO ");
+        builder.Append(
+            PostgreSqlPermissionsStorageInitializer.Qualified(
+                storageOptions.Value,
+                storageOptions.Value.PermissionGrantsTableName
+            )
+        );
+        builder.Append(
+            " (\"Id\",\"Name\",\"ProviderName\",\"ProviderKey\",\"TenantId\",\"IsGranted\",\"DateCreated\") VALUES "
+        );
+
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+        {
+            if (rowIndex > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append(
+                CultureInfo.InvariantCulture,
+                $"(@Id_{rowIndex},@Name_{rowIndex},@ProviderName_{rowIndex},@ProviderKey_{rowIndex},@TenantId_{rowIndex},@IsGranted_{rowIndex},@DateCreated_{rowIndex})"
+            );
+        }
+
+        return builder.Append(';').ToString();
+    }
+
+    private static List<PermissionGrantRecord> _Materialize(
+        IEnumerable<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var records = permissionGrants.TryGetNonEnumeratedCount(out var count)
+            ? new List<PermissionGrantRecord>(count)
+            : [];
+
+        foreach (var permissionGrant in permissionGrants)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            records.Add(permissionGrant);
+        }
+
+        return records;
+    }
+
+    private DateTimeOffset _DateCreated(PermissionGrantRecord permissionGrant)
+    {
+        // Preserve caller-supplied DateCreated when present; otherwise stamp from the TimeProvider.
+        // Grants are insert-only (revocation deletes then re-inserts), so DateUpdated is never written here.
+        return permissionGrant.DateCreated == default ? timeProvider.GetUtcNow() : permissionGrant.DateCreated;
+    }
+
+    private static string _ParameterName(string name, int rowIndex)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{name}_{rowIndex}");
     }
 
     private static NpgsqlParameter _Param(string name, object? value)

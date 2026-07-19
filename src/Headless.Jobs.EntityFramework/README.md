@@ -14,7 +14,10 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: lease renewal comparisons use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
 - **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
-- **Portable CAS fallback**: the base package keeps the existing EF select-and-compare-and-swap claim strategy when no native claim provider is installed.
+- **Portable CAS fallback**: the base package keeps the EF select-and-compare-and-swap claim strategy when no native
+  claim provider is installed, ordered by execution time and ID and capped at 100 candidates per recovery sweep.
+- **Storage-reduced cron graphs**: the dashboard projection reads distinct UTC date keys, then groups status counts
+  inside the selected inclusive range without loading occurrence entities or the `CronJob` navigation.
 - **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
@@ -31,6 +34,11 @@ The `JobsDbContext<TTimeJob, TCronJob>` constructor must be `public` for the EF 
 Install `Headless.Jobs.EntityFramework.PostgreSql` or `Headless.Jobs.EntityFramework.SqlServer` and select it inside the same `UseEntityFramework` builder to replace the CAS pickup path with a provider-native atomic claim-and-return operation. The scheduler and persistence contract remain database-agnostic. Register exactly one native claim provider; selecting both fails during registration.
 
 These packages are EF optimization extensions, not standalone persistence providers. The base package owns the full persistence contract plus provider-neutral mapping definitions and claim-transaction lifecycle primitives; each extension owns provider-specific claim execution, including SQL, parameters, and locking semantics.
+
+Dashboard graph selection intentionally remains history-derived. The EF provider first projects only distinct UTC
+occurrence dates to reproduce the existing date-window choice, then issues a second filtered `GROUP BY` query for
+date/status counts. This keeps the graph's sparse-date and zero-fill behavior unchanged while making transferred rows
+proportional to distinct dates and the selected window rather than lifetime occurrence history.
 
 ## Installation
 

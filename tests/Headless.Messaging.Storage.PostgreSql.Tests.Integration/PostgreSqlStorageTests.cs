@@ -2,7 +2,9 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
@@ -64,6 +66,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     {
         _EnsureInitialized();
         return _CreateStorage(timeProvider);
+    }
+
+    /// <inheritdoc />
+    protected override bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = dispatchTimeout;
+        return true;
     }
 
     /// <inheritdoc />
@@ -317,6 +327,154 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_schedule_messages_of_delayed()
     {
         return base.should_schedule_messages_of_delayed();
+    }
+
+    [Fact]
+    public override Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        return base.should_claim_delayed_messages_atomically_when_capability_supported();
+    }
+
+    [Fact]
+    public async Task should_ignore_caller_cancellation_once_delayed_claim_commit_starts()
+    {
+        _EnsureInitialized();
+
+        const int lockClassId = 31_415;
+        const int lockObjectId = 92_653;
+        var expiresAt = TimeProvider.System.GetUtcNow().AddSeconds(30);
+        var stored = await _storage!.StoreMessageAsync(
+            "delayed-claim-commit-cancellation",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+                ExpiresAt = expiresAt,
+            },
+            cancellationToken: AbortToken
+        );
+        stored.ExpiresAt = expiresAt;
+        (await _storage.ChangePublishStateAsync(stored, StatusName.Delayed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        await using var controlConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await controlConnection.OpenAsync(AbortToken);
+        await controlConnection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                CREATE OR REPLACE FUNCTION messaging.block_delayed_claim_commit()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $function$
+                BEGIN
+                    PERFORM pg_advisory_xact_lock(31415, 92653);
+                    RETURN NEW;
+                END;
+                $function$;
+
+                DROP TRIGGER IF EXISTS block_delayed_claim_commit ON messaging.published;
+                CREATE CONSTRAINT TRIGGER block_delayed_claim_commit
+                    AFTER UPDATE ON messaging.published
+                    DEFERRABLE INITIALLY DEFERRED
+                    FOR EACH ROW
+                    WHEN (OLD."StatusName" = 'Delayed' AND NEW."StatusName" = 'Queued')
+                    EXECUTE FUNCTION messaging.block_delayed_claim_commit();
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+        await controlConnection.ExecuteAsync(
+            new CommandDefinition(
+                "SELECT pg_advisory_lock(@LockClassId, @LockObjectId);",
+                new { LockClassId = lockClassId, LockObjectId = lockObjectId },
+                cancellationToken: AbortToken
+            )
+        );
+
+        var lockHeld = true;
+        try
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+            var claimStorage = (IDelayedMessageClaimStorage)_storage!;
+            var claimTask = claimStorage.ClaimDelayedMessagesAsync(cancellation.Token).AsTask();
+            await _WaitForAdvisoryLockWaiterAsync(controlConnection, lockClassId, lockObjectId, AbortToken);
+
+            await cancellation.CancelAsync();
+            await Task.Delay(TimeSpan.FromMilliseconds(500), TimeProvider.System, AbortToken);
+            var commitStayedInFlight = !claimTask.IsCompleted;
+
+            await controlConnection.ExecuteAsync(
+                new CommandDefinition(
+                    "SELECT pg_advisory_unlock(@LockClassId, @LockObjectId);",
+                    new { LockClassId = lockClassId, LockObjectId = lockObjectId },
+                    cancellationToken: AbortToken
+                )
+            );
+            lockHeld = false;
+
+            var claimed = await claimTask;
+
+            commitStayedInFlight.Should().BeTrue("the in-flight COMMIT must not observe caller cancellation");
+            claimed.Should().ContainSingle(message => message.StorageId == stored.StorageId);
+            var persisted = await controlConnection.QuerySingleAsync<DelayedClaimState>(
+                new CommandDefinition(
+                    """
+                    SELECT "StatusName", "LockedUntil", "Owner"
+                    FROM messaging.published
+                    WHERE "Id"=@Id;
+                    """,
+                    new { Id = stored.StorageId },
+                    cancellationToken: AbortToken
+                )
+            );
+            persisted.StatusName.Should().Be(nameof(StatusName.Queued));
+            persisted.LockedUntil.Should().NotBeNull();
+            persisted.Owner.Should().Be(NodeMembership.GetOwnerTag());
+        }
+        finally
+        {
+            if (lockHeld)
+            {
+                await controlConnection.ExecuteAsync(
+                    new CommandDefinition(
+                        "SELECT pg_advisory_unlock(@LockClassId, @LockObjectId);",
+                        new { LockClassId = lockClassId, LockObjectId = lockObjectId },
+                        cancellationToken: AbortToken
+                    )
+                );
+            }
+
+            await controlConnection.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    DROP TRIGGER IF EXISTS block_delayed_claim_commit ON messaging.published;
+                    DROP FUNCTION IF EXISTS messaging.block_delayed_claim_commit();
+                    """,
+                    cancellationToken: AbortToken
+                )
+            );
+        }
+    }
+
+    [Fact]
+    public override Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        return base.should_keep_early_delayed_claim_lease_alive_until_dispatch();
+    }
+
+    [Fact]
+    public override Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        return base.should_clear_claim_lease_when_flushing_delayed_state();
+    }
+
+    [Fact]
+    public override Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        return base.should_return_disjoint_winners_to_concurrent_delayed_claimers();
     }
 
     [Fact]
@@ -1282,6 +1440,52 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 _WalkPlanForProperty(child, propertyName, collector);
             }
         }
+    }
+
+    private static async Task _WaitForAdvisoryLockWaiterAsync(
+        NpgsqlConnection connection,
+        int lockClassId,
+        int lockObjectId,
+        CancellationToken cancellationToken
+    )
+    {
+        var started = TimeProvider.System.GetTimestamp();
+        while (TimeProvider.System.GetElapsedTime(started) < TimeSpan.FromSeconds(10))
+        {
+            var hasWaiter = await connection.ExecuteScalarAsync<bool>(
+                new CommandDefinition(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_locks
+                        WHERE locktype = 'advisory'
+                          AND classid::bigint = @LockClassId
+                          AND objid::bigint = @LockObjectId
+                          AND NOT granted
+                    );
+                    """,
+                    new { LockClassId = lockClassId, LockObjectId = lockObjectId },
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (hasWaiter)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), TimeProvider.System, cancellationToken);
+        }
+
+        throw new TimeoutException("The delayed-claim COMMIT did not reach the deferred advisory lock.");
+    }
+
+    private sealed class DelayedClaimState
+    {
+        public required string StatusName { get; init; }
+
+        public DateTime? LockedUntil { get; init; }
+
+        public string? Owner { get; init; }
     }
 
     private sealed class PersistedLease

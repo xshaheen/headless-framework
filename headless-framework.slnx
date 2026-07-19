@@ -7,6 +7,7 @@
         <Project Path="tests\Headless.OpenApi.Nswag.Tests.Unit\Headless.OpenApi.Nswag.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Api/">
+        <Project Path="benchmarks/Headless.Api.Idempotency.Benchmarks/Headless.Api.Idempotency.Benchmarks.csproj" />
         <Project Path="demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />
         <Project Path="src\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
         <Project Path="src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
@@ -40,6 +41,7 @@
         <Project Path="tests\Headless.AuditLog.Storage.SqlServer.Tests.Integration\Headless.AuditLog.Storage.SqlServer.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
+        <Project Path="benchmarks/Headless.Blobs.Benchmarks/Headless.Blobs.Benchmarks.csproj" />
         <Project Path="demo\Headless.Tus.Demo\Headless.Tus.Demo.csproj" />
         <Project Path="src\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
         <Project Path="src\Headless.Blobs.Aws\Headless.Blobs.Aws.csproj" />
@@ -217,6 +219,7 @@
         <Project Path="tests/Headless.Dashboard.Authentication.Tests.Unit/Headless.Dashboard.Authentication.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Jobs/">
+        <Project Path="benchmarks/Headless.Jobs.Benchmarks/Headless.Jobs.Benchmarks.csproj" />
         <Project Path="demo/Headless.Jobs.Api.Demo/Headless.Jobs.Api.Demo.csproj" />
         <Project Path="demo/Headless.Jobs.Console.Demo/Headless.Jobs.Console.Demo.csproj" />
         <Project Path="demo/Headless.Jobs.Dashboard.Jwt.Demo/Headless.Jobs.Dashboard.Jwt.Demo.csproj" />
@@ -227,9 +230,12 @@
         <Project Path="src/Headless.Jobs.EntityFramework.PostgreSql/Headless.Jobs.EntityFramework.PostgreSql.csproj" />
         <Project Path="src/Headless.Jobs.EntityFramework.SqlServer/Headless.Jobs.EntityFramework.SqlServer.csproj" />
         <Project Path="src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj" />
+        <Project Path="test-assets/Headless.Jobs.CancellationProcessFixture/Headless.Jobs.CancellationProcessFixture.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.Tests.Harness/Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
+        <Project Path="test-assets/Headless.Jobs.DiscoveryFixture/Headless.Jobs.DiscoveryFixture.csproj" />
+        <Project Path="test-assets/Headless.Jobs.GeneratedDiscoveryFixture/Headless.Jobs.GeneratedDiscoveryFixture.csproj" />
         <Project Path="tests/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj" />
     </Folder>
@@ -292,7 +298,7 @@
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
         <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
-        <Project Path="src/Headless.Messaging.InMemoryStorage/Headless.Messaging.InMemoryStorage.csproj" />
+        <Project Path="src/Headless.Messaging.Storage.InMemory/Headless.Messaging.Storage.InMemory.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql/Headless.Messaging.Storage.PostgreSql.csproj" />
@@ -314,7 +320,7 @@
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemory.Tests.Unit/Headless.Messaging.InMemory.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.InMemoryStorage.Tests.Unit/Headless.Messaging.InMemoryStorage.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Storage.InMemory.Tests.Unit/Headless.Messaging.Storage.InMemory.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />

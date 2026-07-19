@@ -72,4 +72,18 @@ public sealed class ConnectionMultiplexerExtensionsTests(RedisTestFixture fixtur
         // then
         count.Should().Be(0);
     }
+
+    [Fact]
+    public async Task should_honor_pre_canceled_token_when_counting_all_keys()
+    {
+        // given
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+
+        // when
+        var act = async () => await Multiplexer.CountAllKeysAsync(cancellationTokenSource.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

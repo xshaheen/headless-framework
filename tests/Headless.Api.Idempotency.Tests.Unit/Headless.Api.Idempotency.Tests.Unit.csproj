@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

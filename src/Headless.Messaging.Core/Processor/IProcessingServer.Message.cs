@@ -7,8 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-[PublicAPI]
-public sealed class MessageProcessingServer(
+internal sealed class MessageProcessingServer(
     ILogger<MessageProcessingServer> logger,
     ILoggerFactory loggerFactory,
     IServiceProvider provider,

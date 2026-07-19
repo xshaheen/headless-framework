@@ -68,6 +68,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     /// <inheritdoc />
+    protected override bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
+    {
+        _EnsureInitialized();
+        _messagingOptions!.Value.RetryPolicy.DispatchTimeout = dispatchTimeout;
+        return true;
+    }
+
+    /// <inheritdoc />
     protected override async Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -305,6 +313,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_schedule_messages_of_delayed()
     {
         return base.should_schedule_messages_of_delayed();
+    }
+
+    [Fact]
+    public override Task should_claim_delayed_messages_atomically_when_capability_supported()
+    {
+        return base.should_claim_delayed_messages_atomically_when_capability_supported();
+    }
+
+    [Fact]
+    public override Task should_keep_early_delayed_claim_lease_alive_until_dispatch()
+    {
+        return base.should_keep_early_delayed_claim_lease_alive_until_dispatch();
+    }
+
+    [Fact]
+    public override Task should_clear_claim_lease_when_flushing_delayed_state()
+    {
+        return base.should_clear_claim_lease_when_flushing_delayed_state();
+    }
+
+    [Fact]
+    public override Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
+    {
+        return base.should_return_disjoint_winners_to_concurrent_delayed_claimers();
     }
 
     [Fact]

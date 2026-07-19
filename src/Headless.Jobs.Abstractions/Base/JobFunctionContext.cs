@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Base;
@@ -47,7 +48,6 @@ public class JobFunctionContext
     protected JobFunctionContext(JobFunctionContext other)
     {
         ServiceScope = other.ServiceScope;
-        RequestCancelOperationAction = other.RequestCancelOperationAction;
         Id = other.Id;
         Type = other.Type;
         RetryCount = other.RetryCount;
@@ -58,14 +58,6 @@ public class JobFunctionContext
     }
 
     internal AsyncServiceScope ServiceScope { get; set; }
-
-    /// <summary>
-    /// Delegate invoked by <see cref="RequestCancellation"/> to signal the scheduler that this execution
-    /// should be cancelled cooperatively. Wired by the scheduler; not intended to be set by consumers —
-    /// call <see cref="RequestCancellation"/> instead.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public required Action RequestCancelOperationAction { get; init; }
 
     /// <summary>Unique identifier of the job row (time job or cron occurrence) being executed.</summary>
     public Guid Id { get; internal set; }
@@ -95,13 +87,21 @@ public class JobFunctionContext
     public required CronOccurrenceOperations CronOccurrenceOperations { get; init; }
 
     /// <summary>
-    /// Signals the scheduler to cancel this job's execution cooperatively. The cancellation token
-    /// passed to the job function method will be cancelled, and the job's status will transition
-    /// to <c>Cancelled</c>.
+    /// Durably requests cooperative cancellation of this time job. The current owner observes the persisted request;
+    /// this method does not directly signal process-local execution state.
     /// </summary>
-    public void RequestCancellation()
+    /// <param name="cancellationToken">Cancels only the durable request operation.</param>
+    /// <returns><see langword="true"/> only when a new durable request was recorded.</returns>
+    /// <exception cref="InvalidOperationException">This context represents a cron occurrence.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    public Task<bool> RequestCancellationAsync(CancellationToken cancellationToken = default)
     {
-        RequestCancelOperationAction();
+        if (Type != JobType.TimeJob)
+        {
+            throw new InvalidOperationException("Durable cancellation is supported only for time jobs.");
+        }
+
+        return ServiceScope.ServiceProvider.GetRequiredService<IJobScheduler>().CancelAsync(Id, cancellationToken);
     }
 
     internal void SetServiceScope(AsyncServiceScope serviceScope)

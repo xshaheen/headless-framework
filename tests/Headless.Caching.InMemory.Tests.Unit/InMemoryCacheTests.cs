@@ -2383,7 +2383,7 @@ public sealed class InMemoryCacheTests : TestBase
 
         // when
         await store.SetEntryAsync(key, in entry, AbortToken);
-        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var roundTripped = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
 
         // then
         roundTripped.Found.Should().BeTrue();
@@ -2443,7 +2443,7 @@ public sealed class InMemoryCacheTests : TestBase
 
         // when — one bulk read, keys deliberately include a duplicate (presentKey twice) and a miss.
         var keys = new[] { presentKey, missingKey, invalidatedKey, presentKey };
-        var entries = await store.TryGetAllEntriesAsync<int>(keys, AbortToken);
+        var entries = await store.TryGetAllEntriesAsync<int>(keys, cancellationToken: AbortToken);
 
         // then — position-aligned, one element per key (duplicates each resolved).
         entries.Should().HaveCount(4);

@@ -54,6 +54,19 @@ public sealed class SetupIdempotencyTests
     }
 
     [Fact]
+    public void should_default_request_body_buffer_threshold_to_1_mib_plus_1_byte()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddIdempotency(_ => { });
+
+        var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
+
+        resolved.RequestBodyBufferThreshold.Should().Be((1 * 1024 * 1024) + 1);
+        resolved.MaxBodySizeForHashing.Should().Be(1024 * 1024);
+    }
+
+    [Fact]
     public void should_apply_setup_action_with_service_provider()
     {
         var services = new ServiceCollection();
@@ -79,6 +92,7 @@ public sealed class SetupIdempotencyTests
         {
             [nameof(IdempotencyOptions.HeaderName)] = "X-My-Key",
             [nameof(IdempotencyOptions.MaxBodySizeForHashing)] = "2048",
+            [nameof(IdempotencyOptions.RequestBodyBufferThreshold)] = "1024",
         };
         var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
 
@@ -89,6 +103,7 @@ public sealed class SetupIdempotencyTests
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         resolved.HeaderName.Should().Be("X-My-Key");
         resolved.MaxBodySizeForHashing.Should().Be(2048);
+        resolved.RequestBodyBufferThreshold.Should().Be(1024);
     }
 
     [Fact]

@@ -15,6 +15,12 @@ HF010   | Headless.Jobs.SourceGenerator | Error | Multiple constructors with [Jo
 HF011   | Headless.Jobs.SourceGenerator | Error | Duplicate request type across [JobFunction] methods
 HF012   | Headless.Jobs.SourceGenerator | Error | Undefined JobPriority value on [JobFunction]
 HF013   | Headless.Jobs.SourceGenerator | Error | Negative maximum concurrency on [JobFunction]
+HF014   | Headless.Jobs.SourceGenerator | Error | Unknown Jobs middleware target descriptor
+HF015   | Headless.Jobs.SourceGenerator | Error | Duplicate Jobs middleware declaration
+HF016   | Headless.Jobs.SourceGenerator | Error | Method-level Jobs middleware is not beside a JobFunction declaration
+HF017   | Headless.Jobs.SourceGenerator | Error | Method-level Jobs middleware redundantly specifies Function
+HF018   | Headless.Jobs.SourceGenerator | Error | Assembly-level Function targets a function declared in the same assembly
+HF019   | Headless.Jobs.SourceGenerator | Error | Middleware type is inaccessible to generated registration code
 
 ### Removed Rules
 

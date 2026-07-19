@@ -22,15 +22,16 @@ public static class SetupAuditLogEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <c>DbContext</c> subclass that owns the audit log table. The context must call
-        /// <see cref="AuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
+        /// <see cref="Microsoft.EntityFrameworkCore.HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
         /// <c>OnModelCreating</c>, which is validated at application startup.
         /// </typeparam>
         /// <remarks>
         /// This overload uses EF Core migrations for schema management; the startup storage
         /// initializer (<see cref="AuditLogStorageOptions.InitializeOnStartup"/>) has no effect
         /// in EF mode. A startup gate validates that the registered
-        /// <typeparamref name="TContext"/> contains the <c>AuditLogEntry</c> entity and throws
-        /// <see cref="InvalidOperationException"/> when the model does not include it.
+        /// <typeparamref name="TContext"/> fully configured <c>AuditLogEntry</c> through
+        /// <c>modelBuilder.AddHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
+        /// when the model did not run that configuration.
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext

@@ -14,7 +14,7 @@
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core.Tests.Harness\Headless.Messaging.Core.Tests.Harness.csproj" />

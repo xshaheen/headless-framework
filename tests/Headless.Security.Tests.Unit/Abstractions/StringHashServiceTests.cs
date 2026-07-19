@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using Headless;
-using Headless.Abstractions;
+using Headless.Security;
 
 namespace Tests.Abstractions;
 

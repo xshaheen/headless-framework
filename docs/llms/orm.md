@@ -44,13 +44,13 @@ packages: EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
 
-> ORM domain: `Headless.EntityFramework` for relational stores via EF Core (with global filters, auditing, DDD event dispatch, and tenant write protection), `Headless.EntityFramework.Messaging` as the outbox bridge add-on, and `Headless.Couchbase` for document storage via Couchbase.
+> ORM domain: `Headless.EntityFramework` for relational stores via EF Core (with global filters, model-driven audit capture, DDD event dispatch, and tenant write protection), `Headless.EntityFramework.Messaging` as the outbox bridge add-on, and `Headless.Couchbase` for document storage via Couchbase.
 
 ## Quick Orientation
 
 Choose by storage model:
 
-- `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for auditing, soft-delete, multi-tenancy filter, DDD event dispatch (domain + integration), and transaction-aware save behavior. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
+- `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit `IIntegrationEvent`. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
 
@@ -69,6 +69,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Use `AddHeadlessDbContext<TDbContext>(...)` not raw `AddDbContext`.** The raw registration misses the save pipeline, EF interceptors wiring (commit coordination), the `IDbContextFactory<TDbContext>` singleton, and the compiled-query cache key replacement. `AddHeadlessDbContext` registers all of these.
 - `HeadlessDbContext` requires two constructor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
+- Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **Never pool `HeadlessDbContext`.** Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. The context holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher and audit persistence. Pooling reuses a prior request's unit of work — a captive-dependency bug, not a perf trade-off.
 - Enable tenant write protection with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` when the host uses root tenancy. Without it, the multi-tenancy query filter still scopes reads and bulk operations, but `SaveChanges` does not validate which tenant owns the entity.
 - **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
@@ -171,7 +172,7 @@ Entity Framework Core integration with framework conventions and save pipeline o
 
 ### Problem Solved
 
-Provides a framework-aware base `DbContext` with conventions for auditing, soft delete, tenant filters, two-tier event dispatch (in-process domain events plus transactional integration-event outbox), and transaction-aware save behavior — so application contexts inherit a consistent, tested baseline without hand-wiring each concern.
+Provides a framework-aware base `DbContext` with conventions for audit fields, EF model-driven audit-log capture, soft delete, tenant filters, two-tier event dispatch (in-process domain events plus transactional integration-event outbox), and transaction-aware save behavior — so application contexts inherit a consistent, tested baseline without hand-wiring each concern.
 
 ### Key Features
 
@@ -180,6 +181,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)` (registers context, `IDbContextFactory<TDbContext>`, commit-coordination interceptors, and headless services)
 - Application-generated Guid keys: every `IEntity<Guid>` is configured `ValueGenerated.Never`; key is produced client-side at add time via a provider-keyed `IGuidGenerator` (`SqlServer` comb, `Version7` for others). Numeric keys are not generated by Headless.
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities
+- EF-native automatic audit-log policy via `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`; `EfAuditChangeCapture` reads the finalized model without reflecting over domain attributes
 - Three named global query filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
@@ -200,6 +202,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - **Unknown commit outcomes are not replayed.** `ExecuteCoordinatedTransactionAsync` lets the EF execution strategy retry failures before commit starts. Once `CommitAsync` begins, an exception is surfaced without replay because the database may already have committed; reconcile with a client-generated key or another durable idempotency key before retrying the business operation.
 - **Domain-event at-most-once guard.** The pipeline runs domain-event publication inside the EF execution strategy. A guard ensures handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent. Under a caller-managed transaction driven by your own retry loop, each `SaveChanges` is a fresh invocation with a fresh guard, so handlers can publish again; idempotency is the right defensive posture regardless.
 - **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
+- **The EF model is the automatic audit policy source.** The fluent policy stays in this ORM package because built-in change capture is EF-specific, while audit storage remains provider-independent. Domain entities carry no audit marker or attributes, and there is no duplicate provider-neutral policy registry.
 
 ### Installation
 
@@ -223,6 +226,7 @@ public sealed class AppDbContext(
     {
         base.OnModelCreating(modelBuilder); // required — wires filters, conventions, runtime
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<Product>().IsAudited();
     }
 }
 
@@ -290,6 +294,28 @@ var allTenants = await dbContext.Products.IgnoreMultiTenancyFilter().IgnoreNotDe
 ```
 
 Each bypass emits a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with caller member + file.
+
+#### Automatic Audit Policy
+
+Configure automatic audit capture on EF entity and property metadata inside `OnModelCreating` or an `IEntityTypeConfiguration<TEntity>`:
+
+```csharp
+modelBuilder.Entity<Patient>(patient =>
+{
+    patient.IsAudited();
+    patient.Property(x => x.NationalId).IsAuditSensitive();
+    patient.Property(x => x.CreditCardToken).IsAuditSensitive(SensitiveDataStrategy.Exclude);
+    patient.Property(x => x.LastComputedAt).ExcludeFromAudit();
+});
+
+modelBuilder.Entity<InternalJob>().ExcludeFromAudit();
+```
+
+Entity policy is tri-state: explicit `IsAudited()` or `ExcludeFromAudit()` wins, while an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner. Derived types inherit the nearest configured base policy unless overridden.
+
+Property precedence is: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `SensitiveDataStrategy`. `IsEnabled` remains the master switch and `EntityFilter` remains the final entity veto.
+
+The raw PostgreSQL and SQL Server audit packages are storage providers. They can receive entries from this EF capture pipeline, but they do not define a second audit policy system.
 
 #### Tenant Write Guard
 
@@ -370,6 +396,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 ### Dependencies
 
 - `Headless.Domain`
+- `Headless.AuditLog.Abstractions`
 - `Headless.Core`
 - `Headless.Hosting`
 - `Headless.MultiTenancy`
@@ -387,7 +414,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly
-- Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`) for audit-log integration
+- Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`), which reads the finalized EF model policy
 
 ---
 
@@ -469,7 +496,7 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` for Couchbase Transactions
 - `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
 - `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `(ICluster, Transactions)` tuple per call to `GetClusterAsync`
-- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
+- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
 - `ICouchbaseManager` / `CouchbaseManager` — idempotent scope, collection, and index bootstrapping with Polly retry; `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, `BuildDeferredIndexesAsync`
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
@@ -555,6 +582,7 @@ services.AddHeadlessCouchbase();
 ### Cancellation (Couchbase)
 
 - The async provider seams (`ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`) and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
+- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica and accepts `GetAllReplicasOptions`; pass the caller token through `GetAllReplicasOptions.CancellationToken(...)`.
 - Because clusters are created once and statically cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
 - `ICluster.BucketAsync` exposes no cancellation overload, so `IBucketContextProvider.GetAsync` honors the token before opening the bucket, not during.
 - The Couchbase transactions SDK (`Transactions.RunAsync`) exposes no `CancellationToken` hook, so `ExecuteTransactionAsync` observes the token only before the transaction begins; once the SDK transaction loop starts it runs to completion, SDK timeout, or failure. Bound in-transaction duration with `PerTransactionConfig` (timeout / durability) instead.

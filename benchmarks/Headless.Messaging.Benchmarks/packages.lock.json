@@ -538,6 +538,12 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
+        }
+      },
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {

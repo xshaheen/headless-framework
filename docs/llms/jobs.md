@@ -30,6 +30,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
+    - [Middleware](#middleware)
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
@@ -131,6 +132,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
+- Configure every `AddJobsDiscovery(...)` assembly inside the `AddHeadlessJobs` callback. Jobs loads those assemblies before freezing the process-wide generated catalog; late generated registrations fail deterministically. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
 - Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path.
 - For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
@@ -183,7 +185,7 @@ public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, Cancell
 
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
-Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer.
+Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after all configured `AddJobsDiscovery(...)` assemblies load.
 
 ### Lease Model and Sliding Renewal
 
@@ -272,7 +274,8 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains generated function metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
-- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and `RequestCancellation()`.
+- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
+- **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. Rebuild source-generated consumers together with the Jobs runtime when upgrading this contract.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
@@ -328,6 +331,18 @@ public static Task ExecuteAsync(
 }
 ```
 
+The generated delegate ABI uses service provider, context, then cancellation token. Handwritten registrations use the same order:
+
+```csharp
+using Headless.Jobs;
+
+JobFunctionDelegate handler = static (serviceProvider, context, cancellationToken) =>
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    return Task.CompletedTask;
+};
+```
+
 Requestless scheduling resolves a generated descriptor and passes it to the matching overload:
 
 ```csharp
@@ -348,7 +363,7 @@ var recurringId = await scheduler.ScheduleRecurringAsync(
 );
 ```
 
-All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
+All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
 
 ### Configuration
 
@@ -367,18 +382,18 @@ None.
 
 ## Headless.Jobs.Core
 
-Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, custom thread pool, and the `AddHeadlessJobs` DI extension.
+Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, bounded task scheduler, and the `AddHeadlessJobs` DI extension.
 
 ### Problem Solved
 
-Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and an in-process thread pool without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
+Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and bounded in-process execution without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
 
 ### Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, and returns persisted entity IDs.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Custom thread pool** (`JobsTaskScheduler`): bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), honors `High` → `Normal` → `Low` dequeue order, and gives `LongRunning` work a dedicated thread.
+- **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. Only `LongRunning` work receives a dedicated thread.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
@@ -393,11 +408,17 @@ The in-memory pickup lease uses the injected `TimeProvider`. The EF operational 
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
+Generated module initializers populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddJobsDiscovery(...)` assembly is loaded, then freezes that catalog exactly once. Repeated builds are idempotent; registrations attempted after discovery or freeze fail deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
+
+Each `IHost` receives its own immutable runtime registry projected from the canonical catalog and that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.
+
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 
 Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
 
-Only cancellation tied to the job's cancellation token (including `context.RequestCancellation()`) is classified as `Cancelled`. A detected lease loss writes no terminal status — the row stays `InProgress` so the stalled-reclaim sweep recovers it per `OnNodeDeath`. An unrelated `OperationCanceledException` is handled as a failure and follows the configured retry policy.
+Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
+
+Relational consumers must add and apply a migration for non-null `TimeJobs.CancelRequested` with a `false` default before deploying this version. The PostgreSQL demos include reference migrations; SQL Server and custom-schema applications own the equivalent migration.
 
 Cron expressions are evaluated in `SchedulerTimeZone`. A spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap; an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
@@ -469,6 +490,34 @@ Typed facade calls resolve `typeof(TArgs)`, serialize through the configured Job
 
 Facade calls use those managers internally, so they enlist in an established `Headless.CommitCoordination` scope and retain the same deferred post-commit dispatch/restart/notification behavior.
 
+### Middleware
+
+Jobs middleware uses stage-specific generic attributes. Assembly placement is global; method placement beside `[JobFunction]` targets that function without repeating its durable identity. `Schedule` middleware runs in the manager exactly once per submitted entity, before validation, persistence, or coordinated post-commit work; `Execute` middleware runs inside every retry attempt. Middleware is resolved from a bounded DI scope and must invoke `next` to accept the operation.
+
+```csharp
+[assembly: JobScheduleMiddleware<AuditScheduleMiddleware>(Priority = JobMiddlewarePriority.Early)]
+
+// Uncommon fallback: target a descriptor generated by a referenced assembly.
+[assembly: JobExecuteMiddleware<ExternalInvoiceMiddleware>(Function = "external.invoice.create")]
+
+public static class InvoiceJobs
+{
+    [JobFunction("invoice.create")]
+    [JobExecuteMiddleware<InvoiceExecutionMiddleware>]
+    public static Task CreateAsync(JobFunctionContext<InvoiceRequest> context) => Task.CompletedTask;
+}
+```
+
+Register each middleware type with DI using the lifetime it needs; the generated dispatcher resolves it from the bounded scheduling or execution scope.
+
+```csharp
+builder.Services.AddScoped<AuditScheduleMiddleware>();
+builder.Services.AddScoped<ExternalInvoiceMiddleware>();
+builder.Services.AddScoped<InvoiceExecutionMiddleware>();
+```
+
+The generic constraint requires schedule and execute middleware to implement their matching interfaces. Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery, class-handler targeting, and registration after `JobFunctionProvider.Build()` are unsupported. Include function or middleware-only assemblies in `AddJobsDiscovery` when the runtime would not otherwise load them before startup registration freezes.
+
 ### Configuration
 
 ```csharp
@@ -518,7 +567,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
-- Registers `JobsTaskScheduler` (custom thread pool bounded by active async `MaxConcurrency`).
+- Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
 
 ---
@@ -537,12 +586,20 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
+- **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
+  the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
 
 ### Design Notes
 
 The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
+
+Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
+distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`
+is additive and has a compatibility implementation for third-party providers. A custom durable provider should
+override it so distinct-date selection and date/status aggregation happen in storage; otherwise the default
+implementation preserves behavior by projecting through the existing occurrence-list API.
 
 ### Installation
 
@@ -766,6 +823,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
 - **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
+- **Bounded compatibility recovery**: EF CAS fallback orders overdue roots by execution time and ID and processes at
+  most 100 candidates per sweep, matching the native provider claim ceiling while retaining each row's CAS fence.
 - **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
@@ -1028,7 +1087,7 @@ public sealed class LongRunningCronJob
 | `Succeeded` | Completed successfully |
 | `DueDone` | Cron occurrence completed within its due window |
 | `Failed` | Retries exhausted or unhandled exception |
-| `Cancelled` | Job token cancelled or `context.RequestCancellation()` called; a detected lease loss instead leaves the row `InProgress` for stalled reclaim |
+| `Cancelled` | Idle cancellation was accepted, or an executing time job cooperatively exited after observing durable `CancelRequested`; host shutdown and lease loss do not write this status |
 | `Skipped` | `TerminateExecutionException` or `SkipIfAlreadyRunning()` |
 
 #### Node-Death Policy (OnNodeDeath)

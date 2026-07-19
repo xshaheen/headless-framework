@@ -7,11 +7,11 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 ## Key Features
 
 - `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
-- `PostgresAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
+- `PostgreSqlAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
 - Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`.
 - Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
 - Mutex handles receive durable sequence-backed `FencingToken` values.
-- `PostgresDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`.
+- `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`.
 
 ## Design Notes
 
@@ -59,8 +59,8 @@ Transaction-coupled locking:
 await using var connection = await dataSource.OpenConnectionAsync(ct);
 await using var transaction = await connection.BeginTransactionAsync(ct);
 
-await PostgresDistributedLock.AcquireWithTransactionAsync(
-    PostgresAdvisoryLockKey.FromString("orders:123"),
+await PostgreSqlDistributedLock.AcquireWithTransactionAsync(
+    PostgreSqlAdvisoryLockKey.FromString("orders:123"),
     transaction,
     ct
 );

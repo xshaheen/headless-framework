@@ -12,8 +12,8 @@ public sealed partial class HybridCache
 {
     async ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions
+        FactoryCacheReadOptions readOptions,
+        CancellationToken cancellationToken
     )
     {
         _ThrowIfDisposed();
@@ -31,7 +31,9 @@ public sealed partial class HybridCache
         {
             if (LocalCache is IFactoryCacheStore l1Store)
             {
-                var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                var l1Entry = await l1Store
+                    .TryGetEntryAsync<T>(key, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (l1Entry.IsFresh(now))
                 {
@@ -109,7 +111,7 @@ public sealed partial class HybridCache
             : DistributedCacheTimeoutKind.Hard;
         var l2Read = await _ReadFromL2Async(
                 key,
-                ct => l2Store.TryGetEntryAsync<T>(key, ct),
+                ct => l2Store.TryGetEntryAsync<T>(key, cancellationToken: ct),
                 _SelectDistributedReadTimeout(
                     hasLocalFallback: l1StaleCandidate is not null,
                     softCanDegradeToMiss: false
@@ -167,8 +169,8 @@ public sealed partial class HybridCache
 
     async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions
+        FactoryCacheReadOptions readOptions,
+        CancellationToken cancellationToken
     )
     {
         _ThrowIfDisposed();
@@ -189,7 +191,7 @@ public sealed partial class HybridCache
 
         for (var i = 0; i < keys.Count; i++)
         {
-            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken, readOptions).ConfigureAwait(false);
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], readOptions, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
@@ -748,7 +750,7 @@ public sealed partial class HybridCache
     {
         var l2Read = await _ReadFromL2Async(
                 key,
-                ct => l2Store.TryGetEntryAsync<byte[]>(key, ct),
+                ct => l2Store.TryGetEntryAsync<byte[]>(key, cancellationToken: ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken

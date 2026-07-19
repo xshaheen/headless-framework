@@ -124,7 +124,7 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - Collection validators (unique elements, min/max counts)
 - Geo validators (latitude/longitude)
 - Pagination validators (page index, page size, search query)
-- URL validators (absolute URLs, HTTP/HTTPS) and IP address validators (IPv4/IPv6)
+- URL validators (absolute URLs, HTTP/HTTPS, and HTTPS-or-loopback credential endpoints) and IP address validators (IPv4/IPv6)
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
@@ -149,6 +149,7 @@ public sealed class UserValidator : AbstractValidator<User>
         RuleFor(x => x.PhoneNumber).InternationalPhoneNumber();
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Roles).MinimumElements(1).UniqueElements();
+        RuleFor(x => x.ApiEndpoint).HttpsOrLoopbackHttpUrl(); // HTTPS externally; HTTP only on loopback; no userinfo
     }
 }
 ```
@@ -190,7 +191,7 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
 | Geo | `Latitude`, `Longitude` |
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
 | Network | `Ipv4`, `Ipv6`, `IpAddress` |
 | String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
 | Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable, `TimeProvider`-based) |
@@ -505,6 +506,7 @@ Provides geometry manipulation utilities, precision handling, and SQL Server geo
 - Geometry creation helpers (points, polygons, multi-polygons)
 - Coordinate range validation
 - Feature collection conversion
+- Collision-resistant `HeadlessGeometryExtensions` holder in the `NetTopologySuite.Geometries` namespace; ordinary extension-call syntax remains unchanged
 
 ### Installation
 
@@ -537,6 +539,12 @@ var sanitized = polygon.SanitizeForSqlGeography();
 
 // Simplify polygon
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
+```
+
+Extension-call syntax is unchanged after the holder rename. Code that referenced the former `GeoExtensions` class directly must use `HeadlessGeometryExtensions`:
+
+```csharp
+var sanitized = HeadlessGeometryExtensions.SanitizeForSqlGeography(polygon);
 ```
 
 ### Quick Start
@@ -579,9 +587,10 @@ Provides Redis helper extensions plus definition-first Lua script loading/execut
 
 ### Key Features
 
-- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
+- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
+- Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API
 
 #### Design Notes
 
@@ -647,6 +656,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 ### Key Features
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
+- `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
 - `SitemapUrls` - Extension methods to write sitemap URLs to streams
 - `SitemapIndexBuilder` - Sitemap index generation for large sites
 - `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
@@ -668,11 +678,17 @@ var urls = new List<SitemapUrl>
 {
     new(
         location: new Uri("https://example.com/"),
-        lastModified: DateTime.UtcNow,
-        changeFrequency: ChangeFrequency.Daily,
-        priority: 1.0f
+        options: new SitemapUrlOptions
+        {
+            LastModified = DateTime.UtcNow,
+            ChangeFrequency = ChangeFrequency.Daily,
+            Priority = 1.0f,
+        }
     ),
-    new(location: new Uri("https://example.com/about"), changeFrequency: ChangeFrequency.Monthly, priority: 0.8f),
+    new(
+        location: new Uri("https://example.com/about"),
+        options: new SitemapUrlOptions { ChangeFrequency = ChangeFrequency.Monthly, Priority = 0.8f }
+    ),
 };
 
 // Write to stream
@@ -694,7 +710,7 @@ var urls = new List<SitemapUrl>
             new() { Location = new Uri("https://example.com/en/page"), LanguageCode = "en" },
             new() { Location = new Uri("https://example.com/ar/page"), LanguageCode = "ar" },
         ],
-        lastModified: DateTime.UtcNow
+        options: new SitemapUrlOptions { LastModified = DateTime.UtcNow }
     ),
 };
 

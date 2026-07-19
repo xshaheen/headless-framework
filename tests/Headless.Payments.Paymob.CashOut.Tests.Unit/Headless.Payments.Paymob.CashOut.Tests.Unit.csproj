@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Payments.Paymob.Services\Headless.Payments.Paymob.Services.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

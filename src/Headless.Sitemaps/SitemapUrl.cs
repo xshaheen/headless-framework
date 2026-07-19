@@ -10,68 +10,46 @@ public sealed class SitemapUrl
 {
     /// <summary>Create a sitemap URL.</summary>
     /// <param name="location">The full URL of the page.</param>
-    /// <param name="lastModified">The date of the last modification of the page.</param>
-    /// <param name="changeFrequency">How frequently the page is likely to change.</param>
-    /// <param name="priority">The priority of this URL relative to other URLs on the site (0.0 to 1.0).</param>
-    /// <param name="images">The images associated with this URL. Each URL can contain up to 1,000 image tags.</param>
+    /// <param name="options">Optional last-modified, change-frequency, priority, and image metadata.</param>
     /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="priority"/> is not between 0.0 and 1.0.</exception>
-    public SitemapUrl(
-        Uri location,
-        DateTime? lastModified = null,
-        ChangeFrequency? changeFrequency = null,
-        float? priority = null,
-        IEnumerable<SitemapImage>? images = null
-    )
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="SitemapUrlOptions.Priority"/> is not between 0.0 and 1.0.</exception>
+    public SitemapUrl(Uri location, SitemapUrlOptions? options = null)
     {
         Argument.IsNotNull(location);
 
-        if (priority is not null)
+        if (options?.Priority is not null)
         {
-            Argument.IsInclusiveBetween(priority.Value, 0f, 1f);
+            Argument.IsInclusiveBetween(options.Priority.Value, 0f, 1f);
         }
 
         Location = location;
-        LastModified = lastModified;
-        ChangeFrequency = changeFrequency;
-        Priority = priority;
-        Images = images?.ToArray();
+        LastModified = options?.LastModified;
+        ChangeFrequency = options?.ChangeFrequency;
+        Priority = options?.Priority;
+        Images = options?.Images?.ToArray();
+        WriteAlternateLanguageCodes = options?.WriteAlternateLanguageCodes?.ToArray();
     }
 
     /// <summary>Create a sitemap URL with its localized alternates.</summary>
     /// <param name="alternateLocations">The alternate localized URLs of the page.</param>
-    /// <param name="lastModified">The date of the last modification of the page.</param>
-    /// <param name="changeFrequency">How frequently the page is likely to change.</param>
-    /// <param name="priority">The priority of this URL relative to other URLs on the site (0.0 to 1.0).</param>
-    /// <param name="images">The images associated with this URL. Each URL can contain up to 1,000 image tags.</param>
-    /// <param name="writeAlternateLanguageCodes">
-    /// Restricts which localized versions get their own &lt;url&gt; entry to the specified language/region codes;
-    /// every emitted entry still references all alternates (per hreflang reciprocity). <see langword="null"/> means all.
-    /// </param>
+    /// <param name="options">Optional last-modified, change-frequency, priority, image, and language metadata.</param>
     /// <exception cref="ArgumentNullException"><paramref name="alternateLocations"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="priority"/> is not between 0.0 and 1.0.</exception>
-    public SitemapUrl(
-        IEnumerable<SitemapAlternateUrl> alternateLocations,
-        DateTime? lastModified = null,
-        ChangeFrequency? changeFrequency = null,
-        float? priority = null,
-        IEnumerable<SitemapImage>? images = null,
-        string[]? writeAlternateLanguageCodes = null
-    )
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="SitemapUrlOptions.Priority"/> is not between 0.0 and 1.0.</exception>
+    public SitemapUrl(IEnumerable<SitemapAlternateUrl> alternateLocations, SitemapUrlOptions? options = null)
     {
         Argument.IsNotNull(alternateLocations);
 
-        if (priority is not null)
+        if (options?.Priority is not null)
         {
-            Argument.IsInclusiveBetween(priority.Value, 0f, 1f);
+            Argument.IsInclusiveBetween(options.Priority.Value, 0f, 1f);
         }
 
         AlternateLocations = alternateLocations.ToArray();
-        LastModified = lastModified;
-        ChangeFrequency = changeFrequency;
-        Priority = priority;
-        Images = images?.ToArray();
-        WriteAlternateLanguageCodes = writeAlternateLanguageCodes;
+        LastModified = options?.LastModified;
+        ChangeFrequency = options?.ChangeFrequency;
+        Priority = options?.Priority;
+        Images = options?.Images?.ToArray();
+        WriteAlternateLanguageCodes = options?.WriteAlternateLanguageCodes?.ToArray();
     }
 
     /// <summary>Gets the full URL of the page.</summary>

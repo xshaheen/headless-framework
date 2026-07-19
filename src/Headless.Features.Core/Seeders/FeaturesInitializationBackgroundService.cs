@@ -19,12 +19,12 @@ namespace Headless.Features.Seeders;
 /// <remarks>
 /// On startup, this service:
 /// <list type="number">
-///   <item><description>Saves static definitions to the database (retried up to 10 times with exponential back-off when <see cref="FeatureManagementOptions.SaveStaticFeaturesToDatabase"/> is <see langword="true"/>).</description></item>
+///   <item><description>Saves static definitions to the database (retried up to 10 times with jittered exponential back-off capped at 30 seconds when <see cref="FeatureManagementOptions.SaveStaticFeaturesToDatabase"/> is <see langword="true"/>). Cancellation, invalid arguments, and unsupported operations are not retried.</description></item>
 ///   <item><description>Pre-caches the dynamic feature catalog so the first request does not incur a cold-cache database round-trip (when <see cref="FeatureManagementOptions.IsDynamicFeatureStoreEnabled"/> is <see langword="true"/>).</description></item>
 /// </list>
 /// Both steps are skipped (and the initializer signals completion immediately) when both options are disabled.
 /// </remarks>
-public sealed class FeaturesInitializationBackgroundService(
+internal sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<FeatureManagementOptions> optionsAccessor,
@@ -92,19 +92,13 @@ public sealed class FeaturesInitializationBackgroundService(
     {
         try
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await using var scope = serviceScopeFactory.CreateAsyncScope();
 
             await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).ConfigureAwait(false);
 
@@ -131,10 +125,13 @@ public sealed class FeaturesInitializationBackgroundService(
         {
             Name = "SaveStaticFeatureToDatabaseRetry",
             Delay = TimeSpan.FromSeconds(2),
+            MaxDelay = TimeSpan.FromSeconds(30),
             MaxRetryAttempts = 10,
             BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            ShouldHandle = new PredicateBuilder().Handle<Exception>(),
+            UseJitter = true,
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(static exception =>
+                exception is not OperationCanceledException and not ArgumentException and not NotSupportedException
+            ),
         };
 
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
@@ -152,7 +149,7 @@ public sealed class FeaturesInitializationBackgroundService(
                     {
                         await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         logger.LogFailedToSaveStaticFeatures(e);
 
