@@ -11,8 +11,8 @@ consistent paging and error-descriptor shapes so every package models these the 
 
 ## Key Features
 
-- **Result pattern**: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ResultError`
-  hierarchy, `ErrorDescriptor`, and `ApiResultError` — model expected failure without exceptions.
+- **Result pattern**: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ApiResultError`
+  hierarchy, `ErrorDescriptor`, and `ApiResultErrorBuilder` — model expected failure without exceptions.
 - **Source-generated domain primitives**: `UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber` (implement
   `IPrimitive<T>`, emitted by `Headless.Generator.Primitives` with equality, JSON, and TypeConverter support).
 - **Hand-written value objects**: `Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`,
@@ -36,7 +36,17 @@ descending.
 `IHasExtraProperties` bag); both are `sealed`.
 
 `ErrorDescriptor` defaults to `ValidationSeverity.Error`, matching its role as an expected failure. Pass
-`ValidationSeverity.Warning` or `ValidationSeverity.Information` explicitly for non-error diagnostics.
+`ValidationSeverity.Warning` or `ValidationSeverity.Information` explicitly for non-error diagnostics. The
+parameter-bag constructor accepts any `IReadOnlyDictionary<string, object?>` and copies it defensively into a
+case-insensitive bag.
+
+`FullGeoCoordinate` is constructed from latitude/longitude; the optional components (`Altitude`,
+`HorizontalAccuracy`, `VerticalAccuracy`, `Speed`, `Course`) are init-only properties that default to
+`double.NaN` (unknown) — set them via object initializer when known.
+
+The `…Async` `Map`/`Bind`/`Match` combinators (`ApiResultAsyncExtensions`) also ship cancellation-aware
+overloads whose delegates take `(value, CancellationToken)` plus a trailing `CancellationToken`, so a caller's
+token flows into the async continuation.
 
 ## Installation
 

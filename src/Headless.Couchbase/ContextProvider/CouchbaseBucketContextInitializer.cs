@@ -50,6 +50,12 @@ public static class CouchbaseBucketContextInitializer
     #region Initialize Action
 
     /// <summary>Get internal type concrete DocumentSet{T} which exist in Couchbase Linq namespace</summary>
+    /// <remarks>
+    /// Fragile: resolves Linq2Couchbase's INTERNAL <c>Couchbase.Linq.DocumentSet`1</c> type by name, and
+    /// <c>_CreateInitializeAction</c> below instantiates it via its <c>(BucketContext, string, string)</c>
+    /// constructor. A Linq2Couchbase upgrade that renames or reshapes either breaks this at runtime, not at
+    /// compile time — re-verify on every Linq2Couchbase version bump.
+    /// </remarks>
     private static readonly Type _DocumentSetType =
         typeof(IDocumentSet<>).Assembly.GetType("Couchbase.Linq.DocumentSet`1")
         ?? throw new InvalidOperationException("Could not find DocumentSet type.");

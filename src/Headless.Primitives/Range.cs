@@ -354,6 +354,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
 }
 
 /// <summary>Factory helpers for creating <see cref="Range{T}"/> instances.</summary>
+[PublicAPI]
 public static class Range
 {
     /// <summary>Creates a <see cref="Range{T}"/> from a lower and upper bound.</summary>

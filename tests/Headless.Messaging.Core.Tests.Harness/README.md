@@ -12,12 +12,14 @@ This harness enables consistent integration testing across all messaging provide
 |-------|---------|
 | `TransportTestsBase` | Tests for `ITransport` implementations (sending messages) |
 | `ConsumerClientTestsBase` | Tests for `IConsumerClient` implementations (receiving messages) |
+| `TransportConsumerConformanceTestsBase` | Broker-observed round trip and real settlement invariants |
+| `BrokerFaultTestsBase` | Optional, manifest-driven recovery and fault invariants |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle tests with DI setup |
 
 ## Capability Flags
 
-Each base class uses capability flags to skip tests that don't apply to a specific provider.
+Each base class uses explicit capability flags to skip tests that don't apply to a specific provider. All messaging capability flags default to `false`; provider leaves must opt in so new tests cannot silently advertise unproven coverage.
 
 ### TransportCapabilities
 
@@ -28,8 +30,9 @@ protected override TransportCapabilities Capabilities => new()
     SupportsDeadLetter = true,    // Dead letter queue support
     SupportsPriority = false,     // Message priority levels
     SupportsDelayedDelivery = false, // Scheduled/delayed messages
-    SupportsBatchSend = true,     // Batch message publishing (default: true)
-    SupportsHeaders = true,       // Custom message headers (default: true)
+    SupportsBusTransport = true,  // Publish/fanout intent
+    SupportsQueueTransport = true, // Queue/competing-consumer intent
+    SupportsHeaders = true,       // Producer accepts custom message headers
 };
 ```
 
@@ -38,12 +41,63 @@ protected override TransportCapabilities Capabilities => new()
 ```csharp
 protected override ConsumerClientCapabilities Capabilities => new()
 {
-    SupportsFetchTopics = true,        // Can fetch topic metadata (default: true)
-    SupportsConcurrentProcessing = true, // Concurrent message handling (default: true)
-    SupportsReject = true,             // Reject/nack messages (default: true)
-    SupportsGracefulShutdown = true,   // Clean shutdown support (default: true)
+    SupportsFetchTopics = true,        // Can fetch topic metadata
+    SupportsConcurrentProcessing = true, // Concurrent message handling
+    SupportsReject = true,             // Exposes reject/nack wiring
+    SupportsGracefulShutdown = true,   // Clean shutdown support
 };
 ```
+
+These flags describe producer or client API behavior only. Broker-observed round trip, header fidelity, commit, reject/redelivery, and fault behavior are tracked separately by `TransportConformanceManifest`. Its three states are:
+
+- `Supported`: an executable broker-backed assertion exists;
+- `Unsupported`: the gap has a rationale and linked issue;
+- `NotApplicable`: the provider topology or protocol makes the scenario inapplicable, with a rationale.
+
+An enabled real-broker leaf must support every mandatory baseline cell. Fabricated callback values and producer-side message inspection are not settlement or broker-delivery evidence.
+
+## Broker Conformance Sessions
+
+Provider leaves create an isolated `TransportConsumerConformanceSession` with a unique destination, real producer, real consumer, bounded no-redelivery window, and provider cleanup callback. The shared base:
+
+- waits for `IConsumerClient.WaitUntilReadyAsync` before publishing;
+- captures the broker-delivered body, headers, and opaque settlement value;
+- passes that exact value to `CommitAsync` or `RejectAsync`;
+- observes redelivery or its absence beyond the provider's configured settlement boundary;
+- bounds startup, receive, shutdown, and negative-observation windows;
+- includes consumer diagnostics when a delivery times out.
+
+NATS is the reference implementation. Its test leaf uses queue intent, a unique memory-backed JetStream stream and durable, and a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
+
+RabbitMQ uses unique exchanges and queues; ACK absence is observed beyond the provider window, reject proves broker requeue, and pause/resume proves a single recovered delivery. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
+
+Kafka is queue/consumer-group only in the current provider contract. Pulsar proves both bus fan-out and queue competition; its negative-ack redelivery delay is shortened only in the test fixture, and broker-restart recovery remains a linked gap. Azure Service Bus runs against a dedicated real namespace using `HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING`. The credential must grant entity-management rights because the fixture creates and deletes only its uniquely named queues, topics, and subscriptions. Missing credentials produce precise local skips; the protected `Azure Service Bus Conformance` workflow fails preflight unless the secret exists and verifies that real tests—not only the credential marker—executed.
+
+## Transport Conformance Matrix
+
+`S` means the manifest cell is `Supported` and names an executable broker-backed assertion. `U` means `Unsupported` with the manifest's [tracked gap](https://github.com/xshaheen/headless-framework/issues/359). `N/A` means `NotApplicable` with a topology or protocol rationale. `S†` is executable real-service evidence that still requires the protected Azure credential; a local skip-only run is not completion evidence.
+
+| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus |
+|---|---:|---:|---:|---:|---:|---:|
+| `QueueRoundTrip` | S | S | S | S | S | S† |
+| `BusRoundTrip` | U | U | U | N/A | S | S† |
+| `HeaderRoundTrip` | S | S | S | S | S | S† |
+| `EmptyBodyDispatch` | S | S | N/A | U | U | U |
+| `CommitSettlement` | S | S | S | S | S | S† |
+| `RejectRedelivery` | S | S | S | S | S | S† |
+| `ConsumerPauseRecovery` | S | S | U | S | S | S† |
+| `BrokerInterruptionRecovery` | U | U | U | U | U | U |
+| `StaleSettlement` | U | U | U | U | U | U |
+| `HandlerFailureRedelivery` | U | U | U | U | U | U |
+| `BoundedGracefulShutdown` | S | S | S | S | S | S† |
+
+Evidence anchors:
+
+- Queue/body/header, commit, reject, isolation, and shutdown: `TransportConsumerConformanceTestsBase` provider overrides.
+- Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
+- Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
+- Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
+- AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities
 
@@ -141,7 +195,8 @@ public sealed class <Provider>TransportTests(<Provider>Fixture fixture) : Transp
     public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
 
     [Fact]
-    public override Task should_include_headers_in_sent_message() => base.should_include_headers_in_sent_message();
+    public override Task should_accept_message_with_application_headers() =>
+        base.should_accept_message_with_application_headers();
 
     // ... expose all relevant base tests
 }

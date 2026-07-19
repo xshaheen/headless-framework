@@ -87,6 +87,19 @@ public sealed class EnsureTests
     }
 
     [Fact]
+    public void should_use_captured_expression_as_object_name_when_not_disposed_with_null_value()
+    {
+        // given
+        var isShutDown = true;
+
+        // when
+        var action = () => Ensure.NotDisposed(isShutDown, disposedValue: null);
+
+        // then - the captured condition text stands in for the missing instance
+        action.Should().ThrowExactly<ObjectDisposedException>().Which.ObjectName.Should().Be("isShutDown");
+    }
+
+    [Fact]
     public void should_throw_when_not_disposed_disposed_with_object()
     {
         // given

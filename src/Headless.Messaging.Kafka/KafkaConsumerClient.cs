@@ -160,7 +160,13 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 lock (_lock)
                 {
-                    consumerResult = _consumerClient!.Consume(timeout);
+                    var consumerClient = _consumerClient;
+                    if (consumerClient is null)
+                    {
+                        return;
+                    }
+
+                    consumerResult = consumerClient.Consume(timeout);
                 }
 
                 if (!readyReported)
@@ -183,7 +189,26 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 if (_semaphore is not null)
                 {
-                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+                    {
+                        // Shutdown raced the concurrency-gate wait: stop cleanly. The offset for this
+                        // delivery is never committed, so Kafka redelivers it to a replacement
+                        // consumer. Mirrors the ObjectDisposedException guard already on
+                        // _semaphore.Release() in _ReleaseSemaphore.
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConsumeError,
+                                Reason = $"Consumer stopped during shutdown before dispatch: {e.Message}",
+                            }
+                        );
+
+                        return;
+                    }
 
                     _ObserveBackgroundHandler(
                         Task.Run(

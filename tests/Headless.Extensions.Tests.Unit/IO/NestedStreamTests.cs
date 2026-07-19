@@ -41,7 +41,7 @@ public sealed class NestedStreamTests : TestBase
     [Fact]
     public void slice_input_validation()
     {
-        var actNull = () => StreamExtensions.ReadSlice(null!, 1);
+        var actNull = () => HeadlessStreamExtensions.ReadSlice(null!, 1);
         actNull.Should().Throw<ArgumentNullException>();
 
         var actNegative = () => new MemoryStream().ReadSlice(-1);

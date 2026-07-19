@@ -1,0 +1,88 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.FluentValidation.Resources;
+using Headless.Validators;
+
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace FluentValidation;
+
+/// <summary>FluentValidation extension rules for geographic coordinate values.</summary>
+[PublicAPI]
+public static class HeadlessGeoValidators
+{
+    /// <summary>Validates that the value is a valid latitude in the range [-90, 90].</summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, double> Latitude<T>(this IRuleBuilder<T, double> builder)
+    {
+        return builder
+            .Must(GeoCoordinateValidator.IsValidLatitude)
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+    }
+
+    /// <summary>Validates that the value is a valid latitude in the range [-90, 90]. Passes <see langword="null"/> through without failure.</summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, double?> Latitude<T>(this IRuleBuilder<T, double?> builder)
+    {
+        return builder
+            .Must(latitude => latitude is null || GeoCoordinateValidator.IsValidLatitude(latitude.Value))
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+    }
+
+    /// <summary>Validates that the value is a valid longitude in the range [-180, 180].</summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, double> Longitude<T>(this IRuleBuilder<T, double> builder)
+    {
+        return builder
+            .Must(GeoCoordinateValidator.IsValidLongitude)
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+    }
+
+    /// <summary>Validates that the value is a valid longitude in the range [-180, 180]. Passes <see langword="null"/> through without failure.</summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, double?> Longitude<T>(this IRuleBuilder<T, double?> builder)
+    {
+        return builder
+            .Must(longitude => longitude is null || GeoCoordinateValidator.IsValidLongitude(longitude.Value))
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+    }
+
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    /// <summary>
+    /// Validates that the string value, when parsed as a decimal number, represents a valid latitude
+    /// in the range [-90, 90]. Passes <see langword="null"/> through without failure.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, string> Latitude<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
+    {
+        return builder
+            .Must(latitude =>
+                latitude is null
+                || (
+                    double.TryParse(latitude, CultureInfo.InvariantCulture, out var lat)
+                    && GeoCoordinateValidator.IsValidLatitude(lat)
+                )
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+    }
+
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    /// <summary>
+    /// Validates that the string value, when parsed as a decimal number, represents a valid longitude
+    /// in the range [-180, 180]. Passes <see langword="null"/> through without failure.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
+    public static IRuleBuilderOptions<T, string> Longitude<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
+    {
+        return builder
+            .Must(longitude =>
+                longitude is null
+                || (
+                    double.TryParse(longitude, CultureInfo.InvariantCulture, out var lon)
+                    && GeoCoordinateValidator.IsValidLongitude(lon)
+                )
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+    }
+}

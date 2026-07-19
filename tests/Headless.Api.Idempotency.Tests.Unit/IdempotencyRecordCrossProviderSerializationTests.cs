@@ -4,7 +4,6 @@ using Headless.Api.Idempotency;
 using Headless.Serializer;
 using MessagePack;
 using MessagePack.Resolvers;
-using HeadlessMessagePackSerializer = Headless.Serializer.MessagePackSerializer;
 
 namespace Tests;
 
@@ -12,7 +11,7 @@ namespace Tests;
 /// Pins the cross-provider serialization contract for <see cref="IdempotencyRecord"/>. The Redis
 /// cache provider serializes through <see cref="Headless.Serializer.ISerializer"/>; the default
 /// binding is <see cref="SystemJsonSerializer"/> (System.Text.Json under the hood). Consumers may
-/// swap in <see cref="HeadlessMessagePackSerializer"/> for a more compact wire format. Both paths must
+/// swap in <see cref="MessagePackBinarySerializer"/> for a more compact wire format. Both paths must
 /// round-trip the fields the middleware actually reads at replay time: <c>StatusCode</c>,
 /// <c>Body</c> (exact byte equality), <c>Fingerprint</c> (exact byte equality including null),
 /// <c>Kind</c>, <c>CreatedAt</c>, and <c>Headers</c> entries (key/value pairs preserved by
@@ -129,7 +128,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
         // ContractlessStandardResolver only supports public types, so consumers swapping in
         // MessagePack must configure the AllowPrivate variant. The package README documents
         // this requirement.
-        var serializer = new HeadlessMessagePackSerializer(
+        var serializer = new MessagePackBinarySerializer(
             MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolverAllowPrivate.Instance)
         );
         var original = _Sample();
@@ -161,7 +160,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
         // ContractlessStandardResolver only supports public types, so consumers swapping in
         // MessagePack must configure the AllowPrivate variant. The package README documents
         // this requirement.
-        var serializer = new HeadlessMessagePackSerializer(
+        var serializer = new MessagePackBinarySerializer(
             MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolverAllowPrivate.Instance)
         );
         var original = new IdempotencyRecord
@@ -188,7 +187,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
         // ContractlessStandardResolver only supports public types, so consumers swapping in
         // MessagePack must configure the AllowPrivate variant. The package README documents
         // this requirement.
-        var serializer = new HeadlessMessagePackSerializer(
+        var serializer = new MessagePackBinarySerializer(
             MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolverAllowPrivate.Instance)
         );
         var original = new IdempotencyRecord
@@ -220,7 +219,7 @@ public sealed class IdempotencyRecordCrossProviderSerializationTests
         // ContractlessStandardResolver only supports public types, so consumers swapping in
         // MessagePack must configure the AllowPrivate variant. The package README documents
         // this requirement.
-        var serializer = new HeadlessMessagePackSerializer(
+        var serializer = new MessagePackBinarySerializer(
             MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolverAllowPrivate.Instance)
         );
         var original = new IdempotencyRecord
