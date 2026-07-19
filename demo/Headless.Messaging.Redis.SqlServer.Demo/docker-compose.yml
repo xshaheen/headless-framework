@@ -1,6 +1,6 @@
 services:
   redis-node-0:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     volumes:
       - redis-cluster_data-0:/bitnami/redis/data
     environment:
@@ -8,7 +8,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-1:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     volumes:
       - redis-cluster_data-1:/bitnami/redis/data
     environment:
@@ -16,7 +16,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-2:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     volumes:
       - redis-cluster_data-2:/bitnami/redis/data
     environment:
@@ -24,7 +24,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-3:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     volumes:
       - redis-cluster_data-3:/bitnami/redis/data
     environment:
@@ -32,7 +32,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-4:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     volumes:
       - redis-cluster_data-4:/bitnami/redis/data
     environment:
@@ -40,7 +40,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-5:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.0.15@sha256:84f3c451737aeef420ba00d2320f53bb1757863190d6d42693cc341c29809398
     ports:
      - 6379:6379
     volumes:
@@ -59,7 +59,7 @@ services:
       - 'REDIS_CLUSTER_CREATOR=yes'
 
   db:
-     image: "mcr.microsoft.com/mssql/server:2022-latest"
+     image: "mcr.microsoft.com/mssql/server:2022-latest@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89"
      ports:
         - 1433:1433
      environment:
