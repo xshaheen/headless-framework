@@ -89,7 +89,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
 
     #endregion
 
-    #region ResultError Mapping Tests
+    #region ApiResultError Mapping Tests
 
     [Fact]
     public void should_map_not_found_error_to_404()
@@ -220,7 +220,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         // given
         var controller = _CreateController();
         var creator = _CreateProblemDetailsCreator();
-        var error = ResultError.Custom("custom:error", "Custom error message");
+        var error = ApiResultError.Custom("custom:error", "Custom error message");
 
         // when
         var actionResult = error.ToActionResult(controller, creator);

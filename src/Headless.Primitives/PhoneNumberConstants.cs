@@ -3,6 +3,7 @@
 namespace Headless.Primitives;
 
 /// <summary>Default column names and length constraints for storing phone country codes and national numbers.</summary>
+[PublicAPI]
 public static class PhoneNumberConstants
 {
     /// <summary>Constraints for the phone country-code component.</summary>

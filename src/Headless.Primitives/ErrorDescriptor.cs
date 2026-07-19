@@ -27,19 +27,22 @@ public sealed class ErrorDescriptor
     /// <summary>Initializes a new <see cref="ErrorDescriptor"/> with an initial set of parameters.</summary>
     /// <param name="code">A distinct code indicating the cause of the error.</param>
     /// <param name="description">A human-readable description of the error.</param>
-    /// <param name="paramsDictionary">Parameter values related to the error, stored as the descriptor's parameter bag.</param>
+    /// <param name="paramsDictionary">
+    ///     Parameter values related to the error, copied into the descriptor's parameter bag.
+    ///     Keys are compared case-insensitively.
+    /// </param>
     /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Error"/>.</param>
     public ErrorDescriptor(
         string code,
         [LocalizationRequired] string description,
-        Dictionary<string, object?> paramsDictionary,
+        IReadOnlyDictionary<string, object?> paramsDictionary,
         ValidationSeverity severity = ValidationSeverity.Error
     )
     {
         Code = code;
         Description = description;
         Severity = severity;
-        _params = paramsDictionary;
+        _params = new Dictionary<string, object?>(paramsDictionary, StringComparer.OrdinalIgnoreCase);
     }
 
     private Dictionary<string, object?>? _params;
@@ -104,6 +107,7 @@ public sealed class ErrorDescriptor
 }
 
 /// <summary>The severity assigned to an <see cref="ErrorDescriptor"/>.</summary>
+[PublicAPI]
 public enum ValidationSeverity
 {
     /// <summary>Informational message; does not indicate a failure.</summary>
