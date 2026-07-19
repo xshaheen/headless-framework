@@ -22,8 +22,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 permissions:
   contents: read
@@ -144,19 +144,7 @@ jobs:
         run: make pack-built
 
       - name: "Verify package artifacts"
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          # Symbols are embedded in the assemblies (DebugType=embedded); no .snupkg is produced.
-          packages=("${PACKAGES_DIR}"/*.nupkg)
-
-          if [ "${#packages[@]}" -eq 0 ]; then
-            echo "No .nupkg files were created in ${PACKAGES_DIR}."
-            exit 1
-          fi
-
-          echo "Created ${#packages[@]} package(s)."
+        run: make verify-packages
         shell: bash
 
       - name: "Upload test results"
@@ -199,16 +187,45 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
 
     environment:
       name: "GitHub Packages"
       url: https://github.com/xshaheen/headless-framework/packages
 
     steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: "./global.json"
+
       - name: "Download Artifacts"
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: packages-results
+          path: ${{ env.PACKAGES_DIR }}
+
+      - name: "Verify package artifacts"
+        run: make verify-packages
+        shell: bash
+
+      - name: "Attest package provenance"
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: "${{ env.PACKAGES_DIR }}/*.nupkg"
+
+      # Advisory preflight only. A publish race still fails because push does not use --skip-duplicate.
+      - name: "NuGet.org immutable-version preflight"
+        run: make nuget-publish-preflight
+        shell: bash
 
       - name: "Push Packages"
         env:
@@ -217,7 +234,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          packages=(./*.nupkg)
+          packages=("${PACKAGES_DIR}"/*.nupkg)
 
           if [ ${#packages[@]} -eq 0 ]; then
             echo "No .nupkg files found in the downloaded package artifact."
@@ -227,8 +244,7 @@ jobs:
           for package in "${packages[@]}"; do
             dotnet nuget push "$package" \
               --source "https://nuget.pkg.github.com/xshaheen/index.json" \
-              --api-key "$GITHUB_TOKEN" \
-              --skip-duplicate
+              --api-key "$GITHUB_TOKEN"
           done
         shell: bash
 
@@ -247,10 +263,27 @@ jobs:
       url: https://www.nuget.org/packages?q=Headless.
 
     steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: "./global.json"
+
       - name: "Download Artifacts"
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: packages-results
+          path: ${{ env.PACKAGES_DIR }}
+
+      - name: "Verify package artifacts"
+        run: make verify-packages
+        shell: bash
 
       # Exchange the workflow OIDC token for a temporary nuget.org API key (valid ~1h, one key per token).
       # Requires a Trusted Publishing policy on nuget.org bound to this repo, the workflow file (ci.yml), and
@@ -269,7 +302,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          packages=(./*.nupkg)
+          packages=("${PACKAGES_DIR}"/*.nupkg)
 
           if [ ${#packages[@]} -eq 0 ]; then
             echo "No .nupkg files found in the downloaded package artifact."
@@ -279,7 +312,6 @@ jobs:
           for package in "${packages[@]}"; do
             dotnet nuget push "$package" \
               --source "https://api.nuget.org/v3/index.json" \
-              --api-key "$NUGET_API_KEY" \
-              --skip-duplicate
+              --api-key "$NUGET_API_KEY"
           done
         shell: bash
