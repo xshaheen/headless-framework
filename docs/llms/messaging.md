@@ -1547,7 +1547,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 
 ### Key Features
 
-- `setup.UsePostgreSql(...)`.
+- `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
 - PostgreSQL schema/table configuration.
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
@@ -1590,7 +1590,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 
 ### Key Features
 
-- `setup.UseSqlServer(...)`.
+- `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
 - SQL Server schema/table configuration.
 - EF/Core.Db integration and startup initialization.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.

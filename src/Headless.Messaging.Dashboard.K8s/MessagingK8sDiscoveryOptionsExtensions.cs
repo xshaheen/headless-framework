@@ -26,7 +26,7 @@ internal sealed class K8sDiscoveryOptionsExtension(Action<K8sDiscoveryOptions>? 
     }
 }
 
-public static class MessagingDiscoveryOptionsExtensions
+public static class MessagingK8sDiscoveryOptionsExtensions
 {
     // ReSharper disable once InconsistentNaming
     /// <summary>

@@ -6,6 +6,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -34,6 +35,28 @@ public static class SetupSqlServerMessaging
         }
 
         /// <summary>
+        /// Configures the messaging outbox to use SQL Server, binding and validating
+        /// <see cref="SqlServerOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">Configuration section containing <see cref="SqlServerOptions"/> values.</param>
+        /// <returns>The builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseSqlServer(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            return _AddSqlServerStorageCore(
+                setup,
+                services =>
+                    services
+                        .AddOptions<SqlServerOptions, SqlServerOptionsValidator>()
+                        .Bind(configuration)
+                        .Configure(x => x.Version = setup.Options.Version),
+                outboxProbe: options => configuration.Bind(options)
+            );
+        }
+
+        /// <summary>
         /// Configures the messaging outbox to use SQL Server, delegating all option configuration
         /// to the supplied <paramref name="configure"/> action.
         /// </summary>
@@ -46,9 +69,37 @@ public static class SetupSqlServerMessaging
 
             configure += x => x.Version = setup.Options.Version;
 
-            setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configure));
+            return _AddSqlServerStorageCore(
+                setup,
+                services => services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure),
+                outboxProbe: configure
+            );
+        }
 
-            return setup;
+        /// <summary>
+        /// Configures the messaging outbox to use SQL Server, configuring <see cref="SqlServerOptions"/>
+        /// with access to the resolved service provider (for example to resolve secrets or connection
+        /// settings from DI).
+        /// </summary>
+        /// <remarks>
+        /// This overload targets the raw ADO.NET storage path. The transactional outbox auto-wiring
+        /// requires <c>UseEntityFramework&lt;TContext&gt;()</c>, whose configuration is inspectable at
+        /// registration time; a service-provider-dependent configure cannot be probed then.
+        /// </remarks>
+        /// <param name="configure">A delegate that configures <see cref="SqlServerOptions"/> using the service provider.</param>
+        /// <returns>The builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            configure += (x, _) => x.Version = setup.Options.Version;
+
+            return _AddSqlServerStorageCore(
+                setup,
+                services => services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure),
+                outboxProbe: null
+            );
         }
 
         /// <summary>
@@ -81,21 +132,36 @@ public static class SetupSqlServerMessaging
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(
-                new SqlServerMessagesOptionsExtension(x =>
-                {
-                    configure(x);
-                    x.Version = setup.Options.Version;
-                    x.DbContextType = typeof(TContext);
-                })
-            );
+            Action<SqlServerOptions> combined = x =>
+            {
+                configure(x);
+                x.Version = setup.Options.Version;
+                x.DbContextType = typeof(TContext);
+            };
 
-            return setup;
+            return _AddSqlServerStorageCore(
+                setup,
+                services => services.Configure<SqlServerOptions, SqlServerOptionsValidator>(combined),
+                outboxProbe: combined
+            );
         }
     }
 
-    private sealed class SqlServerMessagesOptionsExtension(Action<SqlServerOptions> configure)
-        : IMessagesOptionsExtension
+    private static MessagingSetupBuilder _AddSqlServerStorageCore(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions,
+        Action<SqlServerOptions>? outboxProbe
+    )
+    {
+        setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configureOptions, outboxProbe));
+
+        return setup;
+    }
+
+    private sealed class SqlServerMessagesOptionsExtension(
+        Action<IServiceCollection> configureOptions,
+        Action<SqlServerOptions>? outboxProbe
+    ) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
@@ -104,7 +170,7 @@ public static class SetupSqlServerMessaging
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
 
-            services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure);
+            configureOptions(services);
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions>();
 
             _AddTransactionalOutbox(services);
@@ -123,11 +189,19 @@ public static class SetupSqlServerMessaging
         // on EF-storage consumers.)
         private void _AddTransactionalOutbox(IServiceCollection services)
         {
+            if (outboxProbe is null)
+            {
+                // Service-provider-dependent configuration cannot be probed at registration time. Only the EF
+                // overloads (which always supply a probe) set DbContextType, so this is the raw-ADO path —
+                // never auto-register.
+                return;
+            }
+
             // DbContextType / EnableTransactionalOutbox are set inside the captured configure action (only the EF
             // overload sets DbContextType), so materialize a throwaway options instance to read them without
             // depending on the DI-built options.
             var probe = new SqlServerOptions();
-            configure(probe);
+            outboxProbe(probe);
 
             if (probe.DbContextType is null)
             {
