@@ -13,6 +13,21 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class JobsOptionsBuilderTests
 {
+    [Fact]
+    public void scheduler_long_running_concurrency_defaults_to_four_or_max_concurrency()
+    {
+        var options = new SchedulerOptionsBuilder { MaxConcurrency = 2 };
+
+        options.MaxLongRunningConcurrency.Should().Be(2);
+
+        options.MaxConcurrency = 16;
+        options.MaxLongRunningConcurrency.Should().Be(4);
+
+        options.MaxLongRunningConcurrency = 7;
+        options.MaxConcurrency = 1;
+        options.MaxLongRunningConcurrency.Should().Be(7);
+    }
+
     private sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;
 
     private sealed class FakeCronJob : CronJobEntity;
@@ -104,6 +119,28 @@ public sealed class JobsOptionsBuilderTests
             .GetValue(builder);
 
         flag.Should().BeOfType<bool>().Which.Should().BeTrue();
+    }
+
+    [Fact]
+    public void use_g_zip_compression_sets_expanded_size_limit()
+    {
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            new JobsExecutionContext(),
+            new SchedulerOptionsBuilder()
+        );
+
+        builder.UseGZipCompression(1234);
+
+        var limit = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
+            .GetProperty(
+                nameof(JobsOptionsBuilder<,>.RequestGZipMaxDecompressedBytes),
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+            )!
+            .GetValue(builder);
+
+        limit.Should().Be(1234);
+        var act = () => builder.UseGZipCompression(0);
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]

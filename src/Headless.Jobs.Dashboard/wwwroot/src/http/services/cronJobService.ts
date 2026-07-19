@@ -1,8 +1,7 @@
 
 import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
-import { AddCronJobRequest, GetCronJobGraphDataRangeResponse, GetCronJobGraphDataResponse, GetCronJobRequest, GetCronJobResponse, UpdateCronJobRequest } from './types/cronJobService.types';
-import { nameof } from '@/utilities/nameof';
+import { AddCronJobRequest, GetCronJobGraphDataRangeResponse, GetCronJobGraphDataResponse, GetCronJobResponse, UpdateCronJobRequest } from './types/cronJobService.types';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
@@ -11,43 +10,6 @@ interface PaginatedCronJobResponse {
     totalCount: number
     pageNumber: number
     pageSize: number
-}
-
-const getCronJobs = () => {
-    const functionNamesStore = useFunctionNameStore();
-    const timeZoneStore = useTimeZoneStore();
-
-    const baseHttp = useBaseHttpService<GetCronJobRequest, GetCronJobResponse>('array')
-        .FixToResponseModel(GetCronJobResponse, response => {
-            response.requestType = functionNamesStore.getNamespaceOrNull(response.function) ?? 'N/A';
-            response.createdAt = formatDate(response.createdAt, true, timeZoneStore.effectiveTimeZone);
-            response.updatedAt = formatDate(response.updatedAt, true, timeZoneStore.effectiveTimeZone);
-            response.initIdentifier = response.initIdentifier?.split("_").slice(0, 2).join("_");
-            if ((response.retryIntervals == null || response.retryIntervals.length == 0) && (response.retries == null || (response.retries as number) == 0))
-                response.retryIntervals = [];
-            else if ((response.retryIntervals == null || response.retryIntervals.length == 0) && (response.retries != null && (response.retries as number) > 0))
-                response.retryIntervals = Array(1).fill(`${30}s`);
-            else 
-                response.retryIntervals = (response.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
-            
-            return response;
-        })
-        .FixToHeaders((header) => {
-            if (header.key == nameof<GetCronJobResponse>(x => x.actions)) {
-                header.sortable = false;
-            }
-            if (nameof<GetCronJobResponse>(x => x.id, x => x.retries).includes(header.key)) {
-                header.visibility = false;
-            }
-            return header;
-        });
-
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-jobs"));
-
-    return {
-        ...baseHttp,
-        requestAsync
-    };
 }
 
 const getCronJobsPaginated = () => {
@@ -177,7 +139,6 @@ const getTimeJobsGraphData = () => {
 }
 
 export const cronJobService = {
-    getCronJobs,
     getCronJobsPaginated,
     updateCronJob,
     addCronJob,

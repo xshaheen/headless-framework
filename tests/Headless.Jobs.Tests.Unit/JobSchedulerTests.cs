@@ -319,6 +319,7 @@ public sealed class JobSchedulerTests : TestBase
     {
         var previousOptions = JobsHelper.RequestJsonSerializerOptions;
         var previousCompression = JobsHelper.UseGZipCompression;
+        var previousMaxDecompressedBytes = JobsHelper.MaxDecompressedRequestBytes;
 
         try
         {
@@ -348,6 +349,32 @@ public sealed class JobSchedulerTests : TestBase
         {
             JobsHelper.RequestJsonSerializerOptions = previousOptions;
             JobsHelper.UseGZipCompression = previousCompression;
+            JobsHelper.MaxDecompressedRequestBytes = previousMaxDecompressedBytes;
+        }
+    }
+
+    [Fact]
+    public void gzip_request_read_enforces_expanded_size_limit()
+    {
+        var previousCompression = JobsHelper.UseGZipCompression;
+        var previousMaxDecompressedBytes = JobsHelper.MaxDecompressedRequestBytes;
+
+        try
+        {
+            JobsHelper.UseGZipCompression = true;
+            var atLimit = JobsHelper.CreateJobRequest(new byte[100]);
+            var aboveLimit = JobsHelper.CreateJobRequest(new byte[101]);
+            JobsHelper.MaxDecompressedRequestBytes = 100;
+
+            JobsHelper.ReadJobRequestAsString(atLimit).Should().HaveLength(100);
+
+            var act = () => JobsHelper.ReadJobRequestAsString(aboveLimit);
+            act.Should().Throw<InvalidDataException>().WithMessage("*100 byte limit*");
+        }
+        finally
+        {
+            JobsHelper.UseGZipCompression = previousCompression;
+            JobsHelper.MaxDecompressedRequestBytes = previousMaxDecompressedBytes;
         }
     }
 

@@ -14,6 +14,10 @@ namespace Headless.Jobs;
 /// </summary>
 public sealed class DashboardOptionsBuilder
 {
+    internal const int MaxPageSize = 100;
+    internal const int MaxRequestBodyBytes = 1024 * 1024;
+    internal const int MaxBatchDeleteIds = 500;
+
     internal string BasePath { get; set; } = "/jobs/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
     internal string? BackendDomain { get; set; }
