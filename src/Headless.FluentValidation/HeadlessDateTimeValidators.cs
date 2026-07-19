@@ -27,7 +27,7 @@ namespace FluentValidation;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public static class DateTimeValidators
+public static class HeadlessDateTimeValidators
 {
     extension<T>(IRuleBuilder<T, DateTimeOffset> rule)
     {

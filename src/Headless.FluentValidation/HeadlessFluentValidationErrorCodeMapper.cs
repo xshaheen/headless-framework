@@ -7,7 +7,7 @@ namespace FluentValidation;
 /// Maps FluentValidation built-in error codes to the framework's <c>g:snake_case</c> error code shape.
 /// </summary>
 [PublicAPI]
-public static class FluentValidationErrorCodeMapper
+public static class HeadlessFluentValidationErrorCodeMapper
 {
     /// <summary>
     /// Maps a FluentValidation built-in error code (for example <c>"EmailValidator"</c>) to the

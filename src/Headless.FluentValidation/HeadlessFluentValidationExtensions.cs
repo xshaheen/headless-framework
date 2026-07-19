@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation integration helpers for the Headless error descriptor model.</summary>
 [PublicAPI]
-public static class FluentValidationExtensions
+public static class HeadlessFluentValidationExtensions
 {
     /// <summary>
     /// Applies an <see cref="ErrorDescriptor"/> to the rule, setting the error code, error message,
@@ -51,7 +51,7 @@ public static class FluentValidationExtensions
     /// <summary>
     /// Groups <see cref="ValidationFailure"/> instances by property path and converts each into an
     /// <see cref="ErrorDescriptor"/>, mapping FluentValidation built-in codes via
-    /// <see cref="FluentValidationErrorCodeMapper.MapToHeadlessErrorCode"/>.
+    /// <see cref="HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode"/>.
     /// </summary>
     /// <param name="failures">The validation failures to convert.</param>
     /// <returns>
@@ -76,7 +76,7 @@ public static class FluentValidationExtensions
                     }
                     else
                     {
-                        errorCode = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(failure.ErrorCode);
+                        errorCode = HeadlessFluentValidationErrorCodeMapper.MapToHeadlessErrorCode(failure.ErrorCode);
 
                         // Normalize the fluent validation property path
                         if (

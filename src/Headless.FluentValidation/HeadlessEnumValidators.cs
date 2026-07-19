@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for validating that a string is a defined enum member name.</summary>
 [PublicAPI]
-public static class EnumValidators
+public static class HeadlessEnumValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     /// <summary>

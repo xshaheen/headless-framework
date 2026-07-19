@@ -8,7 +8,7 @@ namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for Egyptian national ID numbers.</summary>
 [PublicAPI]
-public static class EgyptianNationalIdValidators
+public static class HeadlessEgyptianNationalIdValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     /// <summary>
