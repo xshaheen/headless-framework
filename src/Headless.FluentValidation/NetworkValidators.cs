@@ -2,7 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
-using Headless.FluentValidation;
+using Headless.FluentValidation.Resources;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;

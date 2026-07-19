@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
-using Headless.FluentValidation;
+using Headless.FluentValidation.Resources;
 using Headless.Primitives;
 using Headless.Validators;
 using PhoneNumbers;
