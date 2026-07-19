@@ -8,8 +8,8 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_acquire_release_and_issue_monotonic_fencing_tokens()
@@ -154,7 +154,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         releaseNotifications.Should().Be(0);
     }
 
-    private ServiceProvider _CreateProvider(Action<PostgresDistributedLockOptions>? configure = null)
+    private ServiceProvider _CreateProvider(Action<PostgreSqlDistributedLockOptions>? configure = null)
     {
         var services = new ServiceCollection();
 

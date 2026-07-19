@@ -20,7 +20,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// </summary>
 internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
 {
-    private readonly PostgresDistributedLockOptions _options;
+    private readonly PostgreSqlDistributedLockOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
     private readonly NpgsqlDataSource _dataSource;
@@ -51,7 +51,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// </param>
     /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
     public PostgresConnectionScopedLockStorage(
-        IOptions<PostgresDistributedLockOptions> options,
+        IOptions<PostgreSqlDistributedLockOptions> options,
         NpgsqlDataSource dataSource,
         TimeProvider timeProvider
     )
@@ -355,9 +355,9 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return new(_dataSource, _timeProvider, _commandTimeoutSeconds);
     }
 
-    private PostgresAdvisoryLockKey _CreateKey(string resource)
+    private PostgreSqlAdvisoryLockKey _CreateKey(string resource)
     {
-        return PostgresAdvisoryLockKey.FromString(_options.KeyPrefix + resource, allowHashing: true);
+        return PostgreSqlAdvisoryLockKey.FromString(_options.KeyPrefix + resource, allowHashing: true);
     }
 
     /// <summary>

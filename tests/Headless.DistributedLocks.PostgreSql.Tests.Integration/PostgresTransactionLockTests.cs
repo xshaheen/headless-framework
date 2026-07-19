@@ -10,19 +10,19 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const int _MonitoringCommandTimeoutSeconds = 30;
 
     [Fact]
     public async Task should_release_transaction_lock_when_transaction_commits()
     {
-        var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
 
         await using var connection = await _OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
-        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
         (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
@@ -39,11 +39,11 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     [Fact]
     public async Task should_release_transaction_lock_when_transaction_rolls_back()
     {
-        var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
 
         await using var connection = await _OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
-        await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
         (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
 
@@ -59,16 +59,16 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     [Fact]
     public async Task should_fail_try_acquire_when_held_by_another_transaction()
     {
-        var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
 
         await using var holderConnection = await _OpenAsync();
         await using var holderTransaction = await holderConnection.BeginTransactionAsync(AbortToken);
-        await PostgresDistributedLock.AcquireWithTransactionAsync(key, holderTransaction, AbortToken);
+        await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, holderTransaction, AbortToken);
 
         await using var contenderConnection = await _OpenAsync();
         await using var contenderTransaction = await contenderConnection.BeginTransactionAsync(AbortToken);
 
-        var acquired = await PostgresDistributedLock.TryAcquireWithTransactionAsync(
+        var acquired = await PostgreSqlDistributedLock.TryAcquireWithTransactionAsync(
             key,
             contenderTransaction,
             AbortToken
@@ -82,7 +82,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         await using var nextConnection = await _OpenAsync();
         await using var nextTransaction = await nextConnection.BeginTransactionAsync(AbortToken);
 
-        (await PostgresDistributedLock.TryAcquireWithTransactionAsync(key, nextTransaction, AbortToken))
+        (await PostgreSqlDistributedLock.TryAcquireWithTransactionAsync(key, nextTransaction, AbortToken))
             .Should()
             .BeTrue();
     }
@@ -95,9 +95,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         await transaction.CommitAsync(AbortToken);
         await transaction.DisposeAsync();
 
-        var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
 
-        var act = async () => await PostgresDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        var act = async () => await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -195,7 +195,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     public async Task should_acquire_when_strategy_uses_internally_owned_transaction()
     {
         var resourceName = _CreateResourceName();
-        var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(resourceName, allowHashing: true);
 
         await using (
             var databaseConnection = new PostgresDatabaseConnection(
@@ -359,7 +359,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         throw new InvalidOperationException("The test setup query should have failed the active transaction.");
     }
 
-    private async Task<long> _CountAdvisoryLocksAsync(PostgresAdvisoryLockKey key)
+    private async Task<long> _CountAdvisoryLocksAsync(PostgreSqlAdvisoryLockKey key)
     {
         var (key1, key2) = key.Keys;
 
