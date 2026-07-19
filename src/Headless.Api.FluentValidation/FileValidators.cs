@@ -5,7 +5,6 @@ using Headless.FluentValidation.Resources;
 using Microsoft.AspNetCore.Http;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
 namespace FluentValidation;
 
 /// <summary>

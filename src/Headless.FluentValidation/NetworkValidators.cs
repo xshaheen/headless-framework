@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using Headless.FluentValidation;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for IP address string properties.</summary>
