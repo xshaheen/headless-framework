@@ -26,11 +26,14 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
 
         var receivedMessageCount = 0;
         var consumerClient = await _CreateConsumerClientAsync(groupId);
-        consumerClient.OnMessageCallback = (_, _) =>
-        {
-            receivedMessageCount++;
-            return Task.CompletedTask;
-        };
+        consumerClient.AttachCallbacks(
+            onMessage: (_, _) =>
+            {
+                receivedMessageCount++;
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
 
         // Send malformed JSON directly to queue
         await sqsClient.SendMessageAsync(
@@ -64,11 +67,14 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
 
         var receivedMessageCount = 0;
         var consumerClient = await _CreateConsumerClientAsync(groupId);
-        consumerClient.OnMessageCallback = (_, _) =>
-        {
-            receivedMessageCount++;
-            return Task.CompletedTask;
-        };
+        consumerClient.AttachCallbacks(
+            onMessage: (_, _) =>
+            {
+                receivedMessageCount++;
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
 
         // Send message that deserializes to null
         await sqsClient.SendMessageAsync(
@@ -102,11 +108,14 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
 
         var receivedMessageCount = 0;
         var consumerClient = await _CreateConsumerClientAsync(groupId);
-        consumerClient.OnMessageCallback = (_, _) =>
-        {
-            receivedMessageCount++;
-            return Task.CompletedTask;
-        };
+        consumerClient.AttachCallbacks(
+            onMessage: (_, _) =>
+            {
+                receivedMessageCount++;
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
 
         // Send message with missing MessageAttributes field
         await sqsClient.SendMessageAsync(
@@ -141,12 +150,15 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         var receivedMessageCount = 0;
         TransportMessage? receivedMessage = null;
         var consumerClient = await _CreateConsumerClientAsync(groupId);
-        consumerClient.OnMessageCallback = async (msg, receiptHandle) =>
-        {
-            receivedMessageCount++;
-            receivedMessage = msg;
-            await consumerClient.CommitAsync(receiptHandle);
-        };
+        consumerClient.AttachCallbacks(
+            onMessage: async (msg, receiptHandle) =>
+            {
+                receivedMessageCount++;
+                receivedMessage = msg;
+                await consumerClient.CommitAsync(receiptHandle);
+            },
+            onLog: null
+        );
 
         // Send well-formed message
         const string validMessage = """

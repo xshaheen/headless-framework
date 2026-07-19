@@ -59,6 +59,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("kafka", BrokerAddressDisplay.FormatMany(_kafkaOptions.Servers));
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(

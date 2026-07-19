@@ -163,7 +163,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                 intent,
                 cancellationToken
             );
-            consumer.OnLogCallback = _ => { };
+            consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try
             {

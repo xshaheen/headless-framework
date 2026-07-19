@@ -35,6 +35,12 @@ internal sealed class PulsarConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
 
     public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)

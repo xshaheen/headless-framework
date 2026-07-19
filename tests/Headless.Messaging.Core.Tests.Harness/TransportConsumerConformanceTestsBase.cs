@@ -60,17 +60,19 @@ public sealed class TransportConsumerConformanceSession(
             throw new InvalidOperationException("The conformance session has already started.");
         }
 
-        Consumer.OnMessageCallback = async (message, settlementValue) =>
-        {
-            var delivery = new TransportConformanceDelivery(message, settlementValue);
-            await _deliveries.Writer.WriteAsync(delivery, CancellationToken.None).ConfigureAwait(false);
-
-            if (onDelivery is not null)
+        Consumer.AttachCallbacks(
+            onMessage: async (message, settlementValue) =>
             {
-                await onDelivery(delivery).ConfigureAwait(false);
-            }
-        };
-        Consumer.OnLogCallback = _logs.Enqueue;
+                var delivery = new TransportConformanceDelivery(message, settlementValue);
+                await _deliveries.Writer.WriteAsync(delivery, CancellationToken.None).ConfigureAwait(false);
+
+                if (onDelivery is not null)
+                {
+                    await onDelivery(delivery).ConfigureAwait(false);
+                }
+            },
+            onLog: _logs.Enqueue
+        );
 
         _listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _listeningTask = Task.Run(
