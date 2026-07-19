@@ -796,10 +796,13 @@ var slug = Slug.Create("Long Title That Needs Truncation", options);
 
 #### Character Replacements
 
+`Replacements` accepts any `IReadOnlyDictionary<string, string>` and replaces the default set entirely;
+the assigned dictionary is frozen internally (ordinal comparison) for lookup performance.
+
 ```csharp
 var options = new SlugOptions
 {
-    Replacements =
+    Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["&"] = "and",
         ["@"] = "at",

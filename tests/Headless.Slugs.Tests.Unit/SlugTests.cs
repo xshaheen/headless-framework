@@ -291,14 +291,25 @@ public sealed class SlugTests
     {
         var options = new SlugOptions
         {
-            Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                { "@", " at " },
-            }.ToFrozenDictionary(),
+            Replacements = new Dictionary<string, string>(StringComparer.Ordinal) { { "@", " at " } },
             MaximumLength = 0,
         };
 
         Slug.Create("user@domain", options).Should().Be("user-at-domain");
+    }
+
+    [Fact]
+    public void should_freeze_replacements_internally()
+    {
+        // given - a plain dictionary assigned to the read-only surface
+        var options = new SlugOptions
+        {
+            Replacements = new Dictionary<string, string>(StringComparer.Ordinal) { { "@", " at " } },
+        };
+
+        // then - the stored representation is frozen for lookup performance
+        options.Replacements.Should().BeAssignableTo<FrozenDictionary<string, string>>();
+        new SlugOptions().Replacements.Should().BeAssignableTo<FrozenDictionary<string, string>>();
     }
 
     [Fact]
@@ -316,10 +327,7 @@ public sealed class SlugTests
         // Replacements happen first, then filtering by AllowedRanges
         var options = new SlugOptions
         {
-            Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                { "&", "AND" },
-            }.ToFrozenDictionary(),
+            Replacements = new Dictionary<string, string>(StringComparer.Ordinal) { { "&", "AND" } },
             MaximumLength = 0,
         };
 
