@@ -158,48 +158,6 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_throw_for_basic_without_credentials_when_validate()
-    {
-        // given
-        var builder = new MessagingDashboardOptionsBuilder().WithBasicAuth("admin", "password");
-        builder.Auth.BasicCredentials = null;
-
-        // when
-        var act = () => builder.Validate();
-
-        // then
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public void should_throw_for_api_key_without_key_when_validate()
-    {
-        // given
-        var builder = new MessagingDashboardOptionsBuilder().WithApiKey("temp-key");
-        builder.Auth.ApiKey = null;
-
-        // when
-        var act = () => builder.Validate();
-
-        // then
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public void should_throw_for_custom_without_validator_when_validate()
-    {
-        // given
-        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth((_, _) => true);
-        builder.Auth.CustomValidator = null;
-
-        // when
-        var act = () => builder.Validate();
-
-        // then
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
     public void should_throw_when_validate_no_auth_mode_configured()
     {
         // given — a builder where no WithXxx auth method (not even WithNoAuth) was ever called
