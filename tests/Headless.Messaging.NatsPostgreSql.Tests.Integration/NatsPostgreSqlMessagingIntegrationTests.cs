@@ -184,8 +184,8 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         subscriber.Clear();
 
         var monitoringApi = DataStorage.GetMonitoringApi();
-        var publishedBefore = await monitoringApi.PublishedSucceededCount(AbortToken);
-        var receivedBefore = await monitoringApi.ReceivedSucceededCount(AbortToken);
+        var publishedBefore = await monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
+        var receivedBefore = await monitoringApi.GetReceivedSucceededCountAsync(AbortToken);
 
         var message = new Fixtures.TestMessage
         {
@@ -203,8 +203,8 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
 
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
-        var publishedAfter = await monitoringApi.PublishedSucceededCount(AbortToken);
-        var receivedAfter = await monitoringApi.ReceivedSucceededCount(AbortToken);
+        var publishedAfter = await monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
+        var receivedAfter = await monitoringApi.GetReceivedSucceededCountAsync(AbortToken);
 
         publishedAfter.Should().Be(publishedBefore, "direct publish bypasses durable outbox persistence");
         receivedAfter.Should().BeGreaterThan(receivedBefore, "the consumer side should still persist received records");

@@ -271,20 +271,23 @@ public static class MessagingDashboardEndpoints
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
-        var ps = await monitoringApi.HourlySucceededJobs(MessageType.Publish).ConfigureAwait(false);
-        var pf = await monitoringApi.HourlyFailedJobs(MessageType.Publish).ConfigureAwait(false);
-        var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe).ConfigureAwait(false);
-        var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe).ConfigureAwait(false);
+        var ps = await monitoringApi.GetHourlySucceededJobsAsync(MessageType.Publish).ConfigureAwait(false);
+        var pf = await monitoringApi.GetHourlyFailedJobsAsync(MessageType.Publish).ConfigureAwait(false);
+        var ss = await monitoringApi.GetHourlySucceededJobsAsync(MessageType.Subscribe).ConfigureAwait(false);
+        var sf = await monitoringApi.GetHourlyFailedJobsAsync(MessageType.Subscribe).ConfigureAwait(false);
 
-        var dayHour = ps.Keys.Order().Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
+        // Align all four series to one ascending hour axis instead of relying on dictionary
+        // enumeration order; a bucket missing from a series (the clock ticking over an hour
+        // between the four queries) counts as zero.
+        var hours = ps.Keys.Order().ToArray();
 
         var result = new
         {
-            DayHour = dayHour.ToArray(),
-            PublishSuccessed = ps.Values.Reverse(),
-            PublishFailed = pf.Values.Reverse(),
-            SubscribeSuccessed = ss.Values.Reverse(),
-            SubscribeFailed = sf.Values.Reverse(),
+            DayHour = hours.Select(x => x.ToUnixTimeSeconds()).ToArray(),
+            PublishSuccessed = hours.Select(x => ps.GetValueOrDefault(x)).ToArray(),
+            PublishFailed = hours.Select(x => pf.GetValueOrDefault(x)).ToArray(),
+            SubscribeSuccessed = hours.Select(x => ss.GetValueOrDefault(x)).ToArray(),
+            SubscribeFailed = hours.Select(x => sf.GetValueOrDefault(x)).ToArray(),
         };
 
         cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));

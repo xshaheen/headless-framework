@@ -130,22 +130,22 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         return ValueTask.FromResult(stats);
     }
 
-    public ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+    public ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlyFailedJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return _GetHourlyTimelineStats(type, nameof(StatusName.Failed));
+        return _GetHourlyTimelineStats(type, StatusName.Failed);
     }
 
-    public ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+    public ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlySucceededJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return _GetHourlyTimelineStats(type, nameof(StatusName.Succeeded));
+        return _GetHourlyTimelineStats(type, StatusName.Succeeded);
     }
 
     public ValueTask<IndexPage<MessageView>> GetMessagesAsync(
@@ -271,81 +271,64 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
     }
 
-    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
     }
 
-    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
     }
 
-    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
     }
 
-    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
     }
 
-    private ValueTask<Dictionary<DateTime, int>> _GetHourlyTimelineStats(MessageType type, string statusName)
+    private ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> _GetHourlyTimelineStats(
+        MessageType type,
+        StatusName statusName
+    )
     {
-        // Hourly buckets are label keys, not persisted instants.
-        var endDate = timeProvider.GetUtcNow().UtcDateTime;
-        var dates = new List<DateTime>();
+        // Buckets cover the current UTC hour and the 23 preceding hours, keyed by hour start
+        // (newest first, matching the SQL-backed monitoring implementations).
+        var currentHour = timeProvider.GetUtcNow().TruncateToHours();
+        var oldestHour = currentHour.AddHours(-23);
+
+        var result = new Dictionary<DateTimeOffset, int>(capacity: 24);
+
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(endDate);
-            endDate = endDate.AddHours(-1);
+            result[currentHour.AddHours(-i)] = 0;
         }
 
-        var keyMaps = dates.ToDictionary(
-            x => x.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
-            x => x,
-            StringComparer.Ordinal
-        );
+        var messages = type == MessageType.Publish ? storage.PublishedMessages.Values : storage.ReceivedMessages.Values;
 
-        var valuesMap =
-            type == MessageType.Publish
-                ? storage
-                    .PublishedMessages.Values.Where(x =>
-                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                    )
-                    .GroupBy(
-                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
-                        StringComparer.Ordinal
-                    )
-                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal)
-                : storage
-                    .ReceivedMessages.Values.Where(x =>
-                        string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
-                    )
-                    .GroupBy(
-                        x => x.Added.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
-                        StringComparer.Ordinal
-                    )
-                    .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-
-        foreach (var key in keyMaps.Keys)
+        foreach (var message in messages)
         {
-            valuesMap.TryAdd(key, 0);
+            if (message.StatusName != statusName)
+            {
+                continue;
+            }
+
+            var bucket = message.Added.ToUniversalTime().TruncateToHours();
+
+            if (bucket >= oldestHour && bucket <= currentHour)
+            {
+                result[bucket]++;
+            }
         }
 
-        var result = new Dictionary<DateTime, int>();
-
-        for (var i = 0; i < keyMaps.Count; i++)
-        {
-            var value = valuesMap[keyMaps.ElementAt(i).Key];
-            result.Add(keyMaps.ElementAt(i).Value, value);
-        }
-
-        return ValueTask.FromResult(result);
+        return ValueTask.FromResult<IReadOnlyDictionary<DateTimeOffset, int>>(result);
     }
 }
