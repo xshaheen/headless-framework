@@ -7,7 +7,7 @@ namespace Headless.Api.Contracts;
 
 /// <summary>
 /// API request contract for a phone number composed of an ITU country dialling code and a local
-/// subscriber number. Use the included <c>PhoneNumber</c>
+/// subscriber number. Install <c>Headless.Api.FluentValidation</c> and use its <c>PhoneNumber</c>
 /// validator extension to enforce format rules before mapping to the domain <see cref="PhoneNumber"/>
 /// primitive.
 /// </summary>

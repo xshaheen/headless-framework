@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
+packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
 ---
 
 # API & Web
@@ -37,6 +37,7 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
     - [Key Features](#key-features-2)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
+    - [Tenant-Context Exception Mapping](#tenant-context-exception-mapping)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
@@ -48,24 +49,24 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.Api.Idempotency](#headlessapiidempotency)
+- [Headless.Api.FluentValidation](#headlessapifluentvalidation)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-1)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
-- [Headless.Api.Logging.Serilog](#headlessapiloggingserilog)
+- [Headless.Api.Idempotency](#headlessapiidempotency)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
-- [Headless.Api.MinimalApi](#headlessapiminimalapi)
+- [Headless.Api.Logging.Serilog](#headlessapiloggingserilog)
     - [Problem Solved](#problem-solved-6)
     - [Key Features](#key-features-6)
     - [Installation](#installation-6)
@@ -73,7 +74,7 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
     - [Configuration](#configuration-6)
     - [Dependencies](#dependencies-6)
     - [Side Effects](#side-effects-6)
-- [Headless.Api.Mvc](#headlessapimvc)
+- [Headless.Api.MinimalApi](#headlessapiminimalapi)
     - [Problem Solved](#problem-solved-7)
     - [Key Features](#key-features-7)
     - [Installation](#installation-7)
@@ -81,6 +82,14 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
     - [Configuration](#configuration-7)
     - [Dependencies](#dependencies-7)
     - [Side Effects](#side-effects-7)
+- [Headless.Api.Mvc](#headlessapimvc)
+    - [Problem Solved](#problem-solved-8)
+    - [Key Features](#key-features-8)
+    - [Installation](#installation-8)
+    - [Quick Start](#quick-start-8)
+    - [Configuration](#configuration-8)
+    - [Dependencies](#dependencies-8)
+    - [Side Effects](#side-effects-8)
 
 > ASP.NET Core API infrastructure: service registration, JWT, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
 
@@ -100,7 +109,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 
 Additional packages:
 
-- `Headless.FluentValidation` — general validation plus `IFormFile` upload validators. `Headless.Api.Core` owns validators for its `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest` contracts.
+- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them byte-equivalent on identical retries. See [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
@@ -120,7 +129,7 @@ Additional packages:
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
-- Use `Headless.FluentValidation` for file rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`). Use the `Headless.Api.Core` contract extensions (`PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for framework API requests; do not write manual boundary-validation logic.
+- Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
@@ -264,7 +273,6 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
-- FluentValidation extensions for API-owned `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest` contracts
 
 ### Design Notes
 
@@ -273,7 +281,6 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
-- API request-contract validators live with their contracts in `Headless.Api.Core`; reusable rules and `IFormFile` validators remain in `Headless.FluentValidation`.
 
 ### Installation
 
@@ -613,6 +620,83 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
 - `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)
 - `AddDataProtectionKeyRing()` adds an `IHealthCheck` registration (default name `dataprotection-keyring`); with the default `KeyRingProbeStyle.WriteProbe`, each probe writes and deletes the sentinel blob
+
+---
+
+## Headless.Api.FluentValidation
+
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
+
+### Problem Solved
+
+Provides reusable, type-safe validators for file uploads and common API request contracts, keeping validation rules out of `Headless.Api.Core` while eliminating repeated boundary-validation boilerplate.
+
+### Key Features
+
+- `FileNotEmpty()` — validates file has content
+- `GreaterThanOrEqualTo(bytes)` — minimum file size validation
+- `LessThanOrEqualTo(bytes)` — maximum file size validation
+- `ContentTypes(list)` — MIME type allowlist validation
+- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
+- `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
+- `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
+- `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
+- Localized error messages (English, Arabic)
+
+### Installation
+
+```bash
+dotnet add package Headless.Api.FluentValidation
+```
+
+### Quick Start
+
+```csharp
+using FileSignatures;
+using FileSignatures.Formats;
+using FluentValidation;
+using Headless.Api.Contracts;
+using Headless.FluentValidation;
+using Microsoft.AspNetCore.Http;
+
+public sealed record ProfileRequest(
+    IFormFile? Avatar,
+    PhoneNumberRequest? PhoneNumber,
+    GeoCoordinateRequest? Location,
+    PageMetadataRequest? Metadata
+);
+
+public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
+{
+    public ProfileRequestValidator(IFileFormatInspector inspector)
+    {
+        RuleFor(x => x.Avatar)
+            .FileNotEmpty()
+            .LessThanOrEqualTo(5 * 1024 * 1024) // 5MB
+            .ContentTypes(["image/jpeg", "image/png"])
+            .HaveSignatures(inspector, format => format is Jpeg or Png);
+
+        RuleFor(x => x.PhoneNumber).PhoneNumber();
+        RuleFor(x => x.Location).GeoCoordinate();
+        RuleFor(x => x.Metadata).PageMetadata();
+    }
+}
+```
+
+### Configuration
+
+No configuration required.
+
+### Dependencies
+
+- `Headless.FluentValidation`
+- `Headless.Api.Core`
+- `FileSignatures`
+- `Microsoft.AspNetCore.App` (framework reference)
+
+### Side Effects
+
+None.
 
 ---
 

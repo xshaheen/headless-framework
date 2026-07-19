@@ -1,10 +1,10 @@
 # Headless.FluentValidation
 
-FluentValidation extensions for reusable application rules and ASP.NET Core API boundaries.
+Extension library for FluentValidation providing additional validators and utilities.
 
 ## Problem Solved
 
-Provides common validators, file-upload rules, and standardized error handling in one package, eliminating repeated boundary-validation logic across projects.
+Provides a comprehensive suite of common validators (phone numbers, national IDs, URLs, pagination) and standardized error handling, eliminating the need to rewrite common validation logic across projects.
 
 ## Key Features
 
@@ -17,7 +17,6 @@ Provides common validators, file-upload rules, and standardized error handling i
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) with an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
-- ASP.NET Core file-upload validation for size, declared content type, and binary signatures
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 
@@ -39,29 +38,6 @@ public sealed class UserValidator : AbstractValidator<User>
         RuleFor(x => x.PhoneNumber).InternationalPhoneNumber();
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Roles).MinimumElements(1).UniqueElements();
-    }
-}
-```
-
-### API Boundary Validation
-
-```csharp
-using FileSignatures;
-using FileSignatures.Formats;
-using FluentValidation;
-using Microsoft.AspNetCore.Http;
-
-public sealed record ProfileRequest(IFormFile? Avatar);
-
-public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
-{
-    public ProfileRequestValidator(IFileFormatInspector inspector)
-    {
-        RuleFor(x => x.Avatar)
-            .FileNotEmpty()
-            .LessThanOrEqualTo(5 * 1024 * 1024)
-            .ContentTypes(["image/jpeg", "image/png"])
-            .HaveSignatures(inspector, format => format is Jpeg or Png);
     }
 }
 ```
@@ -148,7 +124,6 @@ constants and localized descriptor factories live in `Headless.FluentValidation.
 | Enum | `EnumName(typeof(TEnum))` |
 | Safe Text | `NoScripts` |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
-| File Upload | `FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures` |
 
 ## Configuration
 
@@ -157,10 +132,8 @@ No configuration required.
 ## Dependencies
 
 - `FluentValidation`
-- `FileSignatures`
 - `libphonenumber-csharp`
 - `Headless.Extensions`
-- `Microsoft.AspNetCore.App` (framework reference)
 
 ## Side Effects
 

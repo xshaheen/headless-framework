@@ -417,7 +417,6 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FileSignatures": "[7.2.1, )",
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
           "libphonenumber-csharp": "[9.0.34, )"

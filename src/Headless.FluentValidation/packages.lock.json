@@ -20,15 +20,6 @@
         "resolved": "0.1.2",
         "contentHash": "RQdzUtFVhwLwisP2Du7Ugm7ldwAzc+QJrlZWNIwHXcgq4b5fLwZgdN1203RdYiHS8OOALophC6yWekxu3UgN2g=="
       },
-      "FileSignatures": {
-        "type": "Direct",
-        "requested": "[7.2.1, )",
-        "resolved": "7.2.1",
-        "contentHash": "ULT/TuNUbusDpp5BnpsiSMkGEHPtPva7lbaQbnm32xa/lgZDPGOkpd9xY0b+Z6rLZUJuxBCBjV0egeqR5awARg==",
-        "dependencies": {
-          "OpenMcdf": "3.1.4"
-        }
-      },
       "FluentValidation": {
         "type": "Direct",
         "requested": "[12.1.1, )",
@@ -272,12 +263,6 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
-      },
-      "OpenMcdf": {
-        "type": "CentralTransitive",
-        "requested": "[3.1.4, )",
-        "resolved": "3.1.4",
-        "contentHash": "ncchtCh9YKqutHTlUCrr1llXA65ijGOCjXBM0mL1+WaGouApWDEACWbBHGzuYcAvB+rgW6IgO4AKgmZ2v1moNA=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

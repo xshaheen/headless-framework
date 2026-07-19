@@ -6,8 +6,8 @@ using Headless.Primitives;
 namespace Headless.Api.Contracts;
 
 /// <summary>
-/// API request contract for a geographic coordinate pair. Use the included <c>GeoCoordinate</c>
-/// validator extension to validate that the latitude and longitude
+/// API request contract for a geographic coordinate pair. Install <c>Headless.Api.FluentValidation</c>
+/// and use its <c>GeoCoordinate</c> validator extension to validate that the latitude and longitude
 /// values fall within valid WGS-84 ranges before mapping to the domain <see cref="GeoCoordinate"/>
 /// primitive.
 /// </summary>

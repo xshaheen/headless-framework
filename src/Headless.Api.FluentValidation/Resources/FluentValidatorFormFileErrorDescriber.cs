@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
-using FluentValidatorErrors = Headless.FluentValidation.Resources.FluentValidatorErrors;
+using FluentValidatorErrors = Headless.Api.FluentValidation.Resources.FluentValidatorErrors;
 
-namespace Headless.FluentValidation.Resources;
+namespace Headless.Api.FluentValidation.Resources;
 
 /// <summary>
 /// Factory methods that produce <see cref="ErrorDescriptor"/> instances for the file-upload FluentValidation rules

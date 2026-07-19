@@ -23,7 +23,6 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
-- FluentValidation extensions for API-owned `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest` contracts
 
 ## Design Notes
 
@@ -32,7 +31,6 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
-- API request-contract validators live with their contracts in this package; reusable rules and `IFormFile` validators remain in `Headless.FluentValidation`.
 
 ## Installation
 
