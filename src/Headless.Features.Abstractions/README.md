@@ -12,6 +12,7 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 - `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
 - `IFeatureDefinitionManager` — looks up and enumerates all registered feature definitions
 - `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure); implements `ICanAddChildFeature` for fluent `AddChild(...)`
+- `FeatureDefinitionCreateOptions` — initializer-based feature metadata with a required `Name`; optional values remain additive without constructor churn
 - `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration; also implements `ICanAddChildFeature`
 - `ICanAddChildFeature` — shared fluent contract (`AddChild(...)`) implemented by both `FeatureGroupDefinition` and `FeatureDefinition` (renamed from `ICanCreateChildFeature`)
 - `IFeatureDefinitionContext` — passed to each provider's `Define`; exposes `AddGroup(name, displayName)`, `GetGroupOrDefault(name)`, and `RemoveGroup(name)`. Groups are created by name — there is no instance-taking `AddGroup(FeatureGroupDefinition)` overload
@@ -70,12 +71,16 @@ public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
     {
         var group = context.AddGroup("App.Features");
 
-        group.AddChild(new FeatureDefinitionCreateOptions("MaxUsers") { DefaultValue = "10" });
-        group.AddChild(new FeatureDefinitionCreateOptions("EnableReports") { DefaultValue = "false" });
+        group.AddChild(new FeatureDefinitionCreateOptions { Name = "MaxUsers", DefaultValue = "10" });
+        group.AddChild(new FeatureDefinitionCreateOptions { Name = "EnableReports", DefaultValue = "false" });
 
         // Nested child features
-        var billingFeature = group.AddChild(new FeatureDefinitionCreateOptions("Billing") { DefaultValue = "false" });
-        billingFeature.AddChild(new FeatureDefinitionCreateOptions("Billing.Invoices") { DefaultValue = "false" });
+        var billingFeature = group.AddChild(
+            new FeatureDefinitionCreateOptions { Name = "Billing", DefaultValue = "false" }
+        );
+        billingFeature.AddChild(
+            new FeatureDefinitionCreateOptions { Name = "Billing.Invoices", DefaultValue = "false" }
+        );
     }
 }
 ```

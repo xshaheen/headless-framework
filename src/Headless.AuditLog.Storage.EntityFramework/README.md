@@ -81,8 +81,9 @@ The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries
 ### Explicit event logging
 
 ```csharp
-await auditLog.LogAsync(new AuditLogWriteRequest("pii.revealed")
+await auditLog.LogAsync(new AuditLogWriteRequest
 {
+    Action = "pii.revealed",
     EntityType = typeof(Patient).FullName,
     EntityId = id.ToString(),
 });

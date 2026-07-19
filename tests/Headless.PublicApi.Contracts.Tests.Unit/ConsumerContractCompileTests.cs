@@ -56,12 +56,21 @@ public sealed class ConsumerContractCompileTests : TestBase
             {
                 public static void ConstructRequestsAndOptions()
                 {
-                    _ = new AuditLogWriteRequest("consumer.created") { EntityType = "Consumer", EntityId = null };
-                    _ = new AuditLogQuery { Action = null, Limit = 20 };
-                    _ = new SettingDefinitionCreateOptions("Consumer.Theme") { DefaultValue = null };
-                    _ = new FeatureDefinitionCreateOptions("Consumer.Enabled") { Description = null };
-                    _ = new JwtTokenValidationRequest("token", "signing-key", "issuer", "audience")
+                    _ = new AuditLogWriteRequest
                     {
+                        Action = "consumer.created",
+                        EntityType = "Consumer",
+                        EntityId = null,
+                    };
+                    _ = new AuditLogQuery { Action = null, Limit = 20 };
+                    _ = new SettingDefinitionCreateOptions { Name = "Consumer.Theme", DefaultValue = null };
+                    _ = new FeatureDefinitionCreateOptions { Name = "Consumer.Enabled", Description = null };
+                    _ = new JwtTokenValidationRequest
+                    {
+                        Token = "token",
+                        SigningKey = "signing-key",
+                        Issuer = "issuer",
+                        Audience = "audience",
                         EncryptingKey = null,
                     };
                     _ = new SitemapUrl(

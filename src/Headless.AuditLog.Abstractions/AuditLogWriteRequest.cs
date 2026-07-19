@@ -8,16 +8,13 @@ namespace Headless.AuditLog;
 [PublicAPI]
 public sealed class AuditLogWriteRequest
 {
-    /// <summary>Creates a request for the specified audit action.</summary>
-    /// <param name="action">A dot-namespaced action name, such as <c>pii.revealed</c>.</param>
-    /// <exception cref="ArgumentException"><paramref name="action"/> is empty or consists only of white-space characters.</exception>
-    public AuditLogWriteRequest(string action)
-    {
-        Action = Argument.IsNotNullOrWhiteSpace(action);
-    }
-
     /// <summary>Gets the dot-namespaced action name.</summary>
-    public string Action { get; }
+    /// <exception cref="ArgumentException">The initialized value is empty or consists only of white-space characters.</exception>
+    public required string Action
+    {
+        get;
+        init => field = Argument.IsNotNullOrWhiteSpace(value);
+    }
 
     /// <summary>Gets the optional CLR type name of the related entity.</summary>
     public string? EntityType { get; init; }

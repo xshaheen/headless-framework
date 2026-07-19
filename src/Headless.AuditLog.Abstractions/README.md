@@ -13,6 +13,7 @@ Provides a provider-agnostic audit log API for representing field-level entity c
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
+- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
 - `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
@@ -35,8 +36,9 @@ Log explicit events:
 
 ```csharp
 await auditLog.LogAsync(
-    new AuditLogWriteRequest("pii.revealed")
+    new AuditLogWriteRequest
     {
+        Action = "pii.revealed",
         EntityType = typeof(Patient).FullName,
         EntityId = id.ToString(),
         Data = new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId },

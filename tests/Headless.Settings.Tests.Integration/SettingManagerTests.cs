@@ -20,12 +20,34 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         var context = new SettingDefinitionContext(new Dictionary<string, SettingDefinition>(StringComparer.Ordinal));
 
-        context.Add(new("Setting1") { DefaultValue = "Value1", DisplayName = "Display1" });
-        context.Add(new("Setting2") { DefaultValue = "Value2", Description = "Description2" });
-        context.Add(new("Setting3") { DefaultValue = "Value3", IsInherited = true });
         context.Add(
-            new("Setting4")
+            new()
             {
+                Name = "Setting1",
+                DefaultValue = "Value1",
+                DisplayName = "Display1",
+            }
+        );
+        context.Add(
+            new()
+            {
+                Name = "Setting2",
+                DefaultValue = "Value2",
+                Description = "Description2",
+            }
+        );
+        context.Add(
+            new()
+            {
+                Name = "Setting3",
+                DefaultValue = "Value3",
+                IsInherited = true,
+            }
+        );
+        context.Add(
+            new()
+            {
+                Name = "Setting4",
                 DefaultValue = "Value4",
                 IsVisibleToClients = true,
                 IsEncrypted = true,
@@ -289,7 +311,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new("Setting1") { DefaultValue = "Value1" });
+            context.Add(new() { Name = "Setting1", DefaultValue = "Value1" });
         }
     }
 
@@ -298,7 +320,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new("Setting2") { DefaultValue = "Value2" });
+            context.Add(new() { Name = "Setting2", DefaultValue = "Value2" });
         }
     }
 

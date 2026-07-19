@@ -409,7 +409,12 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         await auditLog.LogAsync(
-            new("pii.revealed") { EntityType = "User", EntityId = "user-999" },
+            new()
+            {
+                Action = "pii.revealed",
+                EntityType = "User",
+                EntityId = "user-999",
+            },
             cancellationToken: AbortToken
         );
         await db.SaveChangesAsync(AbortToken);
@@ -445,7 +450,12 @@ public sealed class AuditLogIntegrationTests : TestBase
         };
 
         await auditLog.LogAsync(
-            new("pii.revealed") { EntityType = "User", EntityId = "user-999" },
+            new()
+            {
+                Action = "pii.revealed",
+                EntityType = "User",
+                EntityId = "user-999",
+            },
             cancellationToken: AbortToken
         );
         db.Orders.Add(order);

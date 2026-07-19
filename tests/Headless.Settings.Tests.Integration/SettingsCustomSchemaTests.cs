@@ -228,7 +228,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         public void Define(ISettingDefinitionContext context)
         {
-            var definition = context.Add(new(_SettingName) { DefaultValue = "Disabled" });
+            var definition = context.Add(new() { Name = _SettingName, DefaultValue = "Disabled" });
             definition.Providers.Add(UserSettingValueProvider.ProviderName);
         }
     }

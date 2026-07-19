@@ -8,36 +8,37 @@ namespace Headless.Api.Security.Jwt;
 [PublicAPI]
 public sealed class JwtTokenValidationRequest
 {
-    /// <summary>Creates a JWT validation request.</summary>
-    /// <param name="token">The compact-serialized JWT string to validate.</param>
-    /// <param name="signingKey">The HMAC-SHA256 key used to verify the signature.</param>
-    /// <param name="issuer">The expected issuer.</param>
-    /// <param name="audience">The expected audience.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public JwtTokenValidationRequest(string token, string signingKey, string issuer, string audience)
+    /// <summary>Gets the compact-serialized JWT string to validate.</summary>
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    public required string Token
     {
-        Argument.IsNotNull(token);
-        Argument.IsNotNull(signingKey);
-        Argument.IsNotNull(issuer);
-        Argument.IsNotNull(audience);
-
-        Token = token;
-        SigningKey = signingKey;
-        Issuer = issuer;
-        Audience = audience;
+        get;
+        init => field = Argument.IsNotNull(value);
     }
 
-    /// <summary>Gets the compact-serialized JWT string to validate.</summary>
-    public string Token { get; }
-
     /// <summary>Gets the HMAC-SHA256 key used to verify the signature.</summary>
-    public string SigningKey { get; }
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    public required string SigningKey
+    {
+        get;
+        init => field = Argument.IsNotNull(value);
+    }
 
     /// <summary>Gets the expected issuer.</summary>
-    public string Issuer { get; }
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    public required string Issuer
+    {
+        get;
+        init => field = Argument.IsNotNull(value);
+    }
 
     /// <summary>Gets the expected audience.</summary>
-    public string Audience { get; }
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    public required string Audience
+    {
+        get;
+        init => field = Argument.IsNotNull(value);
+    }
 
     /// <summary>Gets the optional JWE decryption key.</summary>
     public string? EncryptingKey { get; init; }

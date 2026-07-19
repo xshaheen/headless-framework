@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Headless.Api.Security.Jwt;
 using Headless.AuditLog;
 using Headless.Caching;
@@ -118,23 +119,48 @@ public sealed class PublicApiMetadataTests
     }
 
     [Fact]
-    public void request_and_options_constructor_parameters_should_preserve_non_null_metadata()
+    public void request_and_options_with_mandatory_values_should_use_required_initializers()
     {
-        var nullability = new NullabilityInfoContext();
-        var constructors = new (Type Type, Type[] ParameterTypes)[]
+        var properties = new (Type Type, string PropertyName)[]
         {
-            (typeof(AuditLogWriteRequest), [typeof(string)]),
-            (typeof(SettingDefinitionCreateOptions), [typeof(string)]),
-            (typeof(FeatureDefinitionCreateOptions), [typeof(string)]),
-            (typeof(JwtTokenValidationRequest), [typeof(string), typeof(string), typeof(string), typeof(string)]),
-            (typeof(CashInBillingData), [typeof(string), typeof(string), typeof(string), typeof(string)]),
+            (typeof(AuditLogWriteRequest), nameof(AuditLogWriteRequest.Action)),
+            (typeof(SettingDefinitionCreateOptions), nameof(SettingDefinitionCreateOptions.Name)),
+            (typeof(FeatureDefinitionCreateOptions), nameof(FeatureDefinitionCreateOptions.Name)),
+            (typeof(JwtTokenValidationRequest), nameof(JwtTokenValidationRequest.Token)),
+            (typeof(JwtTokenValidationRequest), nameof(JwtTokenValidationRequest.SigningKey)),
+            (typeof(JwtTokenValidationRequest), nameof(JwtTokenValidationRequest.Issuer)),
+            (typeof(JwtTokenValidationRequest), nameof(JwtTokenValidationRequest.Audience)),
         };
 
-        foreach (
-            var parameter in constructors.SelectMany(contract =>
-                _GetPublicConstructor(contract.Type, contract.ParameterTypes).GetParameters()
-            )
-        )
+        foreach (var (type, propertyName) in properties)
+        {
+            var property = type.GetProperty(propertyName);
+
+            property.Should().NotBeNull();
+            property!.GetCustomAttribute<RequiredMemberAttribute>().Should().NotBeNull();
+            property.SetMethod.Should().NotBeNull();
+            property.SetMethod!.ReturnParameter.GetRequiredCustomModifiers().Should().Contain(typeof(IsExternalInit));
+        }
+
+        foreach (var type in properties.Select(property => property.Type).Distinct())
+        {
+            var constructors = type.GetConstructors();
+
+            constructors.Should().ContainSingle();
+            constructors[0].GetParameters().Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public void constructor_parameters_should_preserve_non_null_metadata()
+    {
+        var nullability = new NullabilityInfoContext();
+        var constructor = _GetPublicConstructor(
+            typeof(CashInBillingData),
+            [typeof(string), typeof(string), typeof(string), typeof(string)]
+        );
+
+        foreach (var parameter in constructor.GetParameters())
         {
             nullability.Create(parameter).ReadState.Should().Be(NullabilityState.NotNull);
         }

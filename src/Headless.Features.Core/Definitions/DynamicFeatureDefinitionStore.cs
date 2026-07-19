@@ -279,8 +279,9 @@ public sealed class DynamicFeatureDefinitionStore(
     )
     {
         var feature = featureContainer.AddChild(
-            new(featureRecord.Name)
+            new()
             {
+                Name = featureRecord.Name,
                 DefaultValue = featureRecord.DefaultValue,
                 DisplayName = featureRecord.DisplayName,
                 Description = featureRecord.Description,

@@ -91,8 +91,8 @@ public sealed class StaticSettingDefinitionStoreTests : TestBase
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new("Setting1") { DefaultValue = "default1" });
-            context.Add(new("Setting2") { DefaultValue = "default2" });
+            context.Add(new() { Name = "Setting1", DefaultValue = "default1" });
+            context.Add(new() { Name = "Setting2", DefaultValue = "default2" });
         }
     }
 
@@ -100,7 +100,7 @@ public sealed class StaticSettingDefinitionStoreTests : TestBase
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(new("AnotherSetting") { DefaultValue = "another-default" });
+            context.Add(new() { Name = "AnotherSetting", DefaultValue = "another-default" });
         }
     }
 }

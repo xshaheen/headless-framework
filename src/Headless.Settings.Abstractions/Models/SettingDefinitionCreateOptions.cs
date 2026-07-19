@@ -8,16 +8,13 @@ namespace Headless.Settings.Models;
 [PublicAPI]
 public sealed class SettingDefinitionCreateOptions
 {
-    /// <summary>Creates options for a setting with the specified unique name.</summary>
-    /// <param name="name">The unique setting name.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    public SettingDefinitionCreateOptions(string name)
-    {
-        Name = Argument.IsNotNull(name);
-    }
-
     /// <summary>Gets the unique setting name.</summary>
-    public string Name { get; }
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    public required string Name
+    {
+        get;
+        init => field = Argument.IsNotNull(value);
+    }
 
     /// <summary>Gets the optional default value used when no provider supplies a value.</summary>
     public string? DefaultValue { get; init; }

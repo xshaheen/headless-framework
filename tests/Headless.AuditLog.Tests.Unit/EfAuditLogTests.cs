@@ -49,7 +49,7 @@ public sealed class EfAuditLogTests : TestBase
             await cts.CancelAsync();
 
             // when
-            var act = () => sut.LogAsync(new("user.login"), cancellationToken: cts.Token);
+            var act = () => sut.LogAsync(new() { Action = "user.login" }, cancellationToken: cts.Token);
 
             // then - cancellation wins over the IsEnabled short-circuit and nothing is tracked
             await act.Should().ThrowAsync<OperationCanceledException>();
@@ -68,7 +68,7 @@ public sealed class EfAuditLogTests : TestBase
             var sut = _CreateSut(db, Options.Create(new AuditLogOptions { IsEnabled = false }));
 
             // when
-            await sut.LogAsync(new("user.login"), cancellationToken: AbortToken);
+            await sut.LogAsync(new() { Action = "user.login" }, cancellationToken: AbortToken);
 
             // then
             db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
@@ -123,8 +123,9 @@ public sealed class EfAuditLogTests : TestBase
 
             // when
             await sut.LogAsync(
-                new(action)
+                new()
                 {
+                    Action = action,
                     EntityType = entityType,
                     EntityId = entityId,
                     Success = false,
@@ -147,8 +148,9 @@ public sealed class EfAuditLogTests : TestBase
     [Fact]
     public void should_not_include_audit_payload_in_request_string()
     {
-        var request = new AuditLogWriteRequest("pii.revealed")
+        var request = new AuditLogWriteRequest
         {
+            Action = "pii.revealed",
             EntityId = "customer-secret",
             Data = new(StringComparer.Ordinal) { ["email"] = "private@example.com" },
         };

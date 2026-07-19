@@ -8,17 +8,14 @@ namespace Headless.Features.Models;
 [PublicAPI]
 public sealed class FeatureDefinitionCreateOptions
 {
-    /// <summary>Creates options for a feature with the specified unique name.</summary>
-    /// <param name="name">The unique feature name.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or consists only of white-space characters.</exception>
-    public FeatureDefinitionCreateOptions(string name)
-    {
-        Name = Argument.IsNotNullOrWhiteSpace(name);
-    }
-
     /// <summary>Gets the unique feature name.</summary>
-    public string Name { get; }
+    /// <exception cref="ArgumentNullException">The initialized value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The initialized value is empty or consists only of white-space characters.</exception>
+    public required string Name
+    {
+        get;
+        init => field = Argument.IsNotNullOrWhiteSpace(value);
+    }
 
     /// <summary>Gets the optional default value.</summary>
     public string? DefaultValue { get; init; }

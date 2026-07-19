@@ -58,14 +58,16 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(new SettingDefinitionCreateOptions("App.MaxFileSize")
+        context.Add(new SettingDefinitionCreateOptions
         {
+            Name = "App.MaxFileSize",
             DisplayName = "Maximum File Size",
             DefaultValue = "10485760",
         });
 
-        context.Add(new SettingDefinitionCreateOptions("App.ApiKey")
+        context.Add(new SettingDefinitionCreateOptions
         {
+            Name = "App.ApiKey",
             DisplayName = "API Key",
             IsEncrypted = true,
         });

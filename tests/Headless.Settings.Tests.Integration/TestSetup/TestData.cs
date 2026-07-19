@@ -26,8 +26,9 @@ public static class TestData
     public static SettingDefinition AddGenerated(this ISettingDefinitionContext context)
     {
         return context.Add(
-            new(Faker.Random.Guid().ToString("N"))
+            new()
             {
+                Name = Faker.Random.Guid().ToString("N"),
                 DefaultValue = Faker.Random.String2(1, SettingDefinitionRecordConstants.DefaultValueMaxLength),
                 DisplayName = Faker.Random.String2(1, SettingDefinitionRecordConstants.DisplayNameMaxLength),
                 Description = Faker.Random.String2(1, SettingDefinitionRecordConstants.DescriptionMaxLength),
@@ -46,8 +47,9 @@ public static class TestData
     public static SettingDefinition Add(this ISettingDefinitionContext context, SettingDefinition definition)
     {
         var added = context.Add(
-            new(definition.Name)
+            new()
             {
+                Name = definition.Name,
                 DefaultValue = definition.DefaultValue,
                 DisplayName = definition.DisplayName,
                 Description = definition.Description,

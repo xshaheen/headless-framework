@@ -37,8 +37,9 @@ public static class TestData
     private static void _ReplayFeature(ICanAddChildFeature parent, FeatureDefinition source)
     {
         var feature = parent.AddChild(
-            new(source.Name)
+            new()
             {
+                Name = source.Name,
                 DefaultValue = source.DefaultValue,
                 DisplayName = source.DisplayName,
                 Description = source.Description,
@@ -56,8 +57,9 @@ public static class TestData
     public static FeatureDefinition AddGeneratedFeatureDefinition(this FeatureGroupDefinition group)
     {
         return group.AddChild(
-            new(Faker.Random.String2(1, FeatureDefinitionRecordConstants.NameMaxLength))
+            new()
             {
+                Name = Faker.Random.String2(1, FeatureDefinitionRecordConstants.NameMaxLength),
                 DefaultValue = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DefaultValueMaxLength),
                 DisplayName = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DisplayNameMaxLength),
                 Description = Faker.Random.String2(1, FeatureDefinitionRecordConstants.DescriptionMaxLength),
