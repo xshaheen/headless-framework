@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -15,7 +16,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     IJobsNotificationHubSender notificationHubSender,
     CronScheduleCache cronScheduleCache,
     ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger,
-    JobsRequestSerializationOptions serializationOptions
+    JobsRequestSerializationOptions serializationOptions,
+    IGuidGenerator guidGenerator
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -599,7 +601,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return false;
         }
 
-        var occurrence = CronJobOccurrenceFactory.Create(definition, next.Value, now);
+        var occurrence = CronJobOccurrenceFactory.Create(definition, next.Value, now, guidGenerator);
         var updated = await persistenceProvider
             .ResumeCronJobAsync(definition.Id, definition.ScheduleRevision, occurrence, now, cancellationToken)
             .ConfigureAwait(false);

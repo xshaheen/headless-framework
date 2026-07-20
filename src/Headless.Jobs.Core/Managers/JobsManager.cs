@@ -368,7 +368,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
             var replacement =
                 scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence.Value, now)
+                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence.Value, now, guidGenerator)
                     : null;
             var updated = await persistenceProvider
                 .UpdateCronJobsAtomicallyAsync(
@@ -902,7 +902,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
             var replacement =
                 scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now)
+                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now, guidGenerator)
                     : null;
             updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement));
             needsRestart |= scheduleChanged;

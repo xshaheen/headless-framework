@@ -36,7 +36,6 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _rootTicker = new TTimeJob
         {
-            Id = Guid.NewGuid(),
             CreatedAt = now,
             UpdatedAt = now,
             Children = [],
@@ -193,8 +192,6 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         return new TTimeJob
         {
-            Id = Guid.NewGuid(),
-            ParentId = _rootTicker.Id,
             CreatedAt = now,
             UpdatedAt = now,
             Children = [],
@@ -207,8 +204,6 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         return new TTimeJob
         {
-            Id = Guid.NewGuid(),
-            ParentId = parent.Id,
             CreatedAt = now,
             UpdatedAt = now,
             Children = [],
