@@ -12,6 +12,7 @@ namespace Headless.Jobs;
 /// <param name="serviceProvider">The scoped service provider for this execution.</param>
 /// <param name="context">Scheduling metadata and cooperative-cancel hook for this execution.</param>
 /// <param name="cancellationToken">Token signalled when the job is cancelled or the host is shutting down.</param>
+[PublicAPI]
 public delegate Task JobFunctionDelegate(
     IServiceProvider serviceProvider,
     JobFunctionContext context,
