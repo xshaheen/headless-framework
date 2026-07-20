@@ -11,6 +11,8 @@
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
