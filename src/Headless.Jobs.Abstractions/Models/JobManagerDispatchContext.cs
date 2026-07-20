@@ -8,6 +8,7 @@ namespace Headless.Jobs.Models;
 /// SPI projection of a cron job definition that the manager dispatches to a persistence provider to generate and
 /// manage occurrences. Carries only the fields the scheduler loop needs, without loading the full entity graph.
 /// </summary>
+[PublicAPI]
 public class JobManagerDispatchContext(Guid id)
 {
     /// <summary>Identifier of the cron job definition.</summary>
@@ -36,6 +37,7 @@ public class JobManagerDispatchContext(Guid id)
 }
 
 /// <summary>Minimal projection of the most recent upcoming occurrence for a cron job definition.</summary>
+[PublicAPI]
 public class NextCronOccurrence(Guid id, DateTime createdAt)
 {
     /// <summary>Identifier of the upcoming occurrence row.</summary>
