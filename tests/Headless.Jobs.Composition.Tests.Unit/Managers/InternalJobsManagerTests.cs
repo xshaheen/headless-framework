@@ -30,7 +30,8 @@ public sealed class InternalJobsManagerTests : TestBase
             timeProvider,
             sender,
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
         var definition = new FakeCronJob
         {
@@ -82,7 +83,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new Microsoft.Extensions.Time.Testing.FakeTimeProvider(resumeTime),
             Substitute.For<IJobsNotificationHubSender>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
         var definition = new FakeCronJob
         {

@@ -297,7 +297,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_bounds_long_running_dedicated_threads()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 8, maxLongRunningConcurrency: 2);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 8,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 2
+        );
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var twoStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -344,7 +348,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task long_running_admission_honors_capacity_cancellation()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -399,7 +407,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     {
         // The dedicated-thread finally in _ExecuteLongRunningWorkAsync must release the permit even when the work
         // throws; otherwise a faulting long-running job would permanently leak its single slot.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var secondRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Occupy the only long-running slot with work that faults.
@@ -440,7 +452,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // A second long-running admission parks in the detached admission lane when the only slot is occupied.
         // DisposeAsync cancels the shutdown token linked into that wait, so the parked admission must be dropped
         // (its work never runs) and disposal must complete rather than hang on the parked waiter.
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -485,7 +501,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // Regression for the head-of-line hazard: sequential dispatch loops await QueueAsync per batch item, so a
         // saturated long-running pool must not park the caller — ordinary-priority work queued after a blocked
         // long-running admission has to run while that admission is still waiting for a slot.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var parkedStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -541,7 +561,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // The detached admission lane must not accumulate waiters without bound: under sustained saturation the
         // fallback sweep re-dispatches still-parked jobs every lease cycle, so admissions beyond two per slot are
         // rejected outright and rely on the sweep's re-dispatch instead of parking another waiter.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var executedCount = 0;

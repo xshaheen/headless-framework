@@ -10,6 +10,7 @@
     <InternalsVisibleTo Include="Headless.DistributedLocks.SqlServer" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Core.Database.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.SqlServer.Tests.Integration" />
   </ItemGroup>

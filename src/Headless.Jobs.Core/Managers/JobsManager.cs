@@ -137,10 +137,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        _StampTimeJobTree(entity, now);
+        _StampTimeJobTree(entity, now, assignIds: true);
 
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-        _StampTimeJobTree(entity, now);
+        _StampTimeJobTree(entity, now, assignIds: false);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -227,10 +227,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        _StampJob(entity, now);
+        _StampJob(entity, now, assignId: true);
 
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-        _StampJob(entity, now);
+        _StampJob(entity, now, assignId: false);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -549,7 +549,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         List<string>? errors = null;
         foreach (var entity in entities)
         {
-            _StampTimeJobTree(entity, now);
+            _StampTimeJobTree(entity, now, assignIds: true);
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
             {
@@ -560,7 +560,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-            _StampTimeJobTree(entity, now);
+            _StampTimeJobTree(entity, now, assignIds: false);
 
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
@@ -652,7 +652,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         foreach (var entity in entities)
         {
-            _StampJob(entity, now);
+            _StampJob(entity, now, assignId: true);
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
@@ -661,7 +661,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-            _StampJob(entity, now);
+            _StampJob(entity, now, assignId: false);
 
             DateTime? nextOccurrence;
             try
@@ -732,7 +732,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return validEntities;
     }
 
-    private void _StampTimeJobTree(TTimeJob root, DateTime now)
+    private void _StampTimeJobTree(TTimeJob root, DateTime now, bool assignIds)
     {
         var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
         var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
@@ -745,7 +745,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 throw new JobValidatorException("A time-job chain cannot contain cycles or reuse one child instance.");
             }
 
-            _StampJob(current.Job, now);
+            _StampJob(current.Job, now, assignIds);
             current.Job.ParentId = current.ParentId;
 
             foreach (var child in current.Job.Children.Reverse())
@@ -755,13 +755,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private void _StampJob(BaseJobEntity entity, DateTime now)
+    private void _StampJob(BaseJobEntity entity, DateTime now, bool assignId)
     {
-        if (entity.Id == Guid.Empty)
+        if (assignId)
         {
             entity.Id = guidGenerator.Create();
         }
-
         entity.CreatedAt = now;
         entity.UpdatedAt = now;
     }

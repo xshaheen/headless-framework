@@ -436,7 +436,8 @@ public sealed class JobSchedulerTests : TestBase
             Substitute.For<ICronJobManager<CronJobEntity>>(),
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
-            hostScheduler
+            hostScheduler,
+            JobsRequestSerializationOptions.Default
         );
 
         (await scheduler.PauseCronAsync(cronJobId, AbortToken)).Should().Be(accepted);
