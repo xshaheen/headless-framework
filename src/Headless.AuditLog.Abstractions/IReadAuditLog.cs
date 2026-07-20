@@ -19,26 +19,14 @@ public interface IReadAuditLog<TContext>
 {
     /// <summary>
     /// Queries audit log entries matching the specified filters.
-    /// All parameters are optional; omitted parameters are not filtered.
+    /// Unspecified filters are not applied.
     /// </summary>
-    /// <param name="action">Filter by action name (exact match).</param>
-    /// <param name="entityType">Filter by entity type (exact match).</param>
-    /// <param name="entityId">Filter by entity ID (exact match).</param>
-    /// <param name="userId">Filter by user ID.</param>
-    /// <param name="tenantId">Filter by tenant ID.</param>
-    /// <param name="from">Include entries created at or after this time.</param>
-    /// <param name="to">Include entries created before this time.</param>
-    /// <param name="limit">Maximum entries to return. Default: 100.</param>
+    /// <param name="query">The filters and result limit to apply.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="AuditLogQuery.Limit"/> is less than one.</exception>
     Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
-        string? action = null,
-        string? entityType = null,
-        string? entityId = null,
-        string? userId = null,
-        string? tenantId = null,
-        DateTimeOffset? from = null,
-        DateTimeOffset? to = null,
-        int limit = 100,
+        AuditLogQuery query,
         CancellationToken cancellationToken = default
     );
 }

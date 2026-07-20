@@ -28,10 +28,13 @@ public sealed class SitemapModelTests : TestBase
         const float priority = 0.8f;
 
         var sitemapUrl = new SitemapUrl(
-            location: location,
-            lastModified: lastModified,
-            changeFrequency: changeFrequency,
-            priority: priority
+            location,
+            new()
+            {
+                LastModified = lastModified,
+                ChangeFrequency = changeFrequency,
+                Priority = priority,
+            }
         );
 
         sitemapUrl.Location.Should().Be(location);
@@ -50,7 +53,7 @@ public sealed class SitemapModelTests : TestBase
             new SitemapImage(new Uri("https://www.example.com/image2.jpg")),
         };
 
-        var sitemapUrl = new SitemapUrl(location: location, images: images);
+        var sitemapUrl = new SitemapUrl(location, new() { Images = images });
 
         sitemapUrl.Images.Should().BeEquivalentTo(images);
     }
@@ -64,7 +67,7 @@ public sealed class SitemapModelTests : TestBase
             new SitemapAlternateUrl { Location = new Uri("https://www.example.com/de/page"), LanguageCode = "de" },
         };
 
-        var sitemapUrl = new SitemapUrl(alternateLocations: alternates);
+        var sitemapUrl = new SitemapUrl(alternates);
 
         sitemapUrl.AlternateLocations.Should().BeEquivalentTo(alternates);
         sitemapUrl.Location.Should().BeNull();
@@ -78,7 +81,7 @@ public sealed class SitemapModelTests : TestBase
             new SitemapAlternateUrl { Location = new Uri("https://www.example.com/en/page"), LanguageCode = "en" },
         };
 
-        var sitemapUrl = new SitemapUrl(alternateLocations: alternates);
+        var sitemapUrl = new SitemapUrl(alternates);
 
         sitemapUrl.Location.Should().BeNull();
         sitemapUrl.AlternateLocations.Should().NotBeNull();
@@ -93,9 +96,32 @@ public sealed class SitemapModelTests : TestBase
         };
         var langCodes = new[] { "en", "de" };
 
-        var sitemapUrl = new SitemapUrl(alternateLocations: alternates, writeAlternateLanguageCodes: langCodes);
+        var sitemapUrl = new SitemapUrl(alternates, new() { WriteAlternateLanguageCodes = langCodes });
 
         sitemapUrl.WriteAlternateLanguageCodes.Should().BeEquivalentTo(langCodes);
+    }
+
+    [Fact]
+    public void should_snapshot_enumerable_inputs()
+    {
+        var alternates = new List<SitemapAlternateUrl>
+        {
+            new() { Location = new Uri("https://www.example.com/en/page"), LanguageCode = "en" },
+        };
+        var images = new List<SitemapImage> { new(new Uri("https://www.example.com/image.jpg")) };
+        var languageCodes = new List<string> { "en" };
+
+        var sitemapUrl = new SitemapUrl(
+            alternates,
+            new() { Images = images, WriteAlternateLanguageCodes = languageCodes }
+        );
+        alternates.Clear();
+        images.Clear();
+        languageCodes.Clear();
+
+        sitemapUrl.AlternateLocations.Should().ContainSingle();
+        sitemapUrl.Images.Should().ContainSingle();
+        sitemapUrl.WriteAlternateLanguageCodes.Should().ContainSingle();
     }
 
     [Fact]
@@ -121,7 +147,7 @@ public sealed class SitemapModelTests : TestBase
     [InlineData(float.PositiveInfinity)]
     public void should_reject_priority_outside_range(float priority)
     {
-        var act = () => new SitemapUrl(new Uri("https://www.example.com"), priority: priority);
+        var act = () => new SitemapUrl(new Uri("https://www.example.com"), new() { Priority = priority });
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -132,7 +158,7 @@ public sealed class SitemapModelTests : TestBase
     [InlineData(1f)]
     public void should_accept_priority_within_range(float priority)
     {
-        var act = () => new SitemapUrl(new Uri("https://www.example.com"), priority: priority);
+        var act = () => new SitemapUrl(new Uri("https://www.example.com"), new() { Priority = priority });
 
         act.Should().NotThrow();
     }

@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Generator.Primitives.Shared;
 
 /// <summary>Extension methods for working with Roslyn's Compilation and related types.</summary>
-public static class SymbolExtensions
+internal static class SymbolExtensions
 {
     /// <summary>Checks if the symbol has public accessibility.</summary>
     /// <param name="symbol">The symbol to check.</param>

@@ -31,6 +31,12 @@ internal sealed class RedisConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("redis", options.Value.DisplayEndpoint);
 
     public async ValueTask SubscribeAsync(

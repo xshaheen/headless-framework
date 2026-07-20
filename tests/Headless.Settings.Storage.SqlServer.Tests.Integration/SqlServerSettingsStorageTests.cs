@@ -3,10 +3,10 @@
 using System.Data;
 using Headless;
 using Headless.Hosting.Initialization;
+using Headless.Security;
 using Headless.Settings;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
-using Headless.Settings.Seeders;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +31,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is not SettingsInitializationBackgroundService);
+            .Single(x => x is IHostedLifecycleService);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
         await repository.InsertAsync(record, AbortToken);

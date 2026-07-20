@@ -7,6 +7,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.Redis.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Caching.Bcl.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Caching.OutputCache.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Caching.Redis.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Coordination.Redis.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Redis.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Features.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Permissions.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Redis.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Settings.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
   <ItemGroup>

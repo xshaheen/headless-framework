@@ -52,16 +52,21 @@ public sealed class BucketContextProvider(
     )
         where T : CouchbaseBucketContext
     {
-        var (cluster, transactions) = await couchbaseClustersProvider
+        var connection = await couchbaseClustersProvider
             .GetClusterAsync(clusterKey, cancellationToken)
             .ConfigureAwait(false);
 
         // Couchbase's ICluster.BucketAsync exposes no CancellationToken overload, so honor the token before
         // opening the bucket; it is not observed for the duration of the (typically cached) bucket open.
         cancellationToken.ThrowIfCancellationRequested();
-        var bucket = await _GetBucketAsync(cluster, bucketName).ConfigureAwait(false);
+        var bucket = await _GetBucketAsync(connection.Cluster, bucketName).ConfigureAwait(false);
 
-        return CouchbaseBucketContextInitializer.Initialize<T>(serviceProvider, bucket, transactions, defaultScopeName);
+        return CouchbaseBucketContextInitializer.Initialize<T>(
+            serviceProvider,
+            bucket,
+            connection.Transactions,
+            defaultScopeName
+        );
     }
 
     private static ValueTask<IBucket> _GetBucketAsync(ICluster cluster, string bucketName)

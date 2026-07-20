@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -12,9 +11,7 @@ namespace Headless.DistributedLocks;
 /// shared mode, write locks in exclusive mode. Reader-writer handles never carry a fencing token.
 /// </summary>
 /// <param name="mutexProvider">The connection-scoped mutex provider whose shared/exclusive storage backs this.</param>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)
+internal sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)
     : IDistributedReadWriteLock
 {
     /// <summary>Delegates to <see cref="ConnectionScopedDistributedLock.TimeProvider"/>.</summary>

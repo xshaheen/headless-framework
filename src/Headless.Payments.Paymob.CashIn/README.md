@@ -20,6 +20,7 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 - `IPaymobCashInAuthenticator` — caches the 60-minute auth token; refreshes 5 minutes before expiry
 - `CashInCallbackTypes` — `TRANSACTION` and `TOKEN` callback type constants
 - `CashInStatuses` — `pending`, `declined`, `success` constants
+- `CashInBillingData` — requires first name, last name, phone number, and email in its constructor; optional address and shipping values are init-only properties that default to `"NA"`
 - `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
 
 ## Design Notes
@@ -29,6 +30,8 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 The package adds `AddStandardResilienceHandler()` to the named HTTP client automatically. Pass `configureResilience` to `AddPaymobCashIn(...)` to override the resilience policy.
 
 `PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
+
+All Paymob URL options require HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so API credentials and payment tokens cannot be configured for remote plaintext transport.
 
 ## Installation
 
@@ -58,7 +61,7 @@ Create a payment intention (v2 API — preferred):
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
 {
-    public async Task<string> CreatePaymentAsync(decimal amountCents, long integrationId, CancellationToken ct)
+    public async Task<string> CreatePaymentAsync(long amountCents, long integrationId, CancellationToken ct)
     {
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
@@ -79,6 +82,26 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
         );
 
         return response!.ClientSecret; // pass to your frontend Paymob.js
+    }
+
+    public Task<CashInPaymentKeyResponse> CreateLegacyPaymentKeyAsync(
+        long integrationId,
+        long orderId,
+        long amountCents,
+        CancellationToken ct
+    )
+    {
+        var billingData = new CashInBillingData("Ahmed", "Ali", "+201001234567", "ahmed@example.com")
+        {
+            Country = "EG",
+            City = "Cairo",
+            Street = "Tahrir Street",
+        };
+
+        return broker.RequestPaymentKeyAsync(
+            new CashInPaymentKeyRequest(integrationId, orderId, billingData, amountCents),
+            ct
+        );
     }
 }
 ```
@@ -124,6 +147,11 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 | `SecretKey` | Yes | — | Secret key for the v2 Intentions API. |
 | `ExpirationPeriod` | No | `3600` | Payment token lifetime in seconds (must be > 60). |
 | `TokenRefreshBuffer` | No | `00:55:00` | How early to refresh the auth token (must be < 60 min). |
+| `ApiBaseUrl` | No | `https://accept.paymobsolutions.com/api` | Legacy API base URL. |
+| `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | v2 Intentions endpoint. |
+| `RefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/refund` | Refund endpoint. |
+| `VoidRefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/void` | Void endpoint. |
+| `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
 ## Dependencies
 

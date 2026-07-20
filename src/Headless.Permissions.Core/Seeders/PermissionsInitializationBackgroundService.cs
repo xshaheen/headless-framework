@@ -21,9 +21,11 @@ namespace Headless.Permissions.Seeders;
 /// <para>
 /// On failure the <see cref="IInitializer.WaitForInitializationAsync"/> task surfaces the exception so
 /// dependents receive it rather than hanging indefinitely.
+/// Static-definition persistence retries other failures up to 10 times with jittered exponential back-off capped at
+/// 30 seconds. Cancellation, invalid arguments, and unsupported operations are not retried.
 /// </para>
 /// </summary>
-public sealed class PermissionsInitializationBackgroundService(
+internal sealed class PermissionsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<PermissionManagementOptions> optionsAccessor,
@@ -93,19 +95,13 @@ public sealed class PermissionsInitializationBackgroundService(
     {
         try
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await using var scope = serviceScopeFactory.CreateAsyncScope();
 
             await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await _PreCacheDynamicPermissionsAsync(scope, cancellationToken).ConfigureAwait(false);
 
@@ -135,10 +131,13 @@ public sealed class PermissionsInitializationBackgroundService(
         {
             Name = "SaveStaticPermissionToDatabaseRetry",
             Delay = TimeSpan.FromSeconds(2),
+            MaxDelay = TimeSpan.FromSeconds(30),
             MaxRetryAttempts = 10,
             BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            ShouldHandle = new PredicateBuilder().Handle<Exception>(),
+            UseJitter = true,
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(static exception =>
+                exception is not OperationCanceledException and not ArgumentException and not NotSupportedException
+            ),
         };
 
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
@@ -156,7 +155,7 @@ public sealed class PermissionsInitializationBackgroundService(
                     {
                         await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         logger.LogFailedToSaveStaticPermissions(e);
 

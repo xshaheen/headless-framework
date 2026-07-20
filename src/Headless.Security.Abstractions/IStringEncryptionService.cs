@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Security;
 
 /// <summary>Encrypts and decrypts string values using AES-GCM authenticated encryption.</summary>
 [PublicAPI]

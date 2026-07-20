@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.ServiceDefaults" />
-    <InternalsVisibleTo Include="Headless.Api.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Api.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Api.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Api.Mvc.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Integration" />

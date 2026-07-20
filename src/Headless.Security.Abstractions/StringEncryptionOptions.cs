@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Security;
 
 /// <summary>
 /// Configures the default values used by <see cref="IStringEncryptionService" />.

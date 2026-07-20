@@ -265,25 +265,25 @@ internal sealed class PostgreSqlMonitoringApi(
     }
 
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
-    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     /// <summary>Returns the total count of published messages in the <c>Succeeded</c> state.</summary>
-    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     /// <summary>Returns the total count of received messages in the <c>Failed</c> state.</summary>
-    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     /// <summary>Returns the total count of received messages in the <c>Succeeded</c> state.</summary>
-    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
@@ -292,7 +292,7 @@ internal sealed class PostgreSqlMonitoringApi(
     /// Returns a dictionary of UTC hour buckets to <c>Succeeded</c> message counts for the past 24 hours,
     /// from the published or received table depending on <paramref name="type"/>.
     /// </summary>
-    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+    public async ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlySucceededJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
@@ -307,7 +307,7 @@ internal sealed class PostgreSqlMonitoringApi(
     /// Returns a dictionary of UTC hour buckets to <c>Failed</c> message counts for the past 24 hours,
     /// from the published or received table depending on <paramref name="type"/>.
     /// </summary>
-    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+    public async ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlyFailedJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default
     )
@@ -339,49 +339,56 @@ internal sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
     }
 
-    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
+    private Task<IReadOnlyDictionary<DateTimeOffset, int>> _GetHourlyTimelineStats(
         string tableName,
         string statusName,
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow();
-        var dates = new List<DateTime>();
-        // Hourly buckets are label keys, not persisted instants: keep them DateTime.
-        var nowUtc = now.UtcDateTime;
+        // Buckets cover the current UTC hour and the 23 preceding hours, keyed by hour start
+        // (a DateTimeOffset with zero offset), newest first.
+        var currentHour = timeProvider.GetUtcNow().TruncateToHours();
+
+        var keyMaps = new Dictionary<string, DateTimeOffset>(capacity: 24, StringComparer.Ordinal);
 
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(nowUtc.AddHours(-i));
+            var bucket = currentHour.AddHours(-i);
+            keyMaps[bucket.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture)] = bucket;
         }
 
-        var keyMaps = dates.ToDictionary(
-            x => x.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
-            x => x,
-            StringComparer.Ordinal
-        );
+        var oldestHour = currentHour.AddHours(-23);
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], nowUtc, cancellationToken);
+        return _GetTimelineStats(
+            tableName,
+            statusName,
+            keyMaps,
+            oldestHour,
+            currentHour.AddHours(1),
+            cancellationToken
+        );
     }
 
-    private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
+    private async Task<IReadOnlyDictionary<DateTimeOffset, int>> _GetTimelineStats(
         string tableName,
         string statusName,
-        Dictionary<string, DateTime> keyMaps,
-        DateTime minAdded,
-        DateTime maxAdded,
+        Dictionary<string, DateTimeOffset> keyMaps,
+        DateTimeOffset minAdded,
+        DateTimeOffset maxAddedExclusive,
         CancellationToken cancellationToken = default
     )
     {
         var sqlQuery = $"""
             WITH Aggr AS (
-                -- HH24 (24-hour) matches the C# key built with DateTime.ToString("yyyy-MM-dd-HH"); Postgres 'HH'
-                -- is 12-hour, which silently mismatched buckets for hours 00 and 13-23.
-                SELECT to_char("Added",'yyyy-MM-dd-HH24') AS "Key",
+                -- AT TIME ZONE 'UTC' renders the timestamptz in UTC regardless of the session TimeZone,
+                -- matching the UTC hour-bucket keys built in C#. HH24 (24-hour) matches the C# key built
+                -- with ToString("yyyy-MM-dd-HH"); Postgres 'HH' is 12-hour, which silently mismatched
+                -- buckets for hours 00 and 13-23.
+                SELECT to_char("Added" AT TIME ZONE 'UTC','yyyy-MM-dd-HH24') AS "Key",
                 COUNT("Id") AS "Count"
                 FROM {tableName}
-                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" <= @MaxAdded
-                GROUP BY to_char("Added", 'yyyy-MM-dd-HH24')
+                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
+                GROUP BY to_char("Added" AT TIME ZONE 'UTC', 'yyyy-MM-dd-HH24')
             )
             SELECT "Key","Count" from Aggr;
             """;
@@ -389,8 +396,8 @@ internal sealed class PostgreSqlMonitoringApi(
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", statusName),
-            new NpgsqlParameter("@MinAdded", minAdded),
-            new NpgsqlParameter("@MaxAdded", maxAdded),
+            new NpgsqlParameter("@MinAdded", minAdded.UtcDateTime),
+            new NpgsqlParameter("@MaxAdded", maxAddedExclusive.UtcDateTime),
         ];
 
         await using var connection = _options.CreateConnection();
@@ -417,12 +424,12 @@ internal sealed class PostgreSqlMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        var result = new Dictionary<DateTime, int>();
+        var result = new Dictionary<DateTimeOffset, int>(capacity: keyMaps.Count);
 
-        foreach (var (key, dateTime) in keyMaps)
+        foreach (var (key, hourBucket) in keyMaps)
         {
             var value = valuesMap.GetValueOrDefault(key, 0);
-            result.Add(dateTime, value);
+            result.Add(hourBucket, value);
         }
 
         return result;

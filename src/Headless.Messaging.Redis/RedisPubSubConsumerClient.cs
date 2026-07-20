@@ -28,6 +28,12 @@ internal sealed class RedisPubSubConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
 
     public ValueTask<ICollection<string>> FetchMessageNamesAsync(

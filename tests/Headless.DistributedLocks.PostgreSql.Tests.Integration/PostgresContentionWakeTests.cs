@@ -9,8 +9,8 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresContentionWakeTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     [Theory]
     [InlineData(true)]
@@ -64,7 +64,7 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
 
     private async Task _WaitForHeldLockAsync(string keyMaterial)
     {
-        var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
         var (key1, key2) = key.Keys;
 
         using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));

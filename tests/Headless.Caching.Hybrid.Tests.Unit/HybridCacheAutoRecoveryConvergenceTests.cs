@@ -452,20 +452,20 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
-        return ((IFactoryCacheStore)backend).TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+        return ((IFactoryCacheStore)backend).TryGetEntryAsync<T>(key, readOptions, cancellationToken);
     }
 
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
-        return ((IFactoryCacheStore)backend).TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+        return ((IFactoryCacheStore)backend).TryGetAllEntriesAsync<T>(keys, readOptions, cancellationToken);
     }
 
     public ValueTask<bool> SetEntryAsync<T>(

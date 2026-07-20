@@ -2,7 +2,8 @@
 
 namespace Headless.Jobs.Infrastructure;
 
-internal sealed class StringToByteArrayConverter : JsonConverter<byte[]>
+internal sealed class StringToByteArrayConverter(JobsRequestSerializationOptions serializationOptions)
+    : JsonConverter<byte[]>
 {
     public override byte[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -21,7 +22,7 @@ internal sealed class StringToByteArrayConverter : JsonConverter<byte[]>
 
             var dataToObject = JsonSerializer.Deserialize<object>(stringValue);
             // Use JobsHelper to convert string to bytes (same logic as backend)
-            return JobsHelper.CreateJobRequest(dataToObject);
+            return JobsHelper.CreateJobRequest(dataToObject, serializationOptions);
         }
 
         if (reader.TokenType == JsonTokenType.StartArray)
@@ -46,7 +47,7 @@ internal sealed class StringToByteArrayConverter : JsonConverter<byte[]>
 
         try
         {
-            var stringValue = JobsHelper.ReadJobRequestAsString(value);
+            var stringValue = JobsHelper.ReadJobRequestAsString(value, serializationOptions);
             writer.WriteStringValue(stringValue);
         }
 #pragma warning disable ERP022  // Fallback to raw byte array when string deserialization fails.

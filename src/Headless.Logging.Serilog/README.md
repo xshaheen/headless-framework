@@ -100,7 +100,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 
 ### Options
 
-`SerilogOptions` controls file-sink behaviour. Pass an instance to either factory method.
+`SerilogOptions` controls file-sink behaviour. Pass an instance to either factory method. Invalid values fail fast at construction: `LogDirectory` must be non-whitespace, and `RetainedFileCountLimit` / `MaxHeaderLength` must be positive when set.
 
 | Property | Type | Default | Notes |
 |---|---|---|---|

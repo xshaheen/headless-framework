@@ -10,6 +10,34 @@ namespace Tests;
 public sealed class CommitScopeFactoryTests : TestBase
 {
     [Fact]
+    public async Task should_reject_unspecified_outcome_before_claiming_scope_signal()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var calls = 0;
+
+        await using var scope = factory.Begin(new EmptyServiceProvider());
+        scope.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                calls++;
+
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        var act = () => scope.SignalAsync(CommitOutcome.Unspecified).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("outcome");
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.Active);
+        calls.Should().Be(0);
+
+        await scope.SignalAsync(CommitOutcome.Committed);
+
+        calls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_restore_parent_current_after_child_scope_disposes()
     {
         var stack = new CommitScopeStack();

@@ -6,6 +6,7 @@ using Couchbase.Management.Collections;
 using Headless.Couchbase.Clusters;
 using Headless.Couchbase.Managers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -16,6 +17,7 @@ public sealed class CouchbaseManagerScopeCacheTests
     {
         var manager = new CouchbaseManager(
             Substitute.For<ICouchbaseClustersProvider>(),
+            Options.Create(new CouchbaseManagerOptions()),
             NullLogger<CouchbaseManager>.Instance
         );
         var bucket = Substitute.For<IBucket>();

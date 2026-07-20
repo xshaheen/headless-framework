@@ -2,7 +2,7 @@
 
 namespace Headless.Generator.Primitives.Shared;
 
-public static class StaticValues
+internal static class StaticValues
 {
     public const string InvariantCulture = $"{TypeNames.CultureInfo}.InvariantCulture";
     public const string AssumeLocal = $"{TypeNames.DateTimeStyles}.AssumeLocal";

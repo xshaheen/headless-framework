@@ -64,7 +64,7 @@ public static class ApiResultMvcExtensions
     }
 
     /// <summary>
-    /// Maps a <see cref="ResultError"/> to the appropriate problem-details MVC action result using
+    /// Maps a <see cref="ApiResultError"/> to the appropriate problem-details MVC action result using
     /// pattern matching on the concrete error type.
     /// </summary>
     /// <param name="error">The error to map.</param>
@@ -72,7 +72,7 @@ public static class ApiResultMvcExtensions
     /// <param name="creator">The problem-details creator used to build the response body.</param>
     /// <returns>An <see cref="ActionResult"/> with the appropriate HTTP status code and problem-details body.</returns>
     public static ActionResult ToActionResult(
-        this ResultError error,
+        this ApiResultError error,
         ControllerBase controller,
         IProblemDetailsCreator creator
     )

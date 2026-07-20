@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Exceptions;
+using Headless.Security;
 using Headless.Settings.Models;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;

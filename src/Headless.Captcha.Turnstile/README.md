@@ -88,7 +88,7 @@ options.SiteKey = "your-site-key"; // required — rendered into the client widg
 options.SiteSecret = "your-secret-key"; // required — used for server-side verification
 ```
 
-Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload. `TurnstileOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty and `VerifyBaseUrl` to be an HTTP(S) URL, validated at startup.
+Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload. `TurnstileOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty. `VerifyBaseUrl` requires HTTPS for external hosts, permits HTTP only for loopback development/test servers, and rejects userinfo; validation runs at startup.
 
 ## Dependencies
 

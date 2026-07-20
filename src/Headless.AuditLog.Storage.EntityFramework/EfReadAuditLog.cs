@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;
@@ -9,59 +10,54 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
-        string? action = null,
-        string? entityType = null,
-        string? entityId = null,
-        string? userId = null,
-        string? tenantId = null,
-        DateTimeOffset? from = null,
-        DateTimeOffset? to = null,
-        int limit = 100,
+        AuditLogQuery query,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(query);
+        Argument.IsPositive(query.Limit, "The query limit must be positive.", nameof(query));
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var query = context.Set<AuditLogEntry>().AsNoTracking().AsQueryable();
+        var entriesQuery = context.Set<AuditLogEntry>().AsNoTracking().AsQueryable();
 
-        if (action is not null)
+        if (query.Action is not null)
         {
-            query = query.Where(e => e.Action == action);
+            entriesQuery = entriesQuery.Where(e => e.Action == query.Action);
         }
 
-        if (entityType is not null)
+        if (query.EntityType is not null)
         {
-            query = query.Where(e => e.EntityType == entityType);
+            entriesQuery = entriesQuery.Where(e => e.EntityType == query.EntityType);
         }
 
-        if (entityId is not null)
+        if (query.EntityId is not null)
         {
-            query = query.Where(e => e.EntityId == entityId);
+            entriesQuery = entriesQuery.Where(e => e.EntityId == query.EntityId);
         }
 
-        if (userId is not null)
+        if (query.UserId is not null)
         {
-            query = query.Where(e => e.UserId == userId);
+            entriesQuery = entriesQuery.Where(e => e.UserId == query.UserId);
         }
 
-        if (tenantId is not null)
+        if (query.TenantId is not null)
         {
-            query = query.Where(e => e.TenantId == tenantId);
+            entriesQuery = entriesQuery.Where(e => e.TenantId == query.TenantId);
         }
 
-        if (from is not null)
+        if (query.From is not null)
         {
-            query = query.Where(e => e.CreatedAt >= from.Value.UtcDateTime);
+            entriesQuery = entriesQuery.Where(e => e.CreatedAt >= query.From.Value.UtcDateTime);
         }
 
-        if (to is not null)
+        if (query.To is not null)
         {
-            query = query.Where(e => e.CreatedAt < to.Value.UtcDateTime);
+            entriesQuery = entriesQuery.Where(e => e.CreatedAt < query.To.Value.UtcDateTime);
         }
 
-        var entries = await query
+        var entries = await entriesQuery
             .OrderByDescending(e => e.CreatedAt)
             .ThenByDescending(e => e.Id)
-            .Take(limit)
+            .Take(query.Limit)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

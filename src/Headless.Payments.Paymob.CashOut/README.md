@@ -9,7 +9,7 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 ## Key Features
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
-  - `Disburse(request)` — execute disbursement, returns `CashOutTransaction`
+  - `DisburseAsync(request)` — execute disbursement, returns `CashOutTransaction`
   - `GetBudgetAsync()` — query available balance, returns `CashOutBudgetResponse` (rate-limited to 5 req/min)
   - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup, returns `CashOutGetTransactionsResponse`
 - `IPaymobCashOutAuthenticator` — OAuth2 password-grant token management with in-memory caching
@@ -30,9 +30,11 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 ## Design Notes
 
-`IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `Disburse(...)` (not `DisburseAsync`). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
+`IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (with the standard async suffix). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
 The CashOut authentication uses OAuth2 password grant. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
+
+`ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
 
 ## Installation
 
@@ -67,7 +69,7 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
     )
     {
         var request = CashOutDisburseRequest.Vodafone(amount, phoneNumber);
-        var result = await broker.Disburse(request, ct);
+        var result = await broker.DisburseAsync(request, ct);
 
         if (result.IsFailed())
         {
@@ -91,7 +93,7 @@ var request = CashOutDisburseRequest.BankCard(
     transactionType: BankTransactionTypes.CashTransfer,
     fullName: "Ahmed Ali"
 );
-var result = await broker.Disburse(request, cancellationToken);
+var result = await broker.DisburseAsync(request, cancellationToken);
 ```
 
 ## Configuration

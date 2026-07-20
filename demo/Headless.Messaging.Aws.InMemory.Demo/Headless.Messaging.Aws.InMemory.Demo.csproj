@@ -7,6 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Aws\Headless.Messaging.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />
   </ItemGroup>
 </Project>

@@ -40,17 +40,6 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         _calls.Add(new DispatchCall(NextIndex(), kind, payload));
     }
 
-    public void Publish<T>(T domainEvent)
-        where T : class, IDomainEvent
-    {
-        _RecordLocal(domainEvent);
-    }
-
-    public void Publish(IDomainEvent domainEvent)
-    {
-        _RecordLocal(domainEvent);
-    }
-
     public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
         where T : class, IDomainEvent
     {

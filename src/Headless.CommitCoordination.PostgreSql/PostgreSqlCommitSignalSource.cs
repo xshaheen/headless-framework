@@ -18,8 +18,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// <see cref="SignalRolledBackAsync(object)" /> immediately after committing or rolling that
 /// transaction back. If the caller never signals, disposing the returned scope discards the enlisted work.
 /// </remarks>
-[PublicAPI]
-public sealed partial class PostgreSqlCommitSignalSource(
+internal sealed partial class PostgreSqlCommitSignalSource(
     ICommitScopeFactory scopeFactory,
     ILogger<PostgreSqlCommitSignalSource>? logger = null
 ) : ICommitSignalSource

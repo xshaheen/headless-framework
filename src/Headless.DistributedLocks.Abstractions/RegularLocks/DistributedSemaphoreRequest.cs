@@ -26,4 +26,4 @@ namespace Headless.DistributedLocks;
 /// <param name="Resource">The resource the semaphore guards. Must be non-null and non-whitespace.</param>
 /// <param name="MaxCount">The maximum number of concurrent holders of <paramref name="Resource"/>. Must be at least 1.</param>
 [PublicAPI]
-public record DistributedSemaphoreRequest(string Resource, int MaxCount);
+public sealed record DistributedSemaphoreRequest(string Resource, int MaxCount);

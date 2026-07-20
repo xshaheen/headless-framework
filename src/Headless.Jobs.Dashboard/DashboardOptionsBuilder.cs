@@ -14,6 +14,10 @@ namespace Headless.Jobs;
 /// </summary>
 public sealed class DashboardOptionsBuilder
 {
+    internal const int MaxPageSize = 100;
+    internal const int MaxRequestBodyBytes = 1024 * 1024;
+    internal const int MaxBatchDeleteIds = 500;
+
     internal string BasePath { get; set; } = "/jobs/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
     internal string? BackendDomain { get; set; }
@@ -193,6 +197,8 @@ public sealed class DashboardOptionsBuilder
             );
         }
 
-        Auth.Validate();
+        // Credential completeness for the selected mode is validated once, by the FluentValidation
+        // validator wired into the options pipeline (validate-on-start) when these values are copied
+        // into AddDashboardAuthentication — not re-checked here.
     }
 }

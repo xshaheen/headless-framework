@@ -12,72 +12,72 @@ public enum MqLogType
     /// Consumer subscription was cancelled (RabbitMQ).
     /// Typically indicates the consumer was unsubscribed or the connection was terminated.
     /// </summary>
-    ConsumerCancelled,
+    ConsumerCancelled = 0,
 
     /// <summary>
     /// Consumer successfully registered and is ready to receive messages (RabbitMQ).
     /// </summary>
-    ConsumerRegistered,
+    ConsumerRegistered = 1,
 
     /// <summary>
     /// Consumer unregistered from the message broker (RabbitMQ).
     /// </summary>
-    ConsumerUnregistered,
+    ConsumerUnregistered = 2,
 
     /// <summary>
     /// Consumer connection to the broker was shut down (RabbitMQ).
     /// </summary>
-    ConsumerShutdown,
+    ConsumerShutdown = 3,
 
     /// <summary>
     /// An error occurred during message consumption (Kafka).
     /// </summary>
-    ConsumeError,
+    ConsumeError = 4,
 
     /// <summary>
     /// Consumer is retrying after a consumption failure (Kafka).
     /// </summary>
-    ConsumeRetries,
+    ConsumeRetries = 5,
 
     /// <summary>
     /// Failed to establish or maintain connection to the broker server (Kafka).
     /// </summary>
-    ServerConnError,
+    ServerConnError = 6,
 
     /// <summary>
     /// An exception was received from the message broker (Azure Service Bus).
     /// </summary>
-    ExceptionReceived,
+    ExceptionReceived = 7,
 
     /// <summary>
     /// An asynchronous error event occurred (NATS).
     /// </summary>
-    AsyncErrorEvent,
+    AsyncErrorEvent = 8,
 
     /// <summary>
     /// Failed to connect or connection error occurred (NATS).
     /// </summary>
-    ConnectError,
+    ConnectError = 9,
 
     /// <summary>
     /// An invalid ID format was detected during message processing (Amazon SQS).
     /// </summary>
-    InvalidIdFormat,
+    InvalidIdFormat = 10,
 
     /// <summary>
     /// A message is not currently in flight, preventing visibility timeout change (Amazon SQS).
     /// </summary>
-    MessageNotInflight,
+    MessageNotInflight = 11,
 
     /// <summary>
     /// An error occurred during message consumption (Redis Streams).
     /// </summary>
-    RedisConsumeError,
+    RedisConsumeError = 12,
 
     /// <summary>
     /// The transport detected a configuration that is accepted but cannot be fully honored.
     /// </summary>
-    TransportConfigurationWarning,
+    TransportConfigurationWarning = 13,
 }
 
 /// <summary>

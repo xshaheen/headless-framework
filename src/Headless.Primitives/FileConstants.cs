@@ -3,6 +3,7 @@
 namespace Headless.Primitives;
 
 /// <summary>Maximum lengths for the corresponding <see cref="File"/> properties, intended for storage/validation constraints.</summary>
+[PublicAPI]
 public static class FileConstants
 {
     /// <summary>Maximum length of <see cref="File.Id"/>.</summary>

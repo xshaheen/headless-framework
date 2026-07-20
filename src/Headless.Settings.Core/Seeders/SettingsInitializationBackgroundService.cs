@@ -17,7 +17,11 @@ namespace Headless.Settings.Seeders;
 /// on application startup. Implements <see cref="IInitializer"/> so dependents can await
 /// <see cref="WaitForInitializationAsync"/> before serving requests.
 /// </summary>
-public sealed class SettingsInitializationBackgroundService(
+/// <remarks>
+/// Static-definition persistence retries other failures up to 10 times with jittered exponential back-off capped at
+/// 30 seconds. Cancellation, invalid arguments, and unsupported operations are not retried.
+/// </remarks>
+internal sealed class SettingsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<SettingManagementOptions> optionsAccessor,
@@ -87,19 +91,13 @@ public sealed class SettingsInitializationBackgroundService(
     {
         try
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await using var scope = serviceScopeFactory.CreateAsyncScope();
 
             await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             await _PreCacheDynamicSettingsAsync(scope, cancellationToken).ConfigureAwait(false);
 
@@ -126,10 +124,13 @@ public sealed class SettingsInitializationBackgroundService(
         {
             Name = "SaveStaticSettingsToDatabaseRetry",
             Delay = TimeSpan.FromSeconds(2),
+            MaxDelay = TimeSpan.FromSeconds(30),
             MaxRetryAttempts = 10,
             BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            ShouldHandle = new PredicateBuilder().Handle<Exception>(),
+            UseJitter = true,
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(static exception =>
+                exception is not OperationCanceledException and not ArgumentException and not NotSupportedException
+            ),
         };
 
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
@@ -147,7 +148,7 @@ public sealed class SettingsInitializationBackgroundService(
                     {
                         await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         logger.LogFailedToSaveStaticSettings(e);
 

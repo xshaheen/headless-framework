@@ -207,5 +207,5 @@ A provider is usually aligned with the framework when:
 - destination provisioning is isolated to `FetchMessageNamesAsync(...)`
 - every consumed message reaches `OnMessageCallback(...)` with a valid `Headers.Group`
 - commit/reject behavior is broker-correct and symmetric with the callback token
-- pause/resume works without cancelling the receive task
+- pause/resume keeps the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate
 - health and broker failures surface through `OnLogCallback`

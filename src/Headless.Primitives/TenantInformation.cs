@@ -8,6 +8,7 @@ namespace Headless.Primitives;
 /// </summary>
 /// <param name="tenantId">The tenant identifier; <see langword="null"/> indicates the host.</param>
 /// <param name="name">The optional tenant name.</param>
+[PublicAPI]
 public sealed class TenantInformation(string? tenantId, string? name = null)
 {
     /// <summary>The tenant identifier; <see langword="null"/> indicates the host context.</summary>

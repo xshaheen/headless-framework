@@ -6,6 +6,9 @@
     <RootNamespace>Headless.Settings</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Settings.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />

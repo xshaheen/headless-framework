@@ -13,5 +13,11 @@ namespace Headless.Domain;
 public interface IHasETag
 {
     /// <summary>Raw version token of the entity; <see langword="null"/> until the entity has been persisted.</summary>
+    /// <remarks>
+    /// Unlike <see cref="IHasConcurrencyStamp.ConcurrencyStamp"/> (application-generated, get-only), the ETag
+    /// is written by the store: the persistence layer maps it as a database row version
+    /// (for example <c>IsRowVersion()</c> in EF Core) and materializes / refreshes the value on every load and
+    /// save. The setter exists for that store-side write path — domain code should treat the value as read-only.
+    /// </remarks>
     byte[]? ETag { get; set; }
 }

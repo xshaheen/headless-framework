@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
+  consumeHostAccessTokenFromFragment,
   getApiBaseUrl,
   getAuthMode,
   getBackendUrl,
@@ -15,6 +16,38 @@ const baseConfig = {
 
 afterEach(() => {
   delete window.JobsConfig
+  window.history.replaceState(null, '', '/')
+})
+
+describe('host access token fragments', () => {
+  it('normalizes and removes an encoded token fragment in Host mode', () => {
+    window.history.replaceState(null, '', '/jobs/dashboard/login?redirect=%2F#access_token=demo.jwt')
+
+    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
+    expect(window.location.pathname).toBe('/jobs/dashboard/login')
+    expect(window.location.search).toBe('?redirect=%2F')
+    expect(window.location.hash).toBe('')
+  })
+
+  it('does not add a second Bearer prefix', () => {
+    window.history.replaceState(null, '', '/jobs/dashboard/login#access_token=Bearer%20demo.jwt')
+
+    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
+    expect(window.location.hash).toBe('')
+  })
+
+  it('removes but does not consume a token fragment outside Host mode', () => {
+    window.history.replaceState(null, '', '/jobs/dashboard/login#access_token=demo.jwt')
+
+    expect(consumeHostAccessTokenFromFragment('apikey')).toBeNull()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('ignores query-string tokens', () => {
+    window.history.replaceState(null, '', '/jobs/dashboard/login?access_token=demo.jwt')
+
+    expect(consumeHostAccessTokenFromFragment('host')).toBeNull()
+  })
 })
 
 describe('with basePath only (no backend domain)', () => {

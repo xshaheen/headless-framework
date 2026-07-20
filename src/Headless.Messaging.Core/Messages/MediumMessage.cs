@@ -2,6 +2,15 @@
 
 namespace Headless.Messaging.Messages;
 
+/// <summary>
+/// Storage-level envelope for a persisted outbox/inbox message row: pairs the original
+/// <see cref="Message"/> with its serialized content and the durable dispatch/retry bookkeeping
+/// columns (retries, lease, scheduling) that the storage providers and retry processors maintain.
+/// </summary>
+/// <remarks>
+/// Not sealed: storage providers may extend it with backend-specific row state
+/// (e.g., the in-memory provider's message row adds name/group/status columns).
+/// </remarks>
 [PublicAPI]
 public class MediumMessage
 {

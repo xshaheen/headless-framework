@@ -7,6 +7,7 @@ namespace Headless.Primitives;
 /// <param name="items">The items on this page.</param>
 /// <param name="size">The requested page size.</param>
 /// <param name="continuationToken">The token used to fetch the next page, or <see langword="null"/> when this is the last page.</param>
+[PublicAPI]
 public sealed class ContinuationPage<T>(IReadOnlyList<T> items, int size, string? continuationToken)
 {
     /// <summary>The items on this page.</summary>

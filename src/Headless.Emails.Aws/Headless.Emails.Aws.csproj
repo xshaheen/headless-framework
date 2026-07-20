@@ -10,8 +10,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Emails.Aws.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Emails.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Composition.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Providers.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Emails.Core\Headless.Emails.Core.csproj" />

@@ -2,13 +2,13 @@ version: '2.1'
 
 services:
   sftp:
-    image: atmoz/sftp:latest
+    image: atmoz/sftp:latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475
     ports:
         - "2222:22"
     command: framework:password:::storage
 
   ready:
-    image: andrewlock/wait-for-dependencies
+    image: andrewlock/wait-for-dependencies:latest@sha256:5d87561de8c019c3954298f707c1f6d7087f620a1ce36c3ec38cdfbc1ec4066e
     command: sftp:22
     depends_on:
       - sftp

@@ -2,9 +2,9 @@
 
 using Headless.Blobs;
 using Headless.Blobs.SshNet;
+using Headless.Hosting.Options;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Renci.SshNet.Common;
 
 namespace Tests;
