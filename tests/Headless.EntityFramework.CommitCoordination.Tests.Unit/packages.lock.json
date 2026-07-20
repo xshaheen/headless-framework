@@ -656,16 +656,6 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }
       },
-      "headless.entityframework.messaging": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Domain": "[1.0.0, )",
-          "Headless.EntityFramework": "[1.0.0, )",
-          "Headless.EntityFramework.CommitCoordination": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -705,18 +695,6 @@
           "Microsoft.Extensions.Hosting": "[10.0.9, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.9, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.9, )"
-        }
-      },
-      "headless.messaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.bus.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {

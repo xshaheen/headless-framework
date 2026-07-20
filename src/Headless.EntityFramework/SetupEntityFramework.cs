@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
@@ -204,14 +203,10 @@ public static class SetupEntityFramework
             configureOptions?.Invoke(options);
             options.RegisterServices(services);
 
-            // The SaveChanges pipeline opens a coordinated EF transaction so the messaging outbox (and any
-            // other commit-enlisted work) drains atomically when the save commits. Registering the EF commit
-            // coordination source + interceptor here is harmless when nothing enlists (the drain is empty).
-            services.AddEntityFrameworkCommitCoordination();
-
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
+            services.TryAddSingleton<IHeadlessTransactionCoordinator>(NullHeadlessTransactionCoordinator.Instance);
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
             // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based

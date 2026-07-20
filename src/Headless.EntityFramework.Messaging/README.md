@@ -17,7 +17,7 @@ Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration ev
 
 - **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher publishes each integration event; the outbox writer buffers the rows inside the transaction — not sent to the broker in-band. The registered `IDbTransactionInterceptor` drains the buffered dispatch on commit and discards it on rollback. Outbox rows commit atomically with the business data.
 - **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
-- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. `Headless.EntityFramework` depends on `Headless.CommitCoordination.EntityFramework` (generic, datastore-agnostic — not messaging) to own the coordinated save scope. The messaging dependency is isolated to this bridge.
+- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains and selects `Headless.EntityFramework.CommitCoordination`. Core `Headless.EntityFramework` depends on neither messaging nor commit coordination.
 - **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
 
 ## Installation
@@ -52,6 +52,7 @@ None. (Configured via `AddHeadlessMessaging`.)
 ## Dependencies
 
 - `Headless.EntityFramework`
+- `Headless.EntityFramework.CommitCoordination`
 - `Headless.Domain`
 - `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Abstractions`
@@ -60,3 +61,4 @@ None. (Configured via `AddHeadlessMessaging`.)
 
 - Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher`
 - Registers `IntegrationEventPublishInvokerCache` as singleton (`TryAdd`)
+- Selects `Headless.EntityFramework.CommitCoordination` for the save pipeline
