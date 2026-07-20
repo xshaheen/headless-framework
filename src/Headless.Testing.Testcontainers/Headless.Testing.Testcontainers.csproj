@@ -4,7 +4,6 @@
     <Description>Testcontainers integration for Headless testing.</Description>
     <PackageTags>headless;testing;testcontainers;dotnet</PackageTags>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />

@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
-using System.Runtime.CompilerServices;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Base;
@@ -112,6 +111,9 @@ public static class JobsCoordinationFixtureExtensions
     public static readonly TimeSpan SuspicionThreshold = TimeSpan.FromMilliseconds(600);
     public static readonly TimeSpan DeadThreshold = TimeSpan.FromMilliseconds(1200);
     public static readonly TimeSpan DeadRetentionWindow = TimeSpan.FromMilliseconds(1200);
+
+    /// <summary>Registers the generated-equivalent job functions used by the relational conformance suite.</summary>
+    public static void RegisterJobFunctions() => CoordinatedEnqueueJobsRegistration.Initialize();
 
     /// <summary>
     /// Builds (but does not start) a host wired the way a production Jobs node is: a Coordination provider
@@ -757,7 +759,6 @@ internal static class CoordinatedEnqueueJobs
 
 internal static class CoordinatedEnqueueJobsRegistration
 {
-    [ModuleInitializer]
     internal static void Initialize()
     {
         JobFunctionProvider.RegisterFunctions(

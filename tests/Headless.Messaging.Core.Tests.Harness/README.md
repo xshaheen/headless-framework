@@ -126,12 +126,9 @@ Create `tests/Headless.Messaging.<Provider>.Tests.Integration/`:
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.<Provider>" />
     <PackageReference Include="Testcontainers.XunitV3" />
-    <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.<Provider>\Headless.Messaging.<Provider>.csproj" />
