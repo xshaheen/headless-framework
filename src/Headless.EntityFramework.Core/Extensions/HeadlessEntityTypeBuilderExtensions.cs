@@ -12,14 +12,30 @@ namespace Microsoft.EntityFrameworkCore;
 [PublicAPI]
 public static class HeadlessEntityTypeBuilderExtensions
 {
-    /// <summary>Combines a query filter with any existing filter using a logical AND operation.</summary>
+    /// <summary>
+    /// It allows you to add a query filter to an entity type, combining it with
+    /// any existing query filter if any using a logical AND operation
+    /// it differs from <see cref="EntityTypeBuilder{TEntity}.HasQueryFilter(Expression{Func{TEntity, bool}})"/>
+    /// because it merges the new filter with the existing one instead of replacing it.
+    /// </summary>
     public static EntityTypeBuilder<TEntity> AndHasQueryFilter<TEntity>(
         this EntityTypeBuilder<TEntity> builder,
         Expression<Func<TEntity, bool>> filter
     )
         where TEntity : class
     {
-#pragma warning disable EF1001 // EF exposes no public API for reading the existing query-filter expression.
+        // INTERNAL EF CORE API USAGE
+        // -----------------------------------------------------------------------------
+        // Required: Access to CoreAnnotationNames.QueryFilter to retrieve existing query
+        //   filter from entity metadata. EF Core's public API HasQueryFilter() replaces
+        //   filters rather than combining them. We need the annotation name constant to
+        //   retrieve the existing filter for AND-combination.
+        // Tested with: EF Core 8.x, 9.x, 10.x
+        // On EF Core upgrade: Verify CoreAnnotationNames.QueryFilter constant exists
+        //   and FindAnnotation() returns the filter expression with this key.
+        // Alternative: None available in public API as of EF Core 10.0
+        // -----------------------------------------------------------------------------
+#pragma warning disable EF1001 // Is an internal API
         var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
 #pragma warning restore EF1001
 
@@ -38,7 +54,15 @@ public static class HeadlessEntityTypeBuilderExtensions
     )
         where TEntity : class
     {
-#pragma warning disable EF1001 // EF exposes no public API for reading the existing query-filter expression.
+        // INTERNAL EF CORE API USAGE
+        // -----------------------------------------------------------------------------
+        // Required: Access to CoreAnnotationNames.QueryFilter to retrieve existing query
+        //   filter from entity metadata. See documentation in generic overload above.
+        // Tested with: EF Core 8.x, 9.x, 10.x
+        // On EF Core upgrade: Verify CoreAnnotationNames.QueryFilter constant exists
+        // Alternative: None available in public API as of EF Core 10.0
+        // -----------------------------------------------------------------------------
+#pragma warning disable EF1001 // Is an internal API
         var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
 #pragma warning restore EF1001
 
