@@ -12,5 +12,6 @@ namespace Headless.Jobs.Base;
 /// should be used. Placing this attribute on more than one constructor in the same class is a compile-time
 /// error (diagnostic HF010).
 /// </remarks>
+[PublicAPI]
 [AttributeUsage(AttributeTargets.Constructor)]
 public sealed class JobsConstructorAttribute : Attribute;

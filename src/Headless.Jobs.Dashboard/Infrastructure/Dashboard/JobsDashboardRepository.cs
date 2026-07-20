@@ -142,7 +142,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
             var results = allStatuses
-                .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                .Select(status => new JobStatusCount(status, statusCounts.GetValueOrDefault(status, 0)))
                 .ToArray();
 
             return new JobGraphData { Date = date, Results = results };
@@ -195,7 +195,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
             var results = allStatuses
-                .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                .Select(status => new JobStatusCount(status, statusCounts.GetValueOrDefault(status, 0)))
                 .ToArray();
 
             return new JobGraphData { Date = date, Results = results };
@@ -269,7 +269,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
             var results = allStatuses
-                .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                .Select(status => new JobStatusCount(status, statusCounts.GetValueOrDefault(status, 0)))
                 .ToArray();
 
             return new JobGraphData { Date = date, Results = results };
@@ -434,7 +434,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .GetCronJobsPaginatedAsync(predicate: null, pageNumber, pageSize, cancellationToken)
             .ConfigureAwait(false);
 
-        return new PaginationResult<CronJobEntity>(result.Items, result.TotalCount, result.PageNumber, result.PageSize);
+        return new PaginationResult<CronJobEntity>
+        {
+            Items = result.Items,
+            TotalCount = result.TotalCount,
+            PageNumber = result.PageNumber,
+            PageSize = result.PageSize,
+        };
     }
 
     public async Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
@@ -539,7 +545,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .GroupBy(x => x.Date)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(x => Tuple.Create((int)x.Status, x.Count)).ToArray()
+                group => group.Select(x => new JobStatusCount(x.Status, x.Count)).ToArray()
             );
         var allDates = Enumerable
             .Range(0, _GraphDayCount(startDate, endDate))

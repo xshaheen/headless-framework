@@ -4,16 +4,14 @@ namespace Headless.Jobs.DashboardDtos;
 
 /// <summary>
 /// Per-day summary of time job outcomes, used to populate the dashboard execution graph.
-/// Each result tuple carries the succeeded and failed job counts for that day.
+/// Each entry in <see cref="Results"/> carries the execution count for one lifecycle status on that day.
 /// </summary>
-public class JobGraphData
+[PublicAPI]
+public sealed class JobGraphData
 {
     /// <summary>The UTC date this summary covers.</summary>
-    public DateTime Date { get; set; }
+    public required DateTime Date { get; init; }
 
-    /// <summary>
-    /// Succeeded/failed pair for each job type on this date.
-    /// Item1 = succeeded count, Item2 = failed count.
-    /// </summary>
-    public required Tuple<int, int>[] Results { get; set; }
+    /// <summary>Per-status execution counts on this date. Empty when the date has no executions.</summary>
+    public required JobStatusCount[] Results { get; init; }
 }

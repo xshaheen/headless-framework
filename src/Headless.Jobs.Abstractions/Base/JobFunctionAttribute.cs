@@ -21,6 +21,7 @@ namespace Headless.Jobs.Base;
 /// treated as a configuration key and resolved from <c>IConfiguration</c> at startup.
 /// </para>
 /// </remarks>
+[PublicAPI]
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class JobFunctionAttribute : Attribute
 {

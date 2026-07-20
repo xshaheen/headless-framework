@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,19 +110,25 @@ public class JobFunctionContext
 }
 
 /// <summary>
-/// Cron-specific runtime operations available to a job function during execution.
+/// Cron-specific runtime operations available to a job function during execution. Instances are
+/// constructed by the scheduler runtime, which wires the skip callback; consumers only call
+/// <see cref="SkipIfAlreadyRunning"/>.
 /// </summary>
 [PublicAPI]
-public class CronOccurrenceOperations
+public sealed class CronOccurrenceOperations
 {
+    private readonly Action _skipIfAlreadyRunning;
+
     /// <summary>
-    /// Delegate invoked by <see cref="SkipIfAlreadyRunning"/> to mark the current occurrence as
-    /// skipped when another occurrence of the same cron job is already executing on this node.
-    /// Wired by the scheduler; not intended to be set by consumers — call
-    /// <see cref="SkipIfAlreadyRunning"/> instead.
+    /// Wires the delegate invoked by <see cref="SkipIfAlreadyRunning"/> to mark the current occurrence
+    /// as skipped when another occurrence of the same cron job is already executing on this node.
+    /// Internal: the scheduler runtime is the only producer of execution contexts.
     /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public required Action SkipIfAlreadyRunningAction { get; init; }
+    /// <param name="skipIfAlreadyRunning">Callback that skips the occurrence when a sibling is running.</param>
+    internal CronOccurrenceOperations(Action skipIfAlreadyRunning)
+    {
+        _skipIfAlreadyRunning = skipIfAlreadyRunning;
+    }
 
     /// <summary>
     /// Marks this cron occurrence as <c>Skipped</c> and stops execution if another occurrence of the
@@ -132,6 +137,6 @@ public class CronOccurrenceOperations
     /// </summary>
     public void SkipIfAlreadyRunning()
     {
-        SkipIfAlreadyRunningAction();
+        _skipIfAlreadyRunning();
     }
 }

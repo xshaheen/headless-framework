@@ -14,6 +14,7 @@ namespace Headless.Jobs.Models;
 /// update instead of rewriting the whole row. A provider implementation reads the mutated members named in
 /// <see cref="PropertiesToUpdate"/> and persists only those.
 /// </summary>
+[PublicAPI]
 public class JobExecutionState
 {
     /// <summary>
