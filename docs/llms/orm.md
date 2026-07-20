@@ -1,6 +1,6 @@
 ---
 domain: ORM
-packages: EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
+packages: EntityFramework.Core, EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
 ---
 
 # ORM
@@ -17,7 +17,7 @@ packages: EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
     - [DDD aggregate support](#ddd-aggregate-support)
     - [Outbox-within-save-transaction bridge](#outbox-within-save-transaction-bridge)
 - [Choosing a Provider](#choosing-a-provider)
-- [Headless.EntityFramework](#headlessentityframework)
+- [Headless.EntityFramework.Core](#headlessentityframeworkcore)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
     - [Design Notes](#design-notes)
@@ -26,7 +26,7 @@ packages: EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-- [Headless.EntityFramework.Messaging](#headlessentityframeworkmessaging)
+- [Headless.EntityFramework](#headlessentityframework)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
     - [Design Notes](#design-notes-1)
@@ -35,21 +35,31 @@ packages: EntityFramework, EntityFramework.Messaging, Couchbase, MultiTenancy
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.Couchbase](#headlesscouchbase)
+- [Headless.EntityFramework.Messaging](#headlessentityframeworkmessaging)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
+- [Headless.Couchbase](#headlesscouchbase)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 
-> ORM domain: `Headless.EntityFramework` for relational stores via EF Core (with global filters, model-driven audit capture, DDD event dispatch, and tenant write protection), `Headless.EntityFramework.Messaging` as the outbox bridge add-on, and `Headless.Couchbase` for document storage via Couchbase.
+> ORM domain: `Headless.EntityFramework.Core` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions, `Headless.EntityFramework.Messaging` as the outbox bridge add-on, and `Headless.Couchbase` for document storage via Couchbase.
 
 ## Quick Orientation
 
 Choose by storage model:
 
+- `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
 - `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit `IIntegrationEvent`. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
@@ -65,7 +75,8 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 
 ## Agent Instructions
 
-- Treat this domain as exactly three packages (`Headless.EntityFramework`, `Headless.EntityFramework.Messaging`, `Headless.Couchbase`). Do not invent an ORM umbrella package.
+- Treat this domain as four packages (`Headless.EntityFramework.Core`, `Headless.EntityFramework`, `Headless.EntityFramework.Messaging`, `Headless.Couchbase`). Do not invent an ORM umbrella package.
+- Use `Headless.EntityFramework.Core` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
 - **Use `AddHeadlessDbContext<TDbContext>(...)` not raw `AddDbContext`.** The raw registration misses the save pipeline, EF interceptors wiring (commit coordination), the `IDbContextFactory<TDbContext>` singleton, and the compiled-query cache key replacement. `AddHeadlessDbContext` registers all of these.
 - `HeadlessDbContext` requires two constructor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
@@ -166,6 +177,67 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 
 ---
 
+## Headless.EntityFramework.Core
+
+### Problem Solved
+
+Provides provider-neutral Entity Framework Core primitives that feature packages can reuse without depending on the full `Headless.EntityFramework` context, save pipeline, auditing, tenancy, or hosting integration.
+
+### Key Features
+
+- Provider-neutral converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives.
+- Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
+- Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
+- `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
+
+### Design Notes
+
+- This package is intentionally independent of `HeadlessDbContext`. Storage feature packages can consume its EF primitives without inheriting application-level ORM behavior.
+- `NormalizeDateTimeValueConverter` is the single UTC-normalization API; Core does not expose a parallel converter family.
+- The package has no database-provider, hosting, interception, tenancy, auditing, or save-pipeline dependency.
+
+### Installation
+
+```bash
+dotnet add package Headless.EntityFramework.Core
+```
+
+### Quick Start
+
+```csharp
+using Headless.EntityFramework.Configurations;
+using Microsoft.EntityFrameworkCore;
+
+public sealed class ScheduledWork
+{
+    public DateTime DateCreated { get; set; }
+    public DateTime? DateCompleted { get; set; }
+}
+
+modelBuilder.Entity<ScheduledWork>(entity =>
+{
+    entity.Property(x => x.DateCreated).HasConversion(new NormalizeDateTimeValueConverter());
+    entity.Property(x => x.DateCompleted).HasConversion(new NullableNormalizeDateTimeValueConverter());
+});
+
+var page = await dbContext.Set<ScheduledWork>().ToIndexPageAsync(0, 25, cancellationToken);
+```
+
+### Configuration
+
+Converters accept optional EF Core mapping hints. Query and model helpers are opt-in and require no Headless runtime registration.
+
+### Dependencies
+
+- Headless foundational primitives, checks, domain contracts, extensions, and JSON serialization
+- `Microsoft.EntityFrameworkCore` and `Microsoft.EntityFrameworkCore.Relational`
+
+### Side Effects
+
+None. The package performs no dependency-injection registration.
+
+---
+
 ## Headless.EntityFramework
 
 Entity Framework Core integration with framework conventions and save pipeline orchestration.
@@ -190,8 +262,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (wraps in EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination for outbox/jobs drain)
-- Value converters: `MoneyAmountValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
-- `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
+- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Core`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
 ### Design Notes
@@ -396,6 +467,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 ### Dependencies
 
 - `Headless.Domain`
+- `Headless.EntityFramework.Core`
 - `Headless.AuditLog.Abstractions`
 - `Headless.Core`
 - `Headless.Hosting`

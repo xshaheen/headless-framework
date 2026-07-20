@@ -10,6 +10,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
+[Collection(CachingDiagnosticsCollection.Name)]
 public sealed class CachingDiagnosticsTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
