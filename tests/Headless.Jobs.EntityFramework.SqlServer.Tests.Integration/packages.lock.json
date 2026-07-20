@@ -905,11 +905,21 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
+      "headless.domain": {
+        "type": "Project"
+      },
       "headless.entityframework.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore": "[10.0.9, )"
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }
       },
       "headless.extensions": {
