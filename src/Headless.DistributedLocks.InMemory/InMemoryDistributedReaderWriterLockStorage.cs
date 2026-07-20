@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using Headless.Checks;
 
 namespace Headless.DistributedLocks.InMemory;
@@ -27,9 +26,7 @@ namespace Headless.DistributedLocks.InMemory;
 /// </para>
 /// </remarks>
 /// <param name="timeProvider">The time source used to compute and evaluate TTL expiry timestamps.</param>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeProvider)
+internal sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeProvider)
     : IDistributedReadWriteLockStorage
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);

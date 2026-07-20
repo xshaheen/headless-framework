@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
-
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -16,9 +14,7 @@ namespace Headless.DistributedLocks;
 /// <see cref="PublishAsync"/> only costs extra acquisition latency, never a stuck acquirer or a missed lock.
 /// The default <see cref="PollingReleaseSignal"/> implements this in-process.
 /// </remarks>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IReleaseSignal
+internal interface IReleaseSignal
 {
     /// <summary>
     /// Waits until either a release signal for <paramref name="resource"/> is observed or

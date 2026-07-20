@@ -19,6 +19,12 @@ public sealed class PostgreSqlCoordinationOptions
     /// Pre-configured <see cref="NpgsqlDataSource"/>. Takes precedence over <see cref="ConnectionString"/>
     /// when set. Use this to share a data source with connection pooling already configured.
     /// </summary>
+    /// <remarks>
+    /// This member is deliberately typed as the provider-native <see cref="NpgsqlDataSource"/> rather than an
+    /// abstraction: the store relies on full-fidelity Npgsql behavior (pooling and connection configuration) that a
+    /// generic <see cref="System.Data.Common.DbDataSource"/> cannot guarantee, and this package is Npgsql-specific by
+    /// contract, so the coupling is intentional.
+    /// </remarks>
     public NpgsqlDataSource? DataSource { get; set; }
 
     /// <summary>

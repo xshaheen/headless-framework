@@ -36,13 +36,20 @@ public static class SetupInMemoryDistributedLocks
         }
     }
 
+    private static IServiceCollection _AddInMemoryDistributedLocksCore(IServiceCollection services)
+    {
+        services.AddDistributedLockCore<InMemoryDistributedLockStorage>();
+        services.AddDistributedReadWriteLockCore<InMemoryDistributedReadWriteLockStorage>();
+        services.AddDistributedSemaphoreCore<InMemoryDistributedSemaphoreStorage>();
+
+        return services;
+    }
+
     private sealed class InMemoryDistributedLocksOptionsExtension : IDistributedLocksOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddDistributedLockCore<InMemoryDistributedLockStorage>();
-            services.AddDistributedReadWriteLockCore<InMemoryDistributedReadWriteLockStorage>();
-            services.AddDistributedSemaphoreCore<InMemoryDistributedSemaphoreStorage>();
+            _AddInMemoryDistributedLocksCore(services);
         }
     }
 }

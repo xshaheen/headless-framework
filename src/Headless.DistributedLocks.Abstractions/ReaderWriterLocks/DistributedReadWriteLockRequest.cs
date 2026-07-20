@@ -18,4 +18,4 @@ namespace Headless.DistributedLocks;
 /// whole set be ordered by resource name alone and makes two composites over overlapping names unable to deadlock.
 /// </remarks>
 [PublicAPI]
-public record DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode);
+public sealed record DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode);
