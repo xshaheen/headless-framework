@@ -18,8 +18,7 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// drains its registered callbacks. An absent key means the transaction was never enrolled in commit
 /// coordination — this is the normal case for uncoordinated transactions and is silently ignored.
 /// </remarks>
-[PublicAPI]
-public sealed partial class EntityFrameworkCommitSignalSource(
+internal sealed partial class EntityFrameworkCommitSignalSource(
     ICommitScopeFactory scopeFactory,
     ILogger<EntityFrameworkCommitSignalSource>? logger = null
 ) : ICommitSignalSource

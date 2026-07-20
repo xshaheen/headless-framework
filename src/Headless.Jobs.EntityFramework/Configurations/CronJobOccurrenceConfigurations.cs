@@ -13,8 +13,8 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)
     {
-        var utcDateTimeConverter = new UtcDateTimeValueConverter();
-        var nullableUtcDateTimeConverter = new NullableUtcDateTimeValueConverter();
+        var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
+        var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
 
         builder.HasKey("Id");
 

@@ -71,8 +71,10 @@ setup.UseK8sDiscovery(k8s =>
 });
 ```
 
-- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`.
+- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for dashboard discovery and proxy selection. Discovery fails closed when no namespace is configured.
 - `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` appear in the dashboard node list. Set it to `false` to list all services returned from the configured namespace.
+
+The dashboard stores the selected Service name, not a client-composed endpoint. Before forwarding a request, the server resolves that name again in the configured namespace and applies the same visibility and port-label rules used by the node list. Invalid, hidden, cross-namespace, and stale selections are cleared.
 
 ## Dependencies
 
@@ -82,5 +84,5 @@ setup.UseK8sDiscovery(k8s =>
 ## Side Effects
 
 - Queries Kubernetes API for Services
-- Requires appropriate RBAC permissions (read services/namespaces)
+- Requires appropriate RBAC permissions to read Services in the configured namespace
 - Periodically polls for cluster topology changes

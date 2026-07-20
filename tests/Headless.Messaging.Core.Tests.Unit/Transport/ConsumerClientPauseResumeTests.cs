@@ -141,6 +141,15 @@ public sealed class ConsumerClientPauseResumeTests
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
+
         public ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
         {
             return ValueTask.CompletedTask;

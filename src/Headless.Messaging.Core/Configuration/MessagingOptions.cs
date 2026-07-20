@@ -304,6 +304,7 @@ public sealed class MessagingOptions
         target.PublishBatchSize = PublishBatchSize;
         target.CollectorCleaningInterval = CollectorCleaningInterval;
         target.SchedulerBatchSize = SchedulerBatchSize;
+        target.RetryBatchSize = RetryBatchSize;
         target.UseStorageLock = UseStorageLock;
         target.TenantContextRequired = TenantContextRequired;
         target.TransportPublishTimeout = TransportPublishTimeout;
@@ -511,8 +512,28 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("Version must not be empty.")
             .MaximumLength(20)
             .WithMessage("Version must not exceed 20 characters (it is stored in a VARCHAR(20) column).");
-        RuleFor(x => x.SchedulerBatchSize).GreaterThan(0).WithMessage("SchedulerBatchSize must be greater than zero.");
-        RuleFor(x => x.RetryBatchSize).GreaterThan(0).WithMessage("RetryBatchSize must be greater than zero.");
+        RuleFor(x => x.ConsumerThreadCount)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("ConsumerThreadCount must be between 1 and 1024.");
+        RuleFor(x => x.SubscriberParallelExecuteThreadCount)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("SubscriberParallelExecuteThreadCount must be between 1 and 1024.");
+        RuleFor(x => x.SubscriberParallelExecuteBufferFactor)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("SubscriberParallelExecuteBufferFactor must be between 1 and 1024.");
+        RuleFor(x => x)
+            .Must(options =>
+                (long)options.SubscriberParallelExecuteThreadCount * options.SubscriberParallelExecuteBufferFactor
+                <= 100_000
+            )
+            .WithName(nameof(MessagingOptions.SubscriberParallelExecuteBufferFactor))
+            .WithMessage("Subscriber parallel buffer capacity must not exceed 100,000.");
+        RuleFor(x => x.SchedulerBatchSize)
+            .InclusiveBetween(1, 100_000)
+            .WithMessage("SchedulerBatchSize must be between 1 and 100,000.");
+        RuleFor(x => x.RetryBatchSize)
+            .InclusiveBetween(1, 100_000)
+            .WithMessage("RetryBatchSize must be between 1 and 100,000.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
 

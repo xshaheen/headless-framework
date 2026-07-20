@@ -22,7 +22,7 @@ namespace Headless.Permissions;
 /// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here removes the affected cache
 /// key so a direct repository write (bypassing <c>IPermissionManager</c>) is reflected on the next read.
 /// </param>
-public sealed class EfPermissionGrantRepository<TContext>(
+internal sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ICache<PermissionGrantCacheItem> cache
 ) : IPermissionGrantRepository

@@ -100,7 +100,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
 
         // then - the throttle suppressed every re-arm: the logical deadline is unchanged from the initial set.
         // TryGetEntryAsync is a non-re-arming inspection read, so it does not perturb the measurement.
-        var afterBurst = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var afterBurst = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         afterBurst.LogicalExpiresAt.Should().Be(now.Add(sliding));
 
         // and when - more than half the idle window elapses, the next read re-arms exactly once...
@@ -108,14 +108,14 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         var rearmAt = _timeProvider.GetUtcNow().UtcDateTime;
         (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("value");
 
-        var afterThreshold = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var afterThreshold = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         afterThreshold.LogicalExpiresAt.Should().Be(rearmAt.Add(sliding));
 
         // ...and an immediate follow-up read is throttled again (back above the half-window).
         (await cache.GetAsync<string>(key, AbortToken))
             .Value.Should()
             .Be("value");
-        var afterSecond = await store.TryGetEntryAsync<string>(key, AbortToken);
+        var afterSecond = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         afterSecond.LogicalExpiresAt.Should().Be(rearmAt.Add(sliding));
     }
 }

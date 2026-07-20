@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Settings.Models;
 
 /// <summary>Default implementation of <see cref="ISettingDefinitionContext"/> backed by an in-memory dictionary.</summary>
@@ -18,24 +20,18 @@ public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinitio
     }
 
     /// <inheritdoc/>
-    public SettingDefinition Add(
-        string name,
-        string? defaultValue = null,
-        string? displayName = null,
-        string? description = null,
-        bool isVisibleToClients = false,
-        bool isInherited = true,
-        bool isEncrypted = false
-    )
+    public SettingDefinition Add(SettingDefinitionCreateOptions options)
     {
+        Argument.IsNotNull(options);
+
         var definition = new SettingDefinition(
-            name,
-            defaultValue,
-            displayName,
-            description,
-            isVisibleToClients,
-            isInherited,
-            isEncrypted
+            options.Name,
+            options.DefaultValue,
+            options.DisplayName,
+            options.Description,
+            options.IsVisibleToClients,
+            options.IsInherited,
+            options.IsEncrypted
         );
 
         settings[definition.Name] = definition;

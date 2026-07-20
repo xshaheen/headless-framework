@@ -23,12 +23,24 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _rootTicker;
+    private readonly TimeProvider _timeProvider;
+    private readonly JobsRequestSerializationOptions _serializationOptions;
     private readonly bool[] _childrenUsed = new bool[5]; // Track which children are used
     private readonly bool[][] _grandChildrenUsed = new bool[5][]; // Track which grandchildren are used per child
 
-    private FluentChainJobBuilder()
+    private FluentChainJobBuilder(TimeProvider timeProvider, JobsRequestSerializationOptions serializationOptions)
     {
-        _rootTicker = new TTimeJob { Children = [] };
+        _timeProvider = timeProvider;
+        _serializationOptions = serializationOptions;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        _rootTicker = new TTimeJob
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = now,
+            UpdatedAt = now,
+            Children = [],
+        };
 
         // Initialize grandchildren tracking
         for (var i = 0; i < 5; i++)
@@ -42,14 +54,30 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     /// <paramref name="configure"/>.
     /// </summary>
     /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
+    /// <param name="timeProvider">
+    /// Clock used to stamp <c>CreatedAt</c>/<c>UpdatedAt</c> on the root, child, and grandchild jobs.
+    /// Defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.
+    /// </param>
+    /// <param name="serializationOptions">
+    /// Request serialization settings used by the <c>SetRequest</c> methods. Pass the host's
+    /// <see cref="JobsRequestSerializationOptions"/> (resolvable from the service provider) when the host
+    /// configured custom request JSON options or GZip compression; defaults to
+    /// <see cref="JobsRequestSerializationOptions.Default"/> when <see langword="null"/>.
+    /// </param>
     /// <returns>A builder ready to accept child configuration.</returns>
 #pragma warning disable CA1000 // Do not declare static members on generic types
     public static FluentChainJobBuilder<TTimeJob> BeginWith(
 #pragma warning restore CA1000
-        Action<ParentBuilder<TTimeJob>> configure)
+        Action<ParentBuilder<TTimeJob>> configure,
+        TimeProvider? timeProvider = null,
+        JobsRequestSerializationOptions? serializationOptions = null
+    )
     {
-        var builder = new FluentChainJobBuilder<TTimeJob>();
-        var parentBuilder = new ParentBuilder<TTimeJob>(builder._rootTicker);
+        var builder = new FluentChainJobBuilder<TTimeJob>(
+            timeProvider ?? TimeProvider.System,
+            serializationOptions ?? JobsRequestSerializationOptions.Default
+        );
+        var parentBuilder = new ParentBuilder<TTimeJob>(builder._rootTicker, builder._serializationOptions);
         configure(parentBuilder);
         return builder;
     }
@@ -68,7 +96,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _childrenUsed[0] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeJob>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child, _serializationOptions);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -89,7 +117,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _childrenUsed[1] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeJob>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child, _serializationOptions);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -110,7 +138,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _childrenUsed[2] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeJob>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child, _serializationOptions);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -131,7 +159,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _childrenUsed[3] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeJob>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child, _serializationOptions);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -152,7 +180,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
         _childrenUsed[4] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeJob>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child, _serializationOptions);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -161,12 +189,30 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
     private TTimeJob _CreateChild()
     {
-        return new TTimeJob { Parent = _rootTicker, Children = [] };
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        return new TTimeJob
+        {
+            Id = Guid.NewGuid(),
+            ParentId = _rootTicker.Id,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Children = [],
+        };
     }
 
-    private static TTimeJob _CreateGrandChild(TTimeJob parent)
+    private TTimeJob _CreateGrandChild(TTimeJob parent)
     {
-        return new TTimeJob { Parent = parent, Children = [] };
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        return new TTimeJob
+        {
+            Id = Guid.NewGuid(),
+            ParentId = parent.Id,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Children = [],
+        };
     }
 
     /// <summary>Returns the fully configured root <typeparamref name="TTimeJob"/> entity with all child links set.</summary>
@@ -200,8 +246,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -215,8 +261,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -230,8 +276,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -245,8 +291,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -260,8 +306,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -321,8 +367,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -336,8 +382,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -351,8 +397,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -366,8 +412,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -381,8 +427,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -437,8 +483,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -452,8 +498,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -467,8 +513,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -482,8 +528,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -497,8 +543,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -548,8 +594,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -563,8 +609,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -578,8 +624,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -593,8 +639,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -608,8 +654,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -654,8 +700,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -669,8 +715,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -684,8 +730,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -699,8 +745,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -714,8 +760,8 @@ public sealed class FluentChainJobBuilder<TTimeJob>
             }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
-            var grandChild = FluentChainJobBuilder<TTimeJob>._CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
+            var grandChild = _mainBuilder._CreateGrandChild(_child);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild, _mainBuilder._serializationOptions);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
@@ -748,10 +794,12 @@ public sealed class ParentBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _parent;
+    private readonly JobsRequestSerializationOptions _serializationOptions;
 
-    internal ParentBuilder(TTimeJob parent)
+    internal ParentBuilder(TTimeJob parent, JobsRequestSerializationOptions serializationOptions)
     {
         _parent = parent;
+        _serializationOptions = serializationOptions;
     }
 
     /// <summary>Sets the registered function name for the root job.</summary>
@@ -783,7 +831,7 @@ public sealed class ParentBuilder<TTimeJob>
     /// <param name="request">The payload to serialize.</param>
     public ParentBuilder<TTimeJob> SetRequest<T>(T request)
     {
-        _parent.Request = JobsHelper.CreateJobRequest(request);
+        _parent.Request = JobsHelper.CreateJobRequest(request, _serializationOptions);
         return this;
     }
 
@@ -815,10 +863,12 @@ public sealed class ChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _child;
+    private readonly JobsRequestSerializationOptions _serializationOptions;
 
-    internal ChildBuilder(TTimeJob child)
+    internal ChildBuilder(TTimeJob child, JobsRequestSerializationOptions serializationOptions)
     {
         _child = child;
+        _serializationOptions = serializationOptions;
     }
 
     /// <summary>Sets the registered function name for this child job.</summary>
@@ -860,7 +910,7 @@ public sealed class ChildBuilder<TTimeJob>
     /// <param name="request">The payload to serialize.</param>
     public ChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
-        _child.Request = JobsHelper.CreateJobRequest(request);
+        _child.Request = JobsHelper.CreateJobRequest(request, _serializationOptions);
         return this;
     }
 
@@ -892,10 +942,12 @@ public sealed class GrandChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     private readonly TTimeJob _grandChild;
+    private readonly JobsRequestSerializationOptions _serializationOptions;
 
-    internal GrandChildBuilder(TTimeJob grandChild)
+    internal GrandChildBuilder(TTimeJob grandChild, JobsRequestSerializationOptions serializationOptions)
     {
         _grandChild = grandChild;
+        _serializationOptions = serializationOptions;
     }
 
     /// <summary>Sets the registered function name for this grandchild job.</summary>
@@ -937,7 +989,7 @@ public sealed class GrandChildBuilder<TTimeJob>
     /// <param name="request">The payload to serialize.</param>
     public GrandChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
-        _grandChild.Request = JobsHelper.CreateJobRequest(request);
+        _grandChild.Request = JobsHelper.CreateJobRequest(request, _serializationOptions);
         return this;
     }
 
@@ -972,10 +1024,24 @@ public static class FluentChainJobBuilderExtensions
     /// </summary>
     /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
     /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
+    /// <param name="timeProvider">
+    /// Clock used to stamp <c>CreatedAt</c>/<c>UpdatedAt</c> on the root, child, and grandchild jobs.
+    /// Defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.
+    /// </param>
+    /// <param name="serializationOptions">
+    /// Request serialization settings used by the <c>SetRequest</c> methods. Pass the host's
+    /// <see cref="JobsRequestSerializationOptions"/> (resolvable from the service provider) when the host
+    /// configured custom request JSON options or GZip compression; defaults to
+    /// <see cref="JobsRequestSerializationOptions.Default"/> when <see langword="null"/>.
+    /// </param>
     /// <returns>A builder ready to accept child configuration.</returns>
-    public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(Action<ParentBuilder<TTimeJob>> configure)
+    public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(
+        Action<ParentBuilder<TTimeJob>> configure,
+        TimeProvider? timeProvider = null,
+        JobsRequestSerializationOptions? serializationOptions = null
+    )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        return FluentChainJobBuilder<TTimeJob>.BeginWith(configure);
+        return FluentChainJobBuilder<TTimeJob>.BeginWith(configure, timeProvider, serializationOptions);
     }
 }

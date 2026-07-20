@@ -56,6 +56,24 @@
           "Microsoft.Extensions.Logging": "10.0.9"
         }
       },
+      "Microsoft.EntityFrameworkCore.Relational": {
+        "type": "Direct",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "dEoyYKgiaZHHgOFm1WMWm1sFEsEuhPWufX4L9PekKtqd/RaIcPjkCjvbrVvJtApErb5wPSJhYvnTlxhH+p9h2g==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.9",
+          "Microsoft.Extensions.Caching.Memory": "10.0.9",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Logging": "10.0.9"
+        }
+      },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Direct",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "g41l/30G3K4B/d/L8kjux0+30e27c8D0FVQ/PFCpbekgfDpj9mnDhieP67EqXWvl1EWNeZh2rpR4F5B/jcDOHA=="
+      },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
         "requested": "[4.1.5, )",
@@ -199,6 +217,9 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.domain": {
+        "type": "Project"
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -227,6 +248,15 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "libphonenumber-csharp": "[9.0.34, )"
+        }
+      },
+      "headless.serializer.abstractions": {
+        "type": "Project"
+      },
+      "headless.serializer.json": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
       "headless.urls": {
@@ -281,6 +311,15 @@
           "Microsoft.Extensions.Primitives": "10.0.9"
         }
       },
+      "Microsoft.Extensions.Configuration.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "qGhRPd3VxfLV9UqatVOiD9mAeUbj2KiMwGFYC5uXlzExiZQoe4X/hdmzGIU7BQjNLTqCnnbTHVyBglG3668/HA==",
+        "dependencies": {
+          "Microsoft.Extensions.Primitives": "10.0.9"
+        }
+      },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "CentralTransitive",
         "requested": "[10.0.9, )",
@@ -289,12 +328,6 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.9"
         }
-      },
-      "Microsoft.Extensions.DependencyInjection.Abstractions": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.9, )",
-        "resolved": "10.0.9",
-        "contentHash": "g41l/30G3K4B/d/L8kjux0+30e27c8D0FVQ/PFCpbekgfDpj9mnDhieP67EqXWvl1EWNeZh2rpR4F5B/jcDOHA=="
       },
       "Microsoft.Extensions.Logging": {
         "type": "CentralTransitive",

@@ -2,6 +2,8 @@
 
 Default implementations of `IStringEncryptionService` and `IStringHashService`, plus idempotent DI registration helpers.
 
+Contracts, options, implementations, and registration extensions all use the `Headless.Security` namespace.
+
 ## Problem Solved
 
 Ships the concrete AES-GCM encryption and PBKDF2 hashing implementations so application code depends only on the `Headless.Security.Abstractions` contracts. Keeps security concerns separate from `Headless.Core` and `Headless.Api`.
@@ -31,6 +33,8 @@ dotnet add package Headless.Security
 ### String Encryption
 
 ```csharp
+using Headless.Security;
+
 // Bind from configuration section (e.g. "Headless:StringEncryption").
 builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("Headless:StringEncryption"));
 

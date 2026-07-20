@@ -170,10 +170,10 @@ The *dynamic store* (`IDynamicPermissionDefinitionStore`) reads definitions from
 
 `PermissionsInitializationBackgroundService` runs after the application starts. It:
 
-1. Persists static permission definitions to the database (guarded by a distributed lock; retries up to 10 times with exponential back-off), when `SaveStaticPermissionsToDatabase = true`.
+1. Persists static permission definitions to the database (guarded by a distributed lock; up to 10 jittered exponential-back-off retries capped at 30 seconds), when `SaveStaticPermissionsToDatabase = true`.
 2. Pre-caches dynamic definitions from the database into the in-process cache, when `IsDynamicPermissionStoreEnabled = true`.
 
-Dependents can await `WaitForInitializationAsync()` on the `IInitializer` interface to block until both tasks complete. When both options are `false`, initialization is a no-op and `IsInitialized` is set to `true` immediately.
+Dependents can await `WaitForInitializationAsync()` on the `IInitializer` interface to block until both tasks complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface to every waiter. When both options are `false`, initialization is a no-op and `IsInitialized` is set to `true` immediately.
 
 ## Choosing a Provider
 
@@ -292,7 +292,7 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `IPermissionGrantProvider` / built-in providers: `UserPermissionGrantProvider` (`"User"`) and `RolePermissionGrantProvider` (`"Role"`)
 - `IStaticPermissionDefinitionStore` — builds the permission catalog lazily and thread-safely from all registered `IPermissionDefinitionProvider` instances
 - `IDynamicPermissionDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination; disabled by default
-- `PermissionsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled; implements `IInitializer`
+- `PermissionsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled; implements `IInitializer`
 - `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `RegisterExtension`
@@ -310,7 +310,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 - Grant providers are stored in registration order with last-registered = highest priority. The built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
 - `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. However, registering a second storage provider extension throws at host startup.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
-- `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. If the host stops before initialization finishes, the `TaskCompletionSource` is cancelled.
+- `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host stops before initialization finishes, the background task and waiters are cancelled.
 - `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `DateCreated` (non-null) and `DateUpdated` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `DateUpdated` is normally null. The EF provider stamps `DateCreated` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
 - **Tenancy divergence (intentional).** `PermissionGrantRecord` keeps a first-class `TenantId` column and implements `IMultiTenant`, unlike `SettingValueRecord` / `FeatureValueRecord`, which scope tenancy through `ProviderName`/`ProviderKey` and have no tenant column. Grants need tenant-scoped uniqueness expressed directly in the `(Name, ProviderName, ProviderKey, TenantId)` unique index so the same grant can coexist per tenant and for the host. This is a deliberate design decision, not drift.
 

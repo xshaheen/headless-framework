@@ -377,7 +377,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                 {
                     foreach (var domainEvent in emitter.Events)
                     {
-                        bus.Publish(domainEvent);
+                        _PublishDomainEventBlocking(bus, domainEvent);
                     }
                 }
 
@@ -425,6 +425,29 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             ExceptionDispatchInfo.Capture(caught).Throw();
             throw; // unreachable; satisfies analyzers
         }
+#pragma warning restore MA0045
+    }
+
+    // ILocalEventBus is async-only by contract: exposing a public sync Publish invited sync-over-async
+    // dispatch (and its synchronization-context deadlocks) in application code. The synchronous
+    // SaveChanges path still has to dispatch domain events inline, so the bridge lives HERE, contained
+    // in infrastructure. Blocking is acceptable in this frame: EF's own sync SaveChanges is already
+    // blocking database I/O on a thread without a synchronization context to deadlock against.
+    private static void _PublishDomainEventBlocking(ILocalEventBus bus, IDomainEvent domainEvent)
+    {
+#pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
+        var pending = bus.PublishAsync(domainEvent);
+
+        if (pending.IsCompletedSuccessfully)
+        {
+            // Observe the completed ValueTask (required for IValueTaskSource-backed implementations).
+            pending.GetAwaiter().GetResult();
+            return;
+        }
+
+        // GetResult() rethrows the original exception (no AggregateException wrapping by Task.Wait),
+        // preserving the bus's single-exception / AggregateException contract for the catch below.
+        pending.AsTask().GetAwaiter().GetResult();
 #pragma warning restore MA0045
     }
 

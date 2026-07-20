@@ -8,8 +8,8 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_cancel_handle_lost_token_when_backend_connection_dies()
@@ -63,7 +63,7 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
     {
         // Resolve the exact advisory key the provider used so only the lock-holding backend is
         // terminated (avoids collateral termination of other connections in the shared container).
-        var key = PostgresAdvisoryLockKey.FromString(_KeyPrefix + resource, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(_KeyPrefix + resource, allowHashing: true);
         var (key1, key2) = key.Keys;
 
         await using var admin = new NpgsqlConnection(fixture.ConnectionString);

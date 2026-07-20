@@ -14,6 +14,9 @@ namespace Headless.Checks;
 ///   <item><description><see cref="ArgumentOutOfRangeException"/> — numeric / comparable range checks (<c>IsPositive</c>, <c>IsNegative</c>, <c>IsInclusiveBetween</c>, etc.).</description></item>
 /// </list>
 /// Use <see cref="Ensure"/> for runtime state assertions that are not about caller arguments.
+/// The auto-captured <c>paramName</c> parameter is the caller's argument expression and becomes the thrown
+/// exception's <see cref="ArgumentException.ParamName"/>; unlike <see cref="Ensure"/>'s <c>expression</c>, it names
+/// the offending parameter rather than describing a checked condition.
 /// </remarks>
 [PublicAPI]
 public static partial class Argument;

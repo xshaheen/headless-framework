@@ -7,8 +7,15 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

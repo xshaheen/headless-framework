@@ -9,8 +9,17 @@ namespace Headless.Messaging.Serialization;
 /// (JSON string and <see cref="TransportMessage"/>).
 /// </summary>
 /// <remarks>
+/// <para>
 /// The default implementation uses <c>System.Text.Json</c>. Replace this contract in DI to
 /// substitute a different serializer (e.g., MessagePack, Newtonsoft.Json).
+/// </para>
+/// <para>
+/// <b>Evolution policy:</b> this is a consumer-replaceable extension point, so it evolves
+/// additively. New members ship as default interface methods with a behavior-preserving
+/// fallback; existing member signatures do not change within a major version. Custom
+/// implementations therefore keep compiling across minor releases and may override new
+/// defaults when they can do better.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ISerializer

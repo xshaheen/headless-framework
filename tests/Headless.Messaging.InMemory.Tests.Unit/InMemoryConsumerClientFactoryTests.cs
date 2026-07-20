@@ -130,20 +130,26 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var client1Processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var client2Processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        client1.OnMessageCallback = (msg, _) =>
-        {
-            messages1.Add(msg);
-            client1Processed.TrySetResult();
+        client1.AttachCallbacks(
+            onMessage: (msg, _) =>
+            {
+                messages1.Add(msg);
+                client1Processed.TrySetResult();
 
-            return Task.CompletedTask;
-        };
-        client2.OnMessageCallback = (msg, _) =>
-        {
-            messages2.Add(msg);
-            client2Processed.TrySetResult();
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        client2.AttachCallbacks(
+            onMessage: (msg, _) =>
+            {
+                messages2.Add(msg);
+                client2Processed.TrySetResult();
 
-            return Task.CompletedTask;
-        };
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
 
         using var cts = new CancellationTokenSource();
         var listen1 = Task.Run(

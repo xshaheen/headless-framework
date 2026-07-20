@@ -10,13 +10,18 @@ namespace Headless.Payments.Paymob.CashOut.Models;
 /// <remarks>
 /// Register via <c>SetupPaymobCashOut.AddPaymobCashOut</c>. Options are validated on startup;
 /// missing required properties or an invalid URL cause the application to fail fast.
+/// The API URL requires HTTPS for external hosts; HTTP is accepted only for loopback development and test servers,
+/// and user information is rejected.
 /// Authentication uses the OAuth 2.0 password grant; the token is cached and refreshed
 /// automatically based on <c>TokenRefreshBuffer</c>.
 /// </remarks>
 [PublicAPI]
 public sealed class PaymobCashOutOptions
 {
-    /// <summary>The base URL of the Paymob CashOut API (e.g., <c>https://accept.paymob.com/v1/</c>).</summary>
+    /// <summary>
+    /// The base URL of the Paymob CashOut API (e.g., <c>https://accept.paymob.com/v1/</c>). External endpoints
+    /// require HTTPS; HTTP is accepted only for loopback development and test servers.
+    /// </summary>
     public required string ApiBaseUrl { get; init; }
 
     /// <summary>The merchant username used in the OAuth password-grant request.</summary>
@@ -47,7 +52,7 @@ internal sealed class PaymobCashOutOptionsValidator : AbstractValidator<PaymobCa
 {
     public PaymobCashOutOptionsValidator()
     {
-        RuleFor(x => x.ApiBaseUrl).NotEmpty().HttpUrl();
+        RuleFor(x => x.ApiBaseUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
         RuleFor(x => x.UserName).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();
         RuleFor(x => x.ClientId).NotEmpty();

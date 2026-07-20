@@ -134,6 +134,7 @@ Defines the public commit coordination contracts without provider dependencies.
 
 - `ICommitCoordinator`, `ICurrentCommitCoordinator`, `ICommitScope`, and `ICommitSignalSource`.
 - Outcome callbacks for commit and rollback.
+- `CommitOutcome` has explicit values (`Unspecified = 0`, `Committed = 1`, `RolledBack = 2`); `Unspecified` is the default sentinel and is rejected by `ICommitScope.SignalAsync`.
 - Typed scope-local work buffers.
 - Capability lookup through `ICommitCapability`.
 
@@ -269,7 +270,7 @@ Bridges EF Core's transaction commit/rollback edges to commit coordination, so w
 
 ### Key Features
 
-- `EntityFrameworkCommitSignalSource`.
+- Internal `EntityFrameworkCommitSignalSource` registered as `ICommitSignalSource`.
 - DI extension `AddEntityFrameworkCommitCoordination()`.
 - `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` and `HeadlessIdentityDbContext` (any `IHeadlessDbContext`) have a scope-free overload in `Headless.EntityFramework`.
 - Auto-attach of DI-registered interceptors to a consumer's own `DbContext` options via `IDbContextOptionsConfiguration<TContext>` (EF Core 9+). The public helper `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` (in `Headless.EntityFramework`, namespace `Headless.EntityFramework`) registers a configuration that runs against every `DbContext<TContext>` options build — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. `options.AddDiRegisteredInterceptors(sp)` remains the explicit per-options-action form.
@@ -331,7 +332,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services, `EntityFrameworkCommitSignalSource`, `ICommitSignalSource`, and the EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `AddHeadlessDbContext`/`AddHeadlessIdentityDbContext` and the on-by-default messaging EF storage path wire it automatically (via `IDbContextOptionsConfiguration<TContext>`, registered by `AddDiRegisteredInterceptorsConfiguration<TContext>()`); a plain `AddDbContext` consumer wiring its own options action calls `options.AddDiRegisteredInterceptors(sp)` (or `options.AddInterceptors(sp.GetServices<IInterceptor>())`) inside the action, or registers `AddDiRegisteredInterceptorsConfiguration<TContext>()` once — otherwise the commit edge is never observed. When the startup gate is enabled it also registers `CommitInterceptorStartupGate<TContext>`, which runs an empty-commit probe before hosted services start (`CommitProbeMode` Warn default / Strict opt-in).
+Registers core commit coordination services, the internal `EntityFrameworkCommitSignalSource` (exposed as `ICommitSignalSource`), and the internal EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `AddHeadlessDbContext`/`AddHeadlessIdentityDbContext` and the on-by-default messaging EF storage path wire it automatically (via `IDbContextOptionsConfiguration<TContext>`, registered by `AddDiRegisteredInterceptorsConfiguration<TContext>()`); a plain `AddDbContext` consumer wiring its own options action calls `options.AddDiRegisteredInterceptors(sp)` (or `options.AddInterceptors(sp.GetServices<IInterceptor>())`) inside the action, or registers `AddDiRegisteredInterceptorsConfiguration<TContext>()` once — otherwise the commit edge is never observed. When the startup gate is enabled it also registers `CommitInterceptorStartupGate<TContext>`, which runs an empty-commit probe before hosted services start (`CommitProbeMode` Warn default / Strict opt-in).
 
 ## Headless.CommitCoordination.InMemory
 
@@ -377,7 +378,7 @@ Provides PostgreSQL commit coordination registration points for inline framework
 
 ### Key Features
 
-- `PostgreSqlCommitSignalSource`.
+- Internal `PostgreSqlCommitSignalSource` registered as `ICommitSignalSource`.
 - DI extension `AddPostgreSqlCommitCoordination()`.
 - `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
@@ -433,7 +434,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services, `PostgreSqlCommitSignalSource`, and `ICommitSignalSource`.
+Registers core commit coordination services and the internal `PostgreSqlCommitSignalSource` (exposed as `ICommitSignalSource`).
 
 ## Headless.CommitCoordination.SqlServer
 
@@ -443,9 +444,9 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 
 ### Key Features
 
-- `SqlServerCommitSignalSource`.
+- Internal `SqlServerCommitSignalSource` registered as `ICommitSignalSource`.
 - Provider-key registry for detected commit and rollback signals.
-- DI extension `AddSqlServerCommitCoordination()`.
+- DI extension `AddSqlServerCommitCoordination()` with the standard options trio: parameterless defaults, `IConfiguration` binding, `Action<SqlServerCommitCoordinationOptions>`, and `Action<SqlServerCommitCoordinationOptions, IServiceProvider>`.
 - `SqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
 ### Design Notes
@@ -502,4 +503,4 @@ Default mode is `Warn`. Without a `DiagnosticProbeConnectionFactory`, startup co
 
 ### Side Effects
 
-Registers core commit coordination services, `SqlServerCommitSignalSource`, `ICommitSignalSource`, the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.
+Registers core commit coordination services, the internal `SqlServerCommitSignalSource` (exposed as `ICommitSignalSource`), the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.

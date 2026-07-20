@@ -58,6 +58,11 @@ options.UsePostgreSql(config =>
 });
 ```
 
+`UsePostgreSql` ships the standard provider registration overloads: a connection string,
+an `IConfiguration` section bound to `PostgreSqlOptions`, an `Action<PostgreSqlOptions>`,
+and an `Action<PostgreSqlOptions, IServiceProvider>` (resolve secrets/connection settings from DI).
+The transactional-outbox auto-wiring applies only to the `UseEntityFramework<TContext>()` path.
+
 ### `pg_trgm` on managed PostgreSQL
 
 Dashboard content (ILIKE) search is accelerated by GIN trigram indexes that require the `pg_trgm`

@@ -14,6 +14,8 @@ Provides pre-configured Testcontainers fixtures for common infrastructure (Redis
   - `HeadlessRedisFixture`
   - `HeadlessRabbitMqFixture`
   - `HeadlessNatsFixture`
+  - `HeadlessKafkaFixture`
+  - `HeadlessPulsarFixture`
   - `HeadlessAzuriteFixture`
   - `HeadlessLocalStackFixture`
   - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64)
@@ -29,8 +31,9 @@ Bump versions in one place when you want a refresh.
 
 ## Container reuse
 
-The fixtures create their containers with Testcontainers reuse enabled (except `HeadlessRabbitMqFixture` — see
-its remarks; the broker does not survive a warm reattach). When the host opts in —
+The fixtures create their containers with Testcontainers reuse enabled (except `HeadlessRabbitMqFixture`,
+`HeadlessKafkaFixture`, and `HeadlessPulsarFixture`; broker fixtures that need clean restart semantics use fresh
+containers). When the host opts in —
 `testcontainers.reuse.enable=true` in `~/.testcontainers.properties`, or the `TESTCONTAINERS_REUSE_ENABLE=true`
 environment variable — repeated local runs reattach to the already-warm container instead of paying the
 cold-start boot each time (most impactful for the slow-booting SQL Server fixtures). CI leaves reuse disabled,
@@ -85,6 +88,8 @@ No configuration required. Containers use sensible defaults.
 
 - `Headless.Testing`
 - `Testcontainers`
+- `Testcontainers.Kafka`
+- `Testcontainers.Pulsar`
 - `Testcontainers.Redis`
 - `Testcontainers.Xunit`
 

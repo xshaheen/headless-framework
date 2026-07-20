@@ -71,20 +71,29 @@ public sealed class SlugOptions
         UnicodeRange.Create('ؠ', 'ي'),
     ];
 
+    private static readonly FrozenDictionary<string, string> _DefaultReplacements = new Dictionary<string, string>(
+        StringComparer.Ordinal
+    )
+    {
+        { "&", " and " },
+        { "+", " plus " },
+        { ".", " dot " },
+        { "%", " percent " },
+    }.ToFrozenDictionary(StringComparer.Ordinal);
+
     /// <summary>
     /// Verbatim string substitutions applied before slug processing. Each key is replaced with its
-    /// corresponding value using ordinal comparison. Defaults to a small set of common symbol expansions:
+    /// corresponding value using ordinal comparison. Accepts any <see cref="IReadOnlyDictionary{TKey,TValue}"/>;
+    /// the assigned dictionary is frozen internally (ordinal key comparison) for lookup performance.
+    /// Defaults to a small set of common symbol expansions:
     /// <c>&amp;</c> to <c> and </c>, <c>+</c> to <c> plus </c>, <c>.</c> to <c> dot </c>, and
     /// <c>%</c> to <c> percent </c>.
     /// </summary>
-    public FrozenDictionary<string, string> Replacements { get; init; } =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            { "&", " and " },
-            { "+", " plus " },
-            { ".", " dot " },
-            { "%", " percent " },
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> Replacements
+    {
+        get;
+        init => field = value as FrozenDictionary<string, string> ?? value.ToFrozenDictionary(StringComparer.Ordinal);
+    } = _DefaultReplacements;
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="character"/> falls within at least one of the

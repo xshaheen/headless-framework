@@ -16,7 +16,7 @@ namespace Headless.Primitives;
 public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
 {
     private readonly T? _value;
-    private readonly ResultError? _error;
+    private readonly ApiResultError? _error;
 
     private ApiResult(T value)
     {
@@ -26,7 +26,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
         IsSuccess = true;
     }
 
-    private ApiResult(ResultError error)
+    private ApiResult(ApiResultError error)
     {
         _value = default;
         _error = Argument.IsNotNull(error);
@@ -55,7 +55,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>), or when accessed on a
     /// default-initialized instance (which is a failure state carrying no error).
     /// </exception>
-    public ResultError Error
+    public ApiResultError Error
     {
         get
         {
@@ -84,7 +84,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <summary>Tries to get the error without throwing.</summary>
     /// <param name="error">When this method returns <see langword="true"/>, the failure error; otherwise <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if the result is a failure; otherwise <see langword="false"/>.</returns>
-    public bool TryGetError([MaybeNullWhen(false)] out ResultError error)
+    public bool TryGetError([MaybeNullWhen(false)] out ApiResultError error)
     {
         error = _error;
         return !IsSuccess;
@@ -103,7 +103,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <param name="success">The function invoked on success, receiving the value.</param>
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
-    public TResult Match<TResult>(Func<T, TResult> success, Func<ResultError, TResult> failure)
+    public TResult Match<TResult>(Func<T, TResult> success, Func<ApiResultError, TResult> failure)
     {
         return IsSuccess ? success(_value!) : failure(Error);
     }
@@ -142,7 +142,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <summary>Invokes <paramref name="action"/> with the error when failed, then returns this result.</summary>
     /// <param name="action">The action to run on failure, receiving the error.</param>
     /// <returns>This result, to allow chaining.</returns>
-    public ApiResult<T> OnFailure(Action<ResultError> action)
+    public ApiResult<T> OnFailure(Action<ApiResultError> action)
     {
         if (!IsSuccess)
         {
@@ -167,7 +167,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Fail(ResultError error)
+    public static ApiResult<T> Fail(ApiResultError error)
     {
         return new(error);
     }
@@ -247,7 +247,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult{T}"/> carrying <paramref name="error"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
-    public static implicit operator ApiResult<T>(ResultError error) => Fail(error);
+    public static implicit operator ApiResult<T>(ApiResultError error) => Fail(error);
 
     /// <summary>Converts to the non-generic <see cref="ApiResult"/> (discards the value, keeps the success/error state).</summary>
     /// <param name="result">The result to convert.</param>

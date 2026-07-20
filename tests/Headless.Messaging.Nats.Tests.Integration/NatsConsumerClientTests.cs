@@ -14,12 +14,63 @@ using MessagingHeaders = Headless.Messaging.Headers;
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
+public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportConsumerConformanceTestsBase
 {
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
+    protected override string ProviderName => "NATS";
+
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateConformanceSessionAsync(cancellationToken);
+    }
+
     [Fact]
-    public async Task should_receive_and_commit_message()
+    public override Task should_round_trip_queue_message_body_and_headers()
+    {
+        return base.should_round_trip_queue_message_body_and_headers();
+    }
+
+    [Fact]
+    public override Task should_dispatch_empty_message_body()
+    {
+        return base.should_dispatch_empty_message_body();
+    }
+
+    [Fact]
+    public override Task should_commit_real_delivery_and_prevent_redelivery()
+    {
+        return base.should_commit_real_delivery_and_prevent_redelivery();
+    }
+
+    [Fact]
+    public override Task should_reject_real_delivery_and_observe_redelivery()
+    {
+        return base.should_reject_real_delivery_and_observe_redelivery();
+    }
+
+    [Fact]
+    public override Task should_isolate_unique_destinations()
+    {
+        return base.should_isolate_unique_destinations();
+    }
+
+    [Fact]
+    public override Task should_shutdown_idle_consumer_within_bound()
+    {
+        return base.should_shutdown_idle_consumer_within_bound();
+    }
+
+    [Fact]
+    public override Task should_bound_shutdown_while_handler_is_active()
+    {
+        return base.should_bound_shutdown_while_handler_is_active();
+    }
+
+    [Fact]
+    public async Task should_accept_real_delivery_value_for_commit_callback()
     {
         // given
         var streamName = $"consume-commit-{Guid.NewGuid():N}"[..30];
@@ -70,7 +121,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_receive_and_reject_message()
+    public async Task should_accept_real_delivery_value_for_reject_callback()
     {
         // given
         var streamName = $"consume-reject-{Guid.NewGuid():N}"[..30];

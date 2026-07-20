@@ -8,8 +8,8 @@ using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresReleaseSignalReconnectTests(PostgresDistributedLockFixture fixture) : TestBase
+[Collection<PostgreSqlDistributedLockFixture>]
+public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const string _Channel = "headless_distributed_locks_release";
 
@@ -147,7 +147,7 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgresDistributedLockF
 
     private async Task _WaitForHeldLockAsync(string keyMaterial)
     {
-        var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
+        var key = PostgreSqlAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
         var (key1, key2) = key.Keys;
 
         using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));

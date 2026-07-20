@@ -225,7 +225,8 @@ await db.ExecuteCoordinatedTransactionAsync(
             {
                 Function = "SendOrderReminder",
                 ExecutionTime = DateTime.UtcNow.AddHours(24),
-                Request = JobsHelper.SerializeRequest(new { order.Id }),
+                // requestSerialization is the host's JobsRequestSerializationOptions singleton (resolve from DI)
+                Request = JobsHelper.CreateJobRequest(new { order.Id }, requestSerialization),
             },
             ct
         );
@@ -276,6 +277,7 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`. New entities keep `Id`, `CreatedAt`, and `UpdatedAt` unset until a Jobs manager stamps them during `AddAsync` / `AddBatchAsync`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
+- **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. Rebuild source-generated consumers together with the Jobs runtime when upgrading this contract.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
@@ -329,6 +331,18 @@ public static Task ExecuteAsync(
     // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
     return Task.CompletedTask;
 }
+```
+
+The generated delegate ABI uses service provider, context, then cancellation token. Handwritten registrations use the same order:
+
+```csharp
+using Headless.Jobs;
+
+JobFunctionDelegate handler = static (serviceProvider, context, cancellationToken) =>
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    return Task.CompletedTask;
+};
 ```
 
 Requestless scheduling resolves a generated descriptor and passes it to the matching overload:
@@ -387,11 +401,11 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a fluent chain.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
-- **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. Only `LongRunning` work receives a dedicated thread.
+- **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. `LongRunning` work receives a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4). Long-running admission is queued on a detached lane (capped at two parked admissions per slot), so a saturated budget never blocks the dispatch loop; an admission rejected at the cap or dropped by cancellation/shutdown is recovered by the fallback reclaim sweep when its pickup lease lapses.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
-- **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes.
+- **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates the lease-expiry re-claim arm on `OnNodeDeath == Retry`; clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
@@ -566,7 +580,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
-- Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
+- Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 
 ---
 
@@ -598,6 +612,8 @@ distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCro
 is additive and has a compatibility implementation for third-party providers. A custom durable provider should
 override it so distinct-date selection and date/status aggregation happen in storage; otherwise the default
 implementation preserves behavior by projecting through the existing occurrence-list API.
+
+Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes; the legacy all-record `time-jobs`, `cron-jobs`, and `cron-job-occurrences/{cronJobId}` routes are not exposed.
 
 ### Installation
 
@@ -651,6 +667,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
 - `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
+- `Headless.Extensions`
 
 ### Side Effects
 
@@ -930,7 +947,8 @@ await timeJobManager.AddAsync(
     {
         Function = "ProcessPayment",
         ExecutionTime = DateTime.UtcNow,
-        Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
+        // requestSerialization is the host's JobsRequestSerializationOptions singleton (resolve from DI)
+        Request = JobsHelper.CreateJobRequest(new { PaymentId = "pay_123" }, requestSerialization),
         Retries = 3,
         RetryIntervals = [30, 60, 120], // seconds between attempts
     },

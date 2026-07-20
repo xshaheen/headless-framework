@@ -12,7 +12,7 @@ Persists audit entries through the application's EF Core `DbContext` so they com
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
-- `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
+- `HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, and correlation ID.
 - Startup gate validates that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
@@ -81,17 +81,25 @@ The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries
 ### Explicit event logging
 
 ```csharp
-await auditLog.LogAsync("pii.revealed", entityType: typeof(Patient).FullName, entityId: id.ToString());
+await auditLog.LogAsync(new AuditLogWriteRequest
+{
+    Action = "pii.revealed",
+    EntityType = typeof(Patient).FullName,
+    EntityId = id.ToString(),
+});
 ```
 
 ### Query audit entries
 
 ```csharp
 var entries = await readAuditLog.QueryAsync(
-    action: "entity.updated",
-    entityType: typeof(Patient).FullName,
-    limit: 50,
-    cancellationToken: ct
+    new AuditLogQuery
+    {
+        Action = "entity.updated",
+        EntityType = typeof(Patient).FullName,
+        Limit = 50,
+    },
+    ct
 );
 ```
 

@@ -15,8 +15,8 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         // Return a found entry with null timestamps regardless of type requested.
@@ -35,8 +35,8 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 
     public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions = default
+        FactoryCacheReadOptions readOptions = default,
+        CancellationToken cancellationToken = default
     )
     {
         // Position-aligned: every key resolves to the same found-with-null-timestamps entry the single-key path

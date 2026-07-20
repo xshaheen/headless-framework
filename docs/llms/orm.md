@@ -59,7 +59,7 @@ packages: EntityFramework.Core, EntityFramework, EntityFramework.Messaging, Couc
 
 Choose by storage model:
 
-- `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
+- `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
 - `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit `IIntegrationEvent`. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
@@ -76,7 +76,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 ## Agent Instructions
 
 - Treat this domain as four packages (`Headless.EntityFramework.Core`, `Headless.EntityFramework`, `Headless.EntityFramework.Messaging`, `Headless.Couchbase`). Do not invent an ORM umbrella package.
-- Use `Headless.EntityFramework.Core` for provider-neutral EF converters; do not reference the full `Headless.EntityFramework` package solely to normalize persisted timestamps.
+- Use `Headless.EntityFramework.Core` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
 - **Use `AddHeadlessDbContext<TDbContext>(...)` not raw `AddDbContext`.** The raw registration misses the save pipeline, EF interceptors wiring (commit coordination), the `IDbContextFactory<TDbContext>` singleton, and the compiled-query cache key replacement. `AddHeadlessDbContext` registers all of these.
 - `HeadlessDbContext` requires two constructor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
@@ -185,14 +185,16 @@ Provides provider-neutral Entity Framework Core primitives that feature packages
 
 ### Key Features
 
-- `UtcDateTimeValueConverter` normalizes `DateTime` values to UTC on database writes and reads.
-- `NullableUtcDateTimeValueConverter` provides the same normalization while preserving `null` values.
+- Provider-neutral converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives.
+- Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
+- Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
 - `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
 
 ### Design Notes
 
 - This package is intentionally independent of `HeadlessDbContext`. Storage feature packages can consume its EF primitives without inheriting application-level ORM behavior.
-- UTC normalization delegates to `DateTime.NormalizeToUtc()` from `Headless.Extensions`, keeping the framework's handling of `Local`, `Utc`, and `Unspecified` values consistent.
+- `NormalizeDateTimeValueConverter` is the single UTC-normalization API; Core does not expose a parallel converter family.
+- The package has no database-provider, hosting, interception, tenancy, auditing, or save-pipeline dependency.
 
 ### Installation
 
@@ -214,23 +216,25 @@ public sealed class ScheduledWork
 
 modelBuilder.Entity<ScheduledWork>(entity =>
 {
-    entity.Property(x => x.DateCreated).HasConversion(new UtcDateTimeValueConverter());
-    entity.Property(x => x.DateCompleted).HasConversion(new NullableUtcDateTimeValueConverter());
+    entity.Property(x => x.DateCreated).HasConversion(new NormalizeDateTimeValueConverter());
+    entity.Property(x => x.DateCompleted).HasConversion(new NullableNormalizeDateTimeValueConverter());
 });
+
+var page = await dbContext.Set<ScheduledWork>().ToIndexPageAsync(0, 25, cancellationToken);
 ```
 
 ### Configuration
 
-Both converters accept optional EF Core `ConverterMappingHints`. They do not require dependency injection or runtime clock services because UTC normalization is deterministic.
+Converters accept optional EF Core mapping hints. Query and model helpers are opt-in and require no Headless runtime registration.
 
 ### Dependencies
 
-- `Headless.Extensions`
-- `Microsoft.EntityFrameworkCore`
+- Headless foundational primitives, checks, domain contracts, extensions, and JSON serialization
+- `Microsoft.EntityFrameworkCore` and `Microsoft.EntityFrameworkCore.Relational`
 
 ### Side Effects
 
-None. The package performs no dependency-injection registration and applies converters only where consumers configure them.
+None. The package performs no dependency-injection registration.
 
 ---
 
@@ -258,8 +262,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (wraps in EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination for outbox/jobs drain)
-- Value converters: `MoneyAmountValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
-- `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
+- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Core`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
 ### Design Notes
@@ -464,6 +467,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 ### Dependencies
 
 - `Headless.Domain`
+- `Headless.EntityFramework.Core`
 - `Headless.AuditLog.Abstractions`
 - `Headless.Core`
 - `Headless.Hosting`
@@ -563,13 +567,13 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 
 - `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` for Couchbase Transactions
 - `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
-- `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `(ICluster, Transactions)` tuple per call to `GetClusterAsync`
-- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
-- `ICouchbaseManager` / `CouchbaseManager` — idempotent scope, collection, and index bootstrapping with Polly retry; `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, `BuildDeferredIndexesAsync`
+- `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `CouchbaseClusterConnection` (cluster + transaction manager) per call to `GetClusterAsync`
+- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
+- `ICouchbaseManager` / `CouchbaseManager` — idempotent scope, collection, and index bootstrapping with Polly retry (configurable via `CouchbaseManagerOptions`: `MaxRetries`, `RetryDelay`, `Timeout`); `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, `BuildDeferredIndexesAsync`
 - `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
 - `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
-- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call
+- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call; overloads accept `IConfiguration`, `Action<CouchbaseManagerOptions>`, or `Action<CouchbaseManagerOptions, IServiceProvider>` to tune the manager's resilience options
 
 ### Installation
 
@@ -618,6 +622,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 
 - Implement and register `ICouchbaseClusterOptionsProvider` to supply cluster options (connection string, credentials) per cluster key.
 - Implement and register `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
+- Optionally tune the manager's Polly resilience via `CouchbaseManagerOptions` (`MaxRetries`, default 3; `RetryDelay`, default 500 ms; `Timeout`, default 10 s) using the `AddHeadlessCouchbase(IConfiguration)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions>)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions, IServiceProvider>)` overloads; options are validated (FluentValidation) on startup.
 - Resolve `IBucketContextProvider` from DI to get typed bucket contexts.
 - Use `ICouchbaseManager` during application startup or `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
 
@@ -643,13 +648,14 @@ services.AddHeadlessCouchbase();
 ### Side Effects
 
 - `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider` — those remain the consumer's responsibility.
-- Cluster connections are lazily initialized and statically cached by `clusterKey` in `CouchbaseClustersProvider`. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
+- Cluster connections are lazily initialized and cached per `CouchbaseClustersProvider` instance (a singleton within one container) by `clusterKey`; separate containers hold independent connections. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
 - `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.
 
 ### Cancellation (Couchbase)
 
 - The async provider seams (`ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`) and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
-- Because clusters are created once and statically cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
+- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica and accepts `GetAllReplicasOptions`; pass the caller token through `GetAllReplicasOptions.CancellationToken(...)`.
+- Because clusters are created once per provider and cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
 - `ICluster.BucketAsync` exposes no cancellation overload, so `IBucketContextProvider.GetAsync` honors the token before opening the bucket, not during.
 - The Couchbase transactions SDK (`Transactions.RunAsync`) exposes no `CancellationToken` hook, so `ExecuteTransactionAsync` observes the token only before the transaction begins; once the SDK transaction loop starts it runs to completion, SDK timeout, or failure. Bound in-transaction duration with `PerTransactionConfig` (timeout / durability) instead.

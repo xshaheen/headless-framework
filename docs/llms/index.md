@@ -20,7 +20,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Argument validation and guard clauses
 
-- Use `Argument.*` (e.g., `Argument.IsNotNull(value)`, `Argument.IsNotNullOrWhiteSpace(value)`, `Argument.IsPositive(value)`) and `Ensure.*` (e.g., `Ensure.True(condition)`, `Ensure.NotDisposed(this, _disposed)`) from `Headless.Checks`.
+- Use `Argument.*` (e.g., `Argument.IsNotNull(value)`, `Argument.IsNotNullOrWhiteSpace(value)`, `Argument.IsPositive(value)`) and `Ensure.*` (e.g., `Ensure.True(condition)`, `Ensure.NotDisposed(_disposed, this)`) from `Headless.Checks`.
 - Do not use `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, or other `*.ThrowIf*` static helpers.
 - For request payloads, use FluentValidation rules rather than manual `if` guards.
 
@@ -46,7 +46,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Database access
 
-- For reusable EF Core converters without `HeadlessDbContext`, use `Headless.EntityFramework.Core`.
+- For provider-neutral EF converters, primitive mappings, and query helpers without `HeadlessDbContext`, use `Headless.EntityFramework.Core`.
 - For EF Core, use `Headless.EntityFramework` — call `services.AddHeadlessDbContext<TContext>(...)` for framework conventions, global filters, soft deletes, and tenancy support.
 - For raw SQL, use the connection factories in `Headless.Sql.PostgreSql` / `Headless.Sql.SqlServer` / `Headless.Sql.Sqlite` rather than constructing `NpgsqlConnection` / `SqlConnection` directly.
 
@@ -396,7 +396,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
-- `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
+- `Headless.Messaging.Storage.InMemory` — Ephemeral storage (dev/testing).
 - `Headless.Messaging.Testing` — In-process test harness for asserting dispatch/consume behavior (documented in [testing.md](testing.md)).
 
 ### OpenAPI
@@ -405,7 +405,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.OpenApi.Scalar` — Scalar API documentation UI.
 
 ### ORM
-- `Headless.EntityFramework.Core` — provider-neutral EF Core value converters without the full context and save pipeline.
+- `Headless.EntityFramework.Core` — provider-neutral EF converters, primitive mappings, and query helpers without the full context and save pipeline.
 - `Headless.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
 - `Headless.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
 - `Headless.Couchbase` — Couchbase with bucket context and cluster management.

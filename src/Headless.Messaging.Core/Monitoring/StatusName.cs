@@ -18,14 +18,14 @@ public enum StatusName
     Failed = -1,
 
     /// <summary>The message is scheduled for future delivery and has not yet been queued.</summary>
-    Scheduled,
+    Scheduled = 0,
 
     /// <summary>The message was processed successfully.</summary>
-    Succeeded,
+    Succeeded = 1,
 
     /// <summary>The message is delayed and awaiting its next retry/dispatch window.</summary>
-    Delayed,
+    Delayed = 2,
 
     /// <summary>The message is queued and awaiting processing.</summary>
-    Queued,
+    Queued = 3,
 }

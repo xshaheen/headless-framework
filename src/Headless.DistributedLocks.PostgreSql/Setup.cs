@@ -46,7 +46,7 @@ public static class SetupPostgreSqlDistributedLocks
 
         /// <summary>
         /// Configures the distributed-lock provider to use PostgreSQL advisory locks, binding
-        /// <see cref="PostgresDistributedLockOptions"/> from the supplied <see cref="IConfiguration"/>.
+        /// <see cref="PostgreSqlDistributedLockOptions"/> from the supplied <see cref="IConfiguration"/>.
         /// </summary>
         /// <param name="configuration">
         /// The configuration section to bind. Must not be <see langword="null"/>.
@@ -59,14 +59,14 @@ public static class SetupPostgreSqlDistributedLocks
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new PostgresDistributedLocksOptionsExtension(configuration));
+            setup.RegisterExtension(new PostgreSqlDistributedLocksOptionsExtension(configuration));
 
             return setup;
         }
 
         /// <summary>
         /// Configures the distributed-lock provider to use PostgreSQL advisory locks, applying the
-        /// supplied delegate to <see cref="PostgresDistributedLockOptions"/>.
+        /// supplied delegate to <see cref="PostgreSqlDistributedLockOptions"/>.
         /// </summary>
         /// <param name="configure">
         /// A delegate that configures the options. Must not be <see langword="null"/>.
@@ -75,11 +75,11 @@ public static class SetupPostgreSqlDistributedLocks
         /// <exception cref="ArgumentNullException">
         /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
         /// </exception>
-        public HeadlessDistributedLocksSetupBuilder UsePostgreSql(Action<PostgresDistributedLockOptions> configure)
+        public HeadlessDistributedLocksSetupBuilder UsePostgreSql(Action<PostgreSqlDistributedLockOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgresDistributedLocksOptionsExtension(configure));
+            setup.RegisterExtension(new PostgreSqlDistributedLocksOptionsExtension(configure));
 
             return setup;
         }
@@ -87,7 +87,7 @@ public static class SetupPostgreSqlDistributedLocks
         /// <summary>
         /// Configures the distributed-lock provider to use PostgreSQL advisory locks, applying the
         /// supplied delegate (which also receives the <see cref="IServiceProvider"/>) to
-        /// <see cref="PostgresDistributedLockOptions"/>.
+        /// <see cref="PostgreSqlDistributedLockOptions"/>.
         /// </summary>
         /// <param name="configure">
         /// A delegate that configures the options with access to the DI container. Must not be
@@ -98,35 +98,35 @@ public static class SetupPostgreSqlDistributedLocks
         /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
         /// </exception>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql(
-            Action<PostgresDistributedLockOptions, IServiceProvider> configure
+            Action<PostgreSqlDistributedLockOptions, IServiceProvider> configure
         )
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgresDistributedLocksOptionsExtension(configure));
+            setup.RegisterExtension(new PostgreSqlDistributedLocksOptionsExtension(configure));
 
             return setup;
         }
     }
 
-    private sealed class PostgresDistributedLocksOptionsExtension : IDistributedLocksOptionsExtension
+    private sealed class PostgreSqlDistributedLocksOptionsExtension : IDistributedLocksOptionsExtension
     {
         private readonly IConfiguration? _configuration;
-        private readonly Action<PostgresDistributedLockOptions>? _configure;
-        private readonly Action<PostgresDistributedLockOptions, IServiceProvider>? _configureWithServices;
+        private readonly Action<PostgreSqlDistributedLockOptions>? _configure;
+        private readonly Action<PostgreSqlDistributedLockOptions, IServiceProvider>? _configureWithServices;
 
-        public PostgresDistributedLocksOptionsExtension(IConfiguration configuration)
+        public PostgreSqlDistributedLocksOptionsExtension(IConfiguration configuration)
         {
             _configuration = configuration;
         }
 
-        public PostgresDistributedLocksOptionsExtension(Action<PostgresDistributedLockOptions> configure)
+        public PostgreSqlDistributedLocksOptionsExtension(Action<PostgreSqlDistributedLockOptions> configure)
         {
             _configure = configure;
         }
 
-        public PostgresDistributedLocksOptionsExtension(
-            Action<PostgresDistributedLockOptions, IServiceProvider> configure
+        public PostgreSqlDistributedLocksOptionsExtension(
+            Action<PostgreSqlDistributedLockOptions, IServiceProvider> configure
         )
         {
             _configureWithServices = configure;
@@ -136,17 +136,19 @@ public static class SetupPostgreSqlDistributedLocks
         {
             if (_configuration is not null)
             {
-                services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(
+                services.Configure<PostgreSqlDistributedLockOptions, PostgreSqlDistributedLockOptionsValidator>(
                     _configuration
                 );
             }
             else if (_configure is not null)
             {
-                services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(_configure);
+                services.Configure<PostgreSqlDistributedLockOptions, PostgreSqlDistributedLockOptionsValidator>(
+                    _configure
+                );
             }
             else
             {
-                services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(
+                services.Configure<PostgreSqlDistributedLockOptions, PostgreSqlDistributedLockOptionsValidator>(
                     _configureWithServices
                 );
             }
@@ -187,7 +189,7 @@ public static class SetupPostgreSqlDistributedLocks
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
             sp.GetService<IFencingTokenSource>(),
-            pollingFallback: sp.GetRequiredService<IOptions<PostgresDistributedLockOptions>>().Value.PollingFallback
+            pollingFallback: sp.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value.PollingFallback
         ));
         services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());
         services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();

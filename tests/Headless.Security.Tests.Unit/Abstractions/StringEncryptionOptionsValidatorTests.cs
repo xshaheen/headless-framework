@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless;
-using Headless.Abstractions;
+using Headless.Security;
 
 namespace Tests.Abstractions;
 

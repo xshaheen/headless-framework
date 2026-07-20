@@ -9,16 +9,16 @@ public enum SensitiveDataStrategy
     /// Replace the value with <c>"***"</c>. The property name still appears in
     /// <see cref="AuditLogEntryData.ChangedFields"/> — you know it changed, not to what.
     /// </summary>
-    Redact,
+    Redact = 0,
 
     /// <summary>
     /// Omit the property entirely from OldValues, NewValues, and ChangedFields.
     /// </summary>
-    Exclude,
+    Exclude = 1,
 
     /// <summary>
     /// Pass the value through <see cref="AuditLogOptions.SensitiveValueTransformer"/>.
     /// Consumer controls the output (hash, mask, tokenize).
     /// </summary>
-    Transform,
+    Transform = 2,
 }

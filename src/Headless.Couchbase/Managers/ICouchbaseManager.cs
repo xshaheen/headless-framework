@@ -11,6 +11,7 @@ using Headless.Checks;
 using Headless.Couchbase.Clusters;
 using Humanizer;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
@@ -18,9 +19,9 @@ namespace Headless.Couchbase.Managers;
 
 /// <summary>
 /// Provides idempotent scope, collection, and index management operations against a Couchbase cluster.
-/// All mutating operations are guarded by a Polly retry pipeline with linear back-off and a 10-second
-/// overall timeout; transient failures are retried while idempotent exceptions (scope/collection/index
-/// already exists) are treated as success.
+/// All mutating operations are guarded by a Polly retry pipeline (linear back-off with jitter plus an
+/// overall timeout, configured via <see cref="CouchbaseManagerOptions"/>); transient failures are retried
+/// while idempotent exceptions (scope/collection/index already exists) are treated as success.
 /// </summary>
 [PublicAPI]
 public interface ICouchbaseManager
@@ -51,13 +52,16 @@ public interface ICouchbaseManager
     /// <param name="clusterKey">The logical cluster identifier.</param>
     /// <param name="bucketName">The bucket containing the scope.</param>
     /// <param name="scopeName">The scope in which to create collections.</param>
-    /// <param name="collections">The set of collection names to ensure exist.</param>
+    /// <param name="collections">
+    /// The set of collection names to ensure exist. Set semantics are required: the names are processed
+    /// in parallel, so they must be unique.
+    /// </param>
     /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
     Task CreateCollectionsAsync(
         string clusterKey,
         string bucketName,
         string scopeName,
-        HashSet<string> collections,
+        IReadOnlySet<string> collections,
         CancellationToken cancellationToken = default
     );
 
@@ -115,28 +119,38 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
     /// <summary>
     /// Initializes a new instance of <see cref="CouchbaseManager"/> with a Polly retry pipeline
-    /// (linear back-off, 500 ms base delay with jitter, 10-second overall timeout).
+    /// (linear back-off with jitter plus an overall timeout) built from <paramref name="options"/>.
     /// </summary>
     /// <param name="clustersProvider">Provides access to registered Couchbase clusters.</param>
+    /// <param name="options">
+    /// Resilience options controlling the retry count, base delay, and overall timeout. Defaults:
+    /// 3 retries, 500 ms base delay, 10-second timeout.
+    /// </param>
     /// <param name="logger">Logger for operation lifecycle events.</param>
     /// <param name="timeProvider">
     /// Optional time provider used by the Polly pipeline; defaults to <see cref="TimeProvider.System"/>.
     /// </param>
     public CouchbaseManager(
         ICouchbaseClustersProvider clustersProvider,
+        IOptions<CouchbaseManagerOptions> options,
         ILogger<CouchbaseManager> logger,
         TimeProvider? timeProvider = null
     )
     {
+        Argument.IsNotNull(options);
+
         _clustersProvider = clustersProvider;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+
+        var resilienceOptions = options.Value;
 
         var retryStrategyOptions = new RetryStrategyOptions
         {
             Name = "CouchbaseManager.Retry",
             BackoffType = DelayBackoffType.Linear,
-            Delay = 0.5.Seconds(),
+            MaxRetryAttempts = resilienceOptions.MaxRetries,
+            Delay = resilienceOptions.RetryDelay,
             UseJitter = true,
             ShouldHandle = new PredicateBuilder().Handle<Exception>(e =>
                 e
@@ -150,7 +164,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
             .AddRetry(retryStrategyOptions)
-            .AddTimeout(10.Seconds())
+            .AddTimeout(resilienceOptions.Timeout)
             .Build();
     }
 
@@ -165,7 +179,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(bucketName);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
+        var cluster = await _GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
 
         await _retryPipeline
             .ExecuteAsync(
@@ -270,7 +284,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         string clusterKey,
         string bucketName,
         string scopeName,
-        HashSet<string> collections,
+        IReadOnlySet<string> collections,
         CancellationToken cancellationToken = default
     )
     {
@@ -530,9 +544,9 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
     private async Task<ICluster> _GetClusterAsync(string clusterKey, CancellationToken cancellationToken)
     {
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
+        var connection = await _clustersProvider.GetClusterAsync(clusterKey, cancellationToken).ConfigureAwait(false);
 
-        return cluster;
+        return connection.Cluster;
     }
 
     private async Task<IBucket> _GetBucketAsync(

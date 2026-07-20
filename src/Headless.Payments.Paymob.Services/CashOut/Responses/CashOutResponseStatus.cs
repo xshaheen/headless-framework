@@ -11,8 +11,8 @@ public enum CashOutResponseStatus
     /// The provider accepted the disbursement request but has not yet confirmed delivery.
     /// Monitor via the inquiry endpoint or await a callback.
     /// </summary>
-    Pending,
+    Pending = 0,
 
     /// <summary>The disbursement was delivered to the recipient successfully.</summary>
-    Success,
+    Success = 1,
 }

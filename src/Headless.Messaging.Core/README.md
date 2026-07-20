@@ -43,7 +43,7 @@ For a local, dependency-free first run, install the in-memory transport and stor
 ```bash
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
-dotnet add package Headless.Messaging.InMemoryStorage
+dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
 ```csharp
@@ -254,7 +254,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 ```
 
 - `Version` is validated non-empty and at most 20 characters: the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- `RetryBatchSize` (default 200, `> 0`) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000, `> 0`) caps the delayed/queued scheduler batch.
+- `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
+- `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
 
 ## Middleware
 

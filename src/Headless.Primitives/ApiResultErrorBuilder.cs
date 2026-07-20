@@ -9,14 +9,14 @@ namespace Headless.Primitives;
 [PublicAPI]
 public ref struct ApiResultErrorBuilder
 {
-    private List<ResultError>? _errors;
+    private List<ApiResultError>? _errors;
 
     /// <summary><see langword="true"/> if at least one error has been accumulated.</summary>
     public readonly bool HasErrors => _errors is { Count: > 0 };
 
     /// <summary>Accumulates an error to be reported when the builder is materialized into a result.</summary>
     /// <param name="error">The error to accumulate.</param>
-    public void Add(ResultError error)
+    public void Add(ApiResultError error)
     {
         _errors ??= [];
         _errors.Add(error);

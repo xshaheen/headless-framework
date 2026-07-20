@@ -22,12 +22,14 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     IGuidGenerator guidGenerator,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    JobsRequestSerializationOptions serializationOptions
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
+    private readonly JobsRequestSerializationOptions _serializationOptions = Argument.IsNotNull(serializationOptions);
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider = Argument.IsNotNull(
         persistenceProvider
     );
@@ -611,7 +613,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             return (string.Empty, 0);
         }
 
-        var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes);
+        var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes, _serializationOptions);
 
         if (!_functionRegistry.RequestTypes.TryGetValue(functionName, out var functionTypeContext))
         {

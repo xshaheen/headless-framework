@@ -771,7 +771,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                 {
                     CronExpression = string.Empty,
                     Priority = JobPriority.LongRunning,
-                    Delegate = (cancellationToken, _, context) =>
+                    Delegate = (_, context, cancellationToken) =>
                         CoordinatedEnqueueJobs.RunAsync(context, cancellationToken),
                     MaxConcurrency = 1,
                 },
@@ -779,7 +779,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                 {
                     CronExpression = string.Empty,
                     Priority = JobPriority.LongRunning,
-                    Delegate = async (cancellationToken, _, context) =>
+                    Delegate = async (_, context, cancellationToken) =>
                     {
                         var request = await JobsRequestProvider
                             .GetRequestAsync<CoordinatedFacadeRequest>(context, cancellationToken)

@@ -14,7 +14,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
     CronScheduleCache cronScheduleCache,
-    ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger
+    ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger,
+    JobsRequestSerializationOptions serializationOptions
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -718,7 +719,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     .GetTimeJobRequestAsync(jobId, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
-        return request == null ? default : JobsHelper.ReadJobRequest<T>(request);
+        return request == null ? default : JobsHelper.ReadJobRequest<T>(request, serializationOptions);
     }
 
     public async Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default)

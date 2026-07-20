@@ -6,7 +6,7 @@ Provides PostgreSQL commit coordination registration points for inline framework
 
 ## Key Features
 
-- `PostgreSqlCommitSignalSource`.
+- Internal `PostgreSqlCommitSignalSource` registered as `ICommitSignalSource`.
 - DI extension `AddPostgreSqlCommitCoordination()`.
 - `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
@@ -62,4 +62,4 @@ None.
 
 ## Side Effects
 
-Registers core commit coordination services, `PostgreSqlCommitSignalSource`, and `ICommitSignalSource`.
+Registers core commit coordination services and the internal `PostgreSqlCommitSignalSource` (exposed as `ICommitSignalSource`).

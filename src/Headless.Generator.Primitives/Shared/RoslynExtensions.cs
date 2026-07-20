@@ -10,7 +10,7 @@ namespace Headless.Generator.Primitives.Shared;
 /// A collection of extension methods for working with Roslyn syntax and symbols.
 /// See: https://www.meziantou.net/working-with-types-in-a-roslyn-analyzer.htm
 /// </summary>
-public static class RoslynExtensions
+internal static class RoslynExtensions
 {
     /// <summary>Gets the location of the attribute data within the source code.</summary>
     /// <param name="self">The attribute data to retrieve the location for.</param>

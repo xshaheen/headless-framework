@@ -14,6 +14,7 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`. New entities keep `Id`, `CreatedAt`, and `UpdatedAt` unset until a Jobs manager stamps them during `AddAsync` / `AddBatchAsync`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
+- **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. Rebuild source-generated consumers together with the Jobs runtime when upgrading this contract.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 
@@ -90,6 +91,18 @@ public static Task SendReminderAsync(
 
 [JobFunction("Cleanup")]
 public static Task CleanupAsync(CancellationToken ct) => Task.CompletedTask;
+```
+
+The generated delegate ABI uses service provider, context, then cancellation token. Handwritten registrations use the same order:
+
+```csharp
+using Headless.Jobs;
+
+JobFunctionDelegate handler = static (serviceProvider, context, cancellationToken) =>
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    return Task.CompletedTask;
+};
 ```
 
 All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`.

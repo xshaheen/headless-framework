@@ -84,7 +84,7 @@ internal static class DelegateGenerator
         // JobFunctionRegistration record (object initializer) rather than a positional value-tuple so new
         // per-function knobs stay additive without breaking this baked-in [ModuleInitializer] ABI.
         sb.AppendLine(
-            $"            jobFunctionDelegateDict.Add(\"{functionName}\", new JobFunctionRegistration {{ CronExpression = {cronExprFlag}, Priority = (JobPriority){functionPriority}, Delegate = new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
+            $"            jobFunctionDelegateDict.Add(\"{functionName}\", new JobFunctionRegistration {{ CronExpression = {cronExprFlag}, Priority = (JobPriority){functionPriority}, Delegate = new JobFunctionDelegate({asyncFlag}(serviceProvider, context, cancellationToken) =>"
         );
         sb.AppendLine("            {");
 

@@ -13,7 +13,7 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
-        var utcDateTimeConverter = new UtcDateTimeValueConverter();
+        var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
 
         builder.HasKey("Id");
 
