@@ -40,7 +40,7 @@ public interface IEnumLocaleAccessor
 
 /// <summary>
 /// Default <see cref="IEnumLocaleAccessor"/> implementation that delegates to the
-/// <c>EnumExtensions.GetLocale</c> extension methods using the locale and language
+/// <c>HeadlessEnumExtensions.GetLocale</c> extension methods using the locale and language
 /// exposed by the injected <see cref="ICurrentLocale"/>.
 /// </summary>
 public sealed class DefaultEnumLocaleAccessor(ICurrentLocale currentLocale) : IEnumLocaleAccessor

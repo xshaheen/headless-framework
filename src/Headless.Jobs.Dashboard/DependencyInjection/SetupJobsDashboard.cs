@@ -53,7 +53,7 @@ public static class SetupJobsDashboard
 
         configureDashboard?.Invoke(dashboardConfig);
 
-        jobsConfiguration.DashboardServiceAction = (services) =>
+        jobsConfiguration.DashboardServiceAction = (services, requestSerializationOptions) =>
         {
             services.AddScoped<
                 IJobsDashboardRepository<TTimeJob, TCronJob>,
@@ -98,7 +98,7 @@ public static class SetupJobsDashboard
                 }
             }
 
-            services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig);
+            services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig, requestSerializationOptions);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
 
             // Live-nodes bridge: pushes membership deltas to the hub. Resolved lazily so the in-memory /

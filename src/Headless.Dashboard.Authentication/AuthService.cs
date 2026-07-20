@@ -9,27 +9,18 @@ namespace Headless.Dashboard.Authentication;
 /// <summary>
 /// Authentication service supporting 5 modes: None, Basic, ApiKey, Host, Custom.
 /// </summary>
-public sealed class AuthService : IAuthService
+/// <remarks>
+/// The service does not re-validate <paramref name="config"/>: credential completeness is enforced
+/// once, by the FluentValidation validator wired into the options pipeline (validate-on-start) in
+/// <see cref="SetupDashboardAuthentication"/>, which every DI-resolved <see cref="AuthConfig"/> traverses.
+/// </remarks>
+/// <param name="config">The authentication configuration, including mode and credentials.</param>
+/// <param name="logger">The logger used to record authentication errors.</param>
+[PublicAPI]
+public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) : IAuthService
 {
-    private readonly AuthConfig _config;
-    private readonly ILogger<AuthService> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="AuthService"/> and validates <paramref name="config"/>
-    /// immediately so misconfiguration is caught at startup rather than on the first request.
-    /// </summary>
-    /// <param name="config">The authentication configuration, including mode and credentials.</param>
-    /// <param name="logger">The logger used to record authentication errors.</param>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown by <see cref="AuthConfig.Validate"/> when the configuration is incomplete for the
-    /// selected <see cref="AuthMode"/>.
-    /// </exception>
-    public AuthService(AuthConfig config, ILogger<AuthService> logger)
-    {
-        _config = config;
-        _logger = logger;
-        _config.Validate();
-    }
+    private readonly AuthConfig _config = config;
+    private readonly ILogger<AuthService> _logger = logger;
 
     /// <inheritdoc/>
     public async Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken cancellationToken = default)

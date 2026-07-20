@@ -29,6 +29,12 @@ public sealed class SqlServerCommitCoordinationOptions
     /// <see langword="null" /> and the mode is <see cref="CommitProbeMode.Warn" />, the
     /// live transaction check is skipped and the probe records a <see cref="SqlServerCommitDiagnosticProbeStatus.Skipped" /> result.
     /// </summary>
+    /// <remarks>
+    /// This member is deliberately typed as the provider-native <see cref="SqlConnection" /> rather than
+    /// <see cref="System.Data.Common.DbConnection" />: the probe exists precisely to validate
+    /// <c>Microsoft.Data.SqlClient</c>'s diagnostic-listener behavior, which only fires for genuine
+    /// <see cref="SqlConnection" /> transactions, so the SqlClient coupling is intentional.
+    /// </remarks>
     public Func<CancellationToken, ValueTask<SqlConnection>>? DiagnosticProbeConnectionFactory { get; set; }
 
     /// <summary>

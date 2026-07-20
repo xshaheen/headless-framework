@@ -7,7 +7,7 @@ namespace Headless.Settings.Models;
 
 /// <summary>Describes a named application setting, including its defaults, visibility, and storage options.</summary>
 /// <remarks>
-/// Instances are minted through <see cref="ISettingDefinitionContext.Add(string, string?, string?, string?, bool, bool, bool)"/>;
+/// Instances are minted through <see cref="ISettingDefinitionContext.Add(SettingDefinitionCreateOptions)"/>;
 /// the constructor is <see langword="internal"/> so the definition registry owns creation.
 /// </remarks>
 [PublicAPI]

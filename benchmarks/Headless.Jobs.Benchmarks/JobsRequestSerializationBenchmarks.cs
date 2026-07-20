@@ -7,6 +7,7 @@ namespace Headless.Jobs.Benchmarks;
 public class JobsRequestSerializationBenchmarks
 {
     private byte[] _request = null!;
+    private JobsRequestSerializationOptions _serializationOptions = null!;
 
     [Params(256, 4 * 1024, 64 * 1024, 1024 * 1024)]
     public int PayloadSize { get; set; }
@@ -17,24 +18,24 @@ public class JobsRequestSerializationBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        JobsHelper.RequestJsonSerializerOptions = new JsonSerializerOptions();
-        JobsHelper.UseGZipCompression = Compressed;
-        _request = JobsHelper.CreateJobRequest(new BenchmarkPayload(new string('x', PayloadSize)));
+        _serializationOptions = new JobsRequestSerializationOptions { UseGZipCompression = Compressed };
+        _request = JobsHelper.CreateJobRequest(
+            new BenchmarkPayload(new string('x', PayloadSize)),
+            _serializationOptions
+        );
     }
 
     [Benchmark(Baseline = true, Description = "UTF-8 bytes -> string -> typed object")]
     public BenchmarkPayload? StringIntermediate()
     {
-        JobsHelper.UseGZipCompression = Compressed;
-        var json = JobsHelper.ReadJobRequestAsString(_request);
-        return JsonSerializer.Deserialize<BenchmarkPayload>(json, JobsHelper.RequestJsonSerializerOptions);
+        var json = JobsHelper.ReadJobRequestAsString(_request, _serializationOptions);
+        return JsonSerializer.Deserialize<BenchmarkPayload>(json, _serializationOptions.SerializerOptions);
     }
 
     [Benchmark(Description = "UTF-8/GZip stream -> typed object")]
     public BenchmarkPayload? DirectTypedRead()
     {
-        JobsHelper.UseGZipCompression = Compressed;
-        return JobsHelper.ReadJobRequest<BenchmarkPayload>(_request);
+        return JobsHelper.ReadJobRequest<BenchmarkPayload>(_request, _serializationOptions);
     }
 
     public sealed record BenchmarkPayload(string Value);

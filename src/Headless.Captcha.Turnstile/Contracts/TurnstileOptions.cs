@@ -12,7 +12,10 @@ namespace Headless.Captcha;
 [PublicAPI]
 public sealed class TurnstileOptions
 {
-    /// <summary>The base URL of the Cloudflare Turnstile API. Defaults to the public Cloudflare endpoint.</summary>
+    /// <summary>
+    /// The base URL of the Cloudflare Turnstile API. External endpoints require HTTPS; HTTP is accepted only for
+    /// loopback development and test servers. Defaults to the public Cloudflare endpoint.
+    /// </summary>
     public string VerifyBaseUrl { get; set; } = "https://challenges.cloudflare.com/";
 
     /// <summary>The Turnstile site key rendered into the client widget.</summary>
@@ -26,7 +29,7 @@ internal sealed class TurnstileOptionsValidator : AbstractValidator<TurnstileOpt
 {
     public TurnstileOptionsValidator()
     {
-        RuleFor(x => x.VerifyBaseUrl).HttpUrl();
+        RuleFor(x => x.VerifyBaseUrl).HttpsOrLoopbackHttpUrl();
         RuleFor(x => x.SiteKey).NotEmpty();
         RuleFor(x => x.SiteSecret).NotEmpty();
     }

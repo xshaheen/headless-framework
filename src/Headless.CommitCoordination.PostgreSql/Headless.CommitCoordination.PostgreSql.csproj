@@ -10,6 +10,9 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.CommitCoordination.PostgreSql.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
   </ItemGroup>

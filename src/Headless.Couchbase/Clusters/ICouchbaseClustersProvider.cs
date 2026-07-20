@@ -9,8 +9,6 @@ using Nito.AsyncEx;
 
 namespace Headless.Couchbase.Clusters;
 
-using GetClusterResult = (ICluster Cluster, Transactions ClusterTransactions);
-
 /// <summary>
 /// Provides lazily-created, cached Couchbase cluster and transaction instances identified by a
 /// logical cluster key. Disposing this provider disposes all created clusters.
@@ -24,13 +22,16 @@ public interface ICouchbaseClustersProvider : IAsyncDisposable
     /// <param name="clusterKey">The logical cluster identifier.</param>
     /// <param name="cancellationToken">
     /// A token that bounds only <em>this</em> caller's wait for the cluster. The underlying connection is a
-    /// process-shared, must-complete operation that always runs on <see cref="CancellationToken.None"/>, so
+    /// provider-shared, must-complete operation that always runs on <see cref="CancellationToken.None"/>, so
     /// cancelling this token abandons the caller's own wait without aborting — or permanently poisoning — the
     /// shared connection that other callers are awaiting. A connection attempt that fails is evicted so the
     /// next caller retries; callers that receive an already-connected cluster complete synchronously.
     /// </param>
-    /// <returns>A tuple of the connected cluster and its transaction manager.</returns>
-    ValueTask<GetClusterResult> GetClusterAsync(string clusterKey, CancellationToken cancellationToken = default);
+    /// <returns>The connected cluster and its transaction manager.</returns>
+    ValueTask<CouchbaseClusterConnection> GetClusterAsync(
+        string clusterKey,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <summary>
@@ -38,12 +39,14 @@ public interface ICouchbaseClustersProvider : IAsyncDisposable
 /// access and caches them for the lifetime of the provider.
 /// </summary>
 /// <remarks>
-/// Cluster connections are initialized lazily and cached in a process-level static dictionary. This
-/// means a single physical cluster is shared across all DI scopes within the process. The shared connect
-/// runs to completion on <see cref="CancellationToken.None"/> so that no single caller's cancellation can
-/// abort or poison the connection others depend on; a connect that faults or is cancelled is evicted from
-/// the cache so the next caller re-creates it. Disposal iterates all connected clusters and disposes them
-/// in sequence.
+/// Cluster connections are initialized lazily and cached per provider instance.
+/// <c>AddHeadlessCouchbase</c> registers the provider as a singleton, so within one container a single
+/// physical cluster is shared across all DI scopes; separate containers (or separately constructed
+/// providers with different option providers) hold independent connections instead of silently sharing
+/// a process-global cache. The shared connect runs to completion on <see cref="CancellationToken.None"/>
+/// so that no single caller's cancellation can abort or poison the connection others depend on; a connect
+/// that faults or is cancelled is evicted from the cache so the next caller re-creates it. Disposal
+/// iterates all connected clusters and disposes them in sequence.
 /// </remarks>
 [PublicAPI]
 public sealed class CouchbaseClustersProvider(
@@ -52,20 +55,20 @@ public sealed class CouchbaseClustersProvider(
     ILogger<CouchbaseClustersProvider> logger
 ) : ICouchbaseClustersProvider
 {
-    private static readonly ConcurrentDictionary<string, AsyncLazy<GetClusterResult>> _Clusters = new(
+    private readonly ConcurrentDictionary<string, AsyncLazy<CouchbaseClusterConnection>> _clusters = new(
         StringComparer.Ordinal
     );
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentException"><paramref name="clusterKey"/> is null or empty.</exception>
-    public async ValueTask<GetClusterResult> GetClusterAsync(
+    public async ValueTask<CouchbaseClusterConnection> GetClusterAsync(
         string clusterKey,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotEmpty(clusterKey);
 
-        var lazy = _Clusters.GetOrAdd(
+        var lazy = _clusters.GetOrAdd(
             clusterKey,
             static (clusterKey, @this) => @this._CreateLazyCluster(clusterKey),
             this
@@ -88,16 +91,16 @@ public sealed class CouchbaseClustersProvider(
             // healthy replacement another caller may have already installed.
             if (lazy.Task.IsFaulted || lazy.Task.IsCanceled)
             {
-                _Clusters.TryRemove(new KeyValuePair<string, AsyncLazy<GetClusterResult>>(clusterKey, lazy));
+                _clusters.TryRemove(new KeyValuePair<string, AsyncLazy<CouchbaseClusterConnection>>(clusterKey, lazy));
             }
 
             throw;
         }
     }
 
-    private AsyncLazy<GetClusterResult> _CreateLazyCluster(string clusterKey)
+    private AsyncLazy<CouchbaseClusterConnection> _CreateLazyCluster(string clusterKey)
     {
-        // The connection is a process-shared resource cached and reused by every caller, so the factory runs
+        // The connection is a provider-shared resource cached and reused by every caller, so the factory runs
         // on CancellationToken.None: one caller cancelling their GetClusterAsync wait must never abort — or,
         // because AsyncLazy caches failures, permanently poison — the connection the others depend on.
         return new(async () =>
@@ -121,27 +124,27 @@ public sealed class CouchbaseClustersProvider(
                 logger.LogFailedToConnectToCluster(e, clusterKey);
             }
 
-            return (cluster, transactions);
+            return new CouchbaseClusterConnection { Cluster = cluster, Transactions = transactions };
         });
     }
 
     /// <summary>Disposes all connected clusters and their transaction managers.</summary>
     public async ValueTask DisposeAsync()
     {
-        foreach (var item in _Clusters)
+        foreach (var item in _clusters)
         {
             if (item.Value is not { IsStarted: true, Task: { IsCompleted: true, IsFaulted: false, IsCanceled: false } })
             {
                 continue;
             }
 
-            var cluster = await item.Value.ConfigureAwait(false);
+            var connection = await item.Value.ConfigureAwait(false);
 
-            await cluster.Cluster.DisposeAsync().ConfigureAwait(false);
-            await cluster.ClusterTransactions.DisposeAsync().ConfigureAwait(false);
+            await connection.Cluster.DisposeAsync().ConfigureAwait(false);
+            await connection.Transactions.DisposeAsync().ConfigureAwait(false);
         }
 
-        _Clusters.Clear();
+        _clusters.Clear();
     }
 }
 

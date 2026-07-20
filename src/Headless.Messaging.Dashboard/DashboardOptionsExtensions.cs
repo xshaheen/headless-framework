@@ -3,9 +3,11 @@
 using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
+using Headless.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Dashboard;
 
@@ -36,6 +38,13 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
 
         services.AddSingleton<MessagingMetricsEventListener>();
         services.AddMemoryCache();
+        services.TryAddSingleton<KeyedAsyncLock>();
+        services
+            .AddHttpClient(
+                MessagingDashboardEndpoints.PingHttpClientName,
+                static client => client.Timeout = TimeSpan.FromSeconds(5)
+            )
+            .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false });
 
         services.AddRouting();
         services.AddAuthorization();

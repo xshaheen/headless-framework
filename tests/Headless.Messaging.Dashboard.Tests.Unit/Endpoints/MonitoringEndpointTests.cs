@@ -92,7 +92,9 @@ public sealed class MonitoringEndpointTests : TestBase
                 Tags = "api",
             },
         };
-        discoveryProvider.GetNodes(null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IList<Node>>(nodes));
+        discoveryProvider
+            .GetNodesAsync(null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IList<Node>>(nodes));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
@@ -115,7 +117,7 @@ public sealed class MonitoringEndpointTests : TestBase
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         var namespaces = new List<string> { "default", "staging" };
-        discoveryProvider.GetNamespaces(Arg.Any<CancellationToken>()).Returns(Task.FromResult(namespaces));
+        discoveryProvider.GetNamespacesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(namespaces));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);
@@ -137,7 +139,9 @@ public sealed class MonitoringEndpointTests : TestBase
     {
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNamespaces(Arg.Any<CancellationToken>()).Returns(Task.FromResult<List<string>>(null!));
+        discoveryProvider
+            .GetNamespacesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<List<string>>(null!));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage, discoveryProvider);

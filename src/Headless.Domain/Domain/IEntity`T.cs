@@ -7,7 +7,7 @@ namespace Headless.Domain;
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 [PublicAPI]
 public interface IEntity<out TId> : IEntity
-    where TId : notnull
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     TId Id { get; }

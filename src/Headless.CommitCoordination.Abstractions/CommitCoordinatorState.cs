@@ -18,18 +18,18 @@ public enum CommitCoordinatorState
     /// <summary>
     /// The coordinator is open and accepts new work registrations.
     /// </summary>
-    Active,
+    Active = 0,
 
     /// <summary>
     /// The physical unit of work committed. The coordinator no longer accepts work registrations. The terminal
     /// outcome is claimed synchronously on the commit edge; the asynchronous drain of registered callbacks may
     /// still be in flight when this state is first observed.
     /// </summary>
-    Committed,
+    Committed = 1,
 
     /// <summary>
     /// The physical unit of work rolled back or was abandoned. The coordinator no longer accepts work
     /// registrations. Any registered rollback callbacks are drained asynchronously after the state is set.
     /// </summary>
-    RolledBack,
+    RolledBack = 2,
 }

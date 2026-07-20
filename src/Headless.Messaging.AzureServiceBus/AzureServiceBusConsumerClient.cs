@@ -43,6 +43,12 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(_asbOptions.ConnectionString, _asbOptions.Namespace);
 

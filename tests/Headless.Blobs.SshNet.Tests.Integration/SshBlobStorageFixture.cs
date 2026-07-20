@@ -4,6 +4,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Headless.Blobs;
 using Headless.Blobs.SshNet;
+using Headless.Hosting.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -12,7 +13,9 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFixture>, IAsyncLifetime
 {
-    private readonly IContainer _sftpContainer = new ContainerBuilder("atmoz/sftp:latest")
+    private readonly IContainer _sftpContainer = new ContainerBuilder(
+        "atmoz/sftp:latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475"
+    )
         .WithLabel("type", "ssh-blob-sftp")
         .WithPortBinding(22, true)
         .WithCommand("headless:password:::storage")

@@ -6,6 +6,7 @@ namespace Headless.Primitives;
 /// Maximum lengths for the corresponding <see cref="Image"/> properties. Inherited file lengths mirror
 /// <see cref="FileConstants"/>; <see cref="CaptionMaxLength"/> is image-specific.
 /// </summary>
+[PublicAPI]
 public static class ImageConstants
 {
     /// <summary>Maximum length of <see cref="File.Id"/>. Mirrors <see cref="FileConstants.IdNameMaxLength"/>.</summary>

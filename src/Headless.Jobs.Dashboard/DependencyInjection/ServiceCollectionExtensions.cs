@@ -27,7 +27,8 @@ internal static class JobsDashboardServiceCollectionExtensions
 
     internal static void AddDashboardService<TTimeJob, TCronJob>(
         this IServiceCollection services,
-        DashboardOptionsBuilder config
+        DashboardOptionsBuilder config,
+        JobsRequestSerializationOptions requestSerializationOptions
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
@@ -39,7 +40,7 @@ internal static class JobsDashboardServiceCollectionExtensions
             {
                 PropertyNameCaseInsensitive = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                Converters = { new StringToByteArrayConverter() },
+                Converters = { new StringToByteArrayConverter(requestSerializationOptions) },
             };
         }
         else
@@ -47,7 +48,7 @@ internal static class JobsDashboardServiceCollectionExtensions
             // Ensure StringToByteArrayConverter is always present
             if (!config.DashboardJsonOptions.Converters.Any(c => c is StringToByteArrayConverter))
             {
-                config.DashboardJsonOptions.Converters.Add(new StringToByteArrayConverter());
+                config.DashboardJsonOptions.Converters.Add(new StringToByteArrayConverter(requestSerializationOptions));
             }
         }
 
@@ -142,7 +143,10 @@ internal static class JobsDashboardServiceCollectionExtensions
                     {
                         await next().ConfigureAwait(false);
 
-                        if (context.Response.StatusCode == 404)
+                        if (
+                            context.Response.StatusCode == StatusCodes.Status404NotFound
+                            && !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                        )
                         {
                             var file = embeddedFileProvider.GetFileInfo("index.html");
                             if (file.Exists)

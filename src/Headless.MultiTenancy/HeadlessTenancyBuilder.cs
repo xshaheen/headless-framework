@@ -45,7 +45,7 @@ public sealed class HeadlessTenancyBuilder
     /// <paramref name="seam"/> or <paramref name="capabilities"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException"><paramref name="seam"/> is empty or white space.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
     /// <paramref name="status"/> is not a defined <see cref="TenantPostureStatus"/> value (validated when
     /// the seam already has a recorded posture and the two are merged).
     /// </exception>

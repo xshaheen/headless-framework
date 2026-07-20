@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis;
 
 namespace Headless.Jobs.SourceGenerator.AttributeSyntaxes;
 
-public static class ExtractAttributeExtensions
+internal static class ExtractAttributeExtensions
 {
     public static (
         string? functionName,

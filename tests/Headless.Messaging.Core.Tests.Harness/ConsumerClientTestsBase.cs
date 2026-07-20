@@ -75,7 +75,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         // given
         await using var consumer = await GetConsumerClientAsync();
 
-        consumer.OnMessageCallback = (msg, sender) => Task.CompletedTask;
+        consumer.AttachCallbacks(onMessage: (msg, sender) => Task.CompletedTask, onLog: null);
         consumer.OnMessageCallback.Should().NotBeNull();
 
         var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["test-messageName"]);
@@ -94,8 +94,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
     }
 
-    public virtual async Task should_commit_message_successfully()
+    public virtual async Task should_delegate_commit_callback_value()
     {
+        // Wiring-only test. Broker-observed commit semantics require a real callback value and live in conformance tests.
         // given
         await using var consumer = await GetConsumerClientAsync();
         var mockSender = new object();
@@ -107,8 +108,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
-    public virtual async Task should_reject_message_successfully()
+    public virtual async Task should_delegate_reject_callback_value()
     {
+        // Wiring-only test. Broker-observed reject semantics require a real callback value and live in conformance tests.
         // Skip if consumer doesn't support rejection
         if (!Capabilities.SupportsReject)
         {
@@ -199,7 +201,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         await using var consumer = await GetConsumerClientAsync();
         var listenerStartCount = 0;
 
-        consumer.OnMessageCallback = (_, _) => Task.CompletedTask;
+        consumer.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: null);
 
         var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-messageName"]);
         await consumer.SubscribeAsync(messageNames);
@@ -256,7 +258,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         // given
         await using var consumer = await GetConsumerClientAsync();
 
-        consumer.OnLogCallback = _ => { };
+        consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
         consumer.OnLogCallback.Should().NotBeNull();
 
         var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["log-test-messageName"]);

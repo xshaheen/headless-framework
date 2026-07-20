@@ -2,7 +2,7 @@
 
 namespace Headless.Messaging.Processor;
 
-public interface IProcessor
+internal interface IProcessor
 {
     Task ProcessAsync(ProcessingContext context);
 }

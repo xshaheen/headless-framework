@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory loggerFactory) : IProcessor
+internal sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory loggerFactory) : IProcessor
 {
     // Exponential backoff for processor-level crashes (not message-level retries).
     // Starts at 1 s, doubles on each consecutive failure, caps at 60 s, and adds 0-25% jitter

@@ -15,29 +15,31 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
-    : INodeDiscoveryProvider,
-        ICancellableNodeDiscoveryProvider
+    : INodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
 
-    public async Task<Node?> GetNode(string nodeName, string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNodeAsync(
+        string nodeName,
+        string? ns = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        var resolvedNamespace = _ResolveNamespace(ns);
+        if (resolvedNamespace == null)
+        {
+            return null;
+        }
+
         try
         {
             using var client = new Kubernetes(options.K8sClientConfig);
             var service = await client
-                .CoreV1.ReadNamespacedServiceAsync(nodeName, ns, cancellationToken: cancellationToken)
+                .CoreV1.ReadNamespacedServiceAsync(nodeName, resolvedNamespace, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            return new Node
-            {
-                Id = service.Uid(),
-                Name = service.Name(),
-                Address = "http://" + service.Metadata.Name + "." + ns,
-                Port = service.Spec.Ports?[0].Port ?? 0,
-                Tags = string.Join(',', service.Labels()?.Select(x => x.Key + ":" + x.Value) ?? []),
-            };
+            return _MapService(service, resolvedNamespace);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -51,18 +53,17 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         return null;
     }
 
-    public async Task<IList<Node>> GetNodes(string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<IList<Node>> GetNodesAsync(string? ns = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            ns ??= options.K8sClientConfig.Namespace;
-
-            if (ns == null)
+            var resolvedNamespace = _ResolveNamespace(ns);
+            if (resolvedNamespace == null)
             {
                 return [];
             }
 
-            var nodes = await _ListServices(ns, cancellationToken).ConfigureAwait(false);
+            var nodes = await _ListServices(resolvedNamespace, cancellationToken).ConfigureAwait(false);
 
             cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
@@ -82,79 +83,86 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         }
     }
 
-    public async Task<List<string>> GetNamespaces(CancellationToken cancellationToken)
+    public Task<List<string>> GetNamespacesAsync(CancellationToken cancellationToken = default)
     {
-        using var client = new Kubernetes(options.K8sClientConfig);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        try
-        {
-            var namespaces = await client
-                .ListNamespaceAsync(cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+        var configuredNamespace = _ResolveNamespace(null);
+        List<string> namespaces = configuredNamespace == null ? [] : [configuredNamespace];
 
-            return [.. namespaces.Items.Select(x => x.Name())];
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-#pragma warning disable ERP022
-        catch (Exception)
-        {
-            if (string.IsNullOrEmpty(options.K8sClientConfig.Namespace))
-            {
-                return [];
-            }
-
-            return [options.K8sClientConfig.Namespace];
-        }
-#pragma warning restore ERP022
+        return Task.FromResult(namespaces);
     }
 
-    public Task<IList<Node>> ListServices(string? ns = null)
-    {
-        return _ListServices(ns, CancellationToken.None);
-    }
-
-    Task<IList<Node>> ICancellableNodeDiscoveryProvider.ListServices(string? ns, CancellationToken cancellationToken)
+    public Task<IList<Node>> ListServicesAsync(string? ns = null, CancellationToken cancellationToken = default)
     {
         return _ListServices(ns, cancellationToken);
     }
 
     private async Task<IList<Node>> _ListServices(string? ns, CancellationToken cancellationToken)
     {
+        var resolvedNamespace = _ResolveNamespace(ns);
+        if (resolvedNamespace == null)
+        {
+            return [];
+        }
+
         using var client = new Kubernetes(options.K8sClientConfig);
         var services = await client
-            .CoreV1.ListNamespacedServiceAsync(ns, cancellationToken: cancellationToken)
+            .CoreV1.ListNamespacedServiceAsync(resolvedNamespace, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         var result = new List<Node>();
         foreach (var service in services.Items)
         {
-            IDictionary<string, string> tags = service.Labels();
-
-            var filterResult = _FilterNodesByTags(tags);
-
-            if (filterResult.HideNode)
+            var node = _MapService(service, resolvedNamespace);
+            if (node == null)
             {
                 continue;
             }
 
-            var port = _GetPortByNameOrIndex(service, filterResult.FilteredPortName, filterResult.FilteredPortIndex);
-
-            result.Add(
-                new Node
-                {
-                    Id = service.Uid(),
-                    Name = service.Name(),
-                    Address = "http://" + service.Metadata.Name + "." + ns,
-                    Port = port,
-                    Tags = string.Join(',', service.Labels()?.Select(x => x.Key + ":" + x.Value) ?? []),
-                }
-            );
+            result.Add(node);
         }
 
         return result;
+    }
+
+    private string? _ResolveNamespace(string? requestedNamespace)
+    {
+        var configuredNamespace = options.K8sClientConfig.Namespace;
+        if (string.IsNullOrWhiteSpace(configuredNamespace))
+        {
+            return null;
+        }
+
+        if (
+            requestedNamespace != null
+            && !string.Equals(requestedNamespace, configuredNamespace, StringComparison.Ordinal)
+        )
+        {
+            return null;
+        }
+
+        return configuredNamespace;
+    }
+
+    private Node? _MapService(V1Service service, string ns)
+    {
+        var filterResult = _FilterNodesByTags(service.Labels());
+        if (filterResult.HideNode)
+        {
+            return null;
+        }
+
+        var port = _GetPortByNameOrIndex(service, filterResult.FilteredPortName, filterResult.FilteredPortIndex);
+
+        return new Node
+        {
+            Id = service.Uid(),
+            Name = service.Name(),
+            Address = "http://" + service.Metadata.Name + "." + ns,
+            Port = port,
+            Tags = string.Join(',', service.Labels()?.Select(x => x.Key + ":" + x.Value) ?? []),
+        };
     }
 
     /// <summary>
@@ -266,7 +274,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
                 return new TagFilterResult(HideNode: true, filteredPortIndex, filteredPortName);
             }
 
-            isNodeHidden = false;
+            if (
+                messagingTagScope.Equals("visibility", StringComparison.OrdinalIgnoreCase)
+                && tag.Value.Equals("show", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                isNodeHidden = false;
+            }
 
             //check for portIndex-X tag.
             //If multiple tags with portIndex are found only the last has power

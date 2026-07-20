@@ -2,6 +2,7 @@
 
 using Headless.Blobs.SshNet;
 using Headless.Checks;
+using Headless.Hosting.Options;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

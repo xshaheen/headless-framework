@@ -11,6 +11,7 @@ namespace Headless.Dashboard.Authentication;
 /// Consumed by <see cref="AuthMiddleware"/> on every protected API request. Implementations
 /// are resolved from the request service scope so they may use scoped dependencies.
 /// </remarks>
+[PublicAPI]
 public interface IAuthService
 {
     /// <summary>
@@ -36,6 +37,7 @@ public interface IAuthService
 /// <summary>
 /// Represents the outcome of an authentication attempt.
 /// </summary>
+[PublicAPI]
 public sealed class AuthResult
 {
     /// <summary>
@@ -85,6 +87,7 @@ public sealed class AuthResult
 /// A read-only snapshot of the current authentication configuration, returned by
 /// <see cref="IAuthService.GetAuthInfo"/> for consumption by the dashboard frontend.
 /// </summary>
+[PublicAPI]
 public sealed class AuthInfo
 {
     /// <summary>

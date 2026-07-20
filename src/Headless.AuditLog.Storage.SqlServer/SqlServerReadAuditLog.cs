@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -13,36 +14,31 @@ internal sealed class SqlServerReadAuditLog<TContext>(
 ) : IReadAuditLog<TContext>
 {
     public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
-        string? action = null,
-        string? entityType = null,
-        string? entityId = null,
-        string? userId = null,
-        string? tenantId = null,
-        DateTimeOffset? from = null,
-        DateTimeOffset? to = null,
-        int limit = 100,
+        AuditLogQuery query,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(query);
+        Argument.IsPositive(query.Limit, "The query limit must be positive.", nameof(query));
         var filters = new List<string>();
-        var parameters = new List<SqlParameter> { _Param("Limit", limit) };
+        var parameters = new List<SqlParameter> { _Param("Limit", query.Limit) };
 
-        _AddFilter(filters, parameters, "[Action]=@Action", "Action", action);
-        _AddFilter(filters, parameters, "[EntityType]=@EntityType", "EntityType", entityType);
-        _AddFilter(filters, parameters, "[EntityId]=@EntityId", "EntityId", entityId);
-        _AddFilter(filters, parameters, "[UserId]=@UserId", "UserId", userId);
-        _AddFilter(filters, parameters, "[TenantId]=@TenantId", "TenantId", tenantId);
+        _AddFilter(filters, parameters, "[Action]=@Action", "Action", query.Action);
+        _AddFilter(filters, parameters, "[EntityType]=@EntityType", "EntityType", query.EntityType);
+        _AddFilter(filters, parameters, "[EntityId]=@EntityId", "EntityId", query.EntityId);
+        _AddFilter(filters, parameters, "[UserId]=@UserId", "UserId", query.UserId);
+        _AddFilter(filters, parameters, "[TenantId]=@TenantId", "TenantId", query.TenantId);
 
-        if (from is not null)
+        if (query.From is not null)
         {
             filters.Add("[CreatedAt]>=@From");
-            parameters.Add(_Param("From", from.Value.UtcDateTime));
+            parameters.Add(_Param("From", query.From.Value.UtcDateTime));
         }
 
-        if (to is not null)
+        if (query.To is not null)
         {
             filters.Add("[CreatedAt]<@To");
-            parameters.Add(_Param("To", to.Value.UtcDateTime));
+            parameters.Add(_Param("To", query.To.Value.UtcDateTime));
         }
 
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";

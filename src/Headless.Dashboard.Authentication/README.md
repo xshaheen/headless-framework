@@ -81,7 +81,7 @@ builder.Services.AddDashboardAuthentication(cfg =>
 });
 ```
 
-`AuthConfig` controls credentials, API key, custom validation, host authorization policy, and `SessionTimeoutMinutes`. `AuthConfig.Validate()` throws when the selected mode requires a credential or validator that has not been configured.
+`AuthConfig` controls credentials, API key, custom validation, host authorization policy, and `SessionTimeoutMinutes`. Credential completeness for the selected mode is enforced by an internal FluentValidation validator wired into the options pipeline (validate-on-start) by every `AddDashboardAuthentication` overload; a missing credential surfaces as an `OptionsValidationException` at startup.
 
 Add the middleware to protect `/api/*` paths:
 
@@ -92,7 +92,7 @@ app.UseMiddleware<AuthMiddleware>();
 ## Types
 
 - `AuthMode` — enum of supported modes
-- `AuthConfig` — configuration (credentials, API key, validator, session timeout); its imperative `Validate()` is mirrored by an internal FluentValidation validator wired into the options pipeline
+- `AuthConfig` — configuration (credentials, API key, validator, session timeout); validated by an internal FluentValidation validator wired into the options pipeline (the single validation point)
 - `IAuthService` / `AuthService` — authenticate requests, return `AuthResult`; `AuthenticateAsync(HttpContext, CancellationToken)` accepts an optional cancellation token
 - `AuthMiddleware` — protects `/api/*` paths, skips static files; passes `HttpContext.RequestAborted` to `AuthenticateAsync`
 - `AuthResult` — success/failure with username

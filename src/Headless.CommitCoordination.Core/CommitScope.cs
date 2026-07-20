@@ -39,6 +39,8 @@ internal sealed class CommitScope(CommitCoordinator coordinator, IServiceProvide
     /// </summary>
     internal ValueTask SignalAsync(CommitOutcome outcome, out bool claimedSignal)
     {
+        CommitOutcomeValidation.ThrowIfNotTerminal(outcome);
+
         claimedSignal = _TryClaimSignal();
 
         if (!claimedSignal)

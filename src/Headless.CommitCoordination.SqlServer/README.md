@@ -6,9 +6,9 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 
 ## Key Features
 
-- `SqlServerCommitSignalSource`.
+- Internal `SqlServerCommitSignalSource` registered as `ICommitSignalSource`.
 - Provider-key registry for detected commit and rollback signals.
-- DI extension `AddSqlServerCommitCoordination()`.
+- DI extension `AddSqlServerCommitCoordination()` with the standard options trio: parameterless defaults, `IConfiguration` binding, `Action<SqlServerCommitCoordinationOptions>`, and `Action<SqlServerCommitCoordinationOptions, IServiceProvider>`.
 - `SqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
 ## Design Notes
@@ -65,4 +65,4 @@ Default mode is `Warn`. Without a `DiagnosticProbeConnectionFactory`, startup co
 
 ## Side Effects
 
-Registers core commit coordination services, `SqlServerCommitSignalSource`, `ICommitSignalSource`, the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.
+Registers core commit coordination services, the internal `SqlServerCommitSignalSource` (exposed as `ICommitSignalSource`), the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.

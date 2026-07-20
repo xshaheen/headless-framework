@@ -5,12 +5,10 @@ using StackExchange.Redis;
 namespace Headless.Redis.Testing;
 
 /// <summary>
-/// Destructive helpers on <see cref="IConnectionMultiplexer"/> intended solely for integration-test
-/// setup and teardown. These live in a dedicated <c>Testing</c> namespace so they are not surfaced on
-/// the general-purpose Redis extension surface.
+/// Destructive helpers on <see cref="IConnectionMultiplexer"/> intended solely for repository
+/// integration-test setup and teardown.
 /// </summary>
-[PublicAPI]
-public static class RedisTestSupportExtensions
+internal static class RedisTestSupportExtensions
 {
     /// <summary>
     /// Flushes all databases on every writable (non-replica) endpoint of <paramref name="muxer"/>.

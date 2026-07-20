@@ -14,6 +14,7 @@ using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Security;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;

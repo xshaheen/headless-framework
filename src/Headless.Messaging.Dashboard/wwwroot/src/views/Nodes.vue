@@ -171,15 +171,14 @@ const namespaces = ref<string[]>([])
 const selectedNamespace = ref<string | null>(getCookie('messaging.node.ns'))
 
 // --- Active node ---
-function getActiveNodeEndpoint(): string | null {
+function getActiveNodeName(): string | null {
   return getCookie('messaging.node')
 }
 
 function isActiveNode(node: NodeInfo): boolean {
-  const active = getActiveNodeEndpoint()
+  const active = getActiveNodeName()
   if (!active) return false
-  const nodeEndpoint = `${node.address}:${node.port}`
-  return active === nodeEndpoint
+  return active === node.name
 }
 
 // --- Namespace loading ---
@@ -283,8 +282,7 @@ async function pingAll() {
 
 // --- Switch node ---
 function switchToNode(node: NodeInfo) {
-  const endpoint = `${node.address}:${node.port}`
-  setCookie('messaging.node', endpoint)
+  setCookie('messaging.node', node.name)
   if (selectedNamespace.value) {
     setCookie('messaging.node.ns', selectedNamespace.value)
   }

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using Headless.Abstractions;
 
-namespace Headless;
+namespace Headless.Security;
 
 /// <summary>Creates deterministic, salted string hashes using configured PBKDF2 options.</summary>
 internal sealed class StringHashService(StringHashOptions options) : IStringHashService

@@ -51,18 +51,18 @@ Install `Headless.Serializer.Abstractions` to depend on interfaces only (domain/
 - **JSON (default)**: `Headless.Serializer.Json` — System.Text.Json, human-readable, fully interoperable.
 - **Binary**: `Headless.Serializer.MessagePack` — compact wire format, faster for high-throughput internal paths (caching, messaging).
 
-Code against `ISerializer` / `IJsonSerializer` / `IBinarySerializer` from Abstractions. Never reference `SystemJsonSerializer` or `MessagePackSerializer` directly in service code.
+Code against `ISerializer` / `IJsonSerializer` / `IBinarySerializer` from Abstractions. Never reference `SystemJsonSerializer` or `MessagePackBinarySerializer` directly in service code.
 
-Neither provider registers itself into DI automatically — you must call `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()` or `services.AddSingleton<IBinarySerializer, MessagePackSerializer>()` explicitly.
+Neither provider registers itself into DI automatically — you must call `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()` or `services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>()` explicitly.
 
 ## Agent Instructions
 
-- Always depend on `ISerializer`, `IJsonSerializer`, or `IBinarySerializer` from `Headless.Serializer.Abstractions`. Never reference `SystemJsonSerializer` or `MessagePackSerializer` in application code.
+- Always depend on `ISerializer`, `IJsonSerializer`, or `IBinarySerializer` from `Headless.Serializer.Abstractions`. Never reference `SystemJsonSerializer` or `MessagePackBinarySerializer` in application code.
 - Default to `Headless.Serializer.Json` for general use. Switch to `Headless.Serializer.MessagePack` only when binary performance or payload size matters (e.g., cache entries, internal message envelopes, high-throughput pipelines).
 - Do not call `System.Text.Json.JsonSerializer` directly in application code — go through `IJsonSerializer` so the implementation can be swapped and options are centralized.
 - Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Also register a custom `IJsonOptionsProvider` if you need non-default options (registration order does not matter — it is resolved by constructor injection).
-- Register MessagePack: `services.AddSingleton<IBinarySerializer, MessagePackSerializer>()`. Pass custom `MessagePackSerializerOptions` via constructor for compression or resolver changes.
-- **MessagePack security**: the parameterless `MessagePackSerializer()` uses `MessagePackSecurity.UntrustedData`, so it is safe for cross-service caches and external producers by default. Use `new MessagePackSerializer(untrustedData: false)` only when payloads originate inside the current trust boundary and the MessagePack-CSharp fast path is a deliberate choice. When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never changes the level you chose.
+- Register MessagePack: `services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>()`. Pass custom `MessagePackSerializerOptions` via constructor for compression or resolver changes.
+- **MessagePack security**: the parameterless `MessagePackBinarySerializer()` uses `MessagePackSecurity.UntrustedData`, so it is safe for cross-service caches and external producers by default. Use `new MessagePackBinarySerializer(untrustedData: false)` only when payloads originate inside the current trust boundary and the MessagePack-CSharp fast path is a deliberate choice. When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never changes the level you chose.
 - `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` — not AOT-safe as-is. For AOT/NativeAOT scenarios, implement a source-generated `IJsonSerializer` instead.
 - The `ISerializer` contract is buffer-first: writes target an `IBufferWriter<byte>`, reads consume a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`. Use extension methods (`SerializeToBytes<T>`, `SerializeToString<T>`, `Deserialize<T>(byte[])`, `Deserialize<T>(string?)`, plus `Serialize<T>(T, Stream)` / `Deserialize<T>(Stream)`) from `SerializerExtensions` when you hold a `byte[]`, `string`, or `Stream` instead.
 - `SerializeToString` on a binary serializer (e.g., MessagePack) returns a Base64 string; on a text serializer it returns UTF-8. `Deserialize<T>(string?)` reverses this automatically.
@@ -312,7 +312,7 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 
 ### Key Features
 
-- `MessagePackSerializer` — `IBinarySerializer` implementation
+- `MessagePackBinarySerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
 - Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
 - Applies `MessagePackSecurity.UntrustedData` by default; pass `untrustedData: false` only for trusted payloads where the MessagePack-CSharp fast path is intentional
@@ -333,17 +333,17 @@ dotnet add package Headless.Serializer.MessagePack
 
 ```csharp
 // Default: contractless, no compression, MessagePackSecurity.UntrustedData:
-builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
+builder.Services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>();
 
 // Trusted payload fast path only when the trust boundary is explicit:
-builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: false));
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(untrustedData: false));
 
 // With LZ4 compression:
 var options = MessagePackSerializerOptions
     .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithCompression(MessagePackCompression.Lz4BlockArray);
 
-builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(options));
 
 // Consume via abstraction — use extension helpers to avoid Stream boilerplate:
 public sealed class CacheWriter(IBinarySerializer serializer)
@@ -368,7 +368,7 @@ var options = MessagePackSerializerOptions
     .WithSecurity(MessagePackSecurity.UntrustedData);
 
 // Equivalent, without hand-building options:
-var serializer = new MessagePackSerializer(untrustedData: true);
+var serializer = new MessagePackBinarySerializer(untrustedData: true);
 ```
 
 ### Dependencies

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using System.Data.Common;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -19,9 +18,7 @@ namespace Headless.DistributedLocks;
 /// Token cancelled when the underlying connection is lost; consumers observe it to learn the lock is no
 /// longer held. <see cref="CancellationToken.None"/> means acquire-time monitoring was disabled.
 /// </param>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class ConnectionScopedLockHandle(
+internal sealed class ConnectionScopedLockHandle(
     string resource,
     string leaseId,
     Func<ConnectionScopedLockHandle, CancellationToken, ValueTask> release,

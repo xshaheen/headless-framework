@@ -2,8 +2,8 @@
 
 using Headless;
 using Headless.Hosting.Initialization;
+using Headless.Security;
 using Headless.Settings;
-using Headless.Settings.Seeders;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,7 +33,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
 
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is not SettingsInitializationBackgroundService);
+            .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -66,7 +66,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             hosts
                 .Select(h =>
                     h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is not SettingsInitializationBackgroundService)
+                        .Single(x => x is IHostedLifecycleService)
                         .IsInitialized
                 )
                 .Should()

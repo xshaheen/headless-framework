@@ -1850,8 +1850,8 @@ public sealed class InMemoryCache
     // Single-tier (L1 only): the per-tier readOptions have no meaning here and are ignored.
     ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions
+        FactoryCacheReadOptions readOptions,
+        CancellationToken cancellationToken
     )
     {
         _ThrowIfDisposed();
@@ -1920,8 +1920,8 @@ public sealed class InMemoryCache
     // Single-tier (L1 only): the per-tier readOptions have no meaning here and are ignored.
     async ValueTask<CacheStoreEntry<T>[]> IFactoryCacheStore.TryGetAllEntriesAsync<T>(
         IReadOnlyList<string> keys,
-        CancellationToken cancellationToken,
-        FactoryCacheReadOptions readOptions
+        FactoryCacheReadOptions readOptions,
+        CancellationToken cancellationToken
     )
     {
         _ThrowIfDisposed();
@@ -1937,7 +1937,8 @@ public sealed class InMemoryCache
 
         for (var i = 0; i < keys.Count; i++)
         {
-            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken).ConfigureAwait(false);
+            result[i] = await self.TryGetEntryAsync<T>(keys[i], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return result;
