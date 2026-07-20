@@ -26,10 +26,26 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs;
 
+/// <summary>
+/// Registration entry point for the Jobs subsystem. <c>AddHeadlessJobs</c> composes the scheduler,
+/// managers, background services, and the per-host <see cref="JobsRequestSerializationOptions"/> from a
+/// single <see cref="JobsOptionsBuilder{TTimeJob,TCronJob}"/> callback.
+/// </summary>
 public static class SetupJobs
 {
     private static readonly TimeSpan _MaximumPostCommitDrainTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Registers the Jobs subsystem using the default <see cref="TimeJobEntity"/> and
+    /// <see cref="CronJobEntity"/> entity types. Equivalent to
+    /// <c>AddHeadlessJobs&lt;TimeJobEntity, CronJobEntity&gt;(optionsBuilder)</c>.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="optionsBuilder">
+    /// Optional callback that configures the Jobs subsystem (operational store, scheduler, retries,
+    /// request serialization, dashboard, discovery). When omitted, in-memory defaults are used.
+    /// </param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
     public static IServiceCollection AddHeadlessJobs(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? optionsBuilder = null
@@ -38,6 +54,22 @@ public static class SetupJobs
         return services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
     }
 
+    /// <summary>
+    /// Registers the Jobs subsystem with application-specific time and cron job entity types: managers,
+    /// the <c>IJobScheduler</c> facade, background services (unless disabled), the in-memory persistence
+    /// default (replaced by durable providers such as <c>UseEntityFramework</c>), and the per-host
+    /// <see cref="JobsRequestSerializationOptions"/> singleton. The <paramref name="optionsBuilder"/>
+    /// callback also completes job-function discovery: every <c>AddJobsDiscovery</c> assembly must be
+    /// registered inside it, after which the host's function registry is frozen.
+    /// </summary>
+    /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
+    /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="optionsBuilder">
+    /// Optional callback that configures the Jobs subsystem (operational store, scheduler, retries,
+    /// request serialization, dashboard, discovery). When omitted, in-memory defaults are used.
+    /// </param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
     public static IServiceCollection AddHeadlessJobs<TTimeJob, TCronJob>(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TTimeJob, TCronJob>>? optionsBuilder = null
@@ -98,15 +130,15 @@ public static class SetupJobs
         // The soft lease/fallback ordering warning (LeaseDuration < FallbackIntervalChecker) is emitted at startup by
         // JobsInitializationHostedService, where an ILogger is available.
 
-        // Apply JSON serializer options for job requests if configured during service registration
-        if (optionInstance.RequestJsonSerializerOptions != null)
+        // Per-host request serialization settings (JSON options, GZip, decompression cap). Registered as a
+        // singleton so components resolve THIS host's settings — never process-global state shared across hosts.
+        var requestSerializationOptions = new JobsRequestSerializationOptions
         {
-            JobsHelper.RequestJsonSerializerOptions = optionInstance.RequestJsonSerializerOptions;
-        }
-
-        // Configure whether job request payloads should use GZip compression
-        JobsHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
-        JobsHelper.MaxDecompressedRequestBytes = optionInstance.RequestGZipMaxDecompressedBytes;
+            SerializerOptions = optionInstance.RequestJsonSerializerOptions ?? JsonSerializerOptions.Default,
+            UseGZipCompression = optionInstance.RequestGZipCompressionEnabled,
+            MaxDecompressedRequestBytes = optionInstance.RequestGZipMaxDecompressedBytes,
+        };
+        services.AddSingleton(requestSerializationOptions);
 
         // Persisted job/cron primary keys are stamped via IGuidGenerator (Version7 default) instead of random
         // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
@@ -181,7 +213,7 @@ public static class SetupJobs
         );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
-        optionInstance.DashboardServiceAction?.Invoke(services);
+        optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
 
         // The durable operational store opts into coordinated membership; wire it after the provider's own
         // services are registered so the require-provider check sees the coordination registration.

@@ -20,13 +20,15 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByRequestType;
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
     private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
+    private readonly JobsRequestSerializationOptions _serializationOptions;
 
     public JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
         ICronJobManager<TCronJob> cronJobManager,
         JobFunctionRegistry functionRegistry,
         IInternalJobManager internalJobManager,
-        IJobsHostScheduler jobsHostScheduler
+        IJobsHostScheduler jobsHostScheduler,
+        JobsRequestSerializationOptions serializationOptions
     )
         : this(
             timeJobManager,
@@ -35,7 +37,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             functionRegistry.Descriptors.GetValueOrDefault,
             internalJobManager,
             jobsHostScheduler,
-            functionRegistry.CanonicalDescriptors.GetValueOrDefault
+            functionRegistry.CanonicalDescriptors.GetValueOrDefault,
+            serializationOptions
         ) { }
 
     internal JobScheduler(
@@ -45,7 +48,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         Func<string, JobFunctionDescriptor?> descriptorByName,
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
-        Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null
+        Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null,
+        JobsRequestSerializationOptions? serializationOptions = null
     )
     {
         _timeJobManager = Argument.IsNotNull(timeJobManager);
@@ -55,6 +59,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         _descriptorByRequestType = Argument.IsNotNull(descriptorByRequestType);
         _descriptorByName = Argument.IsNotNull(descriptorByName);
         _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
+        _serializationOptions = serializationOptions ?? JobsRequestSerializationOptions.Default;
     }
 
     public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -163,7 +168,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
-            Request = descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request),
+            Request =
+                descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             ExecutionTime = executionTime,
             Description = options?.Description,
             Retries = options?.Retries ?? 0,
@@ -186,7 +192,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var entity = new TCronJob
         {
             Function = descriptor.FunctionName,
-            Request = descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request),
+            Request =
+                descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             Expression = cronExpression,
             Description = options?.Description,
             Retries = options?.Retries ?? 0,

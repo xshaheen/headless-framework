@@ -263,7 +263,13 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             persisted.Should().NotBeNull();
             persisted!.Function.Should().Be(JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName);
             persisted.Request.Should().NotBeNull();
-            JobsHelper.ReadJobRequest<CoordinatedFacadeRequest>(persisted.Request!).Should().Be(request);
+            JobsHelper
+                .ReadJobRequest<CoordinatedFacadeRequest>(
+                    persisted.Request!,
+                    host.Services.GetRequiredService<JobsRequestSerializationOptions>()
+                )
+                .Should()
+                .Be(request);
             persisted.Description.Should().Be(options.Description);
             persisted.Retries.Should().Be(options.Retries);
             persisted.RetryIntervals.Should().Equal(options.RetryIntervals!);

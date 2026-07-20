@@ -7,51 +7,41 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Serialization helpers for converting job request payloads to and from the byte array representation
-/// stored in the persistence layer. Supports optional GZip compression.
+/// stored in the persistence layer. Supports optional GZip compression. Stateless: every member takes the
+/// per-host <see cref="JobsRequestSerializationOptions"/> composed by <c>AddHeadlessJobs</c> and resolved
+/// from the host's service provider — there is no process-global serializer state.
 /// </summary>
 public static class JobsHelper
 {
-    internal const int DefaultMaxDecompressedRequestBytes = 64 * 1024 * 1024;
     private static readonly byte[] _GZipSignature = [0x1f, 0x8b, 0x08, 0x00];
 
     /// <summary>
-    /// JsonSerializerOptions specifically for job request serialization/deserialization.
-    /// Can be configured during application startup via JobsOptionsBuilder.
-    /// </summary>
-    public static JsonSerializerOptions RequestJsonSerializerOptions { get; set; } = new();
-
-    /// <summary>
-    /// Controls whether job requests are GZip-compressed.
-    /// When false (default), requests are stored as plain UTF-8 JSON bytes without compression.
-    /// </summary>
-    public static bool UseGZipCompression { get; set; }
-
-    /// <summary>Maximum expanded size of a compressed job request. Defaults to 64 MiB.</summary>
-    public static int MaxDecompressedRequestBytes { get; set; } = DefaultMaxDecompressedRequestBytes;
-
-    /// <summary>
     /// Serializes <paramref name="data"/> to the byte array format used by the persistence layer,
-    /// applying GZip compression when <see cref="UseGZipCompression"/> is <see langword="true"/>.
+    /// applying GZip compression when <see cref="JobsRequestSerializationOptions.UseGZipCompression"/> is
+    /// <see langword="true"/>.
     /// </summary>
     /// <typeparam name="T">The type of the request payload.</typeparam>
     /// <param name="data">The value to serialize.</param>
+    /// <param name="options">The per-host request serialization settings.</param>
     /// <returns>
     /// A UTF-8 JSON byte array when compression is disabled, or a GZip-compressed byte array with a
     /// four-byte GZip signature appended as a sentinel when compression is enabled.
     /// </returns>
-    public static byte[] CreateJobRequest<T>(T data)
+    public static byte[] CreateJobRequest<T>(T data, JobsRequestSerializationOptions options)
     {
+        Argument.IsNotNull(options);
+
         // If data is already a byte array, short-circuit where possible
         if (data is byte[] existingBytes)
         {
             // If compression is enabled and data already has the GZip signature, assume it is in the final format
-            if (UseGZipCompression && _HasGZipSentinel(existingBytes))
+            if (options.UseGZipCompression && _HasGZipSentinel(existingBytes))
             {
                 return existingBytes;
             }
 
             // If compression is disabled, treat the provided bytes as the final representation
-            if (!UseGZipCompression)
+            if (!options.UseGZipCompression)
             {
                 return existingBytes;
             }
@@ -59,9 +49,9 @@ public static class JobsHelper
 
         var serialized = data is byte[] bytes
             ? bytes
-            : JsonSerializer.SerializeToUtf8Bytes(data, RequestJsonSerializerOptions);
+            : JsonSerializer.SerializeToUtf8Bytes(data, options.SerializerOptions);
 
-        if (!UseGZipCompression)
+        if (!options.UseGZipCompression)
         {
             return serialized;
         }
@@ -90,37 +80,50 @@ public static class JobsHelper
     /// </summary>
     /// <typeparam name="T">The expected request type.</typeparam>
     /// <param name="gzipBytes">The raw bytes from the persistence layer.</param>
+    /// <param name="options">The per-host request serialization settings.</param>
     /// <returns>The deserialized value, or <see langword="default"/> when the JSON value is <see langword="null"/>.</returns>
     /// <exception cref="InvalidOperationException">
-    /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
+    /// <see cref="JobsRequestSerializationOptions.UseGZipCompression"/> is <see langword="true"/> but the
+    /// bytes lack the expected GZip sentinel.
     /// </exception>
     /// <exception cref="InvalidDataException">The compressed payload is truncated or otherwise invalid.</exception>
     /// <exception cref="JsonException">The JSON payload is empty, malformed, or incompatible with <typeparamref name="T"/>.</exception>
-    public static T? ReadJobRequest<T>(byte[] gzipBytes)
+    public static T? ReadJobRequest<T>(byte[] gzipBytes, JobsRequestSerializationOptions options)
     {
-        if (!UseGZipCompression)
+        Argument.IsNotNull(options);
+
+        if (!options.UseGZipCompression)
         {
-            return JsonSerializer.Deserialize<T>(gzipBytes, RequestJsonSerializerOptions);
+            return JsonSerializer.Deserialize<T>(gzipBytes, options.SerializerOptions);
         }
 
         using var memoryStream = _OpenCompressedPayload(gzipBytes);
         using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
 
-        return JsonSerializer.Deserialize<T>(gzipStream, RequestJsonSerializerOptions);
+        return JsonSerializer.Deserialize<T>(gzipStream, options.SerializerOptions);
     }
 
     /// <summary>
-    /// Reads a job request payload as its raw JSON string without deserializing it.
+    /// Reads a job request payload as its raw JSON string without deserializing it. Compressed payloads
+    /// whose expanded size exceeds <see cref="JobsRequestSerializationOptions.MaxDecompressedRequestBytes"/>
+    /// are rejected.
     /// </summary>
     /// <param name="gzipBytes">The raw bytes from the persistence layer.</param>
+    /// <param name="options">The per-host request serialization settings.</param>
     /// <returns>The UTF-8 JSON string representation of the stored payload.</returns>
     /// <exception cref="InvalidOperationException">
-    /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
+    /// <see cref="JobsRequestSerializationOptions.UseGZipCompression"/> is <see langword="true"/> but the
+    /// bytes lack the expected GZip sentinel.
     /// </exception>
-    /// <exception cref="InvalidDataException">The compressed payload is truncated or otherwise invalid.</exception>
-    public static string ReadJobRequestAsString(byte[] gzipBytes)
+    /// <exception cref="InvalidDataException">
+    /// The compressed payload is truncated or otherwise invalid, or its expanded size exceeds
+    /// <see cref="JobsRequestSerializationOptions.MaxDecompressedRequestBytes"/>.
+    /// </exception>
+    public static string ReadJobRequestAsString(byte[] gzipBytes, JobsRequestSerializationOptions options)
     {
-        if (!UseGZipCompression)
+        Argument.IsNotNull(options);
+
+        if (!options.UseGZipCompression)
         {
             // When compression is disabled, treat the bytes as plain UTF-8 JSON
             return Encoding.UTF8.GetString(gzipBytes);
@@ -130,7 +133,7 @@ public static class JobsHelper
         using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
         using var expandedStream = new MemoryStream();
         var buffer = new byte[81920];
-        var maxDecompressedBytes = Argument.IsPositive(MaxDecompressedRequestBytes);
+        var maxDecompressedBytes = Argument.IsPositive(options.MaxDecompressedRequestBytes);
 
         while (true)
         {

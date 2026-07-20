@@ -4,16 +4,11 @@ using Headless.Jobs;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
-public sealed class JobsHelperTests : IDisposable
+public sealed class JobsHelperTests
 {
-    private readonly JsonSerializerOptions _originalOptions = JobsHelper.RequestJsonSerializerOptions;
-    private readonly bool _originalCompression = JobsHelper.UseGZipCompression;
-
-    public void Dispose()
+    private static JobsRequestSerializationOptions _Options(bool compressed)
     {
-        JobsHelper.RequestJsonSerializerOptions = _originalOptions;
-        JobsHelper.UseGZipCompression = _originalCompression;
+        return new JobsRequestSerializationOptions { UseGZipCompression = compressed };
     }
 
     [Theory]
@@ -21,13 +16,13 @@ public sealed class JobsHelperTests : IDisposable
     [InlineData(true)]
     public void should_round_trip_typed_and_textual_legacy_payloads(bool compressed)
     {
-        JobsHelper.UseGZipCompression = compressed;
+        var options = _Options(compressed);
         var request = new SampleRequest("payload", 42);
 
-        var bytes = JobsHelper.CreateJobRequest(request);
+        var bytes = JobsHelper.CreateJobRequest(request, options);
 
-        JobsHelper.ReadJobRequest<SampleRequest>(bytes).Should().Be(request);
-        JobsHelper.ReadJobRequestAsString(bytes).Should().Be("{\"Name\":\"payload\",\"Value\":42}");
+        JobsHelper.ReadJobRequest<SampleRequest>(bytes, options).Should().Be(request);
+        JobsHelper.ReadJobRequestAsString(bytes, options).Should().Be("{\"Name\":\"payload\",\"Value\":42}");
     }
 
     [Theory]
@@ -35,19 +30,19 @@ public sealed class JobsHelperTests : IDisposable
     [InlineData(true)]
     public void should_return_null_for_json_null(bool compressed)
     {
-        JobsHelper.UseGZipCompression = compressed;
-        var bytes = JobsHelper.CreateJobRequest(Encoding.UTF8.GetBytes("null"));
+        var options = _Options(compressed);
+        var bytes = JobsHelper.CreateJobRequest(Encoding.UTF8.GetBytes("null"), options);
 
-        JobsHelper.ReadJobRequest<SampleRequest>(bytes).Should().BeNull();
+        JobsHelper.ReadJobRequest<SampleRequest>(bytes, options).Should().BeNull();
     }
 
     [Fact]
     public void should_reject_empty_or_malformed_plain_json()
     {
-        JobsHelper.UseGZipCompression = false;
+        var options = _Options(compressed: false);
 
-        var readEmpty = () => JobsHelper.ReadJobRequest<SampleRequest>([]);
-        var readMalformed = () => JobsHelper.ReadJobRequest<SampleRequest>("{"u8.ToArray());
+        var readEmpty = () => JobsHelper.ReadJobRequest<SampleRequest>([], options);
+        var readMalformed = () => JobsHelper.ReadJobRequest<SampleRequest>("{"u8.ToArray(), options);
 
         readEmpty.Should().Throw<JsonException>();
         readMalformed.Should().Throw<JsonException>();
@@ -56,11 +51,11 @@ public sealed class JobsHelperTests : IDisposable
     [Fact]
     public void should_reject_missing_sentinel_or_truncated_compressed_json()
     {
-        JobsHelper.UseGZipCompression = true;
+        var options = _Options(compressed: true);
 
-        var readMissing = () => JobsHelper.ReadJobRequest<SampleRequest>([0x1f, 0x8b, 0x08]);
+        var readMissing = () => JobsHelper.ReadJobRequest<SampleRequest>([0x1f, 0x8b, 0x08], options);
         var readTruncated = () =>
-            JobsHelper.ReadJobRequest<SampleRequest>([0x1f, 0x8b, 0x08, 0x00, 0x1f, 0x8b, 0x08, 0x00]);
+            JobsHelper.ReadJobRequest<SampleRequest>([0x1f, 0x8b, 0x08, 0x00, 0x1f, 0x8b, 0x08, 0x00], options);
 
         readMissing.Should().Throw<InvalidOperationException>();
         readTruncated.Should().Throw<JsonException>();
@@ -69,10 +64,10 @@ public sealed class JobsHelperTests : IDisposable
     [Fact]
     public void should_only_recognize_the_trailing_signature()
     {
-        JobsHelper.UseGZipCompression = true;
+        var options = _Options(compressed: true);
         byte[] bytes = [0x1f, 0x8b, 0x08, 0x00, 0x01];
 
-        var read = () => JobsHelper.ReadJobRequest<SampleRequest>(bytes);
+        var read = () => JobsHelper.ReadJobRequest<SampleRequest>(bytes, options);
 
         read.Should().Throw<InvalidOperationException>();
     }

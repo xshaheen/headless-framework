@@ -27,7 +27,8 @@ public sealed class InternalJobsManagerTests : TestBase
             TimeProvider.System,
             sender,
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
         var acceptedId = Guid.NewGuid();
         var rejectedId = Guid.NewGuid();
@@ -51,7 +52,8 @@ public sealed class InternalJobsManagerTests : TestBase
             TimeProvider.System,
             sender,
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
         var jobId = Guid.NewGuid();
         provider.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
@@ -70,7 +72,8 @@ public sealed class InternalJobsManagerTests : TestBase
             TimeProvider.System,
             sender,
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
 
         var owned = new JobExecutionState
@@ -112,7 +115,8 @@ public sealed class InternalJobsManagerTests : TestBase
             TimeProvider.System,
             sender,
             new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default
         );
 
         // The grandchild must keep ITS OWN RunCondition; a regression to the parent's value would

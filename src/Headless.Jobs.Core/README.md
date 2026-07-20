@@ -219,4 +219,4 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 - Registers the non-generic `IJobScheduler` facade against the same configured time/cron entity pair as the managers.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
-- Registers a scheduler-scoped cron schedule cache and sets `JobsHelper` JSON/compression settings.
+- Registers a scheduler-scoped cron schedule cache and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.

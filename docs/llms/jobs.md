@@ -224,7 +224,8 @@ await db.ExecuteCoordinatedTransactionAsync(
             {
                 Function = "SendOrderReminder",
                 ExecutionTime = DateTime.UtcNow.AddHours(24),
-                Request = JobsHelper.SerializeRequest(new { order.Id }),
+                // requestSerialization is the host's JobsRequestSerializationOptions singleton (resolve from DI)
+                Request = JobsHelper.CreateJobRequest(new { order.Id }, requestSerialization),
             },
             ct
         );
@@ -568,7 +569,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
-- Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.
+- Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 
 ---
 
@@ -935,7 +936,8 @@ await timeJobManager.AddAsync(
     {
         Function = "ProcessPayment",
         ExecutionTime = DateTime.UtcNow,
-        Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
+        // requestSerialization is the host's JobsRequestSerializationOptions singleton (resolve from DI)
+        Request = JobsHelper.CreateJobRequest(new { PaymentId = "pay_123" }, requestSerialization),
         Retries = 3,
         RetryIntervals = [30, 60, 120], // seconds between attempts
     },
