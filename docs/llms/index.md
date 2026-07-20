@@ -46,7 +46,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Database access
 
-- For reusable EF Core converters without `HeadlessDbContext`, use `Headless.EntityFramework.Core`.
+- For provider-neutral EF converters, primitive mappings, and query helpers without `HeadlessDbContext`, use `Headless.EntityFramework.Core`.
 - For EF Core, use `Headless.EntityFramework` — call `services.AddHeadlessDbContext<TContext>(...)` for framework conventions, global filters, soft deletes, and tenancy support.
 - For raw SQL, use the connection factories in `Headless.Sql.PostgreSql` / `Headless.Sql.SqlServer` / `Headless.Sql.Sqlite` rather than constructing `NpgsqlConnection` / `SqlConnection` directly.
 
@@ -405,7 +405,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.OpenApi.Scalar` — Scalar API documentation UI.
 
 ### ORM
-- `Headless.EntityFramework.Core` — provider-neutral EF Core value converters without the full context and save pipeline.
+- `Headless.EntityFramework.Core` — provider-neutral EF converters, primitive mappings, and query helpers without the full context and save pipeline.
 - `Headless.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
 - `Headless.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
 - `Headless.Couchbase` — Couchbase with bucket context and cluster management.

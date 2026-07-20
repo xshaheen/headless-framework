@@ -5,14 +5,14 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class UtcDateTimeValueConverterTests : TestBase
+public sealed class NormalizeDateTimeValueConverterTests : TestBase
 {
     [Fact]
     public void should_preserve_utc_value()
     {
         var value = new DateTime(2026, 7, 18, 10, 30, 0, DateTimeKind.Utc);
 
-        var result = _Convert(new UtcDateTimeValueConverter(), value);
+        var result = _Convert(new NormalizeDateTimeValueConverter(), value);
 
         result.Should().Be(value);
         result.Kind.Should().Be(DateTimeKind.Utc);
@@ -23,7 +23,7 @@ public sealed class UtcDateTimeValueConverterTests : TestBase
     {
         var value = new DateTime(2026, 7, 18, 10, 30, 0, DateTimeKind.Local);
 
-        var result = _Convert(new UtcDateTimeValueConverter(), value);
+        var result = _Convert(new NormalizeDateTimeValueConverter(), value);
 
         result.Should().Be(value.ToUniversalTime());
         result.Kind.Should().Be(DateTimeKind.Utc);
@@ -34,7 +34,7 @@ public sealed class UtcDateTimeValueConverterTests : TestBase
     {
         var value = new DateTime(2026, 7, 18, 10, 30, 0, DateTimeKind.Unspecified);
 
-        var result = _Convert(new UtcDateTimeValueConverter(), value);
+        var result = _Convert(new NormalizeDateTimeValueConverter(), value);
 
         result.Ticks.Should().Be(value.Ticks);
         result.Kind.Should().Be(DateTimeKind.Utc);
@@ -43,7 +43,7 @@ public sealed class UtcDateTimeValueConverterTests : TestBase
     [Fact]
     public void should_preserve_null_nullable_value()
     {
-        var converter = new NullableUtcDateTimeValueConverter();
+        var converter = new NullableNormalizeDateTimeValueConverter();
         var convert = converter.ConvertToProviderExpression.Compile();
 
         var result = convert(null);
@@ -55,7 +55,7 @@ public sealed class UtcDateTimeValueConverterTests : TestBase
     public void should_normalize_nullable_value()
     {
         var value = new DateTime(2026, 7, 18, 10, 30, 0, DateTimeKind.Unspecified);
-        var converter = new NullableUtcDateTimeValueConverter();
+        var converter = new NullableNormalizeDateTimeValueConverter();
         var convert = converter.ConvertFromProviderExpression.Compile();
 
         var result = convert(value);
@@ -65,7 +65,7 @@ public sealed class UtcDateTimeValueConverterTests : TestBase
         result.Value.Kind.Should().Be(DateTimeKind.Utc);
     }
 
-    private static DateTime _Convert(UtcDateTimeValueConverter converter, DateTime value)
+    private static DateTime _Convert(NormalizeDateTimeValueConverter converter, DateTime value)
     {
         var toProvider = converter.ConvertToProviderExpression.Compile();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
