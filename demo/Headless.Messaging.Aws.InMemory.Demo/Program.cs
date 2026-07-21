@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
+    setup.Bus.ForConsumersFromAssembly(typeof(Program).Assembly);
     setup.UseInMemoryStorage();
     setup.UseAws(RegionEndpoint.CNNorthWest1);
     setup.UseDashboard(d => d.WithNoAuth());

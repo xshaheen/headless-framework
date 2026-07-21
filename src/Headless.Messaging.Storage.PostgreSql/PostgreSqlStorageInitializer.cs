@@ -258,19 +258,62 @@ internal sealed class PostgreSqlStorageInitializer(
         CancellationToken cancellationToken
     )
     {
-        // SIGTERM mid-build leaves the index in `indisvalid=false` state. `CREATE INDEX CONCURRENTLY
-        // IF NOT EXISTS` matches only by name and silently skips an invalid index, so the retry-pickup
-        // path falls back to a seq scan and the broker queue backs up. Probe pg_index first and drop
-        // an invalid index before re-creating.
-        await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
+        // Repair both interrupted builds and the pre-lane index shape. `IF NOT EXISTS` matches only
+        // by name, so a valid legacy (Version, NextRetryAt) index would otherwise survive forever
+        // and make IntentType a residual predicate during every lane-specific retry claim.
+        await _DropInvalidOrObsoleteRetryIndexConcurrentlyAsync(connection, indexName, cancellationToken)
+            .ConfigureAwait(false);
 
         var createIndex = $"""
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","IntentType","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             """;
 
         await connection
             .ExecuteNonQueryAsync(
                 createIndex,
+                commandTimeout: _GetDdlCommandTimeout(),
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task _DropInvalidOrObsoleteRetryIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        const string probeSql = """
+            SELECT i.indisvalid
+                AND (
+                    SELECT array_agg(a.attname::text ORDER BY k.ord)
+                    FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                    WHERE k.ord <= i.indnkeyatts
+                ) = ARRAY['Version','IntentType','NextRetryAt']::text[]
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE c.relname = @IndexName AND n.nspname = @Schema
+            LIMIT 1;
+            """;
+
+        await using var probeCommand = new NpgsqlCommand(probeSql, connection);
+        probeCommand.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
+        probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
+        probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
+
+        var probeResult = await probeCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (probeResult is not false)
+        {
+            return;
+        }
+
+        var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{postgreSqlOptions.Value.Schema}"."{indexName}";""";
+        await connection
+            .ExecuteNonQueryAsync(
+                dropSql,
                 commandTimeout: _GetDdlCommandTimeout(),
                 cancellationToken: cancellationToken
             )

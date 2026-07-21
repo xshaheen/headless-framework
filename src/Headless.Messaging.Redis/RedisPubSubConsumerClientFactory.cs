@@ -17,10 +17,23 @@ internal sealed class RedisPubSubConsumerClientFactory(
     public Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (lane == MessageLane.Queue)
+        {
+            throw new NotSupportedException(
+                "Headless.Messaging.Redis Pub/Sub is a bus transport provider and cannot create queue consumers."
+            );
+        }
+
+        if (lane != MessageLane.Bus)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null);
+        }
 
         try
         {

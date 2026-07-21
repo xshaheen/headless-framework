@@ -1,5 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Tests.Capabilities;
+
 namespace Tests;
 
 [Collection<RabbitMqFixture>]
@@ -7,6 +11,17 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
     : TransportConsumerConformanceTestsBase
 {
     protected override string ProviderName => "RabbitMQ";
+
+    protected override void ConfigureTransport(MessagingSetupBuilder setup)
+    {
+        setup.UseRabbitMq(options =>
+        {
+            options.HostName = fixture.HostName;
+            options.Port = fixture.Port;
+            options.UserName = fixture.UserName;
+            options.Password = fixture.Password;
+        });
+    }
 
     protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         CancellationToken cancellationToken
@@ -19,6 +34,34 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
     public override Task should_round_trip_queue_message_body_and_headers()
     {
         return base.should_round_trip_queue_message_body_and_headers();
+    }
+
+    [Fact]
+    public override Task should_match_production_runtime_capabilities()
+    {
+        return base.should_match_production_runtime_capabilities();
+    }
+
+    [Fact]
+    public async Task should_fan_out_bus_message_to_distinct_real_subscriptions()
+    {
+        RequireSupport(TransportConformanceScenario.BusRoundTrip);
+        var exchangeName = $"bus-{Guid.NewGuid():N}";
+        var destination = $"message-{Guid.NewGuid():N}";
+        await using var first = await fixture.CreateBusSessionAsync(
+            exchangeName,
+            destination,
+            $"group-{Guid.NewGuid():N}",
+            AbortToken
+        );
+        await using var second = await fixture.CreateBusSessionAsync(
+            exchangeName,
+            destination,
+            $"group-{Guid.NewGuid():N}",
+            AbortToken
+        );
+
+        await TransportBusConformance.AssertFanOutAsync(first, second, AbortToken);
     }
 
     [Fact]

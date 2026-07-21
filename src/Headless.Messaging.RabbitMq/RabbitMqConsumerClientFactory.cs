@@ -12,24 +12,17 @@ internal sealed class RabbitMqConsumerClientFactory(
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
-    }
-
     public async Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
+        var intentType = MessageLaneCompatibility.ToIntentType(lane);
+
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
         var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, intentType);

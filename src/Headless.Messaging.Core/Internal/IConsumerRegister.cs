@@ -342,10 +342,8 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask ExecuteAsync()
     {
-        var groupingMatches = _selector.GetCandidatesMethodsOfIntentGroupNameGrouped();
+        var groupingMatches = _selector.GetCandidatesMethodsOfLaneGroupNameGrouped();
         List<Task>? startupTasks = null;
-
-        _EnsureConsumerFactorySupportsIntent(groupingMatches.Keys);
 
         // Arm the OTel cardinality guard so unrecognized group names are rejected.
         _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys.Select(_CreateHandleName));
@@ -354,19 +352,14 @@ internal sealed class ConsumerRegister(
         {
             var groupKey = matchGroup.Key;
             var groupName = groupKey.GroupName;
-            var intentType = groupKey.IntentType;
+            var lane = groupKey.Lane;
             var handleName = _CreateHandleName(groupKey);
             var limit = _selector.GetGroupConcurrentLimit(groupKey);
 
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(
-                        groupName,
-                        limit,
-                        intentType,
-                        _stoppingCts.Token
-                    )
+                await using var client = await _CreateConsumerClientAsync(groupName, limit, lane, _stoppingCts.Token)
                     .ConfigureAwait(false);
                 client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
                 messageNames = await client
@@ -421,7 +414,7 @@ internal sealed class ConsumerRegister(
                                 var innerClient = await _CreateConsumerClientAsync(
                                         groupName,
                                         limit,
-                                        intentType,
+                                        lane,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
@@ -430,13 +423,7 @@ internal sealed class ConsumerRegister(
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(
-                                    innerClient,
-                                    groupName,
-                                    handleName,
-                                    intentType,
-                                    groupCts.Token
-                                );
+                                _RegisterMessageProcessor(innerClient, groupName, handleName, lane, groupCts.Token);
 
                                 await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -480,37 +467,16 @@ internal sealed class ConsumerRegister(
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken
     )
     {
-        return _consumerClientFactory is IIntentAwareConsumerClientFactory intentAwareFactory
-            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType, cancellationToken)
-            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
-    }
-
-    private void _EnsureConsumerFactorySupportsIntent(IEnumerable<ConsumerGroupKey> groupKeys)
-    {
-        if (_consumerClientFactory is IIntentAwareConsumerClientFactory)
-        {
-            return;
-        }
-
-        var unsupportedGroup = groupKeys.FirstOrDefault(group => group.IntentType != IntentType.Bus);
-
-        if (unsupportedGroup != default)
-        {
-            throw new InvalidOperationException(
-                $"Consumer group '{unsupportedGroup.GroupName}' is registered for {unsupportedGroup.IntentType} delivery, "
-                    + $"but the configured {nameof(IConsumerClientFactory)} does not implement "
-                    + $"{nameof(IIntentAwareConsumerClientFactory)}. Use an intent-aware messaging provider for queue consumers."
-            );
-        }
+        return _consumerClientFactory.CreateAsync(groupName, groupConcurrent, lane, cancellationToken);
     }
 
     private static string _CreateHandleName(ConsumerGroupKey groupKey)
     {
-        return CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
+        return CircuitBreakerGroupKeys.For(groupKey.Lane, groupKey.GroupName);
     }
 
     private async Task _AwaitConsumerReadyThenListenAsync(
@@ -673,11 +639,13 @@ internal sealed class ConsumerRegister(
         IConsumerClient client,
         string group,
         string handleName,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken hostShutdownToken
     )
     {
-        Func<TransportMessage, object?, Task> onMessageCallback = async (transportMessage, sender) =>
+        var intentType = MessageLaneCompatibility.ToIntentType(lane);
+
+        async Task OnMessageCallback(TransportMessage transportMessage, object? sender)
         {
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
@@ -715,7 +683,7 @@ internal sealed class ConsumerRegister(
                 Message message;
                 Exception? dispatchBypassException = null;
 
-                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, intentType, out var executor);
+                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, lane, out var executor);
                 string? exceptionInfo = null;
                 try
                 {
@@ -927,9 +895,9 @@ internal sealed class ConsumerRegister(
                     _circuitBreakerStateManager?.ReleaseHalfOpenProbe(handleName);
                 }
             }
-        };
+        }
 
-        client.AttachCallbacks(onMessageCallback, _WriteLog);
+        client.AttachCallbacks(OnMessageCallback, _WriteLog);
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

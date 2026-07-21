@@ -108,6 +108,13 @@ public static class SetupRabbitMqMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "RabbitMQ",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: false
+                )
+            );
             configureOptions(services);
             services.AddSingleton<RabbitMqTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());

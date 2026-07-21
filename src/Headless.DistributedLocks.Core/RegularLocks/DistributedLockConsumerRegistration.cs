@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -14,10 +15,9 @@ internal static class DistributedLockConsumerRegistration
 {
     /// <summary>
     /// Auto-registers the single lock-released consumer shared by the mutex and semaphore providers
-    /// (both fan out from it via <see cref="ICanReceiveLockReleased"/>). Uses the service-collection
-    /// <c>ForMessage</c> seam, whose registration is drained into the consumer registry by
-    /// messaging bootstrap. Idempotent across repeated distributed-lock primitive
-    /// registrations: once the consumer's <see cref="IConsume{TMessage}"/>
+    /// (both fan out from it via <see cref="ICanReceiveLockReleased"/>). Uses an internal immutable Bus
+    /// contribution that messaging bootstrap drains into the consumer registry. Idempotent across repeated
+    /// primitive registrations: once the consumer's <see cref="IConsume{TMessage}"/>
     /// descriptor is present, subsequent calls are no-ops.
     /// </summary>
     /// <remarks>
@@ -31,10 +31,10 @@ internal static class DistributedLockConsumerRegistration
             return;
         }
 
-        services.ForMessage<DistributedLockReleased>(message =>
-            message
-                .MessageName("headless.locks.released")
-                .OnBus<DistributedLock.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
+        services.AddFrameworkConsumerRegistration<DistributedLockReleased, DistributedLock.LockReleasedConsumer>(
+            MessageLane.Bus,
+            messageName: "headless.locks.released",
+            concurrency: 1
         );
     }
 }

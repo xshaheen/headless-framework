@@ -106,6 +106,7 @@ internal sealed class ConsumeMiddlewarePipeline(
                         descriptor.MessageName,
                         descriptor.GroupName,
                         handlerId,
+                        descriptor.Lane,
                         out var runtimeInvoker
                     )
                 )
@@ -209,7 +210,12 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         if (
             descriptorRegistry is not null
-            && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, groupName, out var descriptors)
+            && descriptorRegistry.TryGetConsumeDescriptors(
+                context.MessageType,
+                groupName,
+                MessageLaneCompatibility.ToLane(context.IntentType),
+                out var descriptors
+            )
         )
         {
             return

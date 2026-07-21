@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Registration;
 
@@ -7,17 +8,19 @@ namespace Tests.Internal;
 
 public sealed class MessageMetadataRegistryTests
 {
+    private const string _MessageName = "test-message";
+
     [Fact]
     public void should_lookup_registered_message_metadata()
     {
         // given
         var config = new FakeProviderConfig("value");
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(config), []),
+            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(config), []),
         ]);
 
         // when
-        var found = registry.TryGet(typeof(TestMessage), out var metadata);
+        var found = registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
         found.Should().BeTrue();
@@ -31,7 +34,7 @@ public sealed class MessageMetadataRegistryTests
         var registry = new MessageMetadataRegistry([]);
 
         // when
-        var found = registry.TryGet(typeof(TestMessage), out var metadata);
+        var found = registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
         found.Should().BeFalse();
@@ -39,38 +42,65 @@ public sealed class MessageMetadataRegistryTests
     }
 
     [Fact]
-    public void should_resolve_assignable_metadata_for_concrete_message()
+    public void should_not_resolve_assignable_metadata_for_concrete_message()
     {
         // given
         var config = new FakeProviderConfig("interface");
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(ITestEvent), null, null, _Configs(config), []),
+            new MessageRegistration(typeof(ITestEvent), MessageLane.Bus, _MessageName, null, _Configs(config), []),
         ]);
 
         // when
-        var found = registry.TryGet(typeof(TestMessage), out var metadata);
+        var found = registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
-        found.Should().BeTrue();
-        metadata!.MessageType.Should().Be<ITestEvent>();
+        found.Should().BeFalse("the declared contract, not payload assignability, selects metadata");
+        metadata.Should().BeNull();
     }
 
     [Fact]
-    public void should_throw_when_assignable_metadata_resolution_is_ambiguous()
+    public void should_require_lane_qualified_route_key_for_lookup()
+    {
+        // when
+        var lookup = typeof(MessageMetadataRegistry)
+            .GetMethods()
+            .Single(method =>
+                string.Equals(method.Name, nameof(MessageMetadataRegistry.TryGet), StringComparison.Ordinal)
+            );
+
+        // then
+        lookup.GetParameters()[0].ParameterType.Should().Be<MessageRouteKey>();
+    }
+
+    [Fact]
+    public void should_not_resolve_multiple_assignable_contracts()
     {
         // given
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(ITestEvent), null, null, _Configs(new FakeProviderConfig("a")), []),
-            new MessageRegistration(typeof(IOtherEvent), null, null, _Configs(new OtherProviderConfig("b")), []),
+            new MessageRegistration(
+                typeof(ITestEvent),
+                MessageLane.Bus,
+                _MessageName,
+                null,
+                _Configs(new FakeProviderConfig("a")),
+                []
+            ),
+            new MessageRegistration(
+                typeof(IOtherEvent),
+                MessageLane.Bus,
+                _MessageName,
+                null,
+                _Configs(new OtherProviderConfig("b")),
+                []
+            ),
         ]);
 
         // when
-        var act = () => registry.TryGet(typeof(TestMessage), out _);
+        var found = registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*multiple registered metadata types*IOtherEvent*ITestEvent*");
+        found.Should().BeFalse();
+        metadata.Should().BeNull();
     }
 
     [Fact]
@@ -80,12 +110,12 @@ public sealed class MessageMetadataRegistryTests
         var first = new FakeProviderConfig("a");
         var second = new OtherProviderConfig("b");
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
+            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(first), []),
+            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(second), []),
         ]);
 
         // when
-        registry.TryGet(typeof(TestMessage), out var metadata);
+        registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
         metadata!.ProviderConfigs.Values.Should().BeEquivalentTo<object>([first, second]);
@@ -98,12 +128,26 @@ public sealed class MessageMetadataRegistryTests
         string? First(object _) => "first";
         string? Second(object _) => "second";
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(TestMessage), null, First, new Dictionary<Type, object>(), []),
-            new MessageRegistration(typeof(TestMessage), null, Second, new Dictionary<Type, object>(), []),
+            new MessageRegistration(
+                typeof(TestMessage),
+                MessageLane.Bus,
+                _MessageName,
+                First,
+                new Dictionary<Type, object>(),
+                []
+            ),
+            new MessageRegistration(
+                typeof(TestMessage),
+                MessageLane.Bus,
+                _MessageName,
+                Second,
+                new Dictionary<Type, object>(),
+                []
+            ),
         ]);
 
         // when
-        registry.TryGet(typeof(TestMessage), out var metadata);
+        registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
         metadata!.CorrelationSelector!(new TestMessage()).Should().Be("second");
@@ -116,12 +160,12 @@ public sealed class MessageMetadataRegistryTests
         var first = new FakeProviderConfig("a");
         var second = new FakeProviderConfig("b");
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
+            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(first), []),
+            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(second), []),
         ]);
 
         // when
-        registry.TryGet(typeof(TestMessage), out var metadata);
+        registry.TryGet(_Route<TestMessage>(), out var metadata);
 
         // then
         metadata!.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(second);
@@ -130,6 +174,11 @@ public sealed class MessageMetadataRegistryTests
     private static IReadOnlyDictionary<Type, object> _Configs(object config)
     {
         return new Dictionary<Type, object> { [config.GetType()] = config };
+    }
+
+    private static MessageRouteKey _Route<T>(MessageLane lane = MessageLane.Bus)
+    {
+        return new MessageRouteKey(typeof(T), _MessageName, lane);
     }
 
     private interface ITestEvent;

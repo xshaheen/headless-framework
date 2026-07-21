@@ -29,6 +29,8 @@ public sealed class AzureServiceBusTransportTests(AzureServiceBusFixture fixture
         secondDelivery.Message.Id.Should().Be(expectedId);
         firstDelivery.Message.Headers["x-headless-conformance"].Should().Be("azure-bus-fanout");
         secondDelivery.Message.Headers["x-headless-conformance"].Should().Be("azure-bus-fanout");
+        firstDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Bus));
+        secondDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Bus));
         await first.Consumer.CommitAsync(firstDelivery.SettlementValue, AbortToken);
         await second.Consumer.CommitAsync(secondDelivery.SettlementValue, AbortToken);
     }
@@ -39,6 +41,7 @@ public sealed class AzureServiceBusTransportTests(AzureServiceBusFixture fixture
         {
             [MessagingHeaders.MessageId] = messageId,
             [MessagingHeaders.MessageName] = messageName,
+            [MessagingHeaders.Intent] = nameof(IntentType.Bus),
             ["x-headless-conformance"] = "azure-bus-fanout",
         };
 

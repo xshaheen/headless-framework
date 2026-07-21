@@ -66,7 +66,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessagesFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -99,7 +99,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessagesFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -149,7 +149,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessagesFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
             setup.UseInMemoryStorage();
             setup.UseInMemory();
@@ -162,7 +162,7 @@ public class Startup
     {
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessagesFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithNoAuth());
             setup.UseInMemoryStorage();
             setup.UseInMemory();

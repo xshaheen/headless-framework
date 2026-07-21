@@ -35,6 +35,8 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
+        var declaredMessageType = options?.MessageType ?? typeof(T);
+
         // Capture the ambient coordinator + relational transaction ONCE here, in the caller's frame, before the
         // pipeline await. Re-reading ICurrentCommitCoordinator.Current inside _PublishInternalAsync (after the
         // middleware await) could observe a torn-down scope and silently fall through to the non-transactional
@@ -49,7 +51,12 @@ internal sealed class OutboxMessageWriter(
             // DelayTime is undefined for the immediate publish path; ignored.
             innerPublish: (middlewareOptions, _, ct) =>
                 _PublishInternalAsync(
-                    publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType),
+                    publishRequestFactory.Create(
+                        contentObj,
+                        declaredMessageType,
+                        middlewareOptions,
+                        intentType: intentType
+                    ),
                     coordinated,
                     ct
                 ),
@@ -66,6 +73,7 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
+        var declaredMessageType = options?.MessageType ?? typeof(T);
         var coordinated = _TryCaptureCoordinatedContext();
 
         return publishPipeline.ExecuteAsync(
@@ -78,8 +86,19 @@ internal sealed class OutboxMessageWriter(
                 // Middleware mutated DelayTime to null -> drop to immediate-publish path; otherwise use the
                 // middleware-mutated value, falling back to the caller-supplied delay if middleware left it untouched.
                 var request = middlewareDelay.HasValue
-                    ? publishRequestFactory.Create(contentObj, middlewareOptions, middlewareDelay.Value, intentType)
-                    : publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType);
+                    ? publishRequestFactory.Create(
+                        contentObj,
+                        declaredMessageType,
+                        middlewareOptions,
+                        middlewareDelay.Value,
+                        intentType
+                    )
+                    : publishRequestFactory.Create(
+                        contentObj,
+                        declaredMessageType,
+                        middlewareOptions,
+                        intentType: intentType
+                    );
                 return _PublishInternalAsync(request, coordinated, ct);
             },
             isTransactional: coordinated is not null,

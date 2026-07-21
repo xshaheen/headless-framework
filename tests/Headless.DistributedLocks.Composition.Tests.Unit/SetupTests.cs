@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,7 @@ public sealed class SetupTests : TestBase
         // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
         // so waiters fall back to polling.
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
+        _AssertInternalBusContribution(services);
     }
 
     [Fact]
@@ -40,6 +42,7 @@ public sealed class SetupTests : TestBase
 
         // when — register the lock provider BEFORE AddHeadlessMessaging.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+        _AssertInternalBusContribution(services);
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
@@ -89,6 +92,7 @@ public sealed class SetupTests : TestBase
         // drained at messaging bootstrap, so registration order does not matter.
         var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         act.Should().NotThrow();
+        _AssertInternalBusContribution(services);
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
@@ -97,7 +101,10 @@ public sealed class SetupTests : TestBase
             .GetRequiredService<IConsumerRegistry>()
             .GetAll()
             .Should()
-            .ContainSingle(metadata => metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer));
+            .ContainSingle(metadata =>
+                metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
+                && metadata.IntentType == IntentType.Bus
+            );
     }
 
     [Fact]
@@ -148,5 +155,38 @@ public sealed class SetupTests : TestBase
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
+    }
+
+    private static void _AssertInternalBusContribution(IServiceCollection services)
+    {
+        var contribution = services
+            .Single(descriptor =>
+                string.Equals(
+                    descriptor.ServiceType.Name,
+                    "FrameworkConsumerRegistrationContribution",
+                    StringComparison.Ordinal
+                )
+            )
+            .ImplementationInstance;
+        contribution.Should().NotBeNull();
+        var contributionType = contribution!.GetType();
+
+        contributionType.IsPublic.Should().BeFalse();
+        contributionType.GetProperty(nameof(PublishContext.Lane))!.GetValue(contribution).Should().Be(MessageLane.Bus);
+        contributionType
+            .GetProperty(nameof(ConsumerMetadata.MessageType))!
+            .GetValue(contribution)
+            .Should()
+            .Be(typeof(DistributedLockReleased));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(MessagingSetupBuilder));
+        services
+            .Should()
+            .NotContain(descriptor =>
+                string.Equals(
+                    descriptor.ServiceType.Name,
+                    "IMessagingRegistrationContributor",
+                    StringComparison.Ordinal
+                )
+            );
     }
 }

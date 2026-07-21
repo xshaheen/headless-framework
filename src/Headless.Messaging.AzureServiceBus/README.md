@@ -27,7 +27,7 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>
@@ -49,7 +49,7 @@ options.UseAzureServiceBus(asb =>
     asb.TokenCredential = credential; // Azure.Core.TokenCredential when not using ConnectionString
 });
 
-options.ForMessage<OrderEvent>(message =>
+options.Bus.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
         .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
@@ -57,6 +57,8 @@ options.ForMessage<OrderEvent>(message =>
 ```
 
 `PartitionKey(...)` stamps `AzureServiceBusMessagingHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusMessagingHeaders.SessionId`. If you omit `SessionId`, the provider now falls back to `PartitionKey` before the framework message id so partitioned session publishes do not fail by default. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+
+The provider declares immutable Bus and Queue capabilities with independent topic/queue topology. The same contract and logical name may therefore be configured independently through `options.Bus` and `options.Queue`.
 
 ## Message Ordering
 

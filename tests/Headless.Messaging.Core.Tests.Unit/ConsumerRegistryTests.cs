@@ -829,6 +829,46 @@ public sealed class ConsumerRegistryTests : TestBase
             .WithMessage("*Cannot register message-name mappings after the registry has been frozen*");
     }
 
+    [Fact]
+    public void lane_specific_message_names_coexist_and_override_the_global_fallback()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "orders.global");
+        registry.RegisterMessageName(typeof(TestMessage), MessageLane.Bus, "orders.bus");
+
+        // when
+        var hasBus = registry.TryGetRawMessageName(typeof(TestMessage), MessageLane.Bus, out var busName);
+        var hasQueue = registry.TryGetRawMessageName(typeof(TestMessage), MessageLane.Queue, out var queueName);
+
+        // then
+        hasBus.Should().BeTrue();
+        busName.Should().Be("orders.bus");
+        hasQueue.Should().BeTrue();
+        queueName.Should().Be("orders.global");
+    }
+
+    [Fact]
+    public void same_lane_names_are_case_insensitive_but_opposite_lane_is_independent()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), MessageLane.Bus, "orders.placed");
+        registry.RegisterMessageName(typeof(TestMessage), MessageLane.Queue, "orders.queue");
+
+        // when
+        var sameLaneCaseVariant = () =>
+            registry.RegisterMessageName(typeof(TestMessage), MessageLane.Bus, "Orders.Placed");
+        var sameLaneConflict = () =>
+            registry.RegisterMessageName(typeof(TestMessage), MessageLane.Bus, "orders.renamed");
+
+        // then
+        sameLaneCaseVariant.Should().NotThrow();
+        sameLaneConflict.Should().Throw<InvalidOperationException>();
+        registry.TryGetRawMessageName(typeof(TestMessage), MessageLane.Queue, out var queueName).Should().BeTrue();
+        queueName.Should().Be("orders.queue");
+    }
+
     private sealed class OtherMessage;
 
     private sealed class OtherMessageConsumer : IConsume<OtherMessage>

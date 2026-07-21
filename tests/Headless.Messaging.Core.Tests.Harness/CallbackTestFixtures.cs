@@ -84,7 +84,7 @@ public enum CallbackRequestMode
     HeadersOnly,
 }
 
-public sealed record CallbackQueueRequestMessage(string Id);
+public sealed record CallbackQueueRequestMessage(string Id, bool ReturnDeclaredContract = false);
 
 public sealed record CallbackFailureRequestMessage(string Id);
 
@@ -95,6 +95,15 @@ public sealed record IsolationRequestMessage(string Id);
 public sealed record ChainRequestMessage(string Id);
 
 public sealed record CallbackResponse(string RequestId, string SourceIntent);
+
+public interface ICallbackResponseContract
+{
+    string RequestId { get; }
+
+    string SourceIntent { get; }
+}
+
+public sealed record ConcreteCallbackResponse(string RequestId, string SourceIntent) : ICallbackResponseContract;
 
 public sealed record RewrittenCallbackResponse(string RequestId);
 
@@ -193,8 +202,59 @@ public sealed class CallbackQueueRequestConsumer : IConsume<CallbackQueueRequest
         CancellationToken cancellationToken
     )
     {
-        context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+        if (context.Message.ReturnDeclaredContract)
+        {
+            context.SetResponse<ICallbackResponseContract>(
+                new ConcreteCallbackResponse(context.Message.Id, context.IntentType.ToString())
+            );
+        }
+        else
+        {
+            context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+        }
+
         return ValueTask.CompletedTask;
+    }
+}
+
+public sealed record CallbackPublishSnapshot<TMessage>(
+    Type DeclaredMessageType,
+    Type ConcreteMessageType,
+    TMessage? Content,
+    IntentType IntentType
+);
+
+public sealed class CallbackPublishRecorder<TMessage>
+{
+    private readonly ConcurrentQueue<CallbackPublishSnapshot<TMessage>> _snapshots = new();
+
+    public IReadOnlyCollection<CallbackPublishSnapshot<TMessage>> Snapshots => _snapshots;
+
+    public void Record(PublishContext<TMessage> context)
+    {
+        _snapshots.Enqueue(
+            new CallbackPublishSnapshot<TMessage>(
+                context.MessageType,
+                context.ConcreteMessageType,
+                context.Content,
+                context.IntentType
+            )
+        );
+    }
+
+    public void Clear()
+    {
+        _snapshots.Clear();
+    }
+}
+
+public sealed class CallbackPublishMiddleware<TMessage>(CallbackPublishRecorder<TMessage> recorder)
+    : IPublishMiddleware<PublishContext<TMessage>>
+{
+    public ValueTask InvokeAsync(PublishContext<TMessage> context, Func<ValueTask> next)
+    {
+        recorder.Record(context);
+        return next();
     }
 }
 

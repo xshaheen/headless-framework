@@ -78,10 +78,10 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         services
             .AddHeadlessMessaging(options =>
             {
-                options.ForMessage<ScopedMessage>(message =>
+                options.Bus.ForMessage<ScopedMessage>(message =>
                     message
                         .MessageName("scope.class")
-                        .OnBus<ScopedClassConsumer>(consumer => consumer.Group("scope.class"))
+                        .Consumer<ScopedClassConsumer>(consumer => consumer.Group("scope.class"))
                 );
                 options.UseInMemory();
                 options.UseInMemoryStorage();

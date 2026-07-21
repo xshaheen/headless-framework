@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Options;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -19,6 +21,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     protected override string ProviderName => "NATS";
+
+    protected override void ConfigureTransport(MessagingSetupBuilder setup)
+    {
+        setup.UseNats(fixture.ConnectionString);
+    }
 
     protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         CancellationToken cancellationToken
@@ -31,6 +38,34 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     public override Task should_round_trip_queue_message_body_and_headers()
     {
         return base.should_round_trip_queue_message_body_and_headers();
+    }
+
+    [Fact]
+    public override Task should_match_production_runtime_capabilities()
+    {
+        return base.should_match_production_runtime_capabilities();
+    }
+
+    [Fact]
+    public async Task should_fan_out_bus_message_to_distinct_real_subscriptions()
+    {
+        RequireSupport(TransportConformanceScenario.BusRoundTrip);
+        var streamName = $"bus-{Guid.NewGuid():N}"[..29];
+        var destination = $"{streamName}.probe";
+        await using var first = await fixture.CreateBusSessionAsync(
+            streamName,
+            destination,
+            $"group-{Guid.NewGuid():N}"[..30],
+            AbortToken
+        );
+        await using var second = await fixture.CreateBusSessionAsync(
+            streamName,
+            destination,
+            $"group-{Guid.NewGuid():N}"[..30],
+            AbortToken
+        );
+
+        await TransportBusConformance.AssertFanOutAsync(first, second, AbortToken);
     }
 
     [Fact]
@@ -282,7 +317,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var factory = new NatsConsumerClientFactory(badOptions, _serviceProvider);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();

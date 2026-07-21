@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 
 namespace Tests.Capabilities;
 
@@ -21,11 +23,67 @@ public enum TransportConformanceScenario
     BoundedGracefulShutdown,
 }
 
+/// <summary>
+/// Test-only snapshot of the immutable production transport descriptor expected from a provider package.
+/// The production descriptor remains runtime authority; the manifest only compares evidence against it.
+/// </summary>
+[PublicAPI]
+public sealed record TransportRuntimeCapabilityExpectation(
+    string Provider,
+    bool SupportsBus,
+    bool SupportsQueue,
+    bool SupportsIndependentLaneTopology
+)
+{
+    public static TransportRuntimeCapabilityExpectation Disabled(string provider)
+    {
+        return new TransportRuntimeCapabilityExpectation(provider, false, false, false);
+    }
+
+    public IReadOnlyList<string> GetMismatchErrors(MessagingProviderCapabilities actual)
+    {
+        var errors = new List<string>();
+
+        if (actual.Role != MessagingProviderRole.Transport)
+        {
+            errors.Add($"{Provider}: production descriptor role must be Transport, not {actual.Role}.");
+        }
+
+        if (!string.Equals(actual.Provider, Provider, StringComparison.Ordinal))
+        {
+            errors.Add($"{Provider}: production descriptor uses provider id '{actual.Provider}'.");
+        }
+
+        var supportsBus = actual.Lanes.Contains(MessageLane.Bus);
+        var supportsQueue = actual.Lanes.Contains(MessageLane.Queue);
+
+        if (supportsBus != SupportsBus)
+        {
+            errors.Add($"{Provider}: production Bus support is {supportsBus}; manifest expects {SupportsBus}.");
+        }
+
+        if (supportsQueue != SupportsQueue)
+        {
+            errors.Add($"{Provider}: production Queue support is {supportsQueue}; manifest expects {SupportsQueue}.");
+        }
+
+        if (actual.SupportsIndependentLaneTopology != SupportsIndependentLaneTopology)
+        {
+            errors.Add(
+                $"{Provider}: production independent-lane topology support is {actual.SupportsIndependentLaneTopology}; manifest expects {SupportsIndependentLaneTopology}."
+            );
+        }
+
+        return errors;
+    }
+}
+
 /// <summary>Conformance declarations for one provider's broker-backed integration leaf.</summary>
 [PublicAPI]
 public sealed record TransportConformanceProfile(
     string Provider,
     bool IsRealBrokerLeafEnabled,
+    TransportRuntimeCapabilityExpectation ExpectedRuntimeCapabilities,
     FrozenDictionary<TransportConformanceScenario, ConformanceSupport> Scenarios
 )
 {
@@ -43,12 +101,35 @@ public sealed record TransportConformanceProfile(
                     )
             );
 
-        return new TransportConformanceProfile(provider, false, scenarios.ToFrozenDictionary());
+        return new TransportConformanceProfile(
+            provider,
+            false,
+            TransportRuntimeCapabilityExpectation.Disabled(provider),
+            scenarios.ToFrozenDictionary()
+        );
     }
 
     public TransportConformanceProfile EnableRealBrokerLeaf()
     {
         return this with { IsRealBrokerLeafEnabled = true };
+    }
+
+    public TransportConformanceProfile WithRuntimeCapabilities(
+        string provider,
+        bool supportsBus,
+        bool supportsQueue,
+        bool supportsIndependentLaneTopology
+    )
+    {
+        return this with
+        {
+            ExpectedRuntimeCapabilities = new TransportRuntimeCapabilityExpectation(
+                provider,
+                supportsBus,
+                supportsQueue,
+                supportsIndependentLaneTopology
+            ),
+        };
     }
 
     public TransportConformanceProfile WithScenario(TransportConformanceScenario scenario, ConformanceSupport support)
@@ -76,7 +157,14 @@ public static class TransportConformanceManifest
         {
             ["NATS"] = TransportConformanceProfile
                 .CreateDisabled("NATS")
+                .WithRuntimeCapabilities(
+                    "NATS JetStream",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: false
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
@@ -86,7 +174,14 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
+                .WithRuntimeCapabilities(
+                    "RabbitMQ",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: false
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
@@ -96,7 +191,14 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
+                .WithRuntimeCapabilities(
+                    "Amazon SQS",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: true
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.EmptyBodyDispatch,
@@ -110,6 +212,12 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithRuntimeCapabilities(
+                    "Kafka",
+                    supportsBus: false,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: false
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BusRoundTrip,
@@ -125,6 +233,12 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
+                .WithRuntimeCapabilities(
+                    "Apache Pulsar",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: false
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -135,6 +249,12 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
+                .WithRuntimeCapabilities(
+                    "Azure Service Bus",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: true
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -178,6 +298,21 @@ public static class TransportConformanceManifest
             errors.AddRange(support.GetValidationErrors(scenario).Select(error => $"{profile.Provider}: {error}"));
         }
 
+        _ValidateLaneRoundTrip(
+            profile,
+            TransportConformanceScenario.BusRoundTrip,
+            profile.ExpectedRuntimeCapabilities.SupportsBus,
+            "Bus",
+            errors
+        );
+        _ValidateLaneRoundTrip(
+            profile,
+            TransportConformanceScenario.QueueRoundTrip,
+            profile.ExpectedRuntimeCapabilities.SupportsQueue,
+            "Queue",
+            errors
+        );
+
         if (profile.IsRealBrokerLeafEnabled)
         {
             foreach (var scenario in _MandatoryBaselineScenarios)
@@ -193,5 +328,28 @@ public static class TransportConformanceManifest
         }
 
         return errors;
+    }
+
+    private static void _ValidateLaneRoundTrip(
+        TransportConformanceProfile profile,
+        TransportConformanceScenario scenario,
+        bool runtimeSupportsLane,
+        string lane,
+        ICollection<string> errors
+    )
+    {
+        if (!profile.Scenarios.TryGetValue(scenario, out var support))
+        {
+            return;
+        }
+
+        if (runtimeSupportsLane && support.Status != ConformanceStatus.Supported)
+        {
+            errors.Add($"{profile.Provider}: production {lane} support requires executable {scenario} evidence.");
+        }
+        else if (!runtimeSupportsLane && support.Status == ConformanceStatus.Supported)
+        {
+            errors.Add($"{profile.Provider}: {scenario} cannot be Supported when production does not support {lane}.");
+        }
     }
 }

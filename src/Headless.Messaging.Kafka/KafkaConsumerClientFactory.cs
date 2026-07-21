@@ -18,27 +18,18 @@ internal sealed class KafkaConsumerClientFactory(
     IOptions<KafkaMessagingOptions> kafkaOptions,
     IServiceProvider serviceProvider,
     IConsumerRegistry? consumerRegistry = null
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Queue, cancellationToken);
-    }
-
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (intentType == IntentType.Bus)
+        if (lane == MessageLane.Bus)
         {
             throw new NotSupportedException(
                 "Headless.Messaging.Kafka is a queue transport provider and cannot create bus consumers."
@@ -47,7 +38,10 @@ internal sealed class KafkaConsumerClientFactory(
 
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
-        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(groupName, intentType);
+        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(
+            groupName,
+            MessageLaneCompatibility.ToIntentType(lane)
+        );
 
         try
         {

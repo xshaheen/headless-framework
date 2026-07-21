@@ -15,15 +15,32 @@ public static class AwsMessageBuilderExtensions
     /// Configures AWS SQS options for <typeparamref name="TMessage"/> publish operations.
     /// </summary>
     /// <typeparam name="TMessage">The message type being registered.</typeparam>
-    /// <param name="builder">The message builder.</param>
+    /// <param name="builder">The bus message builder.</param>
     /// <param name="configure">A delegate that configures the AWS SQS options.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
     /// <remarks>
-    /// Requires the framework-provided <see cref="IMessageBuilder{TMessage}"/> from
-    /// <c>setup.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
+    /// Requires the framework-provided <see cref="IBusMessageBuilder{TMessage}"/> from
+    /// <c>setup.Bus.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
     /// </remarks>
-    public static IMessageBuilder<TMessage> UseAws<TMessage>(
-        this IMessageBuilder<TMessage> builder,
+    public static IBusMessageBuilder<TMessage> UseAws<TMessage>(
+        this IBusMessageBuilder<TMessage> builder,
+        Action<AwsMessageConfigBuilder<TMessage>> configure
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        var configBuilder = new AwsMessageConfigBuilder<TMessage>();
+        configure(configBuilder);
+        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
+
+        return builder;
+    }
+
+    /// <summary>Configures AWS SQS options for <typeparamref name="TMessage"/> queue publish operations.</summary>
+    public static IQueueMessageBuilder<TMessage> UseAws<TMessage>(
+        this IQueueMessageBuilder<TMessage> builder,
         Action<AwsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class

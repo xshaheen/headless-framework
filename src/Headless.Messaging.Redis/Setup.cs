@@ -243,6 +243,13 @@ public static class SetupRedisMessaging
         public void AddServices(IServiceCollection services)
         {
             services.TryAddSingleton(new MessageQueueMarkerService("Redis"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Redis",
+                    [MessageLane.Queue],
+                    supportsIndependentLaneTopology: true
+                )
+            );
             services.AddSingleton<IRedisStreamManager, RedisStreamManager>();
             services.AddSingleton<RedisConsumerClientFactory>();
             services.TryAddSingleton<RedisConsumerClientFactorySelector>();
@@ -283,6 +290,13 @@ public static class SetupRedisMessaging
         public void AddServices(IServiceCollection services)
         {
             services.TryAddSingleton(new MessageQueueMarkerService("Redis"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Redis",
+                    [MessageLane.Bus],
+                    supportsIndependentLaneTopology: true
+                )
+            );
             services.AddSingleton<IRedisPubSubConnectionProvider, RedisPubSubConnectionProvider>();
             services.AddSingleton<RedisPubSubBusTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RedisPubSubBusTransport>());

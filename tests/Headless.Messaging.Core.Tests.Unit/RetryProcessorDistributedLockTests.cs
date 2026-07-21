@@ -45,11 +45,26 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
+    public void should_use_a_distinct_retry_lock_resource_for_each_direction_and_lane()
+    {
+        var resources = new[]
+        {
+            MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
+            MessagingKeys.PublishRetryResource("v1", MessageLane.Queue),
+            MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
+            MessagingKeys.ReceiveRetryResource("v1", MessageLane.Queue),
+        };
+
+        resources.Should().OnlyHaveUniqueItems();
+        resources.Should().AllSatisfy(resource => resource.Should().Contain("v1"));
+    }
+
+    [Fact]
     public async Task should_skip_published_pickup_when_another_holder_owns_the_lock()
     {
         // given — pre-acquire published lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
-            MessagingKeys.PublishRetryResource("v1"),
+            MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
             new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(1) },
             AbortToken
         );
@@ -58,7 +73,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true);
@@ -69,7 +84,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await Task.Delay(200, AbortToken);
 
         // then — published path must not be reached because the lock was already held
-        await storage.DidNotReceive().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -77,7 +94,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     {
         // given — pre-acquire received lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
-            MessagingKeys.ReceiveRetryResource("v1"),
+            MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
             new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(1) },
             AbortToken
         );
@@ -86,7 +103,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true);
@@ -97,7 +114,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await Task.Delay(200, AbortToken);
 
         // then — received path must not be reached because the lock was already held
-        await storage.DidNotReceive().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -122,10 +141,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 lockAcquiredTcs.TrySetResult(trackingProvider.LastIssuedReceiveRetryLock!);
@@ -186,10 +205,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider);
@@ -199,11 +218,16 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         await _EventuallyAsync(() =>
         {
-            captured.Should().HaveCount(2);
+            captured.Should().HaveCount(4);
             captured
                 .Select(call => call.Resource)
                 .Should()
-                .BeEquivalentTo(MessagingKeys.PublishRetryResource("v1"), MessagingKeys.ReceiveRetryResource("v1"));
+                .BeEquivalentTo(
+                    MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
+                    MessagingKeys.PublishRetryResource("v1", MessageLane.Queue),
+                    MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
+                    MessagingKeys.ReceiveRetryResource("v1", MessageLane.Queue)
+                );
             captured
                 .Should()
                 .OnlyContain(call =>
@@ -236,7 +260,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await _EventuallyAsync(async () =>
         {
             await lockProvider
-                .Received(2)
+                .Received(4)
                 .TryAcquireAsync(
                     Arg.Any<string>(),
                     Arg.Any<DistributedLockAcquireOptions?>(),
@@ -244,8 +268,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 );
             captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
         });
-        await storage.DidNotReceive().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
-        await storage.DidNotReceive().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -258,15 +286,18 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var lockProvider = Substitute.For<IDistributedLock>();
 #pragma warning disable AsyncFixer04 // Substitute setup returns leases owned by this awaited test scope.
         lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        lockProvider
             .TryAcquireAsync(
-                MessagingKeys.PublishRetryResource("v1"),
+                MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLease?>(publishedLease));
         lockProvider
             .TryAcquireAsync(
-                MessagingKeys.ReceiveRetryResource("v1"),
+                MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -277,10 +308,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 receivedCallStarted.TrySetResult();
@@ -301,7 +332,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await _EventuallyAsync(async () =>
         {
             captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
-            await storage.Received(1).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+            await storage
+                .Received(1)
+                .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
         });
     }
 
@@ -317,10 +350,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: alwaysGranted);
@@ -331,8 +364,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await Task.Delay(200, AbortToken);
 
         // then — both pickup paths must be exercised when locks are always granted
-        await storage.Received().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
-        await storage.Received().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage
+            .Received()
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+        await storage
+            .Received()
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -343,10 +380,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: false, lockProvider: mockProvider);
@@ -364,8 +401,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
-        await storage.Received().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
-        await storage.Received().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage
+            .Received()
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+        await storage
+            .Received()
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -389,10 +430,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 publishedCallFired.TrySetResult();
@@ -415,7 +456,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             await Task.Delay(200, AbortToken);
 
             // then — exactly one storage pickup despite two ProcessAsync ticks
-            await storage.Received(1).GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+            await storage
+                .Received(1)
+                .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
         }
         finally
         {

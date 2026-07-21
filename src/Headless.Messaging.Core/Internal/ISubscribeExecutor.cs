@@ -76,7 +76,7 @@ internal sealed class SubscribeExecutor(
                 !selector.TryGetMessageNameExecutor(
                     message.Origin.Name,
                     message.Origin.GetGroup()!,
-                    message.IntentType,
+                    message.Lane,
                     out descriptor
                 )
             )

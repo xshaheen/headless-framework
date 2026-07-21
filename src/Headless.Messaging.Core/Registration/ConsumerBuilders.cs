@@ -105,13 +105,13 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
 
 internal sealed class MessageConsumerRegistrationBuilder(
     Type consumerType,
-    IntentType intentType,
+    MessageLane lane,
     bool isAssemblyScan = false
 )
 {
     private readonly ProviderConfigBag _providerConfigs = new();
 
-    public IntentType IntentType { get; set; } = intentType;
+    public MessageLane Lane { get; } = lane;
 
     public string? Group { get; private set; }
 
@@ -160,7 +160,7 @@ internal sealed class MessageConsumerRegistrationBuilder(
     {
         return new MessageConsumerRegistration(
             consumerType,
-            IntentType,
+            Lane,
             isAssemblyScan,
             Group,
             Concurrency,

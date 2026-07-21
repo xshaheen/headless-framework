@@ -821,11 +821,12 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken)
+            _ClaimMessagesOfNeedRetry(PublishedMessages, lane, cancellationToken)
         );
     }
 
@@ -838,11 +839,12 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken)
+            _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, cancellationToken)
         );
     }
 
@@ -856,15 +858,28 @@ internal sealed partial class InMemoryDataStorage(
 
     private List<MediumMessage> _ClaimMessagesOfNeedRetry(
         ConcurrentDictionary<Guid, MemoryMessage> source,
+        MessageLane lane,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ = MessageLaneCompatibility.ToIntentType(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
+
+        // Corrupt persisted compatibility values must fail the pickup visibly. Validating the
+        // whole active version before applying the requested-lane batch prevents an unknown row
+        // from remaining silently stranded behind a full batch of otherwise valid rows.
+        foreach (var candidate in source.Values)
+        {
+            if (string.Equals(candidate.Version, version, StringComparison.Ordinal))
+            {
+                _ = MessageLaneCompatibility.ToLane(candidate.IntentType);
+            }
+        }
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
         // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
@@ -892,6 +907,11 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (candidate)
             {
+                if (MessageLaneCompatibility.ToLane(candidate.IntentType) != lane)
+                {
+                    continue;
+                }
+
                 if (candidate.Retries > maxPersistedRetries)
                 {
                     continue;

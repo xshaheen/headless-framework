@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
@@ -28,146 +27,6 @@ namespace Headless.Messaging;
 [PublicAPI]
 public static class SetupMessaging
 {
-    extension(MessagingSetupBuilder setup)
-    {
-        /// <summary>
-        /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/>.
-        /// </summary>
-        /// <typeparam name="TMessage">The message type to register.</typeparam>
-        /// <param name="configure">The message registration callback.</param>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        [PublicAPI]
-        public MessagingSetupBuilder ForMessage<TMessage>(Action<IMessageBuilder<TMessage>> configure)
-            where TMessage : class
-        {
-            Argument.IsNotNull(configure);
-
-            var builder = new MessageBuilder<TMessage>(setup.Services);
-            configure(builder);
-            var registration = builder.Build();
-            setup.Services.AddSingleton(registration);
-
-            // Name authority is eager: register the raw name now so publish/subscribe agree without waiting
-            // for the startup consumer drain. Consumer metadata still drains at bootstrap (it needs options).
-            if (registration.MessageName is { } messageName)
-            {
-                setup.Registry.RegisterMessageName(registration.MessageType, messageName);
-            }
-
-            return setup;
-        }
-
-        /// <summary>
-        /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and registers them as bus consumers.
-        /// </summary>
-        /// <param name="assembly">The assembly to scan.</param>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        [PublicAPI]
-        public MessagingSetupBuilder ForMessagesFromAssembly(Assembly assembly)
-        {
-            _ScanAssembly(setup, assembly, configure: null);
-
-            return setup;
-        }
-
-        /// <summary>
-        /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and lets
-        /// <paramref name="configure"/> shape each scanned consumer registration before it is registered.
-        /// </summary>
-        /// <param name="assembly">The assembly to scan.</param>
-        /// <param name="configure">
-        /// The per-consumer callback. The supplied <see cref="ScannedConsumerContext"/> exposes the discovered
-        /// consumer and message types; callers should handle a null <see cref="Type.Namespace"/> when inspecting them.
-        /// </param>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        [PublicAPI]
-        public MessagingSetupBuilder ForMessagesFromAssembly(
-            Assembly assembly,
-            [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
-        )
-        {
-            Argument.IsNotNull(assembly);
-            Argument.IsNotNull(configure);
-
-            _ScanAssembly(setup, assembly, configure);
-
-            return setup;
-        }
-
-        /// <summary>
-        /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/> implementations.
-        /// </summary>
-        /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        [PublicAPI]
-        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>()
-        {
-            return setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
-        }
-
-        /// <summary>
-        /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/>
-        /// implementations and lets <paramref name="configure"/> shape each scanned consumer registration before it is registered.
-        /// </summary>
-        /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
-        /// <param name="configure">
-        /// The per-consumer callback. The supplied <see cref="ScannedConsumerContext"/> exposes the discovered
-        /// consumer and message types; callers should handle a null <see cref="Type.Namespace"/> when inspecting them.
-        /// </param>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        [PublicAPI]
-        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>(
-            [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
-        )
-        {
-            return setup.ForMessagesFromAssembly(typeof(TMarker).Assembly, configure);
-        }
-    }
-
-    /// <summary>
-    /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/> directly on the
-    /// service collection, the service-collection twin of the <c>setup.ForMessage&lt;T&gt;(…)</c> builder callback.
-    /// </summary>
-    /// <remarks>
-    /// Use this from framework/library registration code (for example a package's <c>Add…</c> extension) that owns a
-    /// consumer and must register it without access to the <see cref="MessagingSetupBuilder"/> callback. When messaging
-    /// is never added, the emitted descriptors are inert. Application code should prefer the
-    /// <c>setup.ForMessage&lt;T&gt;(…)</c> callback.
-    /// <para>
-    /// Ordering: the emitted registration is drained into the consumer registry at messaging bootstrap, so this can
-    /// be called before or after <see cref="AddHeadlessMessaging"/> as long as both calls happen before host build.
-    /// </para>
-    /// </remarks>
-    /// <typeparam name="TMessage">The message type to register.</typeparam>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configure">The message registration callback.</param>
-    /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
-    [PublicAPI]
-    public static IServiceCollection ForMessage<TMessage>(
-        this IServiceCollection services,
-        Action<IMessageBuilder<TMessage>> configure
-    )
-        where TMessage : class
-    {
-        Argument.IsNotNull(configure);
-
-        var builder = new MessageBuilder<TMessage>(services);
-        configure(builder);
-        var registration = builder.Build();
-        services.AddSingleton(registration);
-
-        // Name authority is eager and order-independent: the shared registry is found-or-created, so a name
-        // declared here is authoritative immediately whether this seam runs before or after AddHeadlessMessaging.
-        // This closes the publish-before-drain window — consumer metadata still drains at bootstrap.
-        if (registration.MessageName is { } messageName)
-        {
-            _GetOrAddConsumerRegistry(services).RegisterMessageName(registration.MessageType, messageName);
-        }
-
-        return services;
-    }
-
     /// <summary>
     /// Registers and configures all messaging services, consumers, and transport infrastructure.
     /// </summary>
@@ -194,10 +53,10 @@ public static class SetupMessaging
     ///         rabbit.Port = 5672;
     ///     });
     ///
-    ///     setup.ForMessage&lt;OrderPlaced&gt;(message => message
+    ///     setup.Bus.ForMessage&lt;OrderPlaced&gt;(message => message
     ///         .MessageName("orders.placed")
-    ///         .OnBus&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
-    ///     setup.ForMessagesFromAssemblyContaining&lt;Program&gt;();
+    ///         .Consumer&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
+    ///     setup.Bus.ForConsumersFromAssemblyContaining&lt;Program&gt;();
     /// });
     /// </code>
     /// </para>
@@ -209,8 +68,7 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        // Found-or-created so a library that called services.ForMessage<T>(...) before AddHeadlessMessaging
-        // shares the same registry instance — registration order does not matter.
+        // Found-or-created so setup-time extensions share one registry instance.
         var registry = _GetOrAddConsumerRegistry(services);
         var options = new MessagingOptions();
         var setup = new MessagingSetupBuilder(services, options, registry);
@@ -237,67 +95,12 @@ public static class SetupMessaging
         return registry;
     }
 
-    private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
-    {
-        return assembly
-            .GetTypes()
-            .Where(static t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
-            .SelectMany(static consumerType =>
-                consumerType
-                    .GetInterfaces()
-                    .Where(static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-                    .Select(i => (ConsumerType: consumerType, MessageType: i.GetGenericArguments()[0]))
-            );
-    }
-
-    private static void _ScanAssembly(
-        MessagingSetupBuilder setup,
-        Assembly assembly,
-        [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder>? configure
-    )
-    {
-        Argument.IsNotNull(assembly);
-
-        foreach (var (consumerType, messageType) in _FindConsumers(assembly))
-        {
-            var builder = new ScannedConsumerBuilder(consumerType);
-            configure?.Invoke(new ScannedConsumerContext(consumerType, messageType), builder);
-
-            if (builder.IsSkipped)
-            {
-                continue;
-            }
-
-            setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
-
-            var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-            setup.Services.TryAdd(
-                new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
-            );
-
-            setup.Services.AddSingleton(
-                new MessageRegistration(
-                    messageType,
-                    MessageName: null,
-                    CorrelationSelector: null,
-                    ProviderConfigs: new Dictionary<Type, object>(),
-                    Consumers: [builder.Build()]
-                )
-            );
-        }
-    }
-
     private static MessagingBuilder _RegisterCoreMessagingServices(
         IServiceCollection services,
         MessagingSetupBuilder setup
     )
     {
         var options = setup.Options;
-        // Register the service collection itself so the bootstrapper can introspect registered descriptors
-        // at startup (e.g., to detect whether IBus/IQueue publishers were gated in). This is intentional:
-        // the bootstrapper is framework-internal and uses it only for read-only discovery — not as a
-        // runtime factory service locator.
-        services.TryAddSingleton(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
@@ -313,6 +116,11 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
         services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
+        services.TryAddSingleton(sp =>
+            MessagingCapabilityModel.Compose(sp.GetServices<MessagingProviderCapabilities>())
+        );
+        services.TryAddSingleton<IMessagingCapabilityModel>(sp => sp.GetRequiredService<MessagingCapabilityModel>());
+        services.TryAddSingleton<IMessageCapabilityGate>(sp => sp.GetRequiredService<MessagingCapabilityModel>());
 
         // Native OpenTelemetry emitter: the enricher snapshot (built-ins gated by the Suppress* toggles plus any
         // custom enrichers) is captured once here from the setup-time instrumentation config. Instruments and the
@@ -393,7 +201,31 @@ public static class SetupMessaging
             serviceExtension.AddServices(services);
         }
 
-        _RegisterPublisherServicesForAvailableTransports(services);
+        // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
+        // only after the immutable capability gate accepts the individual call.
+        services.TryAddSingleton<IBus>(sp => new Bus(
+            sp.GetRequiredService<ISerializer>(),
+            sp,
+            sp.GetRequiredService<IMessagePublishRequestFactory>(),
+            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IMessageCapabilityGate>(),
+            sp.GetService<MessagingTelemetry>()
+        ));
+        services.TryAddSingleton<IQueue>(sp => new Queue(
+            sp.GetRequiredService<ISerializer>(),
+            sp,
+            sp.GetRequiredService<IMessagePublishRequestFactory>(),
+            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IMessageCapabilityGate>(),
+            sp.GetService<MessagingTelemetry>()
+        ));
+        services.TryAddSingleton<IOutboxBus>(sp => new OutboxBus(sp, sp.GetRequiredService<IMessageCapabilityGate>()));
+        services.TryAddSingleton<IOutboxQueue>(sp => new OutboxQueue(
+            sp,
+            sp.GetRequiredService<IMessageCapabilityGate>()
+        ));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
@@ -416,31 +248,10 @@ public static class SetupMessaging
         return new MessagingBuilder(services, options);
     }
 
-    private static void _RegisterPublisherServicesForAvailableTransports(IServiceCollection services)
-    {
-        // Scan the service collection at registration time (extensions have already run) to determine
-        // which transports are present. This gates publisher registration to transport capability so that
-        // a queue-only setup never registers IBus/IOutboxBus descriptors and vice-versa.
-        var hasBusTransport = services.Any(d => d.ServiceType == typeof(IBusTransport));
-        var hasQueueTransport = services.Any(d => d.ServiceType == typeof(IQueueTransport));
-
-        if (hasBusTransport)
-        {
-            services.TryAddSingleton<IBus>(sp => ActivatorUtilities.CreateInstance<Bus>(sp));
-            services.TryAddSingleton<IOutboxBus>(sp => ActivatorUtilities.CreateInstance<OutboxBus>(sp));
-        }
-
-        if (hasQueueTransport)
-        {
-            services.TryAddSingleton<IQueue>(sp => ActivatorUtilities.CreateInstance<Queue>(sp));
-            services.TryAddSingleton<IOutboxQueue>(sp => ActivatorUtilities.CreateInstance<OutboxQueue>(sp));
-        }
-    }
-
     /// <summary>
-    /// Drains the deferred <see cref="MessageRegistration"/> singletons captured by <c>ForMessage&lt;T&gt;</c> into the
+    /// Drains the deferred <see cref="MessageRegistration"/> singletons captured by lane-owned registration into the
     /// consumer registry. Order-independent: the registrations are resolved from the built provider, so it works whether
-    /// the <c>ForMessage</c> / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
+    /// the registration / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
     /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
     /// </summary>
     /// <remarks>
@@ -465,32 +276,44 @@ public static class SetupMessaging
 
         if (registry.HasCompletedMessageRegistrationDrain)
         {
-            // Guard: detect ForMessage<T> calls that happened after BuildServiceProvider(). On .NET 10,
-            // ServiceCollection is not made read-only after build — mutations silently succeed but the
-            // existing provider never sees the new descriptors. Compare the descriptor count in the
-            // registered IServiceCollection (snapshot from before build) against what the provider can
-            // actually resolve to surface this misuse as a loud warning rather than a silent no-op.
-            var serviceCollection = provider.GetService<IServiceCollection>();
-
-            if (serviceCollection is not null)
-            {
-                var descriptorCount = serviceCollection.Count(static d => d.ServiceType == typeof(MessageRegistration));
-                var resolvedCount = provider.GetServices<MessageRegistration>().Count();
-
-                if (descriptorCount > resolvedCount)
-                {
-                    var logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SetupMessaging).FullName!);
-
-                    logger?.ForMessageCalledAfterProviderBuilt(descriptorCount - resolvedCount);
-                }
-            }
-
             return;
         }
 
         var registrations = provider.GetServices<MessageRegistration>().ToList();
+        var frameworkContributions = provider.GetServices<FrameworkConsumerRegistrationContribution>().ToArray();
 
-        // Nothing was captured via ForMessage<T> — mark drained without touching the circuit-breaker
+        foreach (var contribution in frameworkContributions)
+        {
+            if (contribution.MessageName is { } messageName)
+            {
+                registry.RegisterMessageName(contribution.MessageType, contribution.Lane, messageName);
+            }
+        }
+
+        registrations.AddRange(
+            frameworkContributions.Select(static contribution => new MessageRegistration(
+                contribution.MessageType,
+                contribution.Lane,
+                contribution.MessageName,
+                CorrelationSelector: null,
+                ProviderConfigs: new Dictionary<Type, object>(),
+                Consumers:
+                [
+                    new MessageConsumerRegistration(
+                        contribution.ConsumerType,
+                        contribution.Lane,
+                        IsAssemblyScan: false,
+                        contribution.Group,
+                        contribution.Concurrency,
+                        HandlerId: null,
+                        CircuitBreakerOverride: null,
+                        ProviderConfigs: new Dictionary<Type, object>()
+                    ),
+                ]
+            ))
+        );
+
+        // Nothing was captured — mark drained without touching the circuit-breaker
         // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
         if (registrations.Count == 0)
         {
@@ -525,20 +348,21 @@ public static class SetupMessaging
             .SelectMany(static registration =>
                 registration
                     .Consumers.Where(static consumer => !consumer.IsAssemblyScan)
-                    .Select(consumer => (registration.MessageType, consumer.ConsumerType))
+                    .Select(consumer => (registration.MessageType, consumer.ConsumerType, registration.Lane))
             )
             .ToHashSet();
 
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
 
-        // Names are registered eagerly at ForMessage<T>(...) time, so the drain only builds consumer
+        // Names are registered eagerly at lane-owned registration time, so the drain only builds consumer
         // metadata (which needs MessagingOptions). Iterate registrations directly — no per-type grouping.
         foreach (var registration in registrations)
         {
             foreach (var consumer in registration.Consumers)
             {
                 if (
-                    consumer.IsAssemblyScan && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
+                    consumer.IsAssemblyScan
+                    && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType, registration.Lane))
                 )
                 {
                     continue;
@@ -547,14 +371,18 @@ public static class SetupMessaging
                 var resolved = options.CreateConsumerMetadata(
                     consumer.ConsumerType,
                     registration.MessageType,
-                    messageName: null,
-                    registry.TryGetRawMessageName(registration.MessageType, out var mappedMessageName)
+                    registration.MessageName,
+                    registry.TryGetRawMessageName(
+                        registration.MessageType,
+                        registration.Lane,
+                        out var mappedMessageName
+                    )
                         ? mappedMessageName
                         : null,
                     consumer.Group,
                     consumer.Concurrency,
                     consumer.HandlerId,
-                    consumer.IntentType
+                    MessageLaneCompatibility.ToIntentType(registration.Lane)
                 ) with
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
@@ -747,15 +575,4 @@ public static class SetupMessaging
                 );
         }
     }
-}
-
-internal static partial class SetupMessagingLog
-{
-    [LoggerMessage(
-        EventId = 88,
-        EventName = "ForMessageCalledAfterProviderBuilt",
-        Level = LogLevel.Warning,
-        Message = "{Count} ForMessage<T> registration(s) were added after the service provider was built and will be ignored. Move all ForMessage<T> calls before BuildServiceProvider() / host.Build()."
-    )]
-    public static partial void ForMessageCalledAfterProviderBuilt(this ILogger logger, int count);
 }

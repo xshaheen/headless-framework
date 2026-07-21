@@ -35,6 +35,13 @@ public static class SetupInMemoryStorage
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("InMemory"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Storage(
+                    "InMemory",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsDelayedScheduling: true
+                )
+            );
 
             services.AddSingleton<InMemoryDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<InMemoryDataStorage>());

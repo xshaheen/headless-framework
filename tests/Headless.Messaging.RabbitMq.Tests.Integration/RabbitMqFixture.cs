@@ -56,11 +56,47 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         return _connection;
     }
 
-    public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+    public ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
         bool createReplacement = true
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Queue,
+            destination,
+            group,
+            exchangeName: null,
+            createReplacement,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateBusSessionAsync(
+        string exchangeName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Bus,
+            destination,
+            group,
+            exchangeName,
+            createReplacement: false,
+            cancellationToken
+        );
+    }
+
+    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        MessageLane lane,
+        string? destination,
+        string? group,
+        string? exchangeName,
+        bool createReplacement,
+        CancellationToken cancellationToken
     )
     {
         destination ??= $"conf-{Guid.NewGuid():N}";
@@ -74,7 +110,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 Port = Port,
                 UserName = UserName,
                 Password = Password,
-                ExchangeName = $"conf-{Guid.NewGuid():N}",
+                ExchangeName = exchangeName ?? $"conf-{Guid.NewGuid():N}",
             }
         );
 
@@ -91,7 +127,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             pool,
             rabbitOptions,
             services,
-            intentType: IntentType.Queue
+            intentType: _ToIntentType(lane)
         );
 #pragma warning restore CA2000
 
@@ -111,7 +147,14 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 },
                 createReplacementSession: createReplacement
                     ? replacementToken =>
-                        CreateConformanceSessionAsync(replacementToken, destination, group, createReplacement: false)
+                        _CreateConformanceSessionAsync(
+                            lane,
+                            destination,
+                            group,
+                            rabbitOptions.Value.ExchangeName,
+                            createReplacement: false,
+                            replacementToken
+                        )
                     : null
             );
         }
@@ -123,6 +166,14 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             throw;
         }
     }
+
+    private static IntentType _ToIntentType(MessageLane lane) =>
+        lane switch
+        {
+            MessageLane.Bus => IntentType.Bus,
+            MessageLane.Queue => IntentType.Queue,
+            _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
+        };
 
     protected override async ValueTask DisposeAsyncCore()
     {

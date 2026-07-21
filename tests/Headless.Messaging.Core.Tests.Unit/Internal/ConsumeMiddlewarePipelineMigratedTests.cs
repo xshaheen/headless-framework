@@ -140,7 +140,10 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var services = _CreateServices(recorder);
         var builder = new MessagingBuilder(services);
         builder.AddBusConsumeMiddleware<RecordingBusConsumeMiddleware>();
-        builder.AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>("checkout");
+        builder.AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
+            "checkout",
+            MessageLane.Bus
+        );
         var pipeline = _BuildPipeline(services);
 
         // when
@@ -189,7 +192,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var services = _CreateServices(recorder);
         services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingBusConsumeMiddleware>();
         new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout"
+            "checkout",
+            MessageLane.Bus
         );
         var pipeline = _BuildPipeline(services);
 
@@ -212,7 +216,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var recorder = new MigratedConsumeRecorder();
         var services = _CreateServices(recorder);
         new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout"
+            "checkout",
+            MessageLane.Bus
         );
         var pipeline = _BuildPipeline(services);
 
@@ -235,7 +240,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var recorder = new MigratedConsumeRecorder();
         var services = _CreateServices(recorder);
         new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout"
+            "checkout",
+            MessageLane.Bus
         );
         var pipeline = _BuildPipeline(services);
 

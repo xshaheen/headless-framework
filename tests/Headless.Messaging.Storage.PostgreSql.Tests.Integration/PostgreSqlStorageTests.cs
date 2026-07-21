@@ -115,6 +115,26 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithRetryBatchSize(int retryBatchSize)
+    {
+        _EnsureInitialized();
+        var messagingOptions = new MessagingOptions { Version = "v1", RetryBatchSize = retryBatchSize };
+        messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
+        messagingOptions.FailedMessageExpiredAfter = 3600;
+
+        return new PostgreSqlDataStorage(
+            _postgreSqlOptions!,
+            Options.Create(messagingOptions),
+            _initializer!,
+            _serializer!,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            TimeProvider.System,
+            NodeMembership,
+            NullLogger<PostgreSqlDataStorage>.Instance
+        );
+    }
+
+    /// <inheritdoc />
     protected override async Task<int> CountReceivedMessagesByIdentityAsync(
         string messageId,
         string? group,
@@ -234,6 +254,12 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
+    public override Task should_store_published_message_with_intent_type()
+    {
+        return base.should_store_published_message_with_intent_type();
+    }
+
+    [Fact]
     public override Task should_store_received_message()
     {
         return base.should_store_received_message();
@@ -285,6 +311,18 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_get_received_messages_of_need_retry()
     {
         return base.should_get_received_messages_of_need_retry();
+    }
+
+    [Fact]
+    public override Task should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane();
     }
 
     [Fact]
@@ -988,8 +1026,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
         // when
         var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
-            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -1054,8 +1092,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         }
 
         var picked = string.Equals(tableName, "published", StringComparison.Ordinal)
-            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
 
@@ -1126,13 +1164,21 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Theory]
     [InlineData("idx_received_Version_NextRetryAt")]
     [InlineData("idx_published_Version_NextRetryAt")]
-    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string indexName)
+    public async Task should_key_retry_pickup_index_on_version_lane_then_next_retry_at(string indexName)
     {
-        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
-        // seek predicate, not a residual filter. Regression here would silently fan the planner
-        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        // Pin every equality predicate before the NextRetryAt range so each lane gets an isolated seek.
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
+
+        await connection.ExecuteAsync(
+            $"""
+            DROP INDEX IF EXISTS messaging."{indexName}";
+            CREATE INDEX "{indexName}" ON messaging."{(
+                indexName.StartsWith("idx_received", StringComparison.Ordinal) ? "received" : "published"
+            )}" ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            """
+        );
+        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
 
         var columns = (
             await connection.QueryAsync<string>(
@@ -1152,7 +1198,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             )
         ).ToList();
 
-        columns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+        columns.Should().BeEquivalentTo(["Version", "IntentType", "NextRetryAt"], opts => opts.WithStrictOrdering());
 
         // Filtered predicate must be `NextRetryAt IS NOT NULL` so terminal rows are physically
         // excluded from the index — keeps it small even under high failed-message volume.
@@ -1229,7 +1275,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         {
             "received" => $$"""
                 INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Group","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
-                SELECT gen_random_uuid(), 'v1', 'plan-test', NULL, '{}', 0, 0, now(), NULL,
+                SELECT gen_random_uuid(), 'v1', 'plan-test', NULL, '{}', (g % 2)::smallint, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
                        NULL, 'Failed', 'plan-' || g
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
@@ -1237,7 +1283,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 """,
             "published" => $$"""
                 INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
-                SELECT gen_random_uuid(), 'v1', 'plan-test', '{}', 0, 0, now(), NULL,
+                SELECT gen_random_uuid(), 'v1', 'plan-test', '{}', (g % 2)::smallint, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
                        NULL, 'Failed', 'plan-' || g
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
@@ -1263,6 +1309,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             SELECT "Id","Content","IntentType","Retries","Added","NextRetryAt" FROM {qualifiedTable}
             WHERE "Retries" <= @Retries
               AND "Version" = @Version
+              AND "IntentType" = @IntentType
               AND "NextRetryAt" IS NOT NULL
               AND "NextRetryAt" <= now()
             LIMIT 200
@@ -1272,7 +1319,12 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
         var planJson = await connection.QueryFirstOrDefaultAsync<string>(
             explainSql,
-            new { Retries = 50, Version = "v1" },
+            new
+            {
+                Retries = 50,
+                Version = "v1",
+                IntentType = (short)IntentType.Queue,
+            },
             transaction: transaction
         );
         await transaction.CommitAsync(AbortToken);

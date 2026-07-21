@@ -89,6 +89,13 @@ public static class SetupPostgreSqlMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("PostgreSql"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Storage(
+                    "PostgreSql",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsDelayedScheduling: true
+                )
+            );
             configureOptions(services);
             services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();

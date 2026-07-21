@@ -1,5 +1,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,38 @@ namespace Tests;
 
 public sealed class RuntimeSubscriberTests : TestBase
 {
+    [Fact]
+    public void runtime_registry_uses_the_bus_lane_for_names_descriptors_and_invoker_identity()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.Bus.ForMessage<RuntimeMessage>(message => message.MessageName("runtime.bus"));
+            setup.Queue.ForMessage<RuntimeMessage>(message => message.MessageName("runtime.queue"));
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<IRuntimeConsumerRegistry>();
+        var handler = new NamedRuntimeHandler();
+
+        var result = registry.Register<RuntimeMessage>(handler.HandleAsync);
+
+        result.Lane.Should().Be(MessageLane.Bus);
+        result.MessageName.Should().Be("runtime.bus");
+        registry.GetDescriptors().Should().ContainSingle().Which.Lane.Should().Be(MessageLane.Bus);
+        registry
+            .TryGetInvoker(result.MessageName, result.Group, result.HandlerId, MessageLane.Bus, out _)
+            .Should()
+            .BeTrue();
+        registry
+            .TryGetInvoker(result.MessageName, result.Group, result.HandlerId, MessageLane.Queue, out _)
+            .Should()
+            .BeFalse();
+    }
+
     [Fact]
     public async Task should_resolve_default_runtime_subscription_metadata_for_named_handler()
     {

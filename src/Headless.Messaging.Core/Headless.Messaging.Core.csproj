@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Aws" />
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Core" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemory" />

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
 
@@ -37,9 +38,12 @@ public sealed record ConsumerMetadata(
             ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
             : HandlerId;
 
+    /// <summary>Gets the checked runtime lane represented by the compatibility-facing intent.</summary>
+    internal MessageLane Lane => MessageLaneCompatibility.ToLane(IntentType);
+
     /// <summary>
     /// Per-consumer circuit breaker overrides registered via
-    /// <c>ForMessage&lt;TMessage&gt;(...).OnBus&lt;TConsumer&gt;(...)</c>. Applied to the
+    /// lane-owned <c>ForMessage&lt;TMessage&gt;(...).Consumer&lt;TConsumer&gt;(...)</c>. Applied to the
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }

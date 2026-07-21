@@ -103,12 +103,48 @@ public sealed class NatsFixture : HeadlessNatsFixture
         throw new InvalidOperationException("NATS connection attempts were exhausted.");
     }
 
-    public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+    public ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
         CancellationToken cancellationToken,
         string? streamName = null,
         string? destination = null,
         string? group = null,
         bool createReplacement = true
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Queue,
+            streamName,
+            destination,
+            group,
+            createReplacement,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateBusSessionAsync(
+        string streamName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Bus,
+            streamName,
+            destination,
+            group,
+            createReplacement: false,
+            cancellationToken
+        );
+    }
+
+    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        MessageLane lane,
+        string? streamName,
+        string? destination,
+        string? group,
+        bool createReplacement,
+        CancellationToken cancellationToken
     )
     {
         streamName ??= $"conf-{Guid.NewGuid():N}"[..29];
@@ -135,7 +171,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
             options
         );
         var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool);
-        var consumer = new NatsConsumerClient(group, 1, options, services, intentType: IntentType.Queue);
+        var consumer = new NatsConsumerClient(group, 1, options, services, intentType: _ToIntentType(lane));
 #pragma warning restore CA2000
 
         try
@@ -156,12 +192,13 @@ public sealed class NatsFixture : HeadlessNatsFixture
                 },
                 createReplacementSession: createReplacement
                     ? replacementToken =>
-                        CreateConformanceSessionAsync(
-                            replacementToken,
+                        _CreateConformanceSessionAsync(
+                            lane,
                             streamName,
                             destination,
                             group,
-                            createReplacement: false
+                            createReplacement: false,
+                            replacementToken
                         )
                     : null
             );
@@ -174,6 +211,14 @@ public sealed class NatsFixture : HeadlessNatsFixture
             throw;
         }
     }
+
+    private static IntentType _ToIntentType(MessageLane lane) =>
+        lane switch
+        {
+            MessageLane.Bus => IntentType.Bus,
+            MessageLane.Queue => IntentType.Queue,
+            _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
+        };
 
     protected override async ValueTask DisposeAsyncCore()
     {

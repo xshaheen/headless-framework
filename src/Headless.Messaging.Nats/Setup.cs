@@ -116,6 +116,13 @@ public static class SetupNatsMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("NATS JetStream"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "NATS JetStream",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: false
+                )
+            );
 
             configureOptions(services);
 

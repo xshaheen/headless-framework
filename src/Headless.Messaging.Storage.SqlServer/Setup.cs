@@ -86,6 +86,13 @@ public static class SetupSqlServerMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Storage(
+                    "SqlServer",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsDelayedScheduling: true
+                )
+            );
             configureOptions(services);
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();

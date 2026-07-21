@@ -31,6 +31,7 @@ internal interface IRuntimeConsumerRegistry
         string messageName,
         string group,
         string handlerId,
+        MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     );
 }
@@ -62,6 +63,7 @@ internal sealed class EmptyRuntimeConsumerRegistry : IRuntimeConsumerRegistry
         string messageName,
         string group,
         string handlerId,
+        MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     )
     {
@@ -81,7 +83,8 @@ internal sealed record RuntimeConsumerRegistrationResult(
     string? SubscriptionId,
     string MessageName,
     string Group,
-    string HandlerId
+    string HandlerId,
+    MessageLane Lane
 );
 
 internal sealed record RuntimeConsumerRegistration(
@@ -89,6 +92,7 @@ internal sealed record RuntimeConsumerRegistration(
     string MessageName,
     string Group,
     string HandlerId,
+    MessageLane Lane,
     ConsumerExecutorDescriptor Descriptor,
     IRuntimeMessageHandlerInvoker Invoker
 );
@@ -122,18 +126,20 @@ internal sealed class RuntimeConsumerRegistry(
     {
         Argument.IsNotNull(handler);
 
+        const MessageLane lane = MessageLane.Bus;
         var method = handler.Method;
         var handlerId = _ResolveHandlerId(method, typeof(TMessage), options?.HandlerId);
-        var messageName = _ResolveMessageName(typeof(TMessage), options?.MessageName);
+        var messageName = _ResolveMessageName(typeof(TMessage), lane, options?.MessageName);
         var group = _ResolveGroup(handlerId, options?.Group);
         var concurrency = Argument.IsPositive(options?.Concurrency ?? 1);
         var invoker = new RuntimeMessageHandlerInvoker<TMessage>(handler);
-        var descriptor = _CreateDescriptor<TMessage>(method, messageName, group, handlerId, concurrency);
+        var descriptor = _CreateDescriptor<TMessage>(method, messageName, group, handlerId, concurrency, lane);
 
         lock (_lock)
         {
             var existing = _registrations.FirstOrDefault(x =>
-                string.Equals(x.MessageName, messageName, StringComparison.Ordinal)
+                x.Lane == lane
+                && string.Equals(x.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(x.Group, group, StringComparison.Ordinal)
             );
 
@@ -148,7 +154,8 @@ internal sealed class RuntimeConsumerRegistry(
                             SubscriptionId: null,
                             MessageName: messageName,
                             Group: group,
-                            HandlerId: existing.HandlerId
+                            HandlerId: existing.HandlerId,
+                            Lane: lane
                         );
                     case RuntimeSubscriptionDuplicateBehavior.Replace:
                         _registrations = _registrations.Remove(existing);
@@ -170,6 +177,7 @@ internal sealed class RuntimeConsumerRegistry(
                 messageName,
                 group,
                 handlerId,
+                lane,
                 descriptor,
                 invoker
             );
@@ -180,7 +188,8 @@ internal sealed class RuntimeConsumerRegistry(
                 subscriptionId,
                 messageName,
                 group,
-                handlerId
+                handlerId,
+                lane
             );
         }
     }
@@ -208,12 +217,14 @@ internal sealed class RuntimeConsumerRegistry(
         string messageName,
         string group,
         string handlerId,
+        MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     )
     {
         // ReSharper disable once InconsistentlySynchronizedField
         var registration = _registrations.FirstOrDefault(x =>
-            string.Equals(x.MessageName, messageName, StringComparison.Ordinal)
+            x.Lane == lane
+            && string.Equals(x.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
             && string.Equals(x.Group, group, StringComparison.Ordinal)
             && string.Equals(x.HandlerId, handlerId, StringComparison.Ordinal)
         );
@@ -222,14 +233,14 @@ internal sealed class RuntimeConsumerRegistry(
         return invoker != null;
     }
 
-    private string _ResolveMessageName(Type messageType, string? explicitMessageName)
+    private string _ResolveMessageName(Type messageType, MessageLane lane, string? explicitMessageName)
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
             return _options.ApplyMessageNamePrefix(explicitMessageName);
         }
 
-        if (consumerRegistry.TryGetRawMessageName(messageType, out var mappedMessageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, lane, out var mappedMessageName))
         {
             return _options.ApplyMessageNamePrefix(mappedMessageName);
         }
@@ -282,7 +293,8 @@ internal sealed class RuntimeConsumerRegistry(
         string messageName,
         string group,
         string handlerId,
-        byte concurrency
+        byte concurrency,
+        MessageLane lane
     )
         where TMessage : class
     {
@@ -297,7 +309,7 @@ internal sealed class RuntimeConsumerRegistry(
             GroupName = group,
             Concurrency = concurrency,
             HandlerId = handlerId,
-            IntentType = IntentType.Bus,
+            IntentType = MessageLaneCompatibility.ToIntentType(lane),
             Parameters =
             [
                 new ParameterDescriptor

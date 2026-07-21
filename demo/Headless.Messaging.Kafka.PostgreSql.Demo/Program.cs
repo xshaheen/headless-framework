@@ -17,8 +17,8 @@ builder.Services.AddDbContext<AppDbContext>(
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessage<KafkaMessage>(message =>
-        message.MessageName("sample.kafka.postgrsql").OnQueue<KafkaMessageConsumer>()
+    setup.Queue.ForMessage<KafkaMessage>(message =>
+        message.MessageName("sample.kafka.postgrsql").Consumer<KafkaMessageConsumer>()
     );
 
     //setup.UseEntityFramework<AppDbContext>();
