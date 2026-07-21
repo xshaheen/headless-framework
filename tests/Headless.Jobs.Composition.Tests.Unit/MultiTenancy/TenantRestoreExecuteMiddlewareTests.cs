@@ -108,8 +108,36 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
     }
 
     [Fact]
-    public async Task propagation_disabled_leaves_the_ambient_untouched()
+    public async Task propagation_disabled_with_no_persisted_tenant_leaves_the_ambient_untouched()
     {
+        // A genuinely tenant-free job (null TenantId) on a host with propagation off is a pure pass-through: nothing to
+        // restore, so the ambient is left exactly as the caller set it.
+        var tenant = new TestCurrentTenant();
+        var middleware = _Create(tenant, propagate: false);
+        string? observed = null;
+
+        using (tenant.Change("outer"))
+        {
+            await middleware.InvokeAsync(
+                _Context(tenantId: null),
+                _ =>
+                {
+                    observed = tenant.Id;
+                    return Task.CompletedTask;
+                },
+                AbortToken
+            );
+        }
+
+        observed.Should().Be("outer");
+    }
+
+    [Fact]
+    public async Task an_explicit_persisted_tenant_is_restored_even_when_propagation_is_off()
+    {
+        // The schedule side persists an explicit/captured tenant regardless of PropagateTenant, so an explicitly
+        // tenanted job MUST run under its tenant even on a host with propagation off — otherwise it silently executes
+        // system-scope and tenant-filtered reads cross the boundary (#278 finding #1).
         var tenant = new TestCurrentTenant();
         var middleware = _Create(tenant, propagate: false);
         string? observed = null;
@@ -125,9 +153,11 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
                 },
                 AbortToken
             );
+
+            tenant.Id.Should().Be("outer", "the prior ambient is restored on scope disposal");
         }
 
-        observed.Should().Be("outer");
+        observed.Should().Be("t1");
     }
 
     [Fact]
@@ -206,12 +236,5 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
         {
             public void Dispose() => onDispose();
         }
-    }
-
-    private sealed class NullServiceProvider : IServiceProvider
-    {
-        public static readonly NullServiceProvider Instance = new();
-
-        public object? GetService(Type serviceType) => null;
     }
 }

@@ -137,7 +137,7 @@ public sealed class JobsTenancyRegistrationTests : TestBase, IDisposable
         return JobMiddlewareRegistry.DispatchScheduleAsync(
             new JobScheduleContext(_Descriptor, job, provider),
             _ => Task.CompletedTask,
-            TestContext.Current.CancellationToken
+            AbortToken
         );
     }
 

@@ -9,11 +9,15 @@ using Microsoft.Extensions.Options;
 namespace Headless.Jobs.MultiTenancy;
 
 /// <summary>
-/// Restores the job's persisted tenant via <see cref="ICurrentTenant.Change"/> around every handler attempt when
-/// <see cref="JobsTenancyOptions.PropagateTenant"/> is enabled. The scope is opened inside this frame — the frame that
-/// awaits the handler — so the AsyncLocal tenant flows down into the handler and is always reverted on dispose,
-/// whether the attempt succeeds, faults, or cancels. Polly re-dispatches this pipeline per attempt, so each retry is
-/// freshly scoped. A <see langword="null"/> tenant runs the attempt system scope.
+/// Restores the job's persisted tenant via <see cref="ICurrentTenant.Change"/> around every handler attempt whenever
+/// the job carries a <see cref="JobExecutionState.TenantId"/>. The schedule side persists an explicit/captured tenant
+/// regardless of <see cref="JobsTenancyOptions.PropagateTenant"/>, so an explicitly-tenanted job is always restored —
+/// even on a host with propagation off. The scope is opened inside this frame — the frame that awaits the handler —
+/// so the AsyncLocal tenant flows down into the handler and is always reverted on dispose, whether the attempt
+/// succeeds, faults, or cancels. Polly re-dispatches this pipeline per attempt, so each retry is freshly scoped. When
+/// <see cref="JobsTenancyOptions.PropagateTenant"/> is enabled a <see langword="null"/> tenant still clears a leaked
+/// ambient so the attempt runs system scope; a genuinely tenant-free host (no persisted tenant, propagation off) is a
+/// pure pass-through.
 /// </summary>
 [PublicAPI]
 public sealed class TenantRestoreExecuteMiddleware(
@@ -35,14 +39,18 @@ public sealed class TenantRestoreExecuteMiddleware(
         Argument.IsNotNull(context);
         Argument.IsNotNull(next);
 
-        if (!_options.PropagateTenant)
+        var tenantId = context.Execution.TenantId;
+
+        // Restore whenever the row carries a persisted tenant, even with propagation off: the schedule side writes an
+        // explicit/captured tenant regardless of the flag, so an explicitly-tenanted job must always run under its
+        // tenant. Only a genuinely tenant-free host (no persisted tenant and propagation off) short-circuits — a
+        // propagation-enabled host still opens Change(null) below to clear a leaked ambient for system jobs.
+        if (tenantId is null && !_options.PropagateTenant)
         {
             await next(cancellationToken).ConfigureAwait(false);
 
             return;
         }
-
-        var tenantId = context.Execution.TenantId;
 
         // Change is opened in THIS frame so the AsyncLocal set flows down into the awaited handler; a null tenant clears
         // the scope so the attempt runs system scope even if an ambient tenant leaked onto the worker. The scope reverts

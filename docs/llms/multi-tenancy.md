@@ -431,13 +431,14 @@ Structural validation — cron-scope rejection, the system-job contradictions, a
 
 #### Manual Propagation
 
-If you opt out of `PropagateTenant()`, pass the tenant explicitly on every enqueue, and restore it yourself for any work that runs outside the Jobs execute pipeline:
+If you opt out of `PropagateTenant()`, pass the tenant explicitly on every enqueue. An explicit `EnqueueOptions.TenantId` is persisted regardless of the flag and **is still restored around the job handler at execute time** — the handler, and each retry, runs under that tenant, so you do not restore it inside the handler. Manual restoration is only needed for work that runs *outside* the Jobs execute pipeline (inline code, other background paths):
 
 ```csharp
-// Explicit capture at schedule time — no ambient dependency.
+// Explicit capture at schedule time — no ambient dependency. The handler runs under `tenantId`
+// even with PropagateTenant() off, because a persisted tenant is always restored at execute time.
 await scheduler.EnqueueAsync(request, new EnqueueOptions { TenantId = tenantId }, ct);
 
-// Inline work under an explicit scope.
+// Inline work OUTSIDE the Jobs execute pipeline still needs an explicit scope.
 using (currentTenant.Change(tenantId))
 {
     await processor.RunAsync();

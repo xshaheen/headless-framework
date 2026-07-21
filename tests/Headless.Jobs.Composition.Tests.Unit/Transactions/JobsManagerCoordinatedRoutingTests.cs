@@ -49,6 +49,43 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task immediate_dispatch_threads_the_persisted_tenant_into_the_dispatched_state()
+    {
+        // #278: the immediate-dispatch branch builds JobExecutionState from the ACQUIRED row via
+        // _BuildContextFromNonGeneric (JobsManager.cs:532). The execute middleware restores the tenant from that state,
+        // so a copy-paste slip on the TenantId assignment would silently dispatch the job system-scope. Pin it here.
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true);
+        var acquiredChild = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = _FunctionName,
+            TenantId = "t-child",
+        };
+        var acquired = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = _FunctionName,
+            TenantId = "t-root",
+            ExecutionTime = DateTime.UtcNow,
+            Children = [acquiredChild],
+        };
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { acquired });
+        JobExecutionState[]? dispatched = null;
+        sut.Dispatcher.DispatchAsync(
+                Arg.Do<JobExecutionState[]>(states => dispatched = states),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.CompletedTask);
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var rootState = dispatched.Should().ContainSingle().Which;
+        rootState.TenantId.Should().Be("t-root");
+        rootState.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-child");
+    }
+
+    [Fact]
     public async Task add_stamps_the_entire_chain_with_injected_identity_and_time_services()
     {
         var now = new DateTimeOffset(2026, 7, 18, 9, 30, 0, TimeSpan.Zero);
