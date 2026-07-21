@@ -65,18 +65,8 @@ public sealed class TenantPropagationScheduleMiddleware(
         // TenantId null and record the decision (R7).
         if (job.IsSystemJob)
         {
-            if (job.TenantId is not null)
-            {
-                throw new JobValidatorException("A system job cannot also specify an explicit tenant identifier.");
-            }
-
             // A blank ambient is not a real tenant, so it does not escalate a system job into a tenant scope.
-            if (!string.IsNullOrWhiteSpace(_currentTenant.Id))
-            {
-                throw new JobValidatorException(
-                    "A system job cannot be scheduled while an ambient tenant is present; tenant code cannot escalate to system scope."
-                );
-            }
+            JobTenantValidation.ValidateSystemJob(job.TenantId, !string.IsNullOrWhiteSpace(_currentTenant.Id));
 
             logger?.SystemJobScheduled(job.Function);
 
@@ -86,7 +76,7 @@ public sealed class TenantPropagationScheduleMiddleware(
         // Explicit tenant wins over ambient, even when it differs (documented in-process trust model). Validate it.
         if (job.TenantId is { } explicitTenant)
         {
-            _ValidateTenantId(explicitTenant);
+            JobTenantValidation.ValidateExplicitTenantId(explicitTenant);
 
             return;
         }
@@ -114,21 +104,6 @@ public sealed class TenantPropagationScheduleMiddleware(
         if (_options.TenantContextRequired)
         {
             throw new MissingTenantContextException();
-        }
-    }
-
-    private static void _ValidateTenantId(string tenantId)
-    {
-        if (string.IsNullOrWhiteSpace(tenantId))
-        {
-            throw new JobValidatorException("A tenant identifier must not be blank.");
-        }
-
-        if (tenantId.Length > JobsTenancyOptions.TenantIdMaxLength)
-        {
-            throw new JobValidatorException(
-                $"The tenant identifier length ({tenantId.Length}) exceeds the maximum of {JobsTenancyOptions.TenantIdMaxLength}."
-            );
         }
     }
 }

@@ -55,16 +55,11 @@ public sealed class HeadlessJobsTenancyBuilder
     /// <returns>The same Jobs tenancy builder.</returns>
     public HeadlessJobsTenancyBuilder PropagateTenant()
     {
-        // Sentinel — guard the PostConfigure so repeated PropagateTenant() calls do not register the same
-        // callback twice. AddHeadlessJobs already registers the tenant-context primitives (accessor +
-        // ICurrentTenant fallback) and the always-on, options-gated schedule/execute middleware (see
+        // AddHeadlessJobs already registers the tenant-context primitives (accessor + ICurrentTenant fallback)
+        // and the always-on, options-gated schedule/execute middleware (see
         // Headless.Jobs.Core/DependencyInjection/SetupJobs.cs _AddTenancyServices), so — unlike the Messaging
         // seam that adds propagation middleware — the Jobs seam only flips the option flag the middleware reads.
-        if (_builder.Services.All(descriptor => descriptor.ServiceType != typeof(PropagateTenantSentinel)))
-        {
-            _builder.Services.AddSingleton<PropagateTenantSentinel>();
-            _builder.Services.PostConfigure<JobsTenancyOptions>(options => options.PropagateTenant = true);
-        }
+        _RegisterSentinelOnce<PropagateTenantSentinel>(options => options.PropagateTenant = true);
 
         // Routes through the unified IHeadlessTenancyValidator collection aggregated by
         // HeadlessTenancyStartupValidator (IHostedLifecycleService) — runs in StartingAsync before any
@@ -81,13 +76,7 @@ public sealed class HeadlessJobsTenancyBuilder
     /// <returns>The same Jobs tenancy builder.</returns>
     public HeadlessJobsTenancyBuilder RequireTenantOnEnqueue()
     {
-        // Sentinel — guard the PostConfigure registration so repeated RequireTenantOnEnqueue() calls do not
-        // register the same callback twice.
-        if (_builder.Services.All(descriptor => descriptor.ServiceType != typeof(RequireTenantOnEnqueueSentinel)))
-        {
-            _builder.Services.AddSingleton<RequireTenantOnEnqueueSentinel>();
-            _builder.Services.PostConfigure<JobsTenancyOptions>(options => options.TenantContextRequired = true);
-        }
+        _RegisterSentinelOnce<RequireTenantOnEnqueueSentinel>(options => options.TenantContextRequired = true);
 
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, JobsTenantRequiredCrossSeamValidator>()
@@ -98,6 +87,20 @@ public sealed class HeadlessJobsTenancyBuilder
         _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RequireTenantOnEnqueueCapability);
 
         return this;
+    }
+
+    // Sentinel — the PostConfigure contribution must register at most once per flag, so repeated builder calls
+    // (or a repeated .Jobs(...) registration) do not stack duplicate callbacks.
+    private void _RegisterSentinelOnce<TSentinel>(Action<JobsTenancyOptions> postConfigure)
+        where TSentinel : class
+    {
+        if (_builder.Services.Any(descriptor => descriptor.ServiceType == typeof(TSentinel)))
+        {
+            return;
+        }
+
+        _builder.Services.AddSingleton<TSentinel>();
+        _builder.Services.PostConfigure(postConfigure);
     }
 }
 

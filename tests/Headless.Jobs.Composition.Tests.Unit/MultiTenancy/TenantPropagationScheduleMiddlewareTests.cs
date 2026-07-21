@@ -203,11 +203,4 @@ public sealed class TenantPropagationScheduleMiddlewareTests : TestBase
 
         return nextCalled;
     }
-
-    private sealed class NullServiceProvider : IServiceProvider
-    {
-        public static readonly NullServiceProvider Instance = new();
-
-        public object? GetService(Type serviceType) => null;
-    }
 }
