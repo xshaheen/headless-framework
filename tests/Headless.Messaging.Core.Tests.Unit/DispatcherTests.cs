@@ -117,6 +117,7 @@ public sealed class DispatcherTests : TestBase
                 EnablePublishParallelSend = false,
                 SubscriberParallelExecuteThreadCount = 2,
                 SubscriberParallelExecuteBufferFactor = 2,
+                SchedulerBatchSize = 10000,
             }
         );
 
@@ -162,6 +163,80 @@ public sealed class DispatcherTests : TestBase
         var receivedMessages = sender.ReceivedMessages.Select(m => m.StorageId).Order().ToList();
         var expected = messages.Select(m => m.StorageId).Order().ToList();
         expected.Should().Equal(receivedMessages);
+    }
+
+    [Fact]
+    public async Task should_keep_scheduler_overflow_durable_as_delayed()
+    {
+        var options = Options.Create(new MessagingOptions { SchedulerBatchSize = 1 });
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        var first = _CreateTestMessage(1);
+        var second = _CreateTestMessage(2);
+        var publishTime = DateTimeOffset.UtcNow.AddSeconds(30);
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
+
+        await dispatcher.EnqueueToScheduler(first, publishTime, cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(second, publishTime, cancellationToken: AbortToken);
+
+        await _storage
+            .Received(1)
+            .ChangePublishStateAsync(second, StatusName.Delayed, null, null, cancellationToken: CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_not_mark_an_identical_scheduled_entry_as_delayed()
+    {
+        var options = Options.Create(new MessagingOptions { SchedulerBatchSize = 1 });
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        var message = _CreateTestMessage(1);
+        var duplicate = _CreateTestMessage(1);
+        var publishTime = DateTimeOffset.UtcNow.AddSeconds(30);
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
+
+        await dispatcher.EnqueueToScheduler(message, publishTime, cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(duplicate, publishTime, cancellationToken: AbortToken);
+
+        await _storage
+            .DidNotReceive()
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Delayed,
+                Arg.Any<object?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -251,6 +326,7 @@ public sealed class DispatcherTests : TestBase
                 EnablePublishParallelSend = true,
                 SubscriberParallelExecuteThreadCount = 2,
                 SubscriberParallelExecuteBufferFactor = 2,
+                SchedulerBatchSize = 10000,
             }
         );
 

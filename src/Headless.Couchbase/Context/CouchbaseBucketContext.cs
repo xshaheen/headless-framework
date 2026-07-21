@@ -25,6 +25,9 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
 {
     #region Query
 
+    // Fragile: binds to Linq2Couchbase's NON-PUBLIC BucketContext.Query(string, string, BucketQueryOptions)
+    // overload via reflection. A Linq2Couchbase upgrade that renames or reshapes that overload fails here at
+    // runtime (type initialization), not at compile time — re-verify on every Linq2Couchbase version bump.
     private static readonly MethodInfo _QueryMethod =
         typeof(BucketContext).GetMethod(
             name: "Query",

@@ -11,6 +11,11 @@ MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
+PACKAGE_MANIFEST ?= eng/expected-packages.txt
+PACKAGE_VERSION ?= $(shell $(DOTNET) msbuild src/Headless.Core/Headless.Core.csproj -nologo -target:MinVer -getProperty:PackageVersion)
+EXPECTED_PACKAGE_VERSION ?= $(shell if [ -f "$(PACKAGES_DIR)/package-version.txt" ]; then sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"; else printf '%s\n' "$(PACKAGE_VERSION)"; fi)
+EXPECTED_REPOSITORY_URL ?= https://github.com/xshaheen/headless-framework.git
+EXPECTED_REPOSITORY_COMMIT ?= $(shell git rev-parse HEAD)
 TEST_RESULTS_DIR ?= $(ARTIFACTS_DIR)/test-results
 COVERAGE_DIR ?= $(ARTIFACTS_DIR)/coverage
 COVERAGE_REPORT_DIR ?= $(COVERAGE_DIR)/report
@@ -47,7 +52,7 @@ help: ## Show available commands.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
-	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj\n"
+	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*ClockTests'\n"
 	@printf "  make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj\n"
 	@printf "  make coverage-json\n"
@@ -213,13 +218,13 @@ test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override T
 
 .PHONY: test-project
 test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
-	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
+	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-project-fast
 test-project-fast: ## Run one prebuilt test project without restore/build.
-	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
+	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
@@ -284,21 +289,54 @@ coverage-open: coverage-html ## Generate report and open in browser.
 	else echo "Report generated. Open manually: $(COVERAGE_REPORT_DIR)/index.html"; fi
 
 .PHONY: pack
-pack: restore ## Pack NuGet packages (symbols are embedded in the assemblies).
-	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
-
-.PHONY: pack-built
-pack-built: ## Pack already-built source projects without restore/build; used by CI.
+pack: restore verify-package-manifest ## Pack NuGet packages (symbols are embedded in the assemblies).
 	@mkdir -p "$(PACKAGES_DIR)"
 	@for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS); \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
 	done
+	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
+
+.PHONY: pack-built
+pack-built: verify-package-manifest ## Pack already-built source projects without restore/build; used by CI.
+	@mkdir -p "$(PACKAGES_DIR)"
+	@for csproj in src/*/*.csproj; do \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
+	done
+	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
 
 .PHONY: pack-sbom
-pack-sbom: restore ## Pack NuGet packages with GenerateSBOM=true.
+pack-sbom: restore verify-package-manifest ## Pack NuGet packages with GenerateSBOM=true.
 	@mkdir -p "$(PACKAGES_DIR)"
-	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true $(MSBUILD_ARGS)
+	@for csproj in src/*/*.csproj; do \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
+	done
+	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
+
+.PHONY: verify-package-manifest
+verify-package-manifest: ## Compare the canonical package IDs with evaluated packable src projects.
+	./scripts/verify-packages.sh --projects-only --manifest "$(PACKAGE_MANIFEST)"
+
+.PHONY: verify-packages
+verify-packages: ## Verify the complete package set, nuspec metadata, and embedded SPDX SBOMs.
+	./scripts/verify-packages.sh --packages-only \
+		--manifest "$(PACKAGE_MANIFEST)" \
+		--packages-dir "$(PACKAGES_DIR)" \
+		--expected-version "$(EXPECTED_PACKAGE_VERSION)" \
+		--repository-url "$(EXPECTED_REPOSITORY_URL)" \
+		--repository-commit "$(EXPECTED_REPOSITORY_COMMIT)"
+
+.PHONY: nuget-publish-preflight
+nuget-publish-preflight: ## Fail when an expected package ID/version already exists on NuGet.org.
+	./scripts/verify-packages.sh --packages-only --preflight-nuget \
+		--manifest "$(PACKAGE_MANIFEST)" \
+		--packages-dir "$(PACKAGES_DIR)" \
+		--expected-version "$(EXPECTED_PACKAGE_VERSION)" \
+		--repository-url "$(EXPECTED_REPOSITORY_URL)" \
+		--repository-commit "$(EXPECTED_REPOSITORY_COMMIT)"
+
+.PHONY: test-package-verifier
+test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
+	./tests/scripts/verify-packages-tests.sh
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.

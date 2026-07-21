@@ -3173,20 +3173,20 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
             string key,
-            CancellationToken cancellationToken,
-            FactoryCacheReadOptions readOptions = default
+            FactoryCacheReadOptions readOptions = default,
+            CancellationToken cancellationToken = default
         )
         {
-            return inner.TryGetEntryAsync<T>(key, cancellationToken, readOptions);
+            return inner.TryGetEntryAsync<T>(key, readOptions, cancellationToken);
         }
 
         public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
             IReadOnlyList<string> keys,
-            CancellationToken cancellationToken,
-            FactoryCacheReadOptions readOptions = default
+            FactoryCacheReadOptions readOptions = default,
+            CancellationToken cancellationToken = default
         )
         {
-            return inner.TryGetAllEntriesAsync<T>(keys, cancellationToken, readOptions);
+            return inner.TryGetAllEntriesAsync<T>(keys, readOptions, cancellationToken);
         }
 
         public ValueTask<bool> SetEntryAsync<T>(

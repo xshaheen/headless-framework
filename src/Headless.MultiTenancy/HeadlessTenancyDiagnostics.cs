@@ -9,13 +9,13 @@ namespace Headless.MultiTenancy;
 public enum HeadlessTenancyDiagnosticSeverity
 {
     /// <summary>Informational diagnostic.</summary>
-    Information,
+    Information = 0,
 
     /// <summary>Warning diagnostic.</summary>
-    Warning,
+    Warning = 1,
 
     /// <summary>Startup-blocking diagnostic.</summary>
-    Error,
+    Error = 2,
 }
 
 /// <summary>Non-PII diagnostic emitted by tenant posture validators.</summary>

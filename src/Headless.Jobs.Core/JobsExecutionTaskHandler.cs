@@ -400,7 +400,7 @@ internal sealed class JobsExecutionTaskHandler
                             if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                             {
                                 Task terminal(CancellationToken token) =>
-                                    context.CachedDelegate(token, scope.ServiceProvider, jobFunctionContext);
+                                    context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
                                 await JobMiddlewareRegistry
                                     .DispatchExecuteAsync(
                                         new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
@@ -414,7 +414,7 @@ internal sealed class JobsExecutionTaskHandler
                                 // Older generated assemblies can still supply a cached registration without descriptor
                                 // metadata. Preserve their execution path while new generated assemblies use middleware.
                                 await context
-                                    .CachedDelegate(attemptToken, scope.ServiceProvider, jobFunctionContext)
+                                    .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
                                     .ConfigureAwait(false);
                             }
                             success = true;

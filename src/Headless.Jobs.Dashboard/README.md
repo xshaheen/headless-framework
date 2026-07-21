@@ -19,6 +19,8 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 
 The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
+Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes; the legacy all-record `time-jobs`, `cron-jobs`, and `cron-job-occurrences/{cronJobId}` routes are not exposed.
+
 ## Installation
 
 ```bash
@@ -70,6 +72,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
 - `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
+- `Headless.Extensions`
 
 ## Side Effects
 

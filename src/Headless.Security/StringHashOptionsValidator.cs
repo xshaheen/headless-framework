@@ -2,9 +2,8 @@
 
 using System.Security.Cryptography;
 using FluentValidation;
-using Headless.Abstractions;
 
-namespace Headless;
+namespace Headless.Security;
 
 /// <summary>Validates <see cref="StringHashOptions" />.</summary>
 internal sealed class StringHashOptionsValidator : AbstractValidator<StringHashOptions>

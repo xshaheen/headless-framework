@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.PostgreSql;
@@ -14,16 +15,10 @@ internal sealed class PostgreSqlAuditLog<TContext>(
     IOptions<AuditLogOptions> options
 ) : IAuditLog<TContext>
 {
-    public Task LogAsync(
-        string action,
-        string? entityType = null,
-        string? entityId = null,
-        Dictionary<string, object?>? data = null,
-        bool success = true,
-        string? errorCode = null,
-        CancellationToken cancellationToken = default
-    )
+    public Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
     {
+        Argument.IsNotNull(request);
+
         if (!options.Value.IsEnabled)
         {
             return Task.CompletedTask;
@@ -39,12 +34,12 @@ internal sealed class PostgreSqlAuditLog<TContext>(
                 correlationIdProvider.CorrelationId,
                 AuditLogFieldLimits.CorrelationId
             ),
-            Action = AuditLogFieldLimits.Truncate(action, AuditLogFieldLimits.Action),
-            EntityType = AuditLogFieldLimits.Truncate(entityType, AuditLogFieldLimits.EntityType),
-            EntityId = AuditLogFieldLimits.Truncate(entityId, AuditLogFieldLimits.EntityId),
-            NewValues = data,
-            Success = success,
-            ErrorCode = AuditLogFieldLimits.Truncate(errorCode, AuditLogFieldLimits.ErrorCode),
+            Action = AuditLogFieldLimits.Truncate(request.Action, AuditLogFieldLimits.Action),
+            EntityType = AuditLogFieldLimits.Truncate(request.EntityType, AuditLogFieldLimits.EntityType),
+            EntityId = AuditLogFieldLimits.Truncate(request.EntityId, AuditLogFieldLimits.EntityId),
+            NewValues = request.Data,
+            Success = request.Success,
+            ErrorCode = AuditLogFieldLimits.Truncate(request.ErrorCode, AuditLogFieldLimits.ErrorCode),
         };
 
         return writer.WriteAsync([entry], cancellationToken: cancellationToken);

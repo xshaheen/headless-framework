@@ -24,4 +24,5 @@ namespace Headless.Messaging.Exceptions;
 /// The underlying exception that caused the connection failure.
 /// This typically contains specific details about the connection error from the broker client library.
 /// </param>
-public class BrokerConnectionException(Exception innerException) : Exception("Broker Unreachable", innerException);
+public sealed class BrokerConnectionException(Exception innerException)
+    : Exception("Broker Unreachable", innerException);

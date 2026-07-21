@@ -300,7 +300,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         // when
         await sut.StartAsync(AbortToken);
 
-        // Advance time to allow retries to proceed (2s, 4s base delays with exponential backoff)
+        // Advance time to allow jittered retries to proceed.
         for (var i = 0; i < 5 && !completionSource.Task.IsCompleted; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(10));
@@ -311,9 +311,91 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         callCount.Should().BeGreaterThanOrEqualTo(3);
     }
 
+    [Fact]
+    public async Task should_cap_retry_delays_and_surface_terminal_unknown_failure()
+    {
+        var options = new FeatureManagementOptions
+        {
+            SaveStaticFeaturesToDatabase = true,
+            IsDynamicFeatureStoreEnabled = false,
+        };
+
+        var callCount = 0;
+        _store
+            .SaveAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                throw new InvalidOperationException("Always fails");
+            });
+
+        using var sut = _CreateSut(options);
+        await sut.StartAsync(CancellationToken.None);
+
+        await _AdvancePastCappedRetriesAsync();
+
+        var act = () => sut.WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Always fails");
+        callCount.Should().Be(11);
+    }
+
+    [Theory]
+    [InlineData("argument")]
+    [InlineData("not-supported")]
+    [InlineData("operation-cancelled")]
+    public async Task should_not_retry_terminal_save_failure(string failure)
+    {
+        var options = new FeatureManagementOptions
+        {
+            SaveStaticFeaturesToDatabase = true,
+            IsDynamicFeatureStoreEnabled = false,
+        };
+
+        var callCount = 0;
+        var expected = _CreateTerminalException(failure);
+        _store
+            .SaveAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                throw expected;
+            });
+
+        using var sut = _CreateSut(options);
+        await sut.StartAsync(CancellationToken.None);
+
+        var thrown = await Record.ExceptionAsync(() =>
+            sut.WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken)
+        );
+
+        thrown.Should().NotBeNull();
+        expected.GetType().IsAssignableFrom(thrown!.GetType()).Should().BeTrue();
+        callCount.Should().Be(1);
+    }
+
     #endregion
 
     #region Cancellation
+
+    [Fact]
+    public async Task should_complete_waiter_as_cancelled_when_start_token_is_already_cancelled()
+    {
+        var options = new FeatureManagementOptions
+        {
+            SaveStaticFeaturesToDatabase = true,
+            IsDynamicFeatureStoreEnabled = false,
+        };
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var sut = _CreateSut(options);
+
+        await sut.StartAsync(cts.Token);
+
+        var act = () => sut.WaitForInitializationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await _store.DidNotReceive().SaveAsync(Arg.Any<CancellationToken>());
+    }
 
     [Fact]
     public async Task should_cancel_on_start_token_cancellation()
@@ -394,6 +476,27 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
     #endregion
 
     #region Helpers
+
+    private async Task _AdvancePastCappedRetriesAsync()
+    {
+        // Each advance exceeds the 30-second cap, while remaining far below the old unbounded exponential tail.
+        for (var i = 0; i < 15; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(31));
+            await Task.Delay(10, AbortToken);
+        }
+    }
+
+    private static Exception _CreateTerminalException(string failure)
+    {
+        return failure switch
+        {
+            "argument" => new ArgumentException("Invalid configuration"),
+            "not-supported" => new NotSupportedException("Unsupported configuration"),
+            "operation-cancelled" => new OperationCanceledException("Initialization cancelled"),
+            _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, message: null),
+        };
+    }
 
     private FeaturesInitializationBackgroundService _CreateSut(FeatureManagementOptions options)
     {

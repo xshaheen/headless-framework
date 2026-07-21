@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.EntityFramework;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -19,22 +18,19 @@ public sealed class IdentityTestFixture
 {
     protected override void ConfigureDbContext(IServiceCollection services)
     {
-        services.AddHeadlessDbContext<
-            TestIdentityDbContext,
-            TestUser,
-            TestRole,
-            string,
-            IdentityUserClaim<string>,
-            IdentityUserRole<string>,
-            IdentityUserLogin<string>,
-            IdentityRoleClaim<string>,
-            IdentityUserToken<string>,
-            IdentityUserPasskey<string>
-        >(options => options.UseNpgsql(SqlConnectionString));
-
-        // Register EF commit coordination so the scope-free ExecuteCoordinatedTransactionAsync helper can
-        // resolve EntityFrameworkCommitSignalSource and enlist; the interceptor is attached to the context by
-        // AddHeadlessDbContext via IDbContextOptionsConfiguration.
-        services.AddEntityFrameworkCommitCoordination();
+        services
+            .AddHeadlessDbContext<
+                TestIdentityDbContext,
+                TestUser,
+                TestRole,
+                string,
+                IdentityUserClaim<string>,
+                IdentityUserRole<string>,
+                IdentityUserLogin<string>,
+                IdentityRoleClaim<string>,
+                IdentityUserToken<string>,
+                IdentityUserPasskey<string>
+            >(options => options.UseNpgsql(SqlConnectionString))
+            .AddCommitCoordination();
     }
 }

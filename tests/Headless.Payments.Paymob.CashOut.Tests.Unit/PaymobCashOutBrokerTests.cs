@@ -46,7 +46,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // when
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
-        var result = await broker.Disburse(request, AbortToken);
+        var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
         result.TransactionId.Should().Be(transactionId);
@@ -73,7 +73,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // when
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
-        var result = await broker.Disburse(request, AbortToken);
+        var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
         result.TransactionId.Should().Be("tx-quirks");
@@ -99,7 +99,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // when
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
-        var act = () => broker.Disburse(request, AbortToken);
+        var act = () => broker.DisburseAsync(request, AbortToken);
 
         // then
         var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();

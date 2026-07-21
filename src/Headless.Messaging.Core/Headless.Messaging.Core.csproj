@@ -21,7 +21,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.EntityFramework" />
-    <InternalsVisibleTo Include="Headless.Messaging.InMemoryStorage" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.InMemory" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
@@ -29,7 +29,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Testing.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemory.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Messaging.InMemoryStorage.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.InMemory.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />

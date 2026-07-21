@@ -34,8 +34,8 @@ public sealed class HybridCacheSlidingTests : TestBase
         var result = await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(value), options, AbortToken);
 
         // then
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
-        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         result.Value.Should().Be(value);
         l2Entry.Value.Should().Be(value);
@@ -82,8 +82,8 @@ public sealed class HybridCacheSlidingTests : TestBase
         );
 
         // then
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
-        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
 
         result.Value.Should().Be(value);
         factoryCalls.Should().Be(0);
@@ -138,8 +138,8 @@ public sealed class HybridCacheSlidingTests : TestBase
         result.Value.Should().Be(value);
         factoryCalls.Should().Be(0);
 
-        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
-        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, cancellationToken: AbortToken);
         l1Entry.Found.Should().BeTrue();
         l1Entry.Value.Should().Be(value);
         l2Entry.Found.Should().BeFalse();

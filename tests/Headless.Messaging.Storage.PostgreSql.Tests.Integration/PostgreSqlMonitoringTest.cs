@@ -84,8 +84,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // when
         var monitoringApi = storage.GetMonitoringApi();
-        var succeededCount = await monitoringApi.PublishedSucceededCount(AbortToken);
-        var failedCount = await monitoringApi.PublishedFailedCount(AbortToken);
+        var succeededCount = await monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
+        var failedCount = await monitoringApi.GetPublishedFailedCountAsync(AbortToken);
 
         // then
         succeededCount.Should().Be(1);
@@ -250,7 +250,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // when
         var monitoringApi = storage.GetMonitoringApi();
-        var hourly = await monitoringApi.HourlySucceededJobs(MessageType.Publish, AbortToken);
+        var hourly = await monitoringApi.GetHourlySucceededJobsAsync(MessageType.Publish, AbortToken);
 
         // then — should have 24 hour buckets, at least one with count > 0
         hourly.Should().HaveCount(24);
@@ -268,7 +268,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // when
         var monitoringApi = storage.GetMonitoringApi();
-        var hourly = await monitoringApi.HourlyFailedJobs(MessageType.Publish, AbortToken);
+        var hourly = await monitoringApi.GetHourlyFailedJobsAsync(MessageType.Publish, AbortToken);
 
         // then
         hourly.Should().HaveCount(24);

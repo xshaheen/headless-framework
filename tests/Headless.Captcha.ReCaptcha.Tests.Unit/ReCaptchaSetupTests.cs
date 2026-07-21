@@ -106,22 +106,17 @@ public sealed class ReCaptchaSetupTests
         act.Should().Throw<OptionsValidationException>();
     }
 
-    [Fact]
-    public void invalid_verify_base_url_fails_options_validation()
+    [Theory]
+    [InlineData("not-a-url")]
+    [InlineData("http://captcha.example.com/")]
+    [InlineData("http://10.0.0.10/")]
+    [InlineData("https://user:password@captcha.example.com/")]
+    public void unsafe_verify_base_url_fails_options_validation(string verifyBaseUrl)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["ReCaptchaV3:SiteKey"] = "k",
-                    ["ReCaptchaV3:SiteSecret"] = "s",
-                    ["ReCaptchaV3:VerifyBaseUrl"] = "not-a-url",
-                }
-            )
-            .Build();
-
         var services = new ServiceCollection();
-        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(configuration.GetSection("ReCaptchaV3")));
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(_Section("ReCaptchaV3", "k", "s", verifyBaseUrl))
+        );
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -131,6 +126,26 @@ public sealed class ReCaptchaSetupTests
                 .Get(CaptchaConstants.ReCaptchaV3Provider);
 
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData("http://localhost:5000/")]
+    [InlineData("http://127.0.0.1:5000/")]
+    [InlineData("http://[::1]:5000/")]
+    public void loopback_http_verify_base_url_passes_options_validation(string verifyBaseUrl)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(_Section("ReCaptchaV3", "k", "s", verifyBaseUrl))
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+            .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        options.VerifyBaseUrl.Should().Be(verifyBaseUrl);
     }
 
     [Fact]
@@ -259,17 +274,24 @@ public sealed class ReCaptchaSetupTests
         serviceProvider.GetRequiredService<ICaptchaProvider>().GetVerifier("v2-cfg").Should().NotBeNull();
     }
 
-    private static IConfigurationSection _Section(string section, string key, string secret)
+    private static IConfigurationSection _Section(
+        string section,
+        string key,
+        string secret,
+        string? verifyBaseUrl = null
+    )
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    [$"{section}:SiteKey"] = key,
-                    [$"{section}:SiteSecret"] = secret,
-                }
-            )
-            .Build()
-            .GetSection(section);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [$"{section}:SiteKey"] = key,
+            [$"{section}:SiteSecret"] = secret,
+        };
+
+        if (verifyBaseUrl is not null)
+        {
+            values[$"{section}:VerifyBaseUrl"] = verifyBaseUrl;
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(values).Build().GetSection(section);
     }
 }

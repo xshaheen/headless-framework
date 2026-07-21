@@ -13,6 +13,7 @@ Enables cloud-native, multi-tenant messaging using Apache Pulsar with geo-replic
 - **Tiered Storage**: Offload old messages to S3/GCS/Azure Blob
 - **Unified Model**: Both streaming and queuing semantics
 - **Schema Registry**: Built-in schema validation and evolution
+- **Negative-Ack Redelivery**: One-minute default with a validated 100-millisecond minimum.
 - **Host-Cancellable Startup**: Client acquisition and subscription honor host shutdown while preserving the provider timeout.
 
 ## Installation
@@ -43,6 +44,7 @@ options.UsePulsar(pulsar =>
 {
     pulsar.ServiceUrl = "pulsar://localhost:6650";
     pulsar.EnableClientLog = false;
+    pulsar.NegativeAckRedeliveryDelay = TimeSpan.FromMinutes(1); // minimum: 100 ms
     // pulsar.TlsOptions = new PulsarTlsOptions { ... }; // optional TLS settings
     // Tenant and namespace are encoded into the broker topic name (e.g.,
     // "persistent://public/default/orders.events"), not surfaced as options here.
@@ -55,6 +57,7 @@ options.UsePulsar(pulsar =>
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit acknowledges the message.
 - Reject sends a negative acknowledgment so Pulsar can redeliver under subscription policy.
+- `NegativeAckRedeliveryDelay` controls how soon rejected messages become eligible for redelivery. It defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 - Consumer startup subscribes the group name to the configured topics in the tenant and namespace.
 - Topic creation and retention still follow broker configuration for that tenant and namespace.
 - Shared subscriptions favor throughput over strict ordering. Single-threaded consumption gives the most stable order.
@@ -65,7 +68,7 @@ options.UsePulsar(pulsar =>
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `DotPulsar`
+- `Pulsar.Client`
 
 ## Side Effects
 

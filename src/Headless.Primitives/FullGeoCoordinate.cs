@@ -21,8 +21,10 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     public static readonly FullGeoCoordinate Unknown = new();
 
     /// <summary>
-    ///     Initializes a new instance of the GeoCoordinate class from latitude, longitude, altitude, horizontal accuracy,
-    ///     vertical accuracy, speed, and course.
+    ///     Initializes a new instance of the GeoCoordinate class from latitude and longitude. Set
+    ///     <see cref="Altitude"/>, <see cref="HorizontalAccuracy"/>, <see cref="VerticalAccuracy"/>,
+    ///     <see cref="Speed"/>, and <see cref="Course"/> via object initializer when known; they default
+    ///     to <see cref="double.NaN"/> (unknown).
     /// </summary>
     /// <param name="latitude">
     ///     The latitude of the location. May range from -90.0 to 90.0.
@@ -30,47 +32,20 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <param name="longitude">
     ///     The longitude of the location. May range from -180.0 to 180.0.
     /// </param>
-    /// <param name="altitude">
-    ///     The altitude in meters. May be negative, 0, positive, or Double.NaN, if unknown.
-    /// </param>
-    /// <param name="horizontalAccuracy">
-    ///     The accuracy of the latitude and longitude coordinates, in meters. Must be greater
-    ///     than or equal to 0. If a value of 0 is supplied to this constructor, the HorizontalAccuracy property will be set to
-    ///     Double.NaN.
-    /// </param>
-    /// <param name="verticalAccuracy">
-    ///     The accuracy of the altitude, in meters. Must be greater than or equal to 0. If a value
-    ///     of 0 is supplied to this constructor, the VerticalAccuracy property will be set to Double.NaN.
-    /// </param>
-    /// <param name="speed">
-    ///     The speed measured in meters per second. May be negative, 0, positive, or Double.NaN, if unknown.
-    ///     A negative speed can indicate moving in reverse.
-    /// </param>
-    /// <param name="course">
-    ///     The direction of travel, rather than orientation. This parameter is measured in degrees relative
-    ///     to true north. Must range from 0 to 360.0, or be Double.NaN.
-    /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    ///     If <paramref name="latitude"/>, <paramref name="longitude"/>, <paramref name="horizontalAccuracy"/>,
-    ///     <paramref name="verticalAccuracy"/>, <paramref name="speed"/>, or <paramref name="course"/> is out of range.
+    ///     If <paramref name="latitude"/> or <paramref name="longitude"/> is out of range.
     /// </exception>
-    public FullGeoCoordinate(
-        double latitude = double.NaN,
-        double longitude = double.NaN,
-        double altitude = double.NaN,
-        double horizontalAccuracy = double.NaN,
-        double verticalAccuracy = double.NaN,
-        double speed = double.NaN,
-        double course = double.NaN
-    )
+    public FullGeoCoordinate(double latitude = double.NaN, double longitude = double.NaN)
     {
         Latitude = latitude;
         Longitude = longitude;
-        Altitude = altitude;
-        HorizontalAccuracy = horizontalAccuracy;
-        VerticalAccuracy = verticalAccuracy;
-        Speed = speed;
-        Course = course;
+        // Unset optional components mean "unknown" (NaN), not 0 — the backing fields would
+        // otherwise default to 0.0. Object initializers may override these via init accessors.
+        Altitude = double.NaN;
+        HorizontalAccuracy = double.NaN;
+        VerticalAccuracy = double.NaN;
+        Speed = double.NaN;
+        Course = double.NaN;
     }
 
     /// <summary>

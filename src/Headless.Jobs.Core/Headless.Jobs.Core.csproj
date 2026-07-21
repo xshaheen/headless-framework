@@ -6,7 +6,7 @@
     <RootNamespace>Headless.Jobs</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Jobs.Benchmarks" />
     <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />

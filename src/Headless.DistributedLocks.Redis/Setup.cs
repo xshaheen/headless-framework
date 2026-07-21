@@ -74,7 +74,7 @@ public static class SetupRedisDistributedLocks
         GetSemaphoreCountScriptDefinition.Instance,
     ];
 
-    private static IServiceCollection _AddRedisDistributedCore(
+    private static IServiceCollection _AddRedisDistributedLocksCore(
         IServiceCollection services,
         Func<IServiceCollection, IServiceCollection> registerStorage,
         IReadOnlyList<RedisScriptDefinition> scriptDefinitions
@@ -174,17 +174,17 @@ public static class SetupRedisDistributedLocks
     {
         public void AddServices(IServiceCollection services)
         {
-            _AddRedisDistributedCore(
+            _AddRedisDistributedLocksCore(
                 services,
                 static s => s.AddDistributedLockCore<RedisDistributedLockStorage>(),
                 _MutexScripts
             );
-            _AddRedisDistributedCore(
+            _AddRedisDistributedLocksCore(
                 services,
                 static s => s.AddDistributedReadWriteLockCore<RedisDistributedReadWriteLockStorage>(),
                 _ReaderWriterScripts
             );
-            _AddRedisDistributedCore(
+            _AddRedisDistributedLocksCore(
                 services,
                 static s => s.AddDistributedSemaphoreCore<RedisDistributedSemaphoreStorage>(),
                 _SemaphoreScripts

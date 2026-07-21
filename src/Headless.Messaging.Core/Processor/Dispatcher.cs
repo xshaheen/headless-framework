@@ -86,7 +86,7 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         _timeProvider = timeProvider;
         _scopeFactory = scopeFactory;
         _hostApplicationLifetime = hostApplicationLifetime;
-        _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider);
+        _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider, _options.SchedulerBatchSize);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
         _publishChannelSize = Environment.ProcessorCount * 500;
@@ -177,7 +177,17 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
         if (statusName == StatusName.Queued)
         {
-            _schedulerQueue.Enqueue(message, publishTime.Ticks);
+            if (!_schedulerQueue.TryEnqueue(message, publishTime.Ticks))
+            {
+                await _storage
+                    .ChangePublishStateAsync(
+                        message,
+                        StatusName.Delayed,
+                        transaction,
+                        cancellationToken: CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -188,7 +198,8 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
             throw new InvalidOperationException("A committed delayed message must have an expiration time.");
         }
 
-        _schedulerQueue.Enqueue(message, publishTime.Ticks);
+        // A full in-memory queue is safe here: the committed message remains durable as Delayed work.
+        _ = _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
@@ -482,7 +493,9 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
     private void _InitializeReceivedChannel()
     {
-        var bufferSize = _options.SubscriberParallelExecuteThreadCount * _options.SubscriberParallelExecuteBufferFactor;
+        var bufferSize = checked(
+            _options.SubscriberParallelExecuteThreadCount * _options.SubscriberParallelExecuteBufferFactor
+        );
         var isSingleReader = _options.SubscriberParallelExecuteThreadCount == 1;
 
         ReceivedChannel = Channel.CreateBounded<(MediumMessage, ConsumerExecutorDescriptor?)>(

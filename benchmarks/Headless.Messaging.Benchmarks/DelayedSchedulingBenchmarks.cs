@@ -4,11 +4,11 @@ using BenchmarkDotNet.Attributes;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Benchmarks;

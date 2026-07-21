@@ -13,7 +13,7 @@ Provides the full settings management implementation including hierarchical valu
 - Built-in value providers (lowest to highest priority): `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider`
 - `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
 - `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
-- `SettingsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled
+- `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
@@ -25,6 +25,8 @@ Provides the full settings management implementation including hierarchical valu
 Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all.
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
+
+`SettingsInitializationBackgroundService` does not retry cancellation, `ArgumentException`, or `NotSupportedException`; other failures retain 10 retries, and the terminal exception is surfaced to every `IInitializer` waiter.
 
 ## Installation
 
@@ -58,9 +60,19 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760");
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.MaxFileSize",
+            DisplayName = "Maximum File Size",
+            DefaultValue = "10485760",
+        });
 
-        context.Add(name: "App.ApiKey", displayName: "API Key", isEncrypted: true);
+        context.Add(new SettingDefinitionCreateOptions
+        {
+            Name = "App.ApiKey",
+            DisplayName = "API Key",
+            IsEncrypted = true,
+        });
     }
 }
 ```

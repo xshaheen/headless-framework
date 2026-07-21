@@ -19,7 +19,7 @@ namespace Headless.Payments.Paymob.Services.CashOut;
 /// <remarks>
 /// <para>
 /// Each overload builds the appropriate <c>CashOutDisburseRequest</c>, calls the broker's
-/// <c>Disburse</c> method, and maps the raw response to a domain result. Transport errors are
+/// <c>DisburseAsync</c> method, and maps the raw response to a domain result. Transport errors are
 /// caught and returned as <c>CashOutResult.Failure</c> with a structured error descriptor rather
 /// than propagated as exceptions, so callers do not need try/catch for Paymob API failures.
 /// </para>
@@ -210,7 +210,7 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
 
         try
         {
-            result = await broker.Disburse(request, cancellationToken).ConfigureAwait(false);
+            result = await broker.DisburseAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (PaymobCashOutException e)
         {

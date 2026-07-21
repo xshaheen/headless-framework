@@ -2,8 +2,8 @@
 
 using Headless;
 using Headless.Hosting.Initialization;
+using Headless.Security;
 using Headless.Settings;
-using Headless.Settings.Seeders;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -33,7 +33,7 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
 
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is not SettingsInitializationBackgroundService);
+            .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -66,7 +66,7 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             hosts
                 .Select(h =>
                     h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is not SettingsInitializationBackgroundService)
+                        .Single(x => x is IHostedLifecycleService)
                         .IsInitialized
                 )
                 .Should()

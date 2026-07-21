@@ -9,6 +9,7 @@ namespace Headless.Primitives;
 /// <param name="locale">The locale key (for example a culture name) this localization applies to.</param>
 /// <param name="displayName">The localized display name for the annotated member in the given <paramref name="locale"/>.</param>
 /// <param name="description">An optional localized description for the annotated member.</param>
+[PublicAPI]
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Enum, AllowMultiple = true)]
 #pragma warning disable CA1813 // Avoid unsealed attributes. Justification: Needs to be inherited to create specific locale attributes.
 public class LocaleAttribute(string locale, string displayName, string? description = null) : Attribute
@@ -28,10 +29,12 @@ public class LocaleAttribute(string locale, string displayName, string? descript
 /// <typeparam name="T">The enum value type being localized.</typeparam>
 /// <param name="Default">The localization for the default locale.</param>
 /// <param name="Locales">The localizations for each additional locale, keyed by locale.</param>
+[PublicAPI]
 public sealed record AllLocaleValue<T>(EnumLocale<T> Default, KeyEnumLocale<T>[] Locales);
 
 /// <summary>A localized enum value tagged with the locale key it belongs to.</summary>
 /// <typeparam name="T">The enum value type being localized.</typeparam>
+[PublicAPI]
 public sealed record KeyEnumLocale<T>
 {
     /// <summary>The locale key this localization belongs to.</summary>
@@ -43,6 +46,7 @@ public sealed record KeyEnumLocale<T>
 
 /// <summary>A single localized enum value: its display name, optional description, and underlying value.</summary>
 /// <typeparam name="T">The enum value type being localized.</typeparam>
+[PublicAPI]
 public sealed record EnumLocale<T>
 {
     /// <summary>The localized display name for the value.</summary>

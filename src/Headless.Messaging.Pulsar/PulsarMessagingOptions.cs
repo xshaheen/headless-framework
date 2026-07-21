@@ -30,6 +30,12 @@ public sealed class PulsarMessagingOptions
     public bool EnableClientLog { get; set; }
 
     /// <summary>
+    /// Delay before a negatively acknowledged message becomes eligible for redelivery.
+    /// Must be at least 100 milliseconds. Defaults to the Pulsar.Client default of one minute.
+    /// </summary>
+    public TimeSpan NegativeAckRedeliveryDelay { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// TLS configuration for the Pulsar connection. When <see langword="null"/>, TLS is disabled
     /// and the client connects over plain-text.
     /// </summary>
@@ -78,5 +84,6 @@ internal sealed class PulsarMessagingOptionsValidator : AbstractValidator<Pulsar
     public PulsarMessagingOptionsValidator()
     {
         RuleFor(x => x.ServiceUrl).NotEmpty();
+        RuleFor(x => x.NegativeAckRedeliveryDelay).GreaterThanOrEqualTo(TimeSpan.FromMilliseconds(100));
     }
 }

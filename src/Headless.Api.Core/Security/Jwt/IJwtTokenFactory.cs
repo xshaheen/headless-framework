@@ -28,29 +28,16 @@ public interface IJwtTokenFactory
     string CreateJwtToken(ClaimsIdentity identity, JwtTokenRequest request);
 
     /// <summary>Validates a JWT token and returns the resulting <see cref="ClaimsPrincipal"/>.</summary>
-    /// <param name="token">The compact-serialized JWT string to validate.</param>
-    /// <param name="signingKey">HMAC-SHA256 signing key used to verify the signature.</param>
-    /// <param name="encryptingKey">
-    /// Decryption key when the token is a JWE; <see langword="null"/> for plain JWS tokens.
-    /// </param>
-    /// <param name="issuer">Expected <c>iss</c> value (used when <paramref name="validateIssuer"/> is <see langword="true"/>).</param>
-    /// <param name="audience">Expected <c>aud</c> value (used when <paramref name="validateAudience"/> is <see langword="true"/>).</param>
-    /// <param name="validateIssuer">When <see langword="true"/> (default), the <c>iss</c> claim is validated.</param>
-    /// <param name="validateAudience">When <see langword="true"/> (default), the <c>aud</c> claim is validated.</param>
+    /// <param name="request">The token, key material, expected issuer and audience, and validation switches.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
     /// <returns>
     /// The validated <see cref="ClaimsPrincipal"/> on success, or <see langword="null"/> when validation fails
     /// (expired token, bad signature, wrong issuer/audience, etc.).
     /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before validation began.</exception>
     Task<ClaimsPrincipal?> ParseJwtTokenAsync(
-        string token,
-        string signingKey,
-        string? encryptingKey,
-        string issuer,
-        string audience,
-        bool validateIssuer = true,
-        bool validateAudience = true,
+        JwtTokenValidationRequest request,
         CancellationToken cancellationToken = default
     );
 }
@@ -100,24 +87,21 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
     }
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before validation began.</exception>
     public async Task<ClaimsPrincipal?> ParseJwtTokenAsync(
-        string token,
-        string signingKey,
-        string? encryptingKey,
-        string issuer,
-        string audience,
-        bool validateIssuer = true,
-        bool validateAudience = true,
+        JwtTokenValidationRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
         var tokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = validateIssuer,
-            ValidateAudience = validateAudience,
-            ValidIssuer = issuer,
-            ValidAudience = audience,
+            ValidateIssuer = request.ValidateIssuer,
+            ValidateAudience = request.ValidateAudience,
+            ValidIssuer = request.Issuer,
+            ValidAudience = request.Audience,
             ValidateLifetime = true,
             RequireExpirationTime = true,
             ClockSkew = TimeSpan.Zero,
@@ -126,14 +110,14 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
             AuthenticationType = AuthenticationConstants.IdentityAuthenticationType,
             ValidateIssuerSigningKey = true,
             RequireSignedTokens = true,
-            IssuerSigningKey = _CreateSecurityKey(signingKey),
-            TokenDecryptionKey = encryptingKey is null ? null : _CreateSecurityKey(encryptingKey),
+            IssuerSigningKey = _CreateSecurityKey(request.SigningKey),
+            TokenDecryptionKey = request.EncryptingKey is null ? null : _CreateSecurityKey(request.EncryptingKey),
         };
 
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await JwtTokenHelper
-            .TokenHandler.ValidateTokenAsync(token, tokenValidationParameters)
+            .TokenHandler.ValidateTokenAsync(request.Token, tokenValidationParameters)
             .ConfigureAwait(false);
 
         return result.IsValid ? new(result.ClaimsIdentity) : null;

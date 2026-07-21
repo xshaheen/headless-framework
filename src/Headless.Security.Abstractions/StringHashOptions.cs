@@ -2,7 +2,7 @@
 
 using System.Security.Cryptography;
 
-namespace Headless.Abstractions;
+namespace Headless.Security;
 
 /// <summary>
 /// Configures the default values used by <see cref="IStringHashService" />.

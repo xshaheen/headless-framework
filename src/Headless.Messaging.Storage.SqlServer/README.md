@@ -54,6 +54,11 @@ options.UseSqlServer(config =>
 });
 ```
 
+`UseSqlServer` ships the standard provider registration overloads: a connection string,
+an `IConfiguration` section bound to `SqlServerOptions`, an `Action<SqlServerOptions>`,
+and an `Action<SqlServerOptions, IServiceProvider>` (resolve secrets/connection settings from DI).
+The transactional-outbox auto-wiring applies only to the `UseEntityFramework<TContext>()` path.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

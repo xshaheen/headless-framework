@@ -22,7 +22,9 @@ namespace Headless.Api.DataProtection;
 /// downloaded (e.g. deleted between the listing and the read) are silently skipped.
 /// Blobs whose content is not well-formed XML (<see cref="System.Xml.XmlException"/>) or cannot be
 /// read due to I/O failures are also skipped and logged at <c>Warning</c> level — they do not abort
-/// the load of the remaining keys.
+/// the load of the remaining keys. Loading is bounded to 1 MiB of actual streamed bytes per XML blob,
+/// 1,000 XML blobs, and 16 MiB of aggregate XML; exceeding any bound aborts the entire key-ring load.
+/// XML is parsed with DTD processing prohibited.
 /// </para>
 /// <para>
 /// <see cref="StoreElement"/> retries transient I/O and HTTP failures up to 4 times with exponential
@@ -45,6 +47,12 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// delete can neither corrupt nor warn key-ring loading.
     /// </summary>
     internal const string WriteProbeBlobName = "startup-write-probe.xml";
+
+    internal const int MaxXmlBlobSizeBytes = 1024 * 1024;
+    internal const int MaxXmlElementCount = 1000;
+    internal const int MaxAggregateXmlBytes = 16 * 1024 * 1024;
+
+    private const int _ReadBufferSize = 81920;
 
     private readonly IBlobStorage _storage;
     private readonly ILogger _logger;
@@ -105,7 +113,11 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         _logger.LogLoadingElements();
 
-        var files = new List<BlobInfo>();
+        var elements = new List<XElement>();
+        var readBuffer = new byte[_ReadBufferSize];
+        var xmlBlobCount = 0;
+        long aggregateBytesRead = 0;
+
         await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery(ContainerName), "*.xml").ConfigureAwait(false))
         {
             // The startup write probe's sentinel is reserved and never part of the key ring; if a crash left one
@@ -115,47 +127,99 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 continue;
             }
 
-            files.Add(blob);
+            xmlBlobCount++;
+            if (xmlBlobCount > MaxXmlElementCount)
+            {
+                throw new InvalidOperationException(
+                    $"Data Protection key-ring loading exceeded the {MaxXmlElementCount:N0} XML blob limit."
+                );
+            }
+
+            _logger.LogLoadingElement(blob.BlobKey);
+            await using var downloadResult = await _storage
+                .OpenReadStreamAsync(new BlobLocation(ContainerName, blob.BlobKey))
+                .ConfigureAwait(false);
+
+            if (downloadResult is null)
+            {
+                _logger.LogFailedToLoadElement(blob.BlobKey);
+
+                continue;
+            }
+
+            await using var xmlBuffer = new MemoryStream();
+
+            try
+            {
+                long blobBytesRead = 0;
+
+                while (true)
+                {
+                    var remainingBlobBytes = MaxXmlBlobSizeBytes - blobBytesRead;
+                    var remainingAggregateBytes = MaxAggregateXmlBytes - aggregateBytesRead;
+                    var remainingBytes = Math.Min(remainingBlobBytes, remainingAggregateBytes);
+                    var readLength = (int)Math.Min(readBuffer.Length, remainingBytes + 1);
+                    var bytesRead = await downloadResult
+                        .Stream.ReadAsync(readBuffer.AsMemory(0, readLength), CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+
+                    blobBytesRead += bytesRead;
+                    if (blobBytesRead > MaxXmlBlobSizeBytes)
+                    {
+                        throw new InvalidOperationException(
+                            $"Data Protection XML blob '{blob.BlobKey}' exceeded the {MaxXmlBlobSizeBytes:N0}-byte limit."
+                        );
+                    }
+
+                    aggregateBytesRead += bytesRead;
+                    if (aggregateBytesRead > MaxAggregateXmlBytes)
+                    {
+                        throw new InvalidOperationException(
+                            $"Data Protection key-ring loading exceeded the {MaxAggregateXmlBytes:N0}-byte aggregate XML limit."
+                        );
+                    }
+
+                    await xmlBuffer
+                        .WriteAsync(readBuffer.AsMemory(0, bytesRead), CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+
+                xmlBuffer.Position = 0;
+                using var xmlReader = XmlReader.Create(
+                    xmlBuffer,
+                    new XmlReaderSettings
+                    {
+                        Async = true,
+                        CloseInput = false,
+                        DtdProcessing = DtdProcessing.Prohibit,
+                        XmlResolver = null,
+                    }
+                );
+                var element = await XElement
+                    .LoadAsync(xmlReader, LoadOptions.None, CancellationToken.None)
+                    .ConfigureAwait(false);
+                elements.Add(element);
+                _logger.LogLoadedElement(blob.BlobKey);
+            }
+            catch (Exception ex) when (ex is XmlException or IOException)
+            {
+                _logger.LogMalformedElement(blob.BlobKey, ex);
+            }
         }
 
-        if (files.Count == 0)
+        if (xmlBlobCount == 0)
         {
             _logger.LogNoElementsFound();
 
             return [];
         }
 
-        _logger.LogFoundElements(files.Count);
-
-        var elements = new List<XElement>(files.Count);
-
-        foreach (var file in files)
-        {
-            _logger.LogLoadingElement(file.BlobKey);
-            await using var downloadResult = await _storage
-                .OpenReadStreamAsync(new BlobLocation(ContainerName, file.BlobKey))
-                .ConfigureAwait(false);
-
-            if (downloadResult is null)
-            {
-                _logger.LogFailedToLoadElement(file.BlobKey);
-
-                continue;
-            }
-
-            try
-            {
-                var element = await XElement
-                    .LoadAsync(downloadResult.Stream, LoadOptions.None, CancellationToken.None)
-                    .ConfigureAwait(false);
-                elements.Add(element);
-                _logger.LogLoadedElement(file.BlobKey);
-            }
-            catch (Exception ex) when (ex is XmlException or IOException)
-            {
-                _logger.LogMalformedElement(file.BlobKey, ex);
-            }
-        }
+        _logger.LogFoundElements(xmlBlobCount);
 
         return elements.AsReadOnly();
     }

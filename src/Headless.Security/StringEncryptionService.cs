@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using Headless.Abstractions;
 
-namespace Headless;
+namespace Headless.Security;
 
 /// <summary>Encrypts and decrypts strings using AES-GCM authenticated encryption with PBKDF2 key derivation.</summary>
 internal sealed class StringEncryptionService : IStringEncryptionService

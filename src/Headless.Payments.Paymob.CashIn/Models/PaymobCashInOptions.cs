@@ -10,6 +10,8 @@ namespace Headless.Payments.Paymob.CashIn.Models;
 /// <remarks>
 /// Register via <c>SetupPaymobCashIn.AddPaymobCashIn</c>. Options are validated on startup using
 /// FluentValidation; missing required properties or invalid URLs cause the application to fail fast.
+/// Credential-bearing URL options require HTTPS for external hosts; HTTP is accepted only for loopback development
+/// and test servers, and user information is rejected.
 /// </remarks>
 [PublicAPI]
 public sealed record PaymobCashInOptions
@@ -92,11 +94,11 @@ internal sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCas
 {
     public PaymobCashInOptionsValidator()
     {
-        RuleFor(x => x.ApiBaseUrl).NotEmpty().HttpUrl();
-        RuleFor(x => x.IframeBaseUrl).NotEmpty().HttpUrl();
-        RuleFor(x => x.CreateIntentionUrl).NotEmpty().HttpUrl();
-        RuleFor(x => x.RefundUrl).NotEmpty().HttpUrl();
-        RuleFor(x => x.VoidRefundUrl).NotEmpty().HttpUrl();
+        RuleFor(x => x.ApiBaseUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
+        RuleFor(x => x.IframeBaseUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
+        RuleFor(x => x.CreateIntentionUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
+        RuleFor(x => x.RefundUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
+        RuleFor(x => x.VoidRefundUrl).NotEmpty().HttpsOrLoopbackHttpUrl();
         RuleFor(x => x.ApiKey).NotEmpty();
         RuleFor(x => x.Hmac).NotEmpty();
         RuleFor(x => x.ExpirationPeriod).GreaterThan(60);

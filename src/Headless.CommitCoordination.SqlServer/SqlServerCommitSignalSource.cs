@@ -28,8 +28,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// deferred — see plan decision D13.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public sealed partial class SqlServerCommitSignalSource(
+internal sealed partial class SqlServerCommitSignalSource(
     ICommitScopeFactory scopeFactory,
     ILogger<SqlServerCommitSignalSource>? logger = null
 ) : ICommitSignalSource

@@ -368,7 +368,7 @@ internal sealed class ConsumerRegister(
                         _stoppingCts.Token
                     )
                     .ConfigureAwait(false);
-                client.OnLogCallback = _WriteLog;
+                client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
                 messageNames = await client
                     .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
@@ -677,8 +677,7 @@ internal sealed class ConsumerRegister(
         CancellationToken hostShutdownToken
     )
     {
-        client.OnLogCallback = _WriteLog;
-        client.OnMessageCallback = async (transportMessage, sender) =>
+        Func<TransportMessage, object?, Task> onMessageCallback = async (transportMessage, sender) =>
         {
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
@@ -929,6 +928,8 @@ internal sealed class ConsumerRegister(
                 }
             }
         };
+
+        client.AttachCallbacks(onMessageCallback, _WriteLog);
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

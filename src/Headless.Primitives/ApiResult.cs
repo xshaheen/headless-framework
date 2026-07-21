@@ -14,7 +14,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
 {
     private static readonly ApiResult _Success = new(isSuccess: true, error: null);
 
-    private ApiResult(bool isSuccess, ResultError? error)
+    private ApiResult(bool isSuccess, ApiResultError? error)
     {
         IsSuccess = isSuccess;
         Error = error;
@@ -29,11 +29,11 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     public bool IsFailure => !IsSuccess;
 
     /// <summary>The error describing the failure, or <see langword="null"/> when <see cref="IsSuccess"/> is <see langword="true"/>.</summary>
-    public ResultError? Error { get; }
+    public ApiResultError? Error { get; }
 
     // Guarded failure-state access used by Match/OnFailure: a default(ApiResult) is a failure state carrying no error,
     // so surface a clear error instead of handing null to a non-null delegate parameter (a downstream NRE).
-    private ResultError FailureError =>
+    private ApiResultError FailureError =>
         Error
         ?? throw new InvalidOperationException(
             "ApiResult was not properly initialized. Error was accessed on a default instance."
@@ -42,7 +42,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>Tries to get the error without throwing.</summary>
     /// <param name="error">When this method returns <see langword="true"/>, the failure error; otherwise <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if the result is a failure; otherwise <see langword="false"/>.</returns>
-    public bool TryGetError([MaybeNullWhen(false)] out ResultError error)
+    public bool TryGetError([MaybeNullWhen(false)] out ApiResultError error)
     {
         error = Error;
         return !IsSuccess;
@@ -53,7 +53,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <param name="success">The function invoked on success.</param>
     /// <param name="failure">The function invoked on failure, receiving the <see cref="Error"/>.</param>
     /// <returns>The value produced by the invoked branch.</returns>
-    public TResult Match<TResult>(Func<TResult> success, Func<ResultError, TResult> failure)
+    public TResult Match<TResult>(Func<TResult> success, Func<ApiResultError, TResult> failure)
     {
         return IsSuccess ? success() : failure(FailureError);
     }
@@ -74,7 +74,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>Invokes <paramref name="action"/> with the error when the result is a failure, then returns this result.</summary>
     /// <param name="action">The action to run on failure, receiving the <see cref="Error"/>.</param>
     /// <returns>This result, to allow chaining.</returns>
-    public ApiResult OnFailure(Action<ResultError> action)
+    public ApiResult OnFailure(Action<ApiResultError> action)
     {
         if (!IsSuccess)
         {
@@ -96,7 +96,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>Creates a failed result carrying the supplied error.</summary>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult"/>.</returns>
-    public static ApiResult Fail(ResultError error)
+    public static ApiResult Fail(ApiResultError error)
     {
         return new(isSuccess: false, error);
     }
@@ -118,7 +118,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <param name="error">The error describing the failure.</param>
     /// <returns>A failed <see cref="ApiResult{T}"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="error"/> is <see langword="null"/>.</exception>
-    public static ApiResult<T> Fail<T>(ResultError error)
+    public static ApiResult<T> Fail<T>(ApiResultError error)
     {
         return ApiResult<T>.Fail(error);
     }
@@ -157,10 +157,10 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     }
 
     // Implicit from error
-    /// <summary>Implicitly converts a <see cref="ResultError"/> into a failed <see cref="ApiResult"/>.</summary>
+    /// <summary>Implicitly converts a <see cref="ApiResultError"/> into a failed <see cref="ApiResult"/>.</summary>
     /// <param name="error">The error to wrap.</param>
     /// <returns>A failed <see cref="ApiResult"/> carrying <paramref name="error"/>.</returns>
-    public static implicit operator ApiResult(ResultError error) => Fail(error);
+    public static implicit operator ApiResult(ApiResultError error) => Fail(error);
 
     // Equality
     /// <summary>Determines whether this result equals <paramref name="other"/> in success state and error.</summary>

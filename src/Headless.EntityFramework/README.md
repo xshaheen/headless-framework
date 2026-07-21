@@ -22,8 +22,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination)
-- Value converters: `MoneyAmountValueConverter`, `MonthValueConverter`, `AccountIdValueConverter`, `UserIdValueConverter`, `LocaleValueConverter`, `NormalizeDateTimeValueConverter`, `JsonValueConverter`, `ExtraPropertiesValueConverter`
-- `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
+- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Core`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
 ## Design Notes
@@ -189,6 +188,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 ## Dependencies
 
 - `Headless.Domain`
+- `Headless.EntityFramework.Core`
 - `Headless.AuditLog.Abstractions`
 - `Headless.Core`
 - `Headless.Hosting`

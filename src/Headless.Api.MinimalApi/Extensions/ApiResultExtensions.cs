@@ -52,13 +52,13 @@ public static class ApiResultExtensions
     }
 
     /// <summary>
-    /// Maps a <see cref="ResultError"/> to the appropriate problem-details HTTP response using
+    /// Maps a <see cref="ApiResultError"/> to the appropriate problem-details HTTP response using
     /// pattern matching on the concrete error type.
     /// </summary>
     /// <param name="error">The error to map.</param>
     /// <param name="creator">The problem-details creator used to build the response body.</param>
     /// <returns>An <see cref="IResult"/> with the appropriate HTTP status code and problem-details body.</returns>
-    public static IResult ToHttpResult(this ResultError error, IProblemDetailsCreator creator)
+    public static IResult ToHttpResult(this ApiResultError error, IProblemDetailsCreator creator)
     {
         return error switch
         {

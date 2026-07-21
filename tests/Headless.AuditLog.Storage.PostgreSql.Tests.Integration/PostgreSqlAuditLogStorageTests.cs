@@ -48,8 +48,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
             AbortToken
         );
         var entries = await reader.QueryAsync(
-            action: "entity.created",
-            tenantId: "tenant-1",
+            new() { Action = "entity.created", TenantId = "tenant-1" },
             cancellationToken: AbortToken
         );
 
@@ -93,15 +92,50 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         // when
         await store.SaveAsync(entries, savingContext: new object(), AbortToken);
         var roundTripped = await reader.QueryAsync(
-            action: "batch.write",
-            tenantId: "tenant-batch",
-            limit: totalEntries + 10,
+            new()
+            {
+                Action = "batch.write",
+                TenantId = "tenant-batch",
+                Limit = totalEntries + 10,
+            },
             cancellationToken: AbortToken
         );
 
         // then
         roundTripped.Should().HaveCount(totalEntries);
         roundTripped.Select(e => e.EntityId).Should().BeEquivalentTo(entries.Select(e => e.EntityId));
+    }
+
+    [Fact]
+    public async Task should_reject_null_read_query()
+    {
+        // given
+        using var host = _CreateHost();
+        await using var scope = host.Services.CreateAsyncScope();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+
+        // when
+        var act = () => reader.QueryAsync(null!, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task should_reject_non_positive_read_query_limit(int limit)
+    {
+        // given
+        using var host = _CreateHost();
+        await using var scope = host.Services.CreateAsyncScope();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+
+        // when
+        var act = () => reader.QueryAsync(new() { Limit = limit }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     private IHost _CreateHost()

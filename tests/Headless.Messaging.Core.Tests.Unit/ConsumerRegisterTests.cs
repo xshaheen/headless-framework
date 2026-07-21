@@ -671,6 +671,15 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
+
         public async ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,
             CancellationToken cancellationToken = default
@@ -753,6 +762,15 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
+
         public ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,
             CancellationToken cancellationToken = default
@@ -809,6 +827,15 @@ public sealed class ConsumerRegisterTests : TestBase
         public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
 
         public ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,
@@ -880,6 +907,15 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
+
         public ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,
             CancellationToken cancellationToken = default
@@ -938,6 +974,15 @@ public sealed class ConsumerRegisterTests : TestBase
         public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
 
         public ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,

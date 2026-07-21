@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -14,52 +15,80 @@ public static class SetupSqlServerMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
-        /// <summary>
-        /// Configures the messaging outbox to use SQL Server with a raw ADO.NET connection string.
-        /// The connection string is stored in <c>SqlServerOptions.ConnectionString</c> and used
-        /// directly without an EF Core <c>DbContext</c>. The transactional outbox is not available
-        /// on this path; use <c>UseEntityFramework&lt;TContext&gt;()</c> for atomic outbox support.
-        /// </summary>
+        /// <summary>Configures SQL Server message storage with a connection string.</summary>
         /// <param name="connectionString">The SQL Server connection string.</param>
-        /// <returns>The builder for chaining.</returns>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="connectionString"/> is null or whitespace.</exception>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is null or whitespace.</exception>
         public MessagingSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
-
-            return setup.UseSqlServer(opt => opt.ConnectionString = connectionString);
+            return setup.UseSqlServer(options => options.ConnectionString = connectionString);
         }
 
-        /// <summary>
-        /// Configures the messaging outbox to use SQL Server, delegating all option configuration
-        /// to the supplied <paramref name="configure"/> action.
-        /// </summary>
-        /// <param name="configure">An action that populates <see cref="SqlServerOptions"/>.</param>
-        /// <returns>The builder for chaining.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <summary>Configures SQL Server message storage from a configuration section.</summary>
+        /// <param name="configuration">Configuration containing <see cref="SqlServerOptions"/> values.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
+        public MessagingSetupBuilder UseSqlServer(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+            return _AddSqlServerStorageCore(
+                setup,
+                services =>
+                    services
+                        .AddOptions<SqlServerOptions, SqlServerOptionsValidator>()
+                        .Bind(configuration)
+                        .Configure(options => options.Version = setup.Options.Version)
+            );
+        }
+
+        /// <summary>Configures SQL Server message storage with an options action.</summary>
+        /// <param name="configure">Action that configures <see cref="SqlServerOptions"/>.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
         public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions> configure)
         {
             Argument.IsNotNull(configure);
+            configure += options => options.Version = setup.Options.Version;
+            return _AddSqlServerStorageCore(
+                setup,
+                services => services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure)
+            );
+        }
 
-            configure += x => x.Version = setup.Options.Version;
-
-            setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configure));
-
-            return setup;
+        /// <summary>Configures SQL Server message storage with access to the service provider.</summary>
+        /// <param name="configure">Action that configures <see cref="SqlServerOptions"/> using resolved services.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+        public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+            configure += (options, _) => options.Version = setup.Options.Version;
+            return _AddSqlServerStorageCore(
+                setup,
+                services => services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure)
+            );
         }
     }
 
-    internal sealed class SqlServerMessagesOptionsExtension(Action<SqlServerOptions> configure)
+    private static MessagingSetupBuilder _AddSqlServerStorageCore(
+        MessagingSetupBuilder setup,
+        Action<IServiceCollection> configureOptions
+    )
+    {
+        setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configureOptions));
+        return setup;
+    }
+
+    private sealed class SqlServerMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
-
+            configureOptions(services);
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
-
-            services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure);
         }
     }
 }

@@ -17,7 +17,11 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
 {
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
 
-    public async Task<Node?> GetNode(string nodeName, string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNodeAsync(
+        string nodeName,
+        string? ns = null,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -49,6 +53,10 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
                     .FirstOrDefault();
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             _logger.LogConsulGetNodeException(e, e.Message);
@@ -57,7 +65,7 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
         return null;
     }
 
-    public async Task<IList<Node>> GetNodes(string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<IList<Node>> GetNodesAsync(string? ns = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -100,6 +108,10 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
 
             return nodes;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
@@ -109,7 +121,7 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
         }
     }
 
-    public async Task RegisterNode(CancellationToken cancellationToken = default)
+    public async Task RegisterNodeAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -171,6 +183,10 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
             {
                 _logger.LogConsulNodeRegisterSuccess();
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception e)
         {

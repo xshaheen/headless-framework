@@ -11,7 +11,7 @@ namespace Headless.Couchbase.Context;
 /// <summary>
 /// Extension methods for <c>IDocumentSet&lt;T&gt;</c> that expose Couchbase key-value operations
 /// (get, exists, upsert, insert, replace, remove, lock, touch, sub-document, scan) using the entity's
-/// string-keyed document ID derived from <c>IEntity.GetKey()</c>.
+/// string-keyed document ID derived from <c>IEntity.GetKey()</c>. Document identifiers must be non-null.
 /// </summary>
 [PublicAPI]
 public static class DocumentSetExtensions
@@ -25,6 +25,7 @@ public static class DocumentSetExtensions
         CancellationToken cancellationToken = default
     )
         where T : class, IEntity
+        where TId : notnull
     {
         var options = new GetOptions().CancellationToken(cancellationToken);
 
@@ -37,6 +38,7 @@ public static class DocumentSetExtensions
     /// </summary>
     public static async Task<T?> GetAsync<T, TId>(this IDocumentSet<T> set, TId id, GetOptions? options)
         where T : class, IEntity
+        where TId : notnull
     {
         try
         {
@@ -58,6 +60,7 @@ public static class DocumentSetExtensions
         ExistsOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.ExistsAsync(id?.ToString()!, options);
     }
@@ -98,6 +101,7 @@ public static class DocumentSetExtensions
     /// <summary>Removes the document with the given <paramref name="id"/> from the collection.</summary>
     public static Task RemoveAsync<T, TId>(this IDocumentSet<T> set, TId id, RemoveOptions? options = null)
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.RemoveAsync(id?.ToString()!, options);
     }
@@ -105,6 +109,7 @@ public static class DocumentSetExtensions
     /// <summary>Unlocks a previously locked document identified by <paramref name="id"/> and <paramref name="cas"/>.</summary>
     public static Task UnlockAsync<T, TId>(this IDocumentSet<T> set, TId id, ulong cas, UnlockOptions? options = null)
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.UnlockAsync(id?.ToString()!, cas, options);
     }
@@ -117,6 +122,7 @@ public static class DocumentSetExtensions
         TouchOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.TouchAsync(id?.ToString()!, expiry, options);
     }
@@ -132,6 +138,7 @@ public static class DocumentSetExtensions
         TouchOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.TouchWithCasAsync(id?.ToString()!, expiry, options);
     }
@@ -144,6 +151,7 @@ public static class DocumentSetExtensions
         GetAndTouchOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.GetAndTouchAsync(id?.ToString()!, expiry, options);
     }
@@ -156,6 +164,7 @@ public static class DocumentSetExtensions
         GetAndLockOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.GetAndLockAsync(id?.ToString()!, expiry, options);
     }
@@ -167,17 +176,19 @@ public static class DocumentSetExtensions
         GetAnyReplicaOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.GetAnyReplicaAsync(id?.ToString()!, options);
     }
 
     /// <summary>Returns tasks that each resolve to the document content from a distinct replica node.</summary>
-    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicas<T, TId>(
+    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicasAsync<T, TId>(
         this IDocumentSet<T> set,
         TId id,
         GetAllReplicasOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.GetAllReplicasAsync(id?.ToString()!, options);
     }
@@ -190,6 +201,7 @@ public static class DocumentSetExtensions
         LookupInOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.LookupInAsync(id?.ToString()!, specs, options);
     }
@@ -202,6 +214,7 @@ public static class DocumentSetExtensions
         LookupInAnyReplicaOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.LookupInAnyReplicaAsync(id?.ToString()!, specs, options);
     }
@@ -214,6 +227,7 @@ public static class DocumentSetExtensions
         LookupInAllReplicasOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.LookupInAllReplicasAsync(id?.ToString()!, specs, options);
     }
@@ -226,6 +240,7 @@ public static class DocumentSetExtensions
         MutateInOptions? options = null
     )
         where T : class, IEntity
+        where TId : notnull
     {
         return set.Collection.MutateInAsync(id?.ToString()!, specs, options);
     }

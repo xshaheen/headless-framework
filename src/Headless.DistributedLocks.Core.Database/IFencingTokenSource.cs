@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using System.Data.Common;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -17,9 +16,7 @@ namespace Headless.DistributedLocks;
 /// provider calls <see cref="NextAsync"/> after storage acquisition succeeds but before the handle is
 /// returned to the caller; if it throws, the provider releases the just-acquired lock and propagates.
 /// </remarks>
-[PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IFencingTokenSource
+internal interface IFencingTokenSource
 {
     /// <summary>
     /// Returns the next strictly-increasing fencing token for <paramref name="resource"/>, or

@@ -328,6 +328,46 @@ public sealed class MessagingOptionsValidationTests : TestBase
         result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.SchedulerBatchSize));
     }
 
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(1025, 1, 1)]
+    [InlineData(1, 0, 1)]
+    [InlineData(1, 1025, 1)]
+    [InlineData(1, 1, 0)]
+    [InlineData(1, 1, 1025)]
+    [InlineData(1, 1000, 101)]
+    public void should_reject_unbounded_messaging_concurrency(
+        int consumerThreads,
+        int subscriberThreads,
+        int bufferFactor
+    )
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions
+            {
+                ConsumerThreadCount = consumerThreads,
+                SubscriberParallelExecuteThreadCount = subscriberThreads,
+                SubscriberParallelExecuteBufferFactor = bufferFactor,
+            }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0, 200)]
+    [InlineData(100001, 200)]
+    [InlineData(1000, 0)]
+    [InlineData(1000, 100001)]
+    public void should_reject_unbounded_scheduler_and_retry_batches(int schedulerBatchSize, int retryBatchSize)
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { SchedulerBatchSize = schedulerBatchSize, RetryBatchSize = retryBatchSize }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
     [Fact]
     public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
     {

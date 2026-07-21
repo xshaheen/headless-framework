@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
-using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -31,7 +30,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
 
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is not FeaturesInitializationBackgroundService);
+            .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -64,7 +63,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             hosts
                 .Select(h =>
                     h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is not FeaturesInitializationBackgroundService)
+                        .Single(x => x is IHostedLifecycleService)
                         .IsInitialized
                 )
                 .Should()
