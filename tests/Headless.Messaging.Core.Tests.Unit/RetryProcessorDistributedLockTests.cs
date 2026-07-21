@@ -286,6 +286,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var lockProvider = Substitute.For<IDistributedLock>();
 #pragma warning disable AsyncFixer04 // Substitute setup returns leases owned by this awaited test scope.
         lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        lockProvider
             .TryAcquireAsync(
                 MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
                 Arg.Any<DistributedLockAcquireOptions?>(),

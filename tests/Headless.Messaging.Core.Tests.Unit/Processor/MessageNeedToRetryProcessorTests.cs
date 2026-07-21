@@ -95,6 +95,42 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
     }
 
+    private static IDistributedLock _CreateContendedLockProvider()
+    {
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        return lockProvider;
+    }
+
+    private static async Task _RunQuadrantCycleAsync(
+        MessageNeedToRetryProcessor sut,
+        ProcessingContext context,
+        MessageType direction,
+        MessageLane lane
+    )
+    {
+        sut.MarkQuadrantDueForTest(direction, lane);
+        await sut.ProcessAsync(context);
+        await sut.WaitForQuadrantIdleForTestAsync(direction, lane);
+    }
+
+    private static async Task _RunLaneCycleAsync(
+        MessageNeedToRetryProcessor sut,
+        ProcessingContext context,
+        MessageLane lane
+    )
+    {
+        sut.MarkQuadrantDueForTest(MessageType.Publish, lane);
+        sut.MarkQuadrantDueForTest(MessageType.Subscribe, lane);
+        await sut.ProcessAsync(context);
+        await Task.WhenAll(
+            sut.WaitForQuadrantIdleForTestAsync(MessageType.Publish, lane),
+            sut.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, lane)
+        );
+    }
+
     private static ILogger<MessageNeedToRetryProcessor> _CreateCapturingLogger(List<(LogLevel Level, int Id)> captured)
     {
         var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
@@ -761,7 +797,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         // Published-path acquire throws once; received-path returns null (no contention).
         lockProvider
             .TryAcquireAsync(
@@ -792,8 +828,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // when — drive a single cycle; published-path acquire throws.
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
 
         // then — EventId 81 (PublishedRetryLockAcquireFailed) fired at Warning.
         captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 81);
@@ -824,7 +859,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         var publishCallCount = 0;
         lockProvider
             .TryAcquireAsync(
@@ -868,13 +903,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // when — drive three cycles; the third must emit EventId 82.
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
         var beforeThird = captured.ToList();
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
 
         // then — first two cycles: only EventId 81 (Warning); no EventId 82 (Error) yet.
         beforeThird.Count(e => e.Id == 81 && e.Level == LogLevel.Warning).Should().Be(2);
@@ -887,8 +919,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // (_LockCounterRef) only; storage-pickup failures use a separate counter (_CounterRef). Drive
         // one more cycle to verify no further escalation.
         captured.Clear();
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
 
         captured
             .Should()
@@ -903,7 +934,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         lockProvider
             .TryAcquireAsync(
                 MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
@@ -932,8 +963,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
         captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 83);
         captured.Should().NotContain(e => e.Id == 84);
@@ -947,7 +977,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         var receivedCallCount = 0;
         lockProvider
             .TryAcquireAsync(
@@ -987,21 +1017,17 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
         var beforeThird = captured.ToList();
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
         beforeThird.Count(e => e.Id == 83 && e.Level == LogLevel.Warning).Should().Be(2);
         beforeThird.Should().NotContain(e => e.Id == 84);
         captured.Count(e => e.Id == 84 && e.Level == LogLevel.Error).Should().Be(1);
 
         captured.Clear();
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
         captured
             .Should()
@@ -1016,7 +1042,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         lockProvider
             .TryAcquireAsync(
                 MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
@@ -1045,12 +1071,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunLaneCycleAsync(sut, context, MessageLane.Bus);
+        await _RunLaneCycleAsync(sut, context, MessageLane.Bus);
+        await _RunLaneCycleAsync(sut, context, MessageLane.Bus);
 
         captured.Count(e => e.Id == 82 && e.Level == LogLevel.Error).Should().Be(1);
         await dataStorage
@@ -1072,7 +1095,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var logger = _CreateCapturingLogger(captured);
 
         var publishLockCall = 0;
-        var lockProvider = Substitute.For<IDistributedLock>();
+        var lockProvider = _CreateContendedLockProvider();
         lockProvider
             .TryAcquireAsync(
                 MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
@@ -1113,12 +1136,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Cycle 1: lock ok + storage throws (storage streak 1). Cycles 2-3: lock throws (lock streak 2).
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
-        await sut.ProcessAsync(context);
-        await Task.Delay(100, AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
 
         // Lock streak only reached 2 and storage streak only reached 1 → neither escalation fires.
         captured.Should().NotContain(e => e.Id == 82, "the lock-acquire streak only reached 2 (cycles 2-3)");
