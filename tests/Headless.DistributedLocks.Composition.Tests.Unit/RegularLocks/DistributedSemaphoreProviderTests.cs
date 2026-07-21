@@ -169,7 +169,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         for (var i = 0; i < 10 && !slot.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await _DrainUntilAsync(() => slot.LostToken.IsCancellationRequested);
+            await DistributedLockTestSupport.DrainUntilAsync(() => slot.LostToken.IsCancellationRequested);
         }
 
         // then
@@ -423,20 +423,5 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition)
-    {
-        for (var i = 0; i < 2000 && !condition(); i++)
-        {
-            if (i % 100 == 0)
-            {
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1));
-            }
-            else
-            {
-                await Task.Yield();
-            }
-        }
     }
 }
