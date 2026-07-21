@@ -21,7 +21,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
             IsDue = true,
             ScheduledFor = scheduledFor,
             FunctionName = "TestFunction",
-            CronOccurrenceOperations = new CronOccurrenceOperations { SkipIfAlreadyRunningAction = () => { } },
+            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
 
         var request = new TestRequest { Value = 42 };
@@ -53,7 +53,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
             Id = id,
             Type = JobType.TimeJob,
             FunctionName = "TestFunction",
-            CronOccurrenceOperations = new CronOccurrenceOperations { SkipIfAlreadyRunningAction = () => { } },
+            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
         context.SetServiceScope(scope);
 

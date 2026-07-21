@@ -399,6 +399,7 @@ Database access utilities for Entity Framework Core and Couchbase — convention
 | Package | Description |
 |---------|-------------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.EntityFramework.CommitCoordination](src/Headless.EntityFramework.CommitCoordination/README.md) | Opt-in commit coordination for the Headless EF save pipeline |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 

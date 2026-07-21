@@ -3,6 +3,7 @@
 namespace Headless.Jobs.DashboardDtos;
 
 /// <summary>Dashboard projection of a single node's liveness, sourced from the coordination membership substrate.</summary>
+[PublicAPI]
 public sealed class LiveNodeView
 {
     /// <summary>Incarnation-qualified identity in the canonical <c>node@incarnation</c> form.</summary>

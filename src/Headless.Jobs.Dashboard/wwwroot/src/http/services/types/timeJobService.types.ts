@@ -26,7 +26,7 @@ export class GetTimeJobResponse {
 
 export class GetTimeJobGraphDataRangeResponse{
     date!:string;
-    results!:{item1:number, item2:number }[];
+    results!:{status:number, count:number }[];
 }
 
 export class GetTimeJobGraphDataResponse{

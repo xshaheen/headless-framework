@@ -4,7 +4,6 @@
     <Description>In-process Headless messaging test harness with awaitable published, consumed, faulted, and exhausted message assertions.</Description>
     <PackageTags>headless;messaging;testing;dotnet</PackageTags>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>

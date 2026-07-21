@@ -66,6 +66,7 @@ Headless.Emails.Core
 Headless.Emails.Dev
 Headless.Emails.Mailkit
 Headless.EntityFramework
+Headless.EntityFramework.CommitCoordination
 Headless.EntityFramework.Core
 Headless.EntityFramework.Messaging
 Headless.Extensions

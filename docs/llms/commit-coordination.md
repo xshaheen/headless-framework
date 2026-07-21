@@ -1,6 +1,6 @@
 ---
 domain: Commit Coordination
-packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.DurableWork, CommitCoordination.EntityFramework, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
+packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.DurableWork, CommitCoordination.EntityFramework, EntityFramework.CommitCoordination, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
 ---
 
 # Commit Coordination
@@ -51,6 +51,7 @@ packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordi
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
+- [Headless.EntityFramework.CommitCoordination](#headlessentityframeworkcommitcoordination)
 - [Headless.CommitCoordination.InMemory](#headlesscommitcoordinationinmemory)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
@@ -90,6 +91,7 @@ The coordinator guarantees exactly-once callback invocation per coordinator inst
 ## Agent Instructions
 
 - Consumer packages should depend on `Headless.CommitCoordination.Abstractions`; provider packages depend on `Headless.CommitCoordination.Core`.
+- `Headless.CommitCoordination.EntityFramework` owns generic EF commit detection. `Headless.EntityFramework.CommitCoordination` is the separate adapter that makes the Headless save pipeline select it.
 - Register work with `OnCommit` or `OnRollback`; do not expose commit or rollback control to consumers.
 - Use `GetOrAdd<TBuffer>` only for scope-local deferred work buffers. Do not use it as a service locator.
 - Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
@@ -332,7 +334,11 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services, the internal `EntityFrameworkCommitSignalSource` (exposed as `ICommitSignalSource`), and the internal EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `AddHeadlessDbContext`/`AddHeadlessIdentityDbContext` and the on-by-default messaging EF storage path wire it automatically (via `IDbContextOptionsConfiguration<TContext>`, registered by `AddDiRegisteredInterceptorsConfiguration<TContext>()`); a plain `AddDbContext` consumer wiring its own options action calls `options.AddDiRegisteredInterceptors(sp)` (or `options.AddInterceptors(sp.GetServices<IInterceptor>())`) inside the action, or registers `AddDiRegisteredInterceptorsConfiguration<TContext>()` once — otherwise the commit edge is never observed. When the startup gate is enabled it also registers `CommitInterceptorStartupGate<TContext>`, which runs an empty-commit probe before hosted services start (`CommitProbeMode` Warn default / Strict opt-in).
+Registers core commit coordination services, the internal `EntityFrameworkCommitSignalSource` (exposed as `ICommitSignalSource`), and the internal EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `Headless.EntityFramework.CommitCoordination`, `AddHeadlessIdentityDbContext`, and the on-by-default messaging EF storage path wire it automatically (via `IDbContextOptionsConfiguration<TContext>`, registered by `AddDiRegisteredInterceptorsConfiguration<TContext>()`); a plain `AddDbContext` consumer wiring its own options action calls `options.AddDiRegisteredInterceptors(sp)` (or `options.AddInterceptors(sp.GetServices<IInterceptor>())`) inside the action, or registers `AddDiRegisteredInterceptorsConfiguration<TContext>()` once — otherwise the commit edge is never observed. When the startup gate is enabled it also registers `CommitInterceptorStartupGate<TContext>`, which runs an empty-commit probe before hosted services start (`CommitProbeMode` Warn default / Strict opt-in).
+
+## Headless.EntityFramework.CommitCoordination
+
+This opt-in adapter connects `Headless.EntityFramework`'s internal save-pipeline transaction seam to `Headless.CommitCoordination.EntityFramework`. Install it and chain `.AddCommitCoordination()` from `AddHeadlessDbContextServices(...)` when buffered work must enlist in the transaction opened by the Headless save pipeline. The core `Headless.EntityFramework` package otherwise keeps a no-op coordinator and carries no commit-coordination package reference.
 
 ## Headless.CommitCoordination.InMemory
 

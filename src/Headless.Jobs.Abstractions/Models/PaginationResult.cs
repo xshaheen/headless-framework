@@ -6,19 +6,20 @@ namespace Headless.Jobs.Models;
 /// A page of items from a larger result set, used by dashboard query endpoints.
 /// </summary>
 /// <typeparam name="T">The element type of the page.</typeparam>
-public class PaginationResult<T>
+[PublicAPI]
+public sealed class PaginationResult<T>
 {
     /// <summary>The items on the current page.</summary>
-    public IEnumerable<T> Items { get; set; }
+    public required IReadOnlyList<T> Items { get; init; }
 
     /// <summary>Total number of matching records across all pages.</summary>
-    public int TotalCount { get; set; }
+    public required int TotalCount { get; init; }
 
     /// <summary>The current 1-based page number.</summary>
-    public int PageNumber { get; set; }
+    public required int PageNumber { get; init; }
 
     /// <summary>Maximum number of items per page.</summary>
-    public int PageSize { get; set; }
+    public required int PageSize { get; init; }
 
     /// <summary>Total number of pages, computed from <see cref="TotalCount"/> and <see cref="PageSize"/>.</summary>
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
@@ -34,25 +35,4 @@ public class PaginationResult<T>
 
     /// <summary>1-based index of the last item on this page within the full result set.</summary>
     public int LastItemIndex => Math.Min(PageNumber * PageSize, TotalCount);
-
-    /// <summary>Initializes an empty pagination result.</summary>
-    public PaginationResult()
-    {
-        Items = new List<T>();
-    }
-
-    /// <summary>
-    /// Initializes a pagination result with the given items and pagination metadata.
-    /// </summary>
-    /// <param name="items">The items on this page; defaults to an empty list when <see langword="null"/>.</param>
-    /// <param name="totalCount">Total matching records across all pages.</param>
-    /// <param name="pageNumber">Current 1-based page number.</param>
-    /// <param name="pageSize">Maximum items per page.</param>
-    public PaginationResult(IEnumerable<T> items, int totalCount, int pageNumber, int pageSize)
-    {
-        Items = items ?? new List<T>();
-        TotalCount = totalCount;
-        PageNumber = pageNumber;
-        PageSize = pageSize;
-    }
 }

@@ -226,11 +226,11 @@ const processTimeSeriesData = (data: GetTimeJobGraphDataRangeResponse[]) => {
   data.forEach((item) => {
     if (!item.results) return
     item.results.forEach((result) => {
-      allStatuses.add(result.item1)
+      allStatuses.add(result.status)
       if (!dateMap.has(item.date)) {
         dateMap.set(item.date, new Map())
       }
-      dateMap.get(item.date)!.set(result.item1, result.item2)
+      dateMap.get(item.date)!.set(result.status, result.count)
     })
   })
 

@@ -81,6 +81,7 @@ public static class JobFunctionProvider
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions) =>
         _Register(functions, ref _functionRegistrations);
 
@@ -92,6 +93,7 @@ public static class JobFunctionProvider
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterFunctions(IDictionary<string, JobFunctionRegistration> functions, int _)
     {
         // For callback approach, capacity is calculated automatically in Build()
@@ -105,6 +107,7 @@ public static class JobFunctionProvider
     /// <param name="requestTypes">The request types to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when requestTypes parameter is null.</exception>
     /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes) =>
         _Register(requestTypes, ref _requestTypeRegistrations);
 
@@ -116,6 +119,7 @@ public static class JobFunctionProvider
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when requestTypes parameter is null.</exception>
     /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes, int _)
     {
         // For callback approach, capacity is calculated automatically in Build()

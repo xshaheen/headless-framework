@@ -4,7 +4,6 @@
     <Description>Shared testing utilities for Headless Framework packages and consumers.</Description>
     <PackageTags>headless;testing;dotnet</PackageTags>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Bogus" />

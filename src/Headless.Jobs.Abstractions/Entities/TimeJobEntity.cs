@@ -9,6 +9,7 @@ namespace Headless.Jobs.Entities;
 /// Concrete self-referential time job entity for applications that do not need a custom entity type.
 /// Equivalent to <c>TimeJobEntity&lt;TimeJobEntity&gt;</c>.
 /// </summary>
+[PublicAPI]
 public class TimeJobEntity : TimeJobEntity<TimeJobEntity>;
 
 /// <summary>
@@ -19,6 +20,7 @@ public class TimeJobEntity : TimeJobEntity<TimeJobEntity>;
 /// <typeparam name="TTicker">
 /// The concrete derived type used for the self-referential parent/child navigation properties.
 /// </typeparam>
+[PublicAPI]
 public class TimeJobEntity<TTicker> : BaseJobEntity
     where TTicker : TimeJobEntity<TTicker>
 {

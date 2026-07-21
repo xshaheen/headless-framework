@@ -131,8 +131,9 @@ public sealed class CommitCoordinationInterceptorWiringTests : TestBase
 
                 // The point under test: commit coordination registers its IInterceptor in DI, and
                 // AddHeadlessDbContext is expected to apply it — there is deliberately NO AddInterceptors here.
-                services.AddEntityFrameworkCommitCoordination();
-                services.AddHeadlessDbContext<WiringTestDbContext>(options => options.UseSqlite(harness._connection));
+                services
+                    .AddHeadlessDbContext<WiringTestDbContext>(options => options.UseSqlite(harness._connection))
+                    .AddCommitCoordination();
 
                 harness._root = services.BuildServiceProvider();
 

@@ -26,12 +26,12 @@ public sealed class TerminateExecutionException : Exception
         : base(message) { }
 
     /// <summary>
-    /// Initializes a new instance that stamps a specific terminal <paramref name="jobType"/> status.
+    /// Initializes a new instance that stamps a specific terminal <paramref name="status"/>.
     /// </summary>
-    /// <param name="jobType">The terminal status to stamp on the job row.</param>
+    /// <param name="status">The terminal status to stamp on the job row.</param>
     /// <param name="message">Human-readable reason stored in the job's skip/fail reason field.</param>
-    public TerminateExecutionException(JobStatus jobType, string message)
-        : base(message) => Status = jobType;
+    public TerminateExecutionException(JobStatus status, string message)
+        : base(message) => Status = status;
 
     /// <summary>
     /// Initializes a new instance that marks the job as <see cref="JobStatus.Skipped"/>, preserving
@@ -43,14 +43,14 @@ public sealed class TerminateExecutionException : Exception
         : base(message, innerException) { }
 
     /// <summary>
-    /// Initializes a new instance that stamps a specific terminal <paramref name="jobType"/> status,
+    /// Initializes a new instance that stamps a specific terminal <paramref name="status"/>,
     /// preserving an inner exception for diagnostic purposes.
     /// </summary>
-    /// <param name="jobType">The terminal status to stamp on the job row.</param>
+    /// <param name="status">The terminal status to stamp on the job row.</param>
     /// <param name="message">Human-readable reason stored in the job's skip/fail reason field.</param>
     /// <param name="innerException">The underlying cause, for logging context.</param>
-    public TerminateExecutionException(JobStatus jobType, string message, Exception innerException)
-        : base(message, innerException) => Status = jobType;
+    public TerminateExecutionException(JobStatus status, string message, Exception innerException)
+        : base(message, innerException) => Status = status;
 }
 
 internal sealed class ExceptionDetailClassForSerialization
