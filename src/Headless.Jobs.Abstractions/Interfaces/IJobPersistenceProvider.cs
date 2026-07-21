@@ -696,6 +696,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
     /// Queries cron definitions.
     /// </summary>
     /// <param name="predicate">Optional filter; <see langword="null"/> returns every definition.</param>
