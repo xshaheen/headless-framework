@@ -110,7 +110,9 @@ Headless.Messaging.RabbitMq
 Headless.Messaging.Redis
 Headless.Messaging.Storage.InMemory
 Headless.Messaging.Storage.PostgreSql
+Headless.Messaging.Storage.PostgreSql.EntityFramework
 Headless.Messaging.Storage.SqlServer
+Headless.Messaging.Storage.SqlServer.EntityFramework
 Headless.Messaging.Testing
 Headless.MultiTenancy
 Headless.NetTopologySuite
