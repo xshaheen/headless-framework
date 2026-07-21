@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Messaging.Core, EntityFramework, Permissions.Core
+packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Messaging.Core, Jobs.Core, EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -41,6 +41,7 @@ Headless multi-tenancy is built from these pieces:
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
 - `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` and can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
+- `Headless.Jobs.Core` persists a tenant on time jobs — capturing the ambient tenant at schedule time and restoring it around every execution attempt — and can require a tenant on enqueue. Cron stays system-scope.
 - `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
@@ -55,6 +56,7 @@ builder.AddHeadlessTenancy(tenancy =>
         .Http(http => http.ResolveFromClaims())
         .Authorization(auth => auth.RequireTenant())
         .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+        .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
@@ -86,7 +88,8 @@ app.UseAuthorization();
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
-- For background jobs and message consumers, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
+- For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
+- For message consumers, use the Messaging seam. When not using a seam on either path, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
 - Do not assume HTTP middleware covers SignalR hubs, background jobs, or messaging consumers. Those execution paths need their own tenant resolution.
 
 ## HTTP Setup
@@ -393,17 +396,107 @@ When no tenant is active, the cache scope is `t:`. This is expected host-level b
 
 ### Background Jobs
 
-Resolve tenant explicitly while iterating work:
+`Headless.Jobs` persists a length-bounded `TenantId` on time jobs. The tenant is resolved once at schedule time and restored around every execution attempt, so a job scheduled from tenant `t1` runs its handler — and each retry — under `t1` without threading the id through the request payload. Cron definitions stay system-scope (see [Cron Fan-Out](#cron-fan-out)). Registration mirrors the Messaging seam:
 
 ```csharp
-foreach (var tenantId in tenantIds)
+using Headless.Jobs;
+
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+);
+
+builder.Services.AddHeadlessJobs(options =>
+{ /* ... */
+});
+```
+
+Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
+
+#### Automatic Propagation (`PropagateTenant`)
+
+`PropagateTenant()` records a `Propagating` posture and enables two behaviors:
+
+- **Schedule-side capture** — when an enqueue supplies no explicit `EnqueueOptions.TenantId` (or entity `TenantId`), the schedule middleware captures the ambient `ICurrentTenant.Id` onto the job row in the same atomic write that persists it. Nothing recaptures after commit.
+- **Execute-side restoration** — the execute middleware wraps every handler attempt in `ICurrentTenant.Change(job.TenantId)` and disposes the scope on success, fault, or cancellation. Because Polly re-dispatches the execute pipeline per attempt, each retry is freshly scoped and no scope leaks between attempts.
+
+An explicit `EnqueueOptions.TenantId` always wins over ambient capture — even when it differs from the ambient tenant. In-process code already holds `ICurrentTenant.Change`, so an explicit value adds no new escalation vector; this matches the Messaging publish middleware.
+
+#### Strict Enqueue (`RequireTenantOnEnqueue`)
+
+`RequireTenantOnEnqueue()` records an `Enforcing` posture. A time-job enqueue that resolves no explicit or ambient tenant is rejected with `Headless.Abstractions.MissingTenantContextException` — the Jobs sibling of the EF write guard and the HTTP authorization requirement — unless the job opts out as a system job.
+
+Set `IsSystemJob = true` (on `EnqueueOptions` or the entity) to schedule a deliberate tenantless job that bypasses the strict check. To keep tenant code from escalating into system scope, `IsSystemJob = true` is **rejected** with `JobValidatorException` when an ambient tenant is present, or when an explicit `TenantId` is also supplied; the system-job decision is logged at schedule time. `IsSystemJob` is transient — a schedule-time authorization concept with no execution-time meaning — and is never persisted.
+
+Structural validation — cron-scope rejection, the system-job contradictions, and blank/over-length bounds on explicitly supplied tenant values — runs whenever the middleware dispatches, independent of the options. Only ambient capture (`PropagateTenant`) and missing-tenant rejection (`RequireTenantOnEnqueue`) are gated by the seam flags, so tenant-to-system escalation and tenant-scoped cron are always rejected.
+
+#### Manual Propagation
+
+If you opt out of `PropagateTenant()`, pass the tenant explicitly on every enqueue, and restore it yourself for any work that runs outside the Jobs execute pipeline:
+
+```csharp
+// Explicit capture at schedule time — no ambient dependency.
+await scheduler.EnqueueAsync(request, new EnqueueOptions { TenantId = tenantId }, ct);
+
+// Inline work under an explicit scope.
+using (currentTenant.Change(tenantId))
 {
-    using (currentTenant.Change(tenantId))
+    await processor.RunAsync();
+}
+```
+
+#### Cron Fan-Out
+
+Cron definitions and occurrences are always system-scope; scheduling a cron definition whose `TenantId` is non-null throws `JobValidatorException`. To run tenant-scoped recurring work, enumerate tenants in application code inside a system-scope cron handler and schedule one tenant-scoped time job per tenant with an **explicit** `EnqueueOptions.TenantId`:
+
+```csharp
+using Headless.Jobs.Base;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
+
+// A tenant-scoped time job. When it runs, the execute middleware has already restored
+// ICurrentTenant to the job's TenantId, so tenant-scoped services (EF global filters,
+// permission cache) observe the right tenant automatically.
+public sealed record TenantReportRequest(string ReportKind);
+
+[JobFunction("GenerateTenantReport")]
+public sealed class GenerateTenantReport(IReportService reports)
+{
+    public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
+        reports.BuildAsync(context.Request.ReportKind, ct);
+}
+
+// A system-scope cron that fans out one tenant-scoped time job per tenant.
+[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
+public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+{
+    var scheduler = sp.GetRequiredService<IJobScheduler>();
+    var tenants = sp.GetRequiredService<IAppTenantDirectory>(); // application-owned enumeration
+
+    foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
     {
-        await processor.RunAsync();
+        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+        // inside a cron handler would silently persist tenantless jobs.
+        await scheduler.EnqueueAsync(
+            new TenantReportRequest("nightly"),
+            new EnqueueOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+            ct
+        );
     }
 }
 ```
+
+The framework owns no tenant enumeration, `ITenantStore`, per-tenant cron rows, or per-tenant cron expressions — fan-out is application code by design. `IReportService` and `IAppTenantDirectory` above are application-owned services.
+
+#### Startup Diagnostics
+
+The Jobs seam contributes three startup diagnostics through `HeadlessTenancyStartupValidator` (mirroring the Messaging seam), each fired in `StartingAsync` before any hosted service runs:
+
+| Code | Severity | Fires when |
+|---|---|---|
+| `HEADLESS_TENANCY_JOBS_REQUIRE_TENANT_ISOLATED` | Warning | `RequireTenantOnEnqueue()` is configured but Jobs propagation is off and no other tenancy seam or consumer-supplied `ICurrentTenant` contributes the ambient tenant — every non-system enqueue that omits an explicit tenant would fail. A warning, not an error, so a host that always passes an explicit `TenantId` is not blocked. |
+| `HEADLESS_TENANCY_JOBS_PROPAGATION_NULL_CURRENT_TENANT` | Error | `PropagateTenant()` is configured but no tenant source is registered, so the resolved `ICurrentTenant` is only the accessor fallback whose `Id` stays null — propagation would silently no-op. |
+| `HEADLESS_TENANCY_JOBS_REQUIRE_TENANT_DISABLED` | Error | The seam recorded `require-tenant-on-enqueue` but `JobsTenancyOptions.TenantContextRequired` resolved to `false` at startup, typically because a later `Configure<JobsTenancyOptions>` clobbered the seam's `PostConfigure`. |
 
 ### Message Consumers
 
@@ -526,6 +619,7 @@ builder.AddHeadlessTenancy(tenancy =>
         .Http(http => http.ResolveFromClaims())
         .Authorization(auth => auth.RequireTenant())
         .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+        .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
@@ -537,7 +631,7 @@ app.UseHeadlessTenancy(); // after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 
-`AddHeadlessTenancy` is the only call owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, and `.EntityFramework(...)` extensions are contributed by the respective seam packages once they are installed.
+`AddHeadlessTenancy` is the only call owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, and `.EntityFramework(...)` extensions are contributed by the respective seam packages once they are installed.
 
 ### Configuration
 

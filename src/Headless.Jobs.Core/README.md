@@ -22,6 +22,7 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates lease-expiry re-claim on `OnNodeDeath == Retry`; clock skew cannot re-run `Skip` or `MarkFailed` jobs.
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
+- **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` exposes `PropagateTenant()` and `RequireTenantOnEnqueue()`; time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. See [Tenancy](#tenancy).
 
 ## Design Notes
 
@@ -175,6 +176,60 @@ The generic constraint requires schedule and execute middleware to implement the
 
 Facade calls still flow through those managers, so scheduling inside an established `Headless.CommitCoordination` scope preserves the same atomic row write and deferred post-commit side effects.
 
+## Tenancy
+
+Time jobs carry a persisted, length-bounded `TenantId` (`BaseJobEntity.TenantId`, max `JobsTenancyOptions.TenantIdMaxLength = 200`). Enable propagation through the root tenancy seam contributed by this package:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+);
+```
+
+`PropagateTenant()` captures the ambient `ICurrentTenant.Id` onto a time job at schedule time (an explicit `EnqueueOptions.TenantId` wins) and restores it around every execution attempt — including retries, which Polly re-dispatches per attempt. `RequireTenantOnEnqueue()` rejects a tenantless, non-system enqueue with `Headless.Abstractions.MissingTenantContextException`. Set `EnqueueOptions.IsSystemJob = true` for a deliberate tenantless job; it is rejected when an ambient tenant is present so tenant code cannot escalate to system scope, and it is never persisted. Structural validation (cron-scope rejection, system-job contradictions, blank / over-length bounds) always runs; only ambient capture and strict enforcement are gated by the seam flags. Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant instead of the `NullCurrentTenant` fallback.
+
+Cron is always system-scope — a cron definition carrying a tenant is rejected with `JobValidatorException`. Run tenant-scoped recurring work by fanning out one tenant-scoped time job per tenant from a system-scope cron handler, passing an explicit `EnqueueOptions.TenantId`:
+
+```csharp
+using Headless.Jobs.Base;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
+
+// A tenant-scoped time job. When it runs, the execute middleware has already restored
+// ICurrentTenant to the job's TenantId, so tenant-scoped services (EF global filters,
+// permission cache) observe the right tenant automatically.
+public sealed record TenantReportRequest(string ReportKind);
+
+[JobFunction("GenerateTenantReport")]
+public sealed class GenerateTenantReport(IReportService reports)
+{
+    public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
+        reports.BuildAsync(context.Request.ReportKind, ct);
+}
+
+// A system-scope cron that fans out one tenant-scoped time job per tenant.
+[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
+public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+{
+    var scheduler = sp.GetRequiredService<IJobScheduler>();
+    var tenants = sp.GetRequiredService<IAppTenantDirectory>(); // application-owned enumeration
+
+    foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
+    {
+        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+        // inside a cron handler would silently persist tenantless jobs.
+        await scheduler.EnqueueAsync(
+            new TenantReportRequest("nightly"),
+            new EnqueueOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+            ct
+        );
+    }
+}
+```
+
+The framework owns no tenant enumeration — fan-out is application code by design (`IReportService` and `IAppTenantDirectory` above are application-owned). The full resolution rules, chain-propagation semantics, and startup diagnostics are documented in `Headless.MultiTenancy`'s domain docs.
+
 ## Configuration
 
 ```csharp
@@ -221,6 +276,7 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 - `Headless.Coordination.Abstractions`
 - `Headless.Coordination.Core`
 - `Headless.DistributedLocks.Abstractions`
+- `Headless.MultiTenancy`
 - `Headless.Extensions`
 - `NCrontab.Signed`
 - `Polly.Core`
@@ -232,3 +288,4 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a scheduler-scoped cron schedule cache and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
+- Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process; both no-op until the tenancy seam enables `JobsTenancyOptions`.
