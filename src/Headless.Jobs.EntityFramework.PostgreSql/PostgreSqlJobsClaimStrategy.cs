@@ -29,6 +29,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
+    // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
+    // descendant is a boundary — not descended into, claimed independently (U5).
+    private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
+
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
@@ -44,6 +48,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 ? timeJobs
                 : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
         ClaimResult claim;
+        Guid[] leasedDescendantIds;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -76,7 +81,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 )
                 .ConfigureAwait(false);
 
-            await _StampDescendantsAsync(
+            leasedDescendantIds = await _StampDescendantsAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -84,12 +89,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     owner,
                     claim.ClaimedAt,
                     _leaseDuration,
+                    _maxChainDepth,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
+        // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
+        var claimedIds = leasedDescendantIds.ToHashSet();
         var won = claim.Ids.ToHashSet();
         foreach (var timeJob in timeJobs)
         {
@@ -102,6 +111,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
             timeJob.UpdatedAt = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
+            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
             yield return timeJob;
         }
     }
@@ -157,7 +167,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 )
                 .ConfigureAwait(false);
 
-            await _StampDescendantsAsync(
+            var leasedDescendantIds = await _StampDescendantsAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -165,18 +175,38 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     owner,
                     claim.ClaimedAt,
                     _leaseDuration,
+                    _maxChainDepth,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            claimed = await dbContext
+            // R12/KTD2: reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
+            // recursive .Select is not EF-translatable), then prune to the claim's leased set so deep leased nodes are
+            // returned and non-idle tails are dropped — replacing the fixed two-level ForQueueTimeJobs projection.
+            var roots = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
                 .Where(x => claim.Ids.Contains(x.Id) && x.OwnerId == owner)
-                .Include(x => x.Children.Where(y => y.ExecutionTime == null))
-                .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
+                .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
+
+            await MappingExtensions
+                .AttachNonTimedDescendantsAsync(
+                    dbContext.Set<TTimeJob>().AsNoTracking(),
+                    roots,
+                    _maxChainDepth,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            var claimedIds = leasedDescendantIds.ToHashSet();
+            foreach (var root in roots)
+            {
+                MappingExtensions.PruneToClaimedSet(root, claimedIds);
+            }
+
+            claimed = roots;
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -649,7 +679,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         return new ClaimResult([.. ids], claimedAt ?? default);
     }
 
-    private static async Task _StampDescendantsAsync(
+    private static async Task<Guid[]> _StampDescendantsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         TimeJobRelationalMapping mapping,
@@ -657,36 +687,47 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         string owner,
         DateTime claimedAt,
         TimeSpan leaseDuration,
+        int maxChainDepth,
         CancellationToken cancellationToken
     )
     {
         if (rootIds.Length == 0)
         {
-            return;
+            return [];
         }
 
         await using var command = _CreateCommand(dbContext, transaction);
-        // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
-        // every runtime value remains a command parameter.
+        // R12/KTD2: bounded WITH RECURSIVE walk that leases the non-timed idle subtree down to maxChainDepth (root =
+        // depth 1, so direct children are depth 2). Mirrors the generic-EF frontier claim: descend only THROUGH idle
+        // non-timed nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed
+        // independently in U5) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the
+        // same transacted statement as today. RETURNING the leased ids lets the caller prune the hydrated tree to the
+        // claimed set (U3 frontier discipline). SQL structure contains only provider-delimited EF metadata identifiers
+        // and fixed clauses; every runtime value remains a command parameter.
 #pragma warning disable CA2100
         command.CommandText = $"""
-            WITH direct_children AS (
-                SELECT child.{mapping.Id}
+            WITH RECURSIVE descendants (node_id, depth) AS (
+                SELECT child.{mapping.Id}, 2
                 FROM {mapping.Table} AS child
                 WHERE child.{mapping.ParentId} = ANY(@rootIds)
-            ), descendants AS (
-                SELECT {mapping.Id} FROM direct_children
+                  AND child.{mapping.Status} = @idle
+                  AND child.{mapping.ExecutionTime} IS NULL
+                  AND @maxDepth >= 2
                 UNION ALL
-                SELECT grandchild.{mapping.Id}
-                FROM {mapping.Table} AS grandchild
-                INNER JOIN direct_children ON direct_children.{mapping.Id} = grandchild.{mapping.ParentId}
+                SELECT child.{mapping.Id}, descendants.depth + 1
+                FROM {mapping.Table} AS child
+                INNER JOIN descendants ON descendants.node_id = child.{mapping.ParentId}
+                WHERE descendants.depth < @maxDepth
+                  AND child.{mapping.Status} = @idle
+                  AND child.{mapping.ExecutionTime} IS NULL
             )
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = @claimedAt + (@leaseSeconds * INTERVAL '1 second'),
                 {mapping.UpdatedAt} = @claimedAt
             FROM descendants
-            WHERE job.{mapping.Id} = descendants.{mapping.Id} AND job.{mapping.Status} = @idle;
+            WHERE job.{mapping.Id} = descendants.node_id AND job.{mapping.Status} = @idle
+            RETURNING job.{mapping.Id};
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("rootIds", rootIds) { DataTypeName = "uuid[]" });
@@ -694,7 +735,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("claimedAt", claimedAt));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", leaseDuration.TotalSeconds));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.Add(new NpgsqlParameter("maxDepth", NpgsqlDbType.Integer) { Value = maxChainDepth });
+
+        var leasedIds = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            leasedIds.Add(reader.GetGuid(0));
+        }
+
+        return [.. leasedIds];
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTime ClaimedAt);
