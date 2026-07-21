@@ -1523,6 +1523,330 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    public virtual async Task should_pause_skip_pending_preserve_running_and_fence_stale_materialization()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-pause-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var operationTime = DateTime.UtcNow;
+            var definition = _CronDefinition(isPaused: false, revision: 3, timeZoneId: "America/New_York");
+            var idle = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.AddMinutes(1));
+            var queued = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.AddMinutes(2));
+            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.AddMinutes(3));
+            running.OwnerId = "worker-a@incarnation";
+            running.LockedUntil = operationTime.AddMinutes(10);
+
+            (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
+            (await persistence.InsertCronJobOccurrencesAsync([idle, queued, running], ct)).Should().Be(3);
+
+            var paused = await persistence.PauseCronJobAsync(definition.Id, operationTime, ct);
+
+            paused.Should().NotBeNull();
+            paused!.IsPaused.Should().BeTrue();
+            paused.ScheduleRevision.Should().Be(4);
+            paused.TimeZoneId.Should().Be("America/New_York");
+            (await persistence.PauseCronJobAsync(definition.Id, operationTime, ct)).Should().BeNull();
+
+            var occurrences = await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct);
+            foreach (var pending in occurrences.Where(x => x.Id == idle.Id || x.Id == queued.Id))
+            {
+                pending.Status.Should().Be(JobStatus.Skipped);
+                pending.ExecutedAt.Should().Be(operationTime);
+                pending.SkippedReason.Should().Be("Cron definition paused");
+                pending.OwnerId.Should().BeNull();
+                pending.LockedUntil.Should().BeNull();
+            }
+
+            var preserved = occurrences.Single(x => x.Id == running.Id);
+            preserved.Status.Should().Be(JobStatus.InProgress);
+            preserved.OwnerId.Should().Be("worker-a@incarnation");
+            preserved.LockedUntil.Should().Be(operationTime.AddMinutes(10));
+
+            var staleProjection = _CronDispatch(definition, revision: 3);
+            var staleResults = await persistence
+                .QueueCronJobOccurrencesAsync((operationTime.AddMinutes(4), [staleProjection]), ct)
+                .ToArrayAsync(ct);
+            staleResults.Should().BeEmpty();
+            (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
+                .Should()
+                .HaveCount(3);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var firstHost = fixture.BuildHost("cron-resume-a");
+        using var secondHost = fixture.BuildHost("cron-resume-b");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        await firstHost.StartAsync(ct);
+        await secondHost.StartAsync(ct);
+
+        try
+        {
+            var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var second = secondHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+            var operationTime = DateTime.UtcNow;
+            var executionTime = operationTime.AddMinutes(15);
+            var definition = _CronDefinition(isPaused: true, revision: 7, timeZoneId: "America/New_York");
+            (await first.InsertCronJobsAsync([definition], ct)).Should().Be(1);
+
+            var attempts = await Task.WhenAll(
+                first.ResumeCronJobAsync(
+                    definition.Id,
+                    expectedScheduleRevision: 7,
+                    _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
+                    operationTime,
+                    ct
+                ),
+                second.ResumeCronJobAsync(
+                    definition.Id,
+                    expectedScheduleRevision: 7,
+                    _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
+                    operationTime,
+                    ct
+                )
+            );
+
+            attempts.Should().ContainSingle(x => x != null);
+            attempts.Single(x => x != null)!.ScheduleRevision.Should().Be(8);
+            attempts.Single(x => x != null)!.IsPaused.Should().BeFalse();
+            var occurrences = await first.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct);
+            occurrences.Should().ContainSingle();
+            occurrences[0].Status.Should().Be(JobStatus.Idle);
+            occurrences[0].ExecutionTime.Should().Be(executionTime);
+            occurrences[0].ExecutionTime.Kind.Should().Be(DateTimeKind.Utc);
+        }
+        finally
+        {
+            await secondHost.StopAsync(ct);
+            await firstHost.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-edit-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var operationTime = DateTime.UtcNow;
+            var definition = _CronDefinition(isPaused: false, revision: 2, timeZoneId: "America/New_York");
+            var pending = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.AddMinutes(1));
+            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.AddMinutes(2));
+            (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
+            (await persistence.InsertCronJobOccurrencesAsync([pending, running], ct)).Should().Be(2);
+
+            var metadataEdit = _CronDefinition(isPaused: true, revision: 999, timeZoneId: definition.TimeZoneId);
+            metadataEdit.Id = definition.Id;
+            metadataEdit.Description = "metadata-only";
+            var metadataResult = await persistence.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<CronJobEntity>(
+                        metadataEdit,
+                        ExpectedScheduleRevision: 2,
+                        NextOccurrence: null
+                    ),
+                ],
+                operationTime,
+                ct
+            );
+
+            metadataResult.Should().NotBeNull();
+            metadataResult![0].IsPaused.Should().BeFalse();
+            metadataResult[0].ScheduleRevision.Should().Be(2);
+            (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
+                .Single(x => x.Id == pending.Id)
+                .Status.Should()
+                .Be(JobStatus.Queued);
+
+            var scheduleEdit = _CronDefinition(isPaused: false, revision: 999, timeZoneId: "Etc/UTC");
+            scheduleEdit.Id = definition.Id;
+            scheduleEdit.Expression = "0 */5 * * * *";
+            var replacement = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.AddMinutes(5));
+            var scheduleResult = await persistence.UpdateCronJobsAtomicallyAsync(
+                [new CronJobAtomicUpdate<CronJobEntity>(scheduleEdit, ExpectedScheduleRevision: 2, replacement)],
+                operationTime,
+                ct
+            );
+
+            scheduleResult.Should().NotBeNull();
+            scheduleResult![0].ScheduleRevision.Should().Be(3);
+            scheduleResult[0].TimeZoneId.Should().Be("Etc/UTC");
+            var afterActiveEdit = await persistence.GetAllCronJobOccurrencesAsync(
+                x => x.CronJobId == definition.Id,
+                ct
+            );
+            afterActiveEdit.Single(x => x.Id == pending.Id).Status.Should().Be(JobStatus.Skipped);
+            afterActiveEdit.Single(x => x.Id == running.Id).Status.Should().Be(JobStatus.InProgress);
+            afterActiveEdit.Single(x => x.Id == replacement.Id).Status.Should().Be(JobStatus.Idle);
+
+            var paused = await persistence.PauseCronJobAsync(definition.Id, operationTime.AddSeconds(1), ct);
+            paused.Should().NotBeNull();
+            var pausedEdit = _CronDefinition(isPaused: false, revision: 999, timeZoneId: "America/Chicago");
+            pausedEdit.Id = definition.Id;
+            pausedEdit.Expression = "0 */10 * * * *";
+            var pausedResult = await persistence.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<CronJobEntity>(
+                        pausedEdit,
+                        ExpectedScheduleRevision: paused!.ScheduleRevision,
+                        NextOccurrence: null
+                    ),
+                ],
+                operationTime.AddSeconds(2),
+                ct
+            );
+
+            pausedResult.Should().NotBeNull();
+            pausedResult![0].IsPaused.Should().BeTrue();
+            pausedResult[0].ScheduleRevision.Should().Be(paused.ScheduleRevision + 1);
+            var afterPausedEdit = await persistence.GetAllCronJobOccurrencesAsync(
+                x => x.CronJobId == definition.Id,
+                ct
+            );
+            afterPausedEdit.Should().NotContain(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued);
+            afterPausedEdit.Single(x => x.Id == running.Id).Status.Should().Be(JobStatus.InProgress);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_preserve_input_order_when_cron_batch_updates_are_applied()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-order-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var first = _CronDefinition(isPaused: false, revision: 0, timeZoneId: null);
+            first.Id = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+            var second = _CronDefinition(isPaused: false, revision: 0, timeZoneId: null);
+            second.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+            (await persistence.InsertCronJobsAsync([first, second], ct)).Should().Be(2);
+
+            first.Description = "first-updated";
+            second.Description = "second-updated";
+            var result = await persistence.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<CronJobEntity>(first, ExpectedScheduleRevision: 0, NextOccurrence: null),
+                    new CronJobAtomicUpdate<CronJobEntity>(second, ExpectedScheduleRevision: 0, NextOccurrence: null),
+                ],
+                DateTime.UtcNow,
+                ct
+            );
+
+            result.Should().NotBeNull();
+            result!.Select(x => x.Id).Should().Equal(first.Id, second.Id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_retire_pending_seed_work_when_code_defined_expression_changes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-seed-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], ct);
+            var definition = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            var pending = _CronOccurrence(definition.Id, JobStatus.Queued, DateTime.UtcNow.AddMinutes(5));
+            (await persistence.InsertCronJobOccurrencesAsync([pending], ct)).Should().Be(1);
+
+            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], ct);
+
+            var updated = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            updated.Expression.Should().Be("0 */10 * * * *");
+            updated.ScheduleRevision.Should().Be(1);
+            (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
+                .Should()
+                .ContainSingle(x =>
+                    x.Id == pending.Id && x.Status == JobStatus.Skipped && x.SkippedReason == "Cron definition updated"
+                );
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private static CronJobEntity _CronDefinition(bool isPaused, long revision, string? timeZoneId) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = "cron-control",
+            Description = "cron-control",
+            Expression = "0 * * * * *",
+            TimeZoneId = timeZoneId,
+            IsPaused = isPaused,
+            ScheduleRevision = revision,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+
+    private static CronJobOccurrenceEntity<CronJobEntity> _CronOccurrence(
+        Guid cronJobId,
+        JobStatus status,
+        DateTime executionTime
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cronJobId,
+            Status = status,
+            ExecutionTime = executionTime,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+
+    private static JobManagerDispatchContext _CronDispatch(CronJobEntity definition, long revision) =>
+        new(definition.Id)
+        {
+            FunctionName = definition.Function,
+            Expression = definition.Expression,
+            TimeZoneId = definition.TimeZoneId,
+            IsPaused = definition.IsPaused,
+            ScheduleRevision = revision,
+            OnNodeDeath = definition.OnNodeDeath,
+        };
+
     private static async Task _WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();

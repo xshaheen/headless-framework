@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework.Core\Headless.EntityFramework.Core.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
   </ItemGroup>

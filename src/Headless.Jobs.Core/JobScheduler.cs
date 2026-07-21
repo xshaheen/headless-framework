@@ -75,6 +75,28 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return accepted;
     }
 
+    public async Task<bool> PauseCronAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var accepted = await _internalJobManager.PauseCronJobAsync(cronJobId, cancellationToken).ConfigureAwait(false);
+        if (accepted)
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return accepted;
+    }
+
+    public async Task<bool> ResumeCronAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var accepted = await _internalJobManager.ResumeCronJobAsync(cronJobId, cancellationToken).ConfigureAwait(false);
+        if (accepted)
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return accepted;
+    }
+
     public Task<Guid> EnqueueAsync<TArgs>(
         TArgs request,
         EnqueueOptions? options = null,
@@ -196,6 +218,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             Expression = cronExpression,
             Description = options?.Description,
+            TimeZoneId = options?.TimeZoneId,
             Retries = options?.Retries ?? 0,
             RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,

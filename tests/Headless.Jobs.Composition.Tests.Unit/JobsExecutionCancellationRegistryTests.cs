@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -54,6 +55,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
         const string owner = "shared-node";
         var storeServices = new ServiceCollection();
         storeServices.AddSingleton<TimeProvider>(TimeProvider.System);
+        storeServices.AddHeadlessGuidGenerator();
         storeServices.AddSingleton(new SchedulerOptionsBuilder { NodeId = owner });
         using var storeServiceProvider = storeServices.BuildServiceProvider();
         var durableStore = new JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>(storeServiceProvider);

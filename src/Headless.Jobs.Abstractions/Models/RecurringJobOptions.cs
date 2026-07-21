@@ -11,6 +11,9 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record RecurringJobOptions
 {
+    /// <summary>Optional IANA timezone identifier. A <see langword="null"/> value uses the scheduler-global timezone.</summary>
+    public string? TimeZoneId { get; init; }
+
     /// <summary>Optional human-readable description displayed by operational tooling.</summary>
     public string? Description { get; init; }
 

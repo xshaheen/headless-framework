@@ -10,6 +10,7 @@ using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -45,6 +46,44 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task add_stamps_the_entire_chain_with_injected_identity_and_time_services()
+    {
+        var now = new DateTimeOffset(2026, 7, 18, 9, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(now);
+        var rootId = Guid.Parse("01981f40-29c0-7000-8000-000000000001");
+        var childId = Guid.Parse("01981f40-29c0-7000-8000-000000000002");
+        var grandChildId = Guid.Parse("01981f40-29c0-7000-8000-000000000003");
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(rootId, childId, grandChildId);
+        var sut = _CreateSut(
+            CoordinatorMode.None,
+            withWriter: false,
+            timeProvider: timeProvider,
+            guidGenerator: guidGenerator
+        );
+        TimeJobEntity job = FluentChainJobBuilder<TimeJobEntity>
+            .BeginWith(parent => parent.SetFunction(_FunctionName).SetExecutionTime(now.UtcDateTime.AddHours(1)))
+            .WithFirstChild(child => child.SetFunction(_FunctionName))
+            .WithFirstGrandChild(grandChild => grandChild.SetFunction(_FunctionName));
+
+        var result = await sut.Time.AddAsync(job, AbortToken);
+
+        var child = result.Children.Should().ContainSingle().Subject;
+        var grandChild = child.Children.Should().ContainSingle().Subject;
+        result.Id.Should().Be(rootId);
+        result.ParentId.Should().BeNull();
+        child.Id.Should().Be(childId);
+        child.ParentId.Should().Be(rootId);
+        grandChild.Id.Should().Be(grandChildId);
+        grandChild.ParentId.Should().Be(childId);
+        foreach (var item in new[] { result, child, grandChild })
+        {
+            item.CreatedAt.Should().Be(now.UtcDateTime);
+            item.UpdatedAt.Should().Be(now.UtcDateTime);
+        }
     }
 
     [Fact]
@@ -222,6 +261,33 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut
             .Persistence.DidNotReceive()
             .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_report_cron_update_success_when_post_commit_notification_fails()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var current = _CronJob();
+        current.ScheduleRevision = 4;
+        var update = _CronJob();
+        update.Id = current.Id;
+        update.Expression = current.Expression;
+        sut.Persistence.GetCronJobByIdAsync(current.Id, AbortToken).Returns(current);
+        sut.Persistence.UpdateCronJobsAtomicallyAsync(
+                Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
+                Arg.Any<DateTime>(),
+                AbortToken
+            )
+            .Returns([update]);
+        var failure = new InvalidOperationException("notification offline");
+        sut.Notification.UpdateCronJobNotifyAsync(update).Returns<Task>(_ => throw failure);
+
+        var result = await sut.Cron.UpdateAsync(update, AbortToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        result.Result.Should().BeSameAs(update);
+        result.AffectedRows.Should().Be(1);
+        sut.Logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Warning && x.Exception == failure);
     }
 
     [Fact]
@@ -656,6 +722,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         bool withWriter,
         bool dispatcherEnabled = false,
         TimeProvider? timeProvider = null,
+        IGuidGenerator? guidGenerator = null,
         TimeSpan? postCommitDrainTimeout = null
     )
     {
@@ -690,7 +757,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             persistence,
             scheduler,
             timeProvider ?? TimeProvider.System,
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            guidGenerator ?? new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,

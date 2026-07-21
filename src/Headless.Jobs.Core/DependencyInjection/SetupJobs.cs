@@ -191,10 +191,10 @@ public static class SetupJobs
 
                 return new JobsTaskScheduler(
                     schedulerOptionsBuilder.MaxConcurrency,
+                    sp.GetRequiredService<TimeProvider>(),
                     schedulerOptionsBuilder.MaxLongRunningConcurrency,
                     schedulerOptionsBuilder.IdleWorkerTimeOut,
                     notifyDebounce,
-                    sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<ILogger<JobsTaskScheduler>>()
                 );
             });

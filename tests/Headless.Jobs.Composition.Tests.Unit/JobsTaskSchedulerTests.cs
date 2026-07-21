@@ -15,7 +15,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_runs_user_work_on_thread_pool_without_a_synchronization_context()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         bool? startedOnThreadPool = null;
         SynchronizationContext? contextBeforeAwait = null;
@@ -44,7 +44,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_does_not_throw_when_the_round_robin_index_wraps_past_int_max()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
 
         // Seed the round-robin counter just below int.MaxValue so the next enqueues cross the
         // int.MaxValue -> int.MinValue wrap. Before the sign-bit-mask fix, Math.Abs(int.MinValue) threw
@@ -107,7 +107,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_allows_nested_queueing_without_exceeding_concurrency()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var nestedCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await scheduler.QueueAsync(
@@ -134,7 +134,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_isolates_failed_work_from_the_next_item()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var nextCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await scheduler.QueueAsync(
@@ -159,7 +159,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task long_running_work_keeps_its_dedicated_thread()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         bool? startedOnThreadPool = null;
 
@@ -182,7 +182,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task dispose_waits_for_active_long_running_work()
     {
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -210,6 +210,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     {
         await using var scheduler = new JobsTaskScheduler(
             maxConcurrency: 3,
+            timeProvider: TimeProvider.System,
             idleWorkerTimeout: TimeSpan.FromMilliseconds(25)
         );
 
@@ -223,6 +224,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     {
         await using var scheduler = new JobsTaskScheduler(
             maxConcurrency: 1,
+            timeProvider: TimeProvider.System,
             idleWorkerTimeout: TimeSpan.FromMilliseconds(25)
         );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -251,7 +253,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_counts_active_async_work_against_max_concurrency()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var twoStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var startedCount = 0;
@@ -295,7 +297,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_bounds_long_running_dedicated_threads()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 8, maxLongRunningConcurrency: 2);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 8,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 2
+        );
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var twoStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -342,7 +348,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task long_running_admission_honors_capacity_cancellation()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -397,7 +407,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
     {
         // The dedicated-thread finally in _ExecuteLongRunningWorkAsync must release the permit even when the work
         // throws; otherwise a faulting long-running job would permanently leak its single slot.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var secondRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Occupy the only long-running slot with work that faults.
@@ -438,7 +452,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // A second long-running admission parks in the detached admission lane when the only slot is occupied.
         // DisposeAsync cancels the shutdown token linked into that wait, so the parked admission must be dropped
         // (its work never runs) and disposal must complete rather than hang on the parked waiter.
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -483,7 +501,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // Regression for the head-of-line hazard: sequential dispatch loops await QueueAsync per batch item, so a
         // saturated long-running pool must not park the caller — ordinary-priority work queued after a blocked
         // long-running admission has to run while that admission is still waiting for a slot.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var parkedStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -539,7 +561,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // The detached admission lane must not accumulate waiters without bound: under sustained saturation the
         // fallback sweep re-dispatches still-parked jobs every lease cycle, so admissions beyond two per slot are
         // rejected outright and rely on the sweep's re-dispatch instead of parking another waiter.
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, maxLongRunningConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var executedCount = 0;
@@ -580,7 +606,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_dispatches_high_then_normal_then_low_priority()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var executionOrder = new List<JobPriority>();
@@ -621,6 +647,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
         var releaseWorkerOne = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var scheduler = new JobsTaskScheduler(
             maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
             workerStartGate: (workerId, cancellationToken) =>
                 workerId == 1 ? releaseWorkerOne.Task.WaitAsync(cancellationToken) : Task.CompletedTask
         );
@@ -708,7 +735,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_capacity_wait_honors_cancellation()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -751,7 +778,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
     [Fact]
     public async Task queue_async_capacity_cancellation_does_not_cancel_admitted_work()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var blockerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var admittedRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -791,7 +818,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // token. DisposeAsync cancels that token; the resulting OperationCanceledException must
         // not escape the worker's thread-start delegate — an unhandled exception on a manually
         // created thread terminates the whole process.
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 2);
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
         var executed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await scheduler.QueueAsync(

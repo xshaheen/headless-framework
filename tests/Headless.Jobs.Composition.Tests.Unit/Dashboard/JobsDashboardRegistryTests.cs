@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -31,7 +32,10 @@ public sealed class JobsDashboardRegistryTests : TestBase
     {
         var registration = _Registration();
         var registry = _Registry(registration);
-        var (repository, persistence, dispatcher, serviceProvider) = _CreateRepository(registry);
+        var occurrenceId = Guid.Parse("01981f40-29c0-7000-8000-000000000010");
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(occurrenceId);
+        var (repository, persistence, dispatcher, serviceProvider) = _CreateRepository(registry, guidGenerator);
         using (serviceProvider)
         {
             var cronJobId = Guid.NewGuid();
@@ -44,6 +48,15 @@ public sealed class JobsDashboardRegistryTests : TestBase
             persistence.AcquireImmediateCronOccurrencesAsync(Arg.Any<Guid[]>(), AbortToken).Returns([occurrence]);
 
             await repository.AddOnDemandCronJobOccurrenceAsync(cronJobId, AbortToken);
+
+            await persistence
+                .Received(1)
+                .InsertCronJobOccurrencesAsync(
+                    Arg.Is<CronJobOccurrenceEntity<CronJobEntity>[]>(items =>
+                        items.Length == 1 && items[0].Id == occurrenceId
+                    ),
+                    AbortToken
+                );
 
             await dispatcher
                 .Received(1)
@@ -117,7 +130,7 @@ public sealed class JobsDashboardRegistryTests : TestBase
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence,
         IJobsDispatcher Dispatcher,
         ServiceProvider ServiceProvider
-    ) _CreateRepository(JobFunctionRegistry registry)
+    ) _CreateRepository(JobFunctionRegistry registry, IGuidGenerator? guidGenerator = null)
     {
         var persistence = Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var dispatcher = Substitute.For<IJobsDispatcher>();
@@ -131,6 +144,7 @@ public sealed class JobsDashboardRegistryTests : TestBase
             dispatcher,
             registry,
             TimeProvider.System,
+            guidGenerator ?? new SequentialGuidGenerator(SequentialGuidType.Version7),
             serviceProvider,
             JobsRequestSerializationOptions.Default
         );

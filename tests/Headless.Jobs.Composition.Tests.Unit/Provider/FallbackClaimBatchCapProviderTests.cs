@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -40,6 +41,7 @@ public sealed class FallbackClaimBatchCapProviderTests : TestBase
         var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(time);
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = nodeId, LeaseDuration = _Lease });
         var sp = services.BuildServiceProvider();
         return (new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp), time);

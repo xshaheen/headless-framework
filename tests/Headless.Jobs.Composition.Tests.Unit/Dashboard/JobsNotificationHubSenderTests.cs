@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Dashboard;
 
@@ -35,9 +38,33 @@ public sealed class JobsNotificationHubSenderTests : TestBase
         entry.Message.Should().Contain("GetHostStatusNotification");
     }
 
+    [Fact]
+    public async Task should_debounce_time_job_updates_with_the_injected_time_provider()
+    {
+        var logger = new CapturingLogger<JobsNotificationHubSender>();
+        var all = Substitute.For<IClientProxy>();
+        all.SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var timeProvider = new FakeTimeProvider();
+        using var sender = _Create(all, logger, timeProvider);
+
+        await sender.UpdateTimeJobFromExecutionState<TimeJobEntity>(new JobExecutionState { FunctionName = "test" });
+        await sender.UpdateTimeJobFromExecutionState<TimeJobEntity>(new JobExecutionState { FunctionName = "test" });
+        timeProvider.Advance(TimeSpan.FromMilliseconds(99));
+
+        await all.DidNotReceive()
+            .SendCoreAsync("UpdateTimeJobNotification", Arg.Any<object?[]>(), Arg.Any<CancellationToken>());
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        await all.Received(1)
+            .SendCoreAsync("UpdateTimeJobNotification", Arg.Any<object?[]>(), Arg.Any<CancellationToken>());
+    }
+
     private static JobsNotificationHubSender _Create(
         IClientProxy all,
-        CapturingLogger<JobsNotificationHubSender> logger
+        CapturingLogger<JobsNotificationHubSender> logger,
+        TimeProvider? timeProvider = null
     )
     {
         var hubContext = Substitute.For<IHubContext<JobsNotificationHub>>();
@@ -46,7 +73,7 @@ public sealed class JobsNotificationHubSenderTests : TestBase
         hubContext.Clients.Returns(clients);
         clients.All.Returns(all);
 
-        return new JobsNotificationHubSender(hubContext, logger);
+        return new JobsNotificationHubSender(hubContext, logger, timeProvider ?? new FakeTimeProvider());
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

@@ -8,11 +8,11 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 
 ## Key Features
 
-- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs, and requests durable cancellation by job ID.
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs, requests durable cancellation by job ID, and pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
-- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy. Priority remains immutable `[JobFunction]` / descriptor metadata.
+- **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy; recurring options also accept a nullable IANA `TimeZoneId`. Priority remains immutable `[JobFunction]` / descriptor metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
-- **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
+- **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`. New entities keep `Id`, `CreatedAt`, and `UpdatedAt` unset until a Jobs manager stamps them during `AddAsync` / `AddBatchAsync`.
 - **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
 - **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. Rebuild source-generated consumers together with the Jobs runtime when upgrading this contract.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
@@ -23,7 +23,7 @@ These fields are the durable representation. Runtime retry predicates, delays, a
   date/status counts plus the exact inclusive graph boundaries without requiring occurrence entities for empty dates.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
-- **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` for defining parent–child–grandchild job chains up to 3 levels / 5 siblings per level.
+- **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` defines parent–child–grandchild job chains up to 3 levels / 5 siblings per level without reading ambient identity or clock state. The manager stamps the complete tree when it is added.
 - **Global exception handler**: `IJobExceptionHandler` with `HandleExceptionAsync` and `HandleCanceledExceptionAsync`.
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
 
@@ -109,7 +109,9 @@ All facade methods return the persisted entity `Guid`; recurring scheduling retu
 
 `IJobScheduler.CancelAsync(jobId)` is job-ID-only and durable. It returns `true` only for the first accepted request: an idle job becomes terminal `Cancelled`, while queued or in-progress work records `CancelRequested` for its owning node to observe. Unknown, already-requested, and terminal jobs return `false`. `CancelRequested` remains audit data even when an in-progress handler ignores its token and completes naturally.
 
-Relational consumers must add and apply a migration for the non-null `TimeJobs.CancelRequested` column with a `false` default before deploying this version. The PostgreSQL demos include reference migrations; SQL Server and custom stores own the equivalent application migration.
+`IJobScheduler.PauseCronAsync(cronJobId)` and `ResumeCronAsync(cronJobId)` are descriptor-backed, durable definition controls. Each returns `true` only when it wins the state transition. Pause atomically marks the definition paused and skips pending `Idle` / `Queued` occurrences without cancelling `InProgress` work. Resume creates exactly one next occurrence strictly after the resume time; it never replays the paused interval.
+
+Relational consumers must apply the Jobs migrations before deployment, including non-null `TimeJobs.CancelRequested` (`false` default). Cron definitions now persist nullable `TimeZoneId`, non-null `IsPaused` (`false` default), and non-null `ScheduleRevision` (`0` default). The cron-occurrence uniqueness constraint applies only to live `Idle` / `Queued` / `InProgress` rows so a resumed definition can schedule an instant previously terminalized as `Skipped`. Quiesce scheduler nodes while replacing that index because the reference migrations use blocking DDL. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom stores own the equivalent application migration. Custom `IJobPersistenceProvider` implementations must also implement the new atomic pause, resume, and definition-update operations with the documented boolean/null and all-or-nothing semantics before upgrading.
 
 Delayed and recurring scheduling keep time and cron expressions explicit:
 
@@ -124,10 +126,15 @@ var delayedId = await jobs.ScheduleAsync(
 var recurringId = await jobs.ScheduleRecurringAsync(
     new OrderReminderRequest(orderId),
     "0 0 * * *",
-    new RecurringJobOptions { Description = "daily-reminder" },
+    new RecurringJobOptions { Description = "daily-reminder", TimeZoneId = "America/New_York" },
     ct
 );
+
+var pauseAccepted = await jobs.PauseCronAsync(recurringId, ct);
+var resumeAccepted = await jobs.ResumeCronAsync(recurringId, ct);
 ```
+
+`TimeZoneId` accepts IANA identifiers only. A null value falls back to the configured scheduler-global timezone. Cron expressions are evaluated in that timezone, while every occurrence remains a UTC instant in persistence. DST gaps shift forward by the gap; overlaps select the later UTC instant deterministically.
 
 The managers remain supported public APIs. Use `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entity types, chains, or other advanced persistence scenarios:
 
