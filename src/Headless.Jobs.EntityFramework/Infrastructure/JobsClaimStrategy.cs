@@ -192,6 +192,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
+    // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
+    // descendant is a boundary — not descended into, claimed independently (U5).
+    private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
+
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
@@ -215,10 +219,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
-            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+            var claimedIds = await _ClaimTimeJobTreeAsync(dbContext, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (affected <= 0)
+            if (claimedIds.Count == 0)
             {
                 continue;
             }
@@ -234,6 +238,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.OwnerId = owner;
             timeJob.LockedUntil = claimTimestamps.LockedUntil;
             timeJob.Status = JobStatus.Queued;
+
+            // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
+            // execute strictly the claimed set so nothing runs unclaimed.
+            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
 
             yield return timeJob;
         }
@@ -256,6 +264,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1);
 
+        // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces the fixed
+        // two-level ForQueueTimeJobs projection).
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
@@ -264,9 +274,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
             .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
-            .Include(x => x.Children.Where(y => y.ExecutionTime == null))
-            .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
+            .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
             .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        await MappingExtensions
+            .AttachNonTimedDescendantsAsync(context.AsNoTracking(), timeJobsToUpdate, _maxChainDepth, cancellationToken)
             .ConfigureAwait(false);
 
         foreach (var timeJob in timeJobsToUpdate)
@@ -278,10 +291,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var rootMatches = context
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
                 .WhereCanFallbackClaimUsingDatabaseClock();
-            var affected = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+            var claimedIds = await _ClaimTimeJobTreeAsync(dbContext, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (affected <= 0)
+            if (claimedIds.Count == 0)
             {
                 continue;
             }
@@ -297,6 +310,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.LockedUntil = claimTimestamps.LockedUntil;
             timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
+
+            // KTD2: prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
+            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
 
             yield return timeJob;
         }
@@ -528,32 +544,104 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
     }
 
-    private Task<int> _ClaimTimeJobTreeAsync(
-        DbSet<TTimeJob> context,
+    private async Task<HashSet<Guid>> _ClaimTimeJobTreeAsync(
+        TDbContext dbContext,
         IQueryable<TTimeJob> rootMatches,
         Guid rootId,
         string owner,
         CancellationToken cancellationToken
     )
     {
-        var directChildIds = context.Where(x => x.ParentId == rootId).Select(x => x.Id);
+        var context = dbContext.Set<TTimeJob>();
 
-        return context
+        // R12/KTD2: claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier, INSIDE
+        // ONE TRANSACTION so a crash mid-claim cannot strand a partially claimed tree and every level shares one claim
+        // instant. This multi-statement claim deliberately departs from the single-statement autocommit lease-stamp
+        // rule: the transaction anchors the lease deadline (PostgreSQL `now()` == transaction-open) and shortens the
+        // lease by the transaction's bounded (depth-many round-trip) duration — immaterial against a minute-scale
+        // lease, the same trade-off the reclaim sweeps already accept. Claiming the root first, gated on the
+        // optimistic rootMatches predicate, means a losing racer sees 0 rows and never touches the descendants.
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var rootAffected = await context
+            .Where(x => x.Id == rootId)
             .Where(_ => rootMatches.Any())
-            .Where(x =>
-                x.Id == rootId
-                || x.ParentId == rootId
-                || (x.ParentId != null && directChildIds.Contains(x.ParentId.Value))
-            )
-            .Where(x => x.Id == rootId || x.Status == JobStatus.Idle)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds))
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.Status, x => x.Id == rootId ? JobStatus.Queued : x.Status),
+                        .SetProperty(x => x.Status, JobStatus.Queued),
                 cancellationToken
-            );
+            )
+            .ConfigureAwait(false);
+
+        if (rootAffected <= 0)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return [];
+        }
+
+        // KTD2: accumulate the exact set of claimed ids (root + leased descendants) so the caller rebuilds the tree
+        // strictly from it — a node below a non-idle frontier is never leased and must never execute unclaimed.
+        var claimedIds = new HashSet<Guid> { rootId };
+        var frontier = new[] { rootId };
+        var depth = 1;
+
+        while (frontier.Length != 0 && depth < _maxChainDepth)
+        {
+            var parentIds = frontier;
+
+            // Lease the idle non-timed children of the current frontier (status stays Idle — only the root is Queued).
+            await context
+                .Where(x =>
+                    x.ParentId != null
+                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
+                    && x.Status == JobStatus.Idle
+                    && x.ExecutionTime == null
+                )
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.OwnerId, owner)
+                            .SetProperty(
+                                x => x.LockedUntil,
+                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
+                            )
+                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            // Descend into exactly the non-timed children we just leased (idle, non-timed, now owned by us). A non-idle
+            // child (terminalized/running) is not owned by us here, so the frontier stops there.
+            frontier = await context
+                .AsNoTracking()
+                .Where(x =>
+                    x.ParentId != null
+                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
+                    && x.ExecutionTime == null
+                    && x.Status == JobStatus.Idle
+                    && x.OwnerId == owner
+                )
+                .Select(x => x.Id)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var id in frontier)
+            {
+                claimedIds.Add(id);
+            }
+
+            depth++;
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return claimedIds;
     }
 }

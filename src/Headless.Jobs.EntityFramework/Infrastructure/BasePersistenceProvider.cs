@@ -31,6 +31,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration (KTD2).
     protected TimeSpan LeaseDuration { get; } = optionsBuilder.LeaseDuration;
 
+    // R12/KTD2: the maximum number of nodes on a root-to-leaf path that hydration traverses (root = depth 1). A timed
+    // descendant is a boundary — excluded from the in-tree walk, claimed independently (U5).
+    protected int MaxChainDepth { get; } = optionsBuilder.MaxChainDepth;
+
     // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
@@ -250,13 +254,25 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Fetch all jobs within that complete second (this ensures we get all jobs in the same second)
         var maxExecutionTime = minSecond.AddSeconds(1);
 
-        return await baseQuery
-            .Include(x => x.Children.Where(y => y.ExecutionTime == null))
+        // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
+        // recursive .Select projection is not EF-translatable) instead of the fixed two-level ForQueueTimeJobs.
+        var roots = await baseQuery
             .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
             .OrderBy(x => x.ExecutionTime)
-            .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
+            .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        await MappingExtensions
+            .AttachNonTimedDescendantsAsync(
+                dbContext.Set<TTimeJob>().AsNoTracking(),
+                roots,
+                MaxChainDepth,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return roots;
     }
 
     public async Task<byte[]> GetTimeJobRequestAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -588,17 +604,28 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
-        // Return the acquired jobs for immediate execution, with children
-        return await dbContext
+        // Return the acquired jobs for immediate execution, with the non-timed in-tree subtree to MaxChainDepth
+        // (R12/KTD2: flat root load + in-memory rebuild replaces the fixed two-level projection).
+        var roots = await dbContext
             .Set<TTimeJob>()
             .AsNoTracking()
             .Where(x =>
                 ((IEnumerable<Guid>)ids).Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress
             )
-            .Include(x => x.Children.Where(y => y.ExecutionTime == null))
-            .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
+            .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        await MappingExtensions
+            .AttachNonTimedDescendantsAsync(
+                dbContext.Set<TTimeJob>().AsNoTracking(),
+                roots,
+                MaxChainDepth,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return roots;
     }
 
     public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)

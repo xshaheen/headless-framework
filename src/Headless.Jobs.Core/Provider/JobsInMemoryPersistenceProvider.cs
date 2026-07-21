@@ -35,6 +35,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private readonly string _ownerId;
     private readonly TimeSpan _leaseDuration;
 
+    // R12/KTD2: the maximum number of nodes on a root-to-leaf path that claim and hydration traverse (root = depth 1).
+    // A timed descendant (ExecutionTime != null) is a boundary — excluded from the in-tree walk and claimed
+    // independently (U5) — so the walk descends only through non-timed children to this depth.
+    private readonly int _maxChainDepth;
+
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -42,6 +47,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var optionsBuilder = serviceProvider.GetService<SchedulerOptionsBuilder>();
         _ownerId = optionsBuilder?.NodeId ?? Environment.MachineName;
         _leaseDuration = optionsBuilder?.LeaseDuration ?? TimeSpan.FromMinutes(5);
+        _maxChainDepth = optionsBuilder?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth;
     }
 
     // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
@@ -87,11 +93,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                     if (_timeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
                     {
-                        _ClaimIdleDescendants(timeJob.Id, now);
+                        var claimedIds = _ClaimIdleDescendants(timeJob.Id, now);
                         timeJob.UpdatedAt = now;
                         timeJob.OwnerId = _ownerId;
                         timeJob.LockedUntil = now.Add(_leaseDuration);
                         timeJob.Status = JobStatus.Queued;
+
+                        // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not
+                        // lease; execute strictly the claimed set so nothing runs unclaimed.
+                        _PruneToClaimedSet(timeJob, claimedIds);
 
                         yield return timeJob;
                     }
@@ -100,20 +110,47 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    private void _ClaimIdleDescendants(Guid rootId, DateTime now)
+    private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTime now)
     {
-        foreach (var childId in _GetChildrenIds(rootId))
-        {
-            _ClaimIdleJob(childId, now);
+        // R12/KTD2: lease the non-timed in-tree subtree down to MaxChainDepth (root is depth 1) and return the exact
+        // set of claimed ids (root + descendants). A timed child is a boundary (not descended into, claimed
+        // independently by U5); a non-idle child (terminalized by a sweep, or running) is ALSO a boundary — the
+        // frontier stops there so a node below an unclaimable one is never leased and never executed. The caller
+        // rebuilds the returned tree strictly from this set.
+        var claimed = new HashSet<Guid> { rootId };
+        var frontier = new List<Guid> { rootId };
+        var depth = 1;
 
-            foreach (var grandChildId in _GetChildrenIds(childId))
+        while (frontier.Count != 0 && depth < _maxChainDepth)
+        {
+            var next = new List<Guid>();
+
+            foreach (var parentId in frontier)
             {
-                _ClaimIdleJob(grandChildId, now);
+                foreach (var childId in _GetChildrenIds(parentId))
+                {
+                    if (!_timeJobs.TryGetValue(childId, out var child) || child.ExecutionTime is not null)
+                    {
+                        continue;
+                    }
+
+                    // Only descend into children we actually leased (were idle); stop at a non-idle frontier.
+                    if (_ClaimIdleJob(childId, now))
+                    {
+                        claimed.Add(childId);
+                        next.Add(childId);
+                    }
+                }
             }
+
+            frontier = next;
+            depth++;
         }
+
+        return claimed;
     }
 
-    private void _ClaimIdleJob(Guid jobId, DateTime now)
+    private bool _ClaimIdleJob(Guid jobId, DateTime now)
     {
         while (_timeJobs.TryGetValue(jobId, out var existing) && existing.Status == JobStatus.Idle)
         {
@@ -124,9 +161,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (_timeJobs.TryUpdate(jobId, claimed, existing))
             {
-                return;
+                return true;
             }
         }
+
+        return false;
     }
 
     public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobsAsync(
@@ -171,10 +210,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                     if (_timeJobs.TryUpdate(job.Id, updatedTicker, existingTicker))
                     {
-                        _ClaimIdleDescendants(job.Id, now);
+                        var claimedIds = _ClaimIdleDescendants(job.Id, now);
 
-                        // Only build the full hierarchy for successfully acquired jobs
-                        yield return _ForQueueTimeJobs(updatedTicker);
+                        // Only build the full hierarchy for successfully acquired jobs, pruned to the claimed set
+                        // (KTD2) so a non-idle node the claim stopped at — and its tail — never executes unclaimed.
+                        var hydrated = _ForQueueTimeJobs(updatedTicker);
+                        _PruneToClaimedSet(hydrated, claimedIds);
+
+                        yield return hydrated;
                     }
                 }
             }
@@ -680,40 +723,78 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
-        var count = 0;
+        // KTD6 all-or-nothing: validate the WHOLE subtree — structure and id uniqueness, both within the subtree and
+        // against already-stored rows — BEFORE mutating any shared dictionary, so a collision anywhere leaves nothing
+        // visible (never a partially-added parent). Flattening also stamps each node's ParentId.
+        var flattened = new List<TTimeJob>();
+        _CollectSubtree(job, parentId, flattened);
 
+        var seen = new HashSet<Guid>(flattened.Count);
+        foreach (var node in flattened)
+        {
+            if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
+            {
+                // Duplicate id within the subtree, or a collision with an existing row — reject the whole tree.
+                return 0;
+            }
+        }
+
+        var added = new List<TTimeJob>(flattened.Count);
+
+        foreach (var node in flattened)
+        {
+            if (!_timeJobs.TryAdd(node.Id, node))
+            {
+                // A concurrent add raced us on this id after the pre-check; roll back everything so nothing is visible.
+                foreach (var addedNode in added)
+                {
+                    // Conditional (KeyValuePair) remove: pull the row ONLY while the map still holds the exact instance
+                    // we inserted, so a value a concurrent claim/update replaced after our insert is never clobbered.
+                    // Unwind the child index only for the rows we actually removed.
+                    if (
+                        _timeJobs.TryRemove(new KeyValuePair<Guid, TTimeJob>(addedNode.Id, addedNode))
+                        && addedNode.ParentId.HasValue
+                    )
+                    {
+                        _RemoveChildIndex(addedNode.ParentId.Value, addedNode.Id);
+                    }
+                }
+
+                return 0;
+            }
+
+            if (node.ParentId.HasValue)
+            {
+                _AddChildIndex(node.ParentId.Value, node.Id);
+            }
+
+            added.Add(node);
+        }
+
+        return added.Count;
+    }
+
+    private static void _CollectSubtree(TTimeJob job, Guid? parentId, List<TTimeJob> collector)
+    {
         // Set the parent ID if this is a child
         if (parentId.HasValue)
         {
             job.ParentId = parentId.Value;
         }
 
-        // Add the job itself
-        if (_timeJobs.TryAdd(job.Id, job))
+        collector.Add(job);
+
+        if (job.Children is { Count: > 0 })
         {
-            // Maintain children index
-            if (job.ParentId.HasValue)
+            foreach (var child in job.Children)
             {
-                _AddChildIndex(job.ParentId.Value, job.Id);
-            }
-
-            count++;
-
-            // Recursively add all children
-            if (job.Children is { Count: > 0 })
-            {
-                foreach (var child in job.Children)
+                // Cast to TTimeJob since Children is ICollection<TTimeJob>
+                if (child is { } childTicker)
                 {
-                    // Cast to TTimeJob since Children is ICollection<TTimeJob>
-                    if (child is { } childTicker)
-                    {
-                        count += _AddTickerWithChildren(childTicker, job.Id);
-                    }
+                    _CollectSubtree(childTicker, job.Id, collector);
                 }
             }
         }
-
-        return count;
     }
 
     public Task<int> UpdateTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
@@ -1944,7 +2025,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return results;
     }
 
-    // Matches EF Core's MappingExtensions.ForQueueTimeJobs but uses an in-memory children index
+    // Matches EF Core's MappingExtensions.ForQueueTimeJobs but uses an in-memory children index. R12/KTD2: hydrate
+    // the non-timed in-tree subtree down to MaxChainDepth (root = depth 1), carrying the full field set at every level
+    // (dropping RetryCount from any level silently resets the retry budget after restart — docs/solutions precedent).
+    // Timed descendants (ExecutionTime != null) stay excluded — U5 claims them independently.
     private TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
     {
         var root = new TimeJobEntity
@@ -1965,78 +2049,76 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Children = [],
         };
 
-        if (_childrenIndex.TryGetValue(job.Id, out var directChildren) && !directChildren.IsEmpty)
-        {
-            // Pre-size children collection to avoid repeated growth
-            var children = new List<TimeJobEntity>(directChildren.Count);
-
-            foreach (var childId in directChildren.Keys)
-            {
-                if (!_timeJobs.TryGetValue(childId, out var ch))
-                {
-                    continue;
-                }
-
-                // Only children with null ExecutionTime, matching EF mapping
-                if (ch.ExecutionTime != null)
-                {
-                    continue;
-                }
-
-                var childEntity = new TimeJobEntity
-                {
-                    Id = ch.Id,
-                    Function = ch.Function,
-                    Retries = ch.Retries,
-                    RetryCount = ch.RetryCount,
-                    RetryIntervals = ch.RetryIntervals,
-                    CreatedAt = ch.CreatedAt,
-                    UpdatedAt = ch.UpdatedAt,
-                    ParentId = ch.ParentId,
-                    RunCondition = ch.RunCondition,
-                    OnNodeDeath = ch.OnNodeDeath,
-                    Children = [],
-                };
-
-                if (_childrenIndex.TryGetValue(ch.Id, out var grandChildren) && !grandChildren.IsEmpty)
-                {
-                    // Pre-size grandchildren collection
-                    var grandChildList = new List<TimeJobEntity>(grandChildren.Count);
-
-                    foreach (var grandChildId in grandChildren.Keys)
-                    {
-                        if (!_timeJobs.TryGetValue(grandChildId, out var gch))
-                        {
-                            continue;
-                        }
-
-                        grandChildList.Add(
-                            new TimeJobEntity
-                            {
-                                Id = gch.Id,
-                                Function = gch.Function,
-                                Retries = gch.Retries,
-                                RetryCount = gch.RetryCount,
-                                RetryIntervals = gch.RetryIntervals,
-                                CreatedAt = gch.CreatedAt,
-                                UpdatedAt = gch.UpdatedAt,
-                                ParentId = gch.ParentId,
-                                RunCondition = gch.RunCondition,
-                                OnNodeDeath = gch.OnNodeDeath,
-                            }
-                        );
-                    }
-
-                    childEntity.Children = grandChildList;
-                }
-
-                children.Add(childEntity);
-            }
-
-            root.Children = children;
-        }
+        _AttachNonTimedChildren(root, job.Id, depth: 1);
 
         return root;
+    }
+
+    private void _AttachNonTimedChildren(TimeJobEntity parentEntity, Guid parentId, int depth)
+    {
+        // A node at MaxChainDepth is the deepest in-tree node; do not load its children.
+        if (depth >= _maxChainDepth)
+        {
+            return;
+        }
+
+        if (!_childrenIndex.TryGetValue(parentId, out var directChildren) || directChildren.IsEmpty)
+        {
+            return;
+        }
+
+        var children = new List<TimeJobEntity>(directChildren.Count);
+
+        foreach (var childId in directChildren.Keys)
+        {
+            // Only children with null ExecutionTime, matching the EF mapping (timed descendants run via U5's gate).
+            if (!_timeJobs.TryGetValue(childId, out var ch) || ch.ExecutionTime is not null)
+            {
+                continue;
+            }
+
+            var childEntity = new TimeJobEntity
+            {
+                Id = ch.Id,
+                Function = ch.Function,
+                Retries = ch.Retries,
+                RetryCount = ch.RetryCount,
+                RetryIntervals = ch.RetryIntervals,
+                CreatedAt = ch.CreatedAt,
+                UpdatedAt = ch.UpdatedAt,
+                ParentId = ch.ParentId,
+                RunCondition = ch.RunCondition,
+                OnNodeDeath = ch.OnNodeDeath,
+                Children = [],
+            };
+
+            _AttachNonTimedChildren(childEntity, ch.Id, depth + 1);
+
+            children.Add(childEntity);
+        }
+
+        parentEntity.Children = children;
+    }
+
+    // KTD2: keep only the descendants the claim actually leased. The claimed set is prefix-closed (a node is claimed
+    // only after its parent chain was), so pruning the hydrated tree to it yields exactly the executable subtree and a
+    // node below an unclaimable frontier (terminalized/running) is dropped rather than executed unclaimed.
+    private static void _PruneToClaimedSet(TimeJobEntity node, HashSet<Guid> claimedIds)
+    {
+        var kept = new List<TimeJobEntity>(node.Children.Count);
+
+        foreach (var child in node.Children)
+        {
+            if (!claimedIds.Contains(child.Id))
+            {
+                continue;
+            }
+
+            _PruneToClaimedSet(child, claimedIds);
+            kept.Add(child);
+        }
+
+        node.Children = kept;
     }
 
     private void _AddChildIndex(Guid parentId, Guid childId)

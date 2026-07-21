@@ -173,38 +173,37 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
         };
 
+        // The provider already hydrated the tree bounded to MaxChainDepth (U3); recurse the whole thing so a chain
+        // deeper than the grandchild level is executed with each descendant's own RunCondition/RetryCount intact
+        // (omitting RetryCount here would reset the retry budget after restart — docs/solutions precedent).
         foreach (var child in timeJob.Children)
         {
-            var childContext = new JobExecutionState
-            {
-                FunctionName = child.Function,
-                JobId = child.Id,
-                Type = JobType.TimeJob,
-                Retries = child.Retries,
-                RetryCount = child.RetryCount,
-                RetryIntervals = child.RetryIntervals,
-                ParentId = child.ParentId,
-                RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-            };
-
-            childContext.TimeJobChildren.AddRange(
-                child.Children.Select(grandChild => new JobExecutionState
-                {
-                    FunctionName = grandChild.Function,
-                    JobId = grandChild.Id,
-                    Type = JobType.TimeJob,
-                    Retries = grandChild.Retries,
-                    RetryCount = grandChild.RetryCount,
-                    RetryIntervals = grandChild.RetryIntervals,
-                    ParentId = grandChild.ParentId,
-                    RunCondition = grandChild.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                })
-            );
-
-            context.TimeJobChildren.Add(childContext);
+            context.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(child));
         }
 
         return context;
+    }
+
+    private static JobExecutionState _BuildQueuedTimeJobChildContext(TimeJobEntity child)
+    {
+        var childContext = new JobExecutionState
+        {
+            FunctionName = child.Function,
+            JobId = child.Id,
+            Type = JobType.TimeJob,
+            Retries = child.Retries,
+            RetryCount = child.RetryCount,
+            RetryIntervals = child.RetryIntervals,
+            ParentId = child.ParentId,
+            RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+        };
+
+        foreach (var grandChild in child.Children)
+        {
+            childContext.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(grandChild));
+        }
+
+        return childContext;
     }
 
     private async Task<JobExecutionState[]> _QueueNextCronJobsAsync(

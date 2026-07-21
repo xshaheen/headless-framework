@@ -3,6 +3,7 @@
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -54,37 +55,9 @@ internal sealed class JobsFallbackBackgroundService(
                 {
                     foreach (var function in functions)
                     {
-                        if (functionRegistry.Functions.TryGetValue(function.FunctionName, out var tickerItem))
-                        {
-                            function.CachedDelegate = tickerItem.Delegate;
-                            function.CachedPriority = tickerItem.Priority;
-                            function.CachedMaxConcurrency = tickerItem.MaxConcurrency;
-                        }
-
-                        foreach (var child in function.TimeJobChildren)
-                        {
-                            if (functionRegistry.Functions.TryGetValue(child.FunctionName, out var childItem))
-                            {
-                                child.CachedDelegate = childItem.Delegate;
-                                child.CachedPriority = childItem.Priority;
-                                child.CachedMaxConcurrency = childItem.MaxConcurrency;
-                            }
-
-                            foreach (var grandChild in child.TimeJobChildren)
-                            {
-                                if (
-                                    functionRegistry.Functions.TryGetValue(
-                                        grandChild.FunctionName,
-                                        out var grandChildItem
-                                    )
-                                )
-                                {
-                                    grandChild.CachedDelegate = grandChildItem.Delegate;
-                                    grandChild.CachedPriority = grandChildItem.Priority;
-                                    grandChild.CachedMaxConcurrency = grandChildItem.MaxConcurrency;
-                                }
-                            }
-                        }
+                        // U3: attach cached delegates to the whole hydrated tree, not just the grandchild level, so a
+                        // chain deeper than three levels also executes its tail on the timed-out fallback path.
+                        _CacheFunctionReferences(function);
 
                         var semaphore = concurrencyGate.GetSemaphoreOrNull(
                             function.FunctionName,
@@ -144,6 +117,21 @@ internal sealed class JobsFallbackBackgroundService(
     {
         Interlocked.Exchange(ref _started, 0);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _CacheFunctionReferences(JobExecutionState context)
+    {
+        if (functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
+        {
+            context.CachedDelegate = tickerItem.Delegate;
+            context.CachedPriority = tickerItem.Priority;
+            context.CachedMaxConcurrency = tickerItem.MaxConcurrency;
+        }
+
+        foreach (var child in context.TimeJobChildren)
+        {
+            _CacheFunctionReferences(child);
+        }
     }
 }
 

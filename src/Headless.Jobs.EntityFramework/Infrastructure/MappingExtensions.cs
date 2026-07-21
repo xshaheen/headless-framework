@@ -4,6 +4,7 @@ using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Headless.Jobs.Infrastructure;
@@ -91,6 +92,137 @@ internal static class MappingExtensions
                 })
                 .ToArray(),
         };
+    }
+
+    // KTD2: a single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
+    // so deep hydration claims the id-set to depth, reloads these flat rows, and rebuilds the tree by ParentId in
+    // memory (AttachNonTimedDescendantsAsync). Carries the full ForQueueTimeJobs field set — dropping RetryCount (or
+    // any field) from any pickup path silently resets state after restart (docs/solutions precedent).
+    internal static Expression<Func<TTimeJob, TimeJobEntity>> ForFlatTimeJob<TTimeJob>()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        return e => new TimeJobEntity
+        {
+            Id = e.Id,
+            Function = e.Function,
+            Retries = e.Retries,
+            RetryCount = e.RetryCount,
+            RetryIntervals = e.RetryIntervals,
+            CreatedAt = e.CreatedAt,
+            UpdatedAt = e.UpdatedAt,
+            ParentId = e.ParentId,
+            ExecutionTime = e.ExecutionTime,
+            RunCondition = e.RunCondition,
+            OnNodeDeath = e.OnNodeDeath,
+        };
+    }
+
+    /// <summary>
+    /// R12/KTD2: attaches the non-timed in-tree subtree to each already-loaded flat root, frontier by frontier, down
+    /// to <paramref name="maxChainDepth"/> (roots are depth 1). A timed descendant (<c>ExecutionTime != null</c>) is a
+    /// boundary — excluded from the in-tree walk and claimed independently (U5) — so the frontier descends only
+    /// through non-timed children. The tree is rebuilt by <c>ParentId</c> in memory because a recursive EF projection
+    /// is not translatable.
+    /// </summary>
+    internal static async Task AttachNonTimedDescendantsAsync<TTimeJob>(
+        IQueryable<TTimeJob> source,
+        IReadOnlyCollection<TimeJobEntity> roots,
+        int maxChainDepth,
+        CancellationToken cancellationToken
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        if (roots.Count == 0)
+        {
+            return;
+        }
+
+        var childrenByParent = new Dictionary<Guid, List<TimeJobEntity>>();
+        var frontier = roots.Select(x => x.Id).ToArray();
+        var depth = 1;
+
+        while (frontier.Length != 0 && depth < maxChainDepth)
+        {
+            var parentIds = frontier;
+
+            var children = await source
+                .Where(x =>
+                    x.ParentId != null
+                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
+                    && x.ExecutionTime == null
+                )
+                .Select(ForFlatTimeJob<TTimeJob>())
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (children.Length == 0)
+            {
+                break;
+            }
+
+            foreach (var child in children)
+            {
+                if (child.ParentId is not { } parentId)
+                {
+                    continue;
+                }
+
+                if (!childrenByParent.TryGetValue(parentId, out var bucket))
+                {
+                    bucket = [];
+                    childrenByParent[parentId] = bucket;
+                }
+
+                bucket.Add(child);
+            }
+
+            frontier = children.Select(x => x.Id).ToArray();
+            depth++;
+        }
+
+        foreach (var root in roots)
+        {
+            _AttachChildren(root, childrenByParent);
+        }
+    }
+
+    private static void _AttachChildren(TimeJobEntity node, Dictionary<Guid, List<TimeJobEntity>> childrenByParent)
+    {
+        if (!childrenByParent.TryGetValue(node.Id, out var children))
+        {
+            return;
+        }
+
+        node.Children = children;
+
+        foreach (var child in children)
+        {
+            _AttachChildren(child, childrenByParent);
+        }
+    }
+
+    /// <summary>
+    /// KTD2: keeps only the descendants the claim actually leased. The claimed set is prefix-closed (a node is claimed
+    /// only after its parent chain was), so pruning the hydrated tree to it yields exactly the executable subtree — a
+    /// node below a non-idle frontier the claim stopped at (terminalized/running) is dropped rather than executed
+    /// unclaimed.
+    /// </summary>
+    internal static void PruneToClaimedSet(TimeJobEntity node, HashSet<Guid> claimedIds)
+    {
+        var kept = new List<TimeJobEntity>(node.Children.Count);
+
+        foreach (var child in node.Children)
+        {
+            if (!claimedIds.Contains(child.Id))
+            {
+                continue;
+            }
+
+            PruneToClaimedSet(child, claimedIds);
+            kept.Add(child);
+        }
+
+        node.Children = kept;
     }
 
     internal static Expression<Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>> ForQueueCronJobOccurrence<
