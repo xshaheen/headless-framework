@@ -54,12 +54,14 @@ public static class SetupSqlServerEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
-            new SetupSqlServerMessaging.SqlServerMessagesOptionsExtension(storageOptions =>
-            {
-                storageOptions.Schema = options.Schema;
-                storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
-                storageOptions.Version = version;
-            }).AddServices(services);
+            new SetupSqlServerMessaging.SqlServerMessagesOptionsExtension(storageServices =>
+                storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
+                {
+                    storageOptions.Schema = options.Schema;
+                    storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
+                    storageOptions.Version = version;
+                })
+            ).AddServices(services);
 
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions<TContext>>();
 

@@ -56,12 +56,14 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
-            new SetupPostgreSqlMessaging.PostgreSqlMessagesOptionsExtension(storageOptions =>
-            {
-                storageOptions.Schema = options.Schema;
-                storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
-                storageOptions.Version = version;
-            }).AddServices(services);
+            new SetupPostgreSqlMessaging.PostgreSqlMessagesOptionsExtension(storageServices =>
+                storageServices.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(storageOptions =>
+                {
+                    storageOptions.Schema = options.Schema;
+                    storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
+                    storageOptions.Version = version;
+                })
+            ).AddServices(services);
 
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions<TContext>>();
 

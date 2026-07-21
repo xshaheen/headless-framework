@@ -83,7 +83,7 @@ public static class SetupPostgreSqlMessaging
         return setup;
     }
 
-    private sealed class PostgreSqlMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
+    internal sealed class PostgreSqlMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)

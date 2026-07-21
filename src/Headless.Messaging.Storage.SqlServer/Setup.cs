@@ -80,7 +80,7 @@ public static class SetupSqlServerMessaging
         return setup;
     }
 
-    private sealed class SqlServerMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
+    internal sealed class SqlServerMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
