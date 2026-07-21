@@ -119,6 +119,16 @@ public static class SetupJobs
             schedulerOptionsBuilder.MaxLongRunningConcurrency > 0,
             "SchedulerOptionsBuilder.MaxLongRunningConcurrency must be greater than zero."
         );
+        // The structural bound JobChainBuilder.Build() enforces doubles as the configuration ceiling, so the enqueue
+        // guard and the structural guard can never contradict (and SqlServer's recursive-CTE MAXRECURSION stays reachable).
+        Ensure.True(
+            schedulerOptionsBuilder.MaxChainDepth >= 1,
+            "SchedulerOptionsBuilder.MaxChainDepth must be at least 1."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.MaxChainDepth <= JobChain.MaxStructuralDepth,
+            $"SchedulerOptionsBuilder.MaxChainDepth must not exceed the structural ceiling of {JobChain.MaxStructuralDepth}."
+        );
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
         {

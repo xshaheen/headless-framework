@@ -605,6 +605,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The number of rows written, which counts inserted <b>children as well as roots</b> and is therefore usually
     /// larger than <c>jobs.Length</c> for job chains.
     /// </returns>
+    /// <remarks>
+    /// <b>All-or-nothing.</b> The whole call — every root and every nested descendant across all chains — is written
+    /// as a single atomic unit: on any failure no row from this call is persisted, so a chain is never left partially
+    /// visible. The scheduler's chain enqueue relies on this to persist a multi-node tree atomically (issue #311,
+    /// R10); custom providers <b>must</b> preserve the all-or-nothing contract.
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
 

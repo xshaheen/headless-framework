@@ -21,6 +21,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
     private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
     private readonly JobsRequestSerializationOptions _serializationOptions;
+    private readonly int _maxChainDepth;
 
     public JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
@@ -28,7 +29,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         JobFunctionRegistry functionRegistry,
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
-        JobsRequestSerializationOptions serializationOptions
+        JobsRequestSerializationOptions serializationOptions,
+        SchedulerOptionsBuilder? schedulerOptions = null
     )
         : this(
             timeJobManager,
@@ -38,7 +40,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             internalJobManager,
             jobsHostScheduler,
             functionRegistry.CanonicalDescriptors.GetValueOrDefault,
-            serializationOptions
+            serializationOptions,
+            schedulerOptions?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth
         ) { }
 
     internal JobScheduler(
@@ -49,7 +52,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
         Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null,
-        JobsRequestSerializationOptions? serializationOptions = null
+        JobsRequestSerializationOptions? serializationOptions = null,
+        int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth
     )
     {
         _timeJobManager = Argument.IsNotNull(timeJobManager);
@@ -60,6 +64,7 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         _descriptorByName = Argument.IsNotNull(descriptorByName);
         _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
         _serializationOptions = serializationOptions ?? JobsRequestSerializationOptions.Default;
+        _maxChainDepth = Argument.IsPositive(maxChainDepth);
     }
 
     public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -119,6 +124,29 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             options,
             cancellationToken
         );
+    }
+
+    public async Task<Guid> EnqueueAsync(JobChain chain, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(chain);
+
+        // Validate the whole tree first (depth, then per-node descriptor resolution) so nothing is persisted when any
+        // node is invalid — the manager's add path validates only the root, so per-node resolution closes that gap.
+        var depth = _ChainDepth(chain.Root);
+        if (depth > _maxChainDepth)
+        {
+            throw new InvalidOperationException(
+                $"The job chain has a depth of {depth} nodes, which exceeds the configured maximum chain depth of "
+                    + $"{_maxChainDepth} nodes (on-success and on-failure edges both count toward depth)."
+            );
+        }
+
+        // Map to a fresh TTimeJob tree on every call so re-enqueueing the same built chain yields independent trees;
+        // one manager add persists the whole graph atomically via the existing tree-stamping + insert path.
+        var root = _BuildChainEntity(chain.Root, runCondition: null);
+        var persisted = await _timeJobManager.AddAsync(root, cancellationToken).ConfigureAwait(false);
+
+        return persisted.Id;
     }
 
     public Task<Guid> ScheduleAsync<TArgs>(
@@ -226,6 +254,56 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
         return persisted.Id;
+    }
+
+    private static int _ChainDepth(JobChainNode node)
+    {
+        var success = node.OnSuccess is null ? 0 : _ChainDepth(node.OnSuccess);
+        var failure = node.OnFailure is null ? 0 : _ChainDepth(node.OnFailure);
+
+        return 1 + Math.Max(success, failure);
+    }
+
+    private TTimeJob _BuildChainEntity(JobChainNode node, Enums.RunCondition? runCondition)
+    {
+        var descriptor = _ResolveNodeDescriptor(node);
+
+        var entity = new TTimeJob
+        {
+            Function = descriptor.FunctionName,
+            Request = descriptor.RequestType is null
+                ? null
+                : JobsHelper.CreateJobRequest(node.Payload!, descriptor.RequestType, _serializationOptions),
+            ExecutionTime = node.ExecutionTime,
+            Description = node.Options?.Description,
+            Retries = node.Options?.Retries ?? 0,
+            RetryIntervals = node.Options?.RetryIntervals is { } intervals ? [.. intervals] : null,
+            OnNodeDeath = node.Options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            RunCondition = runCondition,
+        };
+
+        if (node.OnSuccess is not null)
+        {
+            entity.Children.Add(_BuildChainEntity(node.OnSuccess, Enums.RunCondition.OnSuccess));
+        }
+
+        if (node.OnFailure is not null)
+        {
+            entity.Children.Add(_BuildChainEntity(node.OnFailure, Enums.RunCondition.OnFailure));
+        }
+
+        return entity;
+    }
+
+    private JobFunctionDescriptor _ResolveNodeDescriptor(JobChainNode node)
+    {
+        if (node.Descriptor is not null)
+        {
+            return _GetRequestlessDescriptor(node.Descriptor);
+        }
+
+        var requestType = node.PayloadType!;
+        return _descriptorByRequestType(requestType) ?? throw new JobFunctionNotFoundException(requestType);
     }
 
     private JobFunctionDescriptor _GetDescriptor<TArgs>()
