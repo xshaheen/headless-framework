@@ -740,6 +740,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Update the job itself
         if (_timeJobs.TryGetValue(job.Id, out var existing))
         {
+            // TenantId is resolved once at schedule time and is not updatable through the generic update API —
+            // update payloads omit it, and writing it would silently clear the tenant.
+            job.TenantId = existing.TenantId;
+
             if (_timeJobs.TryUpdate(job.Id, job, existing))
             {
                 // Maintain children index for parent changes

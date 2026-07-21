@@ -159,6 +159,47 @@ public sealed class SetupJobsTenancyTests : TestBase, IDisposable
     }
 
     [Fact]
+    public void emits_propagation_error_when_only_consumer_seams_are_recorded()
+    {
+        // given — a Messaging-style consumer seam records posture but does not populate ICurrentTenant, so it
+        // must not count as a tenant source (fail-open regression guard).
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy =>
+        {
+            tenancy.RecordSeam("Messaging", TenantPostureStatus.Propagating, "propagate-tenant");
+            tenancy.Jobs(jobs => jobs.PropagateTenant());
+        });
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var (validator, context) = _Resolve<JobsTenantPropagationStartupValidator>(provider);
+
+        // when
+        var diagnostics = validator.Validate(context).ToArray();
+
+        // then
+        diagnostics.Should().ContainSingle();
+        diagnostics[0].Code.Should().Be("HEADLESS_TENANCY_JOBS_PROPAGATION_NULL_CURRENT_TENANT");
+    }
+
+    [Fact]
+    public void emits_no_propagation_error_when_the_http_claims_seam_is_recorded()
+    {
+        // given — the HTTP claim-resolution seam is the seam that actually populates ICurrentTenant.
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy =>
+        {
+            tenancy.RecordSeam("Http", TenantPostureStatus.Configured, "resolve-from-claims");
+            tenancy.Jobs(jobs => jobs.PropagateTenant());
+        });
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var (validator, context) = _Resolve<JobsTenantPropagationStartupValidator>(provider);
+
+        // when / then
+        validator.Validate(context).Should().BeEmpty();
+    }
+
+    [Fact]
     public void emits_no_propagation_error_when_a_consumer_supplied_current_tenant_is_registered()
     {
         // given — a consumer-supplied (non-CurrentTenant, non-NullCurrentTenant) ICurrentTenant is a real source.

@@ -249,7 +249,7 @@ await db.ExecuteCoordinatedTransactionAsync(
 
 ### Tenant Propagation
 
-Time jobs carry a persisted, length-bounded `TenantId` (`BaseJobEntity.TenantId`, max `JobsTenancyOptions.TenantIdMaxLength = 200`) so multi-tenant hosts can run tenant-scoped background work. The tenant is resolved once at schedule time and restored around every execution attempt, so a job scheduled from tenant `t1` runs its handler — and each retry — under `t1`. Registration, posture, and startup diagnostics are documented with the other tenancy seams in [multi-tenancy.md](multi-tenancy.md#background-jobs); enable it with:
+Time jobs carry a persisted, length-bounded `TenantId` (`BaseJobEntity.TenantId`, max `JobsTenancyOptions.TenantIdMaxLength = 200`) so multi-tenant hosts can run tenant-scoped background work. The tenant is resolved once at schedule time and restored around every execution attempt, so a job scheduled from tenant `t1` runs its handler — and each retry — under `t1`. `TenantId` is immutable through the generic update API: update payloads (dashboard edits, seeder refreshes) cannot change or clear a stored tenant. Registration, posture, and startup diagnostics are documented with the other tenancy seams in [multi-tenancy.md](multi-tenancy.md#background-jobs); enable it with:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy =>

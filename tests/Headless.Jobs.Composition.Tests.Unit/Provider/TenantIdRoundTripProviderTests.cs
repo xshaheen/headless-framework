@@ -121,4 +121,25 @@ public sealed class TenantIdRoundTripProviderTests : TestBase
         pickedChild.TenantId.Should().Be(_ChildTenant);
         pickedChild.Children.Should().ContainSingle().Which.TenantId.Should().Be(_GrandChildTenant);
     }
+
+    [Fact]
+    public async Task update_time_jobs_preserves_the_stored_tenant_when_the_payload_omits_it()
+    {
+        var provider = _Create();
+
+        var root = _RootTimeJob(_Now.AddMinutes(-10));
+        await provider.AddTimeJobsAsync([root], AbortToken);
+
+        // Dashboard-style update payload: same row id, TenantId omitted (null).
+        var update = _RootTimeJob(_Now.AddMinutes(5));
+        update.Id = root.Id;
+        update.TenantId = null;
+
+        await provider.UpdateTimeJobsAsync([update], AbortToken);
+
+        var fetched = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
+
+        fetched.Should().NotBeNull();
+        fetched.TenantId.Should().Be(_RootTenant);
+    }
 }

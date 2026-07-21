@@ -188,6 +188,13 @@ internal static class TenantSourceMissing
 /// </summary>
 internal sealed class JobsTenantPropagationStartupValidator : IHeadlessTenancyValidator
 {
+    // Mirrors Headless.Api.Core's SetupApiTenancy seam/capability literals (Jobs.Core has no Api reference).
+    // Only the HTTP claim-resolution seam produces ambient tenant context today; consumer seams (Messaging,
+    // EntityFramework guards, Authorization) record posture without populating ICurrentTenant, so counting
+    // them as tenant sources would fail open and hide a silent-no-op propagation setup.
+    private const string _HttpSeam = "Http";
+    private const string _ResolveFromClaimsCapability = "resolve-from-claims";
+
     public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
     {
         Argument.IsNotNull(context);
@@ -205,7 +212,8 @@ internal sealed class JobsTenantPropagationStartupValidator : IHeadlessTenancyVa
         }
 
         var otherSeamsContributeTenant = context.Manifest.Seams.Any(seam =>
-            !string.Equals(seam.Seam, HeadlessJobsTenancyBuilder.Seam, StringComparison.Ordinal)
+            string.Equals(seam.Seam, _HttpSeam, StringComparison.Ordinal)
+            && seam.Capabilities.Contains(_ResolveFromClaimsCapability, StringComparer.Ordinal)
         );
 
         if (otherSeamsContributeTenant || TenantSourceMissing.HasConsumerOverride(context.Services))
