@@ -4,16 +4,14 @@ namespace Headless.Jobs.DashboardDtos;
 
 /// <summary>
 /// Per-day summary of cron occurrence outcomes, used to populate the dashboard execution graph.
-/// Each result tuple carries the succeeded and failed occurrence counts for that day.
+/// Each entry in <see cref="Results"/> carries the occurrence count for one lifecycle status on that day.
 /// </summary>
-public class CronOccurrenceJobGraphData
+[PublicAPI]
+public sealed class CronOccurrenceJobGraphData
 {
     /// <summary>The UTC date this summary covers.</summary>
-    public DateTime Date { get; set; }
+    public required DateTime Date { get; init; }
 
-    /// <summary>
-    /// Succeeded/failed pair for each cron job on this date.
-    /// Item1 = succeeded count, Item2 = failed count.
-    /// </summary>
-    public Tuple<int, int>[]? Results { get; set; }
+    /// <summary>Per-status occurrence counts on this date. Empty when the date has no occurrences.</summary>
+    public required JobStatusCount[] Results { get; init; }
 }

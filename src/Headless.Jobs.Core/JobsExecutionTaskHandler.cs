@@ -201,7 +201,7 @@ internal sealed class JobsExecutionTaskHandler
         var cancellationTokenSource = new CancellationTokenSource();
 #pragma warning restore CA2000
 
-        // IMPORTANT: Register the job FIRST, before creating the SkipIfAlreadyRunningAction callback
+        // IMPORTANT: Register the job FIRST, before creating the skip-if-already-running callback
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
         var cancellationRegistration = _cancellationRegistry.Register(cancellationTokenSource, context);
         await using var hostShutdownRegistration = cancellationToken.Register(() =>
@@ -215,27 +215,24 @@ internal sealed class JobsExecutionTaskHandler
             Type = context.Type,
             IsDue = isDue,
             ScheduledFor = context.ExecutionTime,
-            CronOccurrenceOperations = new CronOccurrenceOperations
+            CronOccurrenceOperations = new CronOccurrenceOperations(() =>
             {
-                SkipIfAlreadyRunningAction = () =>
+                if (context.Type == JobType.TimeJob)
                 {
-                    if (context.Type == JobType.TimeJob)
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    // Check for other running occurrences of the same parent (excluding self)
-                    // Since we're already registered, we need to exclude ourselves from the check
-                    var isRunning =
-                        context.ParentId.HasValue
-                        && _cancellationRegistry.IsParentRunningExcludingSelf(context.ParentId.Value, context.JobId);
+                // Check for other running occurrences of the same parent (excluding self)
+                // Since we're already registered, we need to exclude ourselves from the check
+                var isRunning =
+                    context.ParentId.HasValue
+                    && _cancellationRegistry.IsParentRunningExcludingSelf(context.ParentId.Value, context.JobId);
 
-                    if (isRunning)
-                    {
-                        throw new TerminateExecutionException("Another CronOccurrence is already running!");
-                    }
-                },
-            },
+                if (isRunning)
+                {
+                    throw new TerminateExecutionException("Another CronOccurrence is already running!");
+                }
+            }),
         };
 
         // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and

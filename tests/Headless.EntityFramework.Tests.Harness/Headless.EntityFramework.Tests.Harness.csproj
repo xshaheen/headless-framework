@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>true</IsTestableProject>
+    <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

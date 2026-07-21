@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Generator.Primitives.Extensions;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;

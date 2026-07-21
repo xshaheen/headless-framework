@@ -7,6 +7,5 @@ namespace Tests;
 internal static class JobsHarnessModuleInitializer
 {
     [ModuleInitializer]
-    internal static void Initialize() =>
-        RuntimeHelpers.RunModuleConstructor(typeof(JobsCoordinationFixtureExtensions).Module.ModuleHandle);
+    internal static void Initialize() => JobsCoordinationFixtureExtensions.RegisterJobFunctions();
 }

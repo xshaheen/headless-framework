@@ -3,6 +3,7 @@
 using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Jobs;
+using Headless.Jobs.DashboardDtos;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure.Dashboard;
@@ -91,15 +92,13 @@ public sealed class JobsDashboardRepositoryTests : TestBase
         var result = await repository.GetCronJobsOccurrencesGraphDataAsync(cronJobId, AbortToken);
 
         result.Select(x => x.Date).Should().Equal(_Today.AddDays(-1), _Today, _Today.AddDays(1));
-#pragma warning disable RS0030 // JobGraphData intentionally retains its public Tuple-based compatibility contract.
         result[0].Results.Should().BeEmpty();
         result[1]
             .Results.Should()
             .BeEquivalentTo(
-                new[] { Tuple.Create((int)JobStatus.Succeeded, 3), Tuple.Create((int)JobStatus.Failed, 2) }
+                new[] { new JobStatusCount(JobStatus.Succeeded, 3), new JobStatusCount(JobStatus.Failed, 2) }
             );
         result[2].Results.Should().BeEmpty();
-#pragma warning restore RS0030
     }
 
     private static (

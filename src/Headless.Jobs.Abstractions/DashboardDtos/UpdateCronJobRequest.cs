@@ -5,6 +5,7 @@ namespace Headless.Jobs.DashboardDtos;
 /// <summary>
 /// Request body for the dashboard "update cron job" endpoint. Only non-null fields are applied.
 /// </summary>
+[PublicAPI]
 public class UpdateCronJobRequest
 {
     /// <summary>Registered function name to assign to the cron job.</summary>

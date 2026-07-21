@@ -12,6 +12,7 @@ namespace Headless.Jobs.Models;
 /// propagate through the caller's ambient transaction on the coordinated path.
 /// </remarks>
 /// <typeparam name="TEntity">The job entity type.</typeparam>
+[PublicAPI]
 public sealed class JobResult<TEntity>
     where TEntity : class
 {

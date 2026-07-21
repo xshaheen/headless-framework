@@ -5,6 +5,7 @@ namespace Headless.Jobs.Interfaces;
 /// <summary>
 /// Manages per-function concurrency limits using semaphores.
 /// </summary>
+[PublicAPI]
 public interface IJobFunctionConcurrencyGate
 {
     /// <summary>

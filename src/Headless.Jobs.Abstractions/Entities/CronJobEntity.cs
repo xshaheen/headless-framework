@@ -9,6 +9,7 @@ namespace Headless.Jobs.Entities;
 /// Persistent definition row for a recurring cron job. One <c>CronJobEntity</c> exists per registered
 /// cron function; the scheduler materializes <c>CronJobOccurrenceEntity</c> rows from it on each tick.
 /// </summary>
+[PublicAPI]
 public class CronJobEntity : BaseJobEntity
 {
     internal CronJobEntity Clone()

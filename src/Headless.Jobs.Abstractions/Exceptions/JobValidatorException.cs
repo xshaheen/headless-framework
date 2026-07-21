@@ -10,7 +10,8 @@ namespace Headless.Jobs.Exceptions;
 /// Batch operations aggregate all per-entity failures into <see cref="Errors"/> so the caller sees
 /// every problem at once. Single-entity operations produce exactly one entry.
 /// </remarks>
-public class JobValidatorException : Exception
+[PublicAPI]
+public sealed class JobValidatorException : Exception
 {
     /// <summary>
     /// Initializes a new instance with a single validation failure message.

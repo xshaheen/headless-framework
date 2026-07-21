@@ -23,6 +23,7 @@ namespace Headless.Jobs.Interfaces;
 /// progression.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IJobExceptionHandler
 {
     /// <summary>

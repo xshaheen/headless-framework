@@ -87,6 +87,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
     IHeadlessAuditPersistence auditPersistence,
+    IHeadlessTransactionCoordinator transactionCoordinator,
     ILocalEventBus? localEventBus = null,
     IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
@@ -226,12 +227,12 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
             .ConfigureAwait(false);
 
-        // Enlist the open transaction in commit coordination SYNCHRONOUSLY, in this frame, so the ambient
-        // coordinator (and its relational capability) flows to the dispatcher/outbox writer invoked inside the
-        // save. The enlist must NOT live behind an async helper — an AsyncLocal push inside an async method does
-        // not propagate back to this caller. The registered transaction interceptor drains enlisted work when the
-        // transaction commits and discards it on rollback; disposing the scope is the un-signalled-dispose safety net.
-        await using var coordination = state.Context.Database.EnlistCommitCoordination(
+        // Give the selected transaction adapter the open transaction synchronously in this frame. The core adapter
+        // is a no-op; the commit-coordination package pushes its ambient coordinator here so it flows to work
+        // invoked inside the save. The push must not live behind an async helper because AsyncLocal state created
+        // there does not propagate back to this caller.
+        await using var coordination = transactionCoordinator.Enlist(
+            state.Context.Database,
             transaction,
             serviceProvider,
             state.CancellationToken
@@ -245,7 +246,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning disable MA0045 // Sync intentionally
         // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
         using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-        using var coordination = state.Context.Database.EnlistCommitCoordination(
+        using var coordination = transactionCoordinator.Enlist(
+            state.Context.Database,
             transaction,
             serviceProvider,
             CancellationToken.None

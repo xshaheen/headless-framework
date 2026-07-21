@@ -2,7 +2,6 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsTestProject>false</IsTestProject>
-    <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Testing.AspNetCore.Tests.Unit" />

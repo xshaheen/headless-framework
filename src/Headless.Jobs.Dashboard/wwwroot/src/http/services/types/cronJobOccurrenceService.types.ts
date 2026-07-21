@@ -24,7 +24,7 @@ export class GetCronJobOccurrenceGraphDataRequest{
 
 export class GetCronJobOccurrenceGraphDataResponse{
     date!:string;
-    results!:{item1:number, item2:number }[];
+    results!:{status:number, count:number }[];
     type!: string;
     statuses!:string[]
 }

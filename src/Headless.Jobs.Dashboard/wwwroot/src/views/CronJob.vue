@@ -241,9 +241,9 @@ const updatePieChartForSelectedTicker = async (jobId: string, min: number, max: 
     // Count occurrences of each status in the selected range
     res.forEach(({ results }) => {
       if (results && Array.isArray(results)) {
-        results.forEach(({ item1, item2 }) => {
-          const currentCount = statusCounts.get(item1) || 0
-          statusCounts.set(item1, currentCount + item2)
+        results.forEach(({ status, count }) => {
+          const currentCount = statusCounts.get(status) || 0
+          statusCounts.set(status, currentCount + count)
         })
       }
     })
@@ -295,22 +295,22 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
     // Extract unique Dates for xAxis
     const uniqueDates = res.map((x) => x.date)
 
-    // Extract all unique item1 values (Status IDs)
-    const uniqueItem1Set = new Set<number>()
+    // Extract all unique status IDs
+    const uniqueStatusSet = new Set<number>()
 
     res.forEach(({ results }) => {
       if (results && Array.isArray(results)) {
-        results.forEach(({ item1 }) => uniqueItem1Set.add(item1))
+        results.forEach(({ status }) => uniqueStatusSet.add(status))
       }
     })
-    const uniqueItem1Array = Array.from(uniqueItem1Set) // Convert Set to Array
+    const uniqueStatusArray = Array.from(uniqueStatusSet) // Convert Set to Array
 
     // Create a Map to store series data
-    const seriesMap = new Map<number, number[]>() // item1 -> data array
+    const seriesMap = new Map<number, number[]>() // status -> data array
 
     // Initialize seriesMap with empty arrays
-    uniqueItem1Array.forEach((item1) => {
-      seriesMap.set(item1, Array(uniqueDates.length).fill(0)) // Fill with 0s initially
+    uniqueStatusArray.forEach((status) => {
+      seriesMap.set(status, Array(uniqueDates.length).fill(0)) // Fill with 0s initially
     })
     
     // Populate seriesMap with actual data
@@ -318,32 +318,32 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
       if (results && Array.isArray(results)) {
         const dateIndex = uniqueDates.indexOf(date) // Find index in xAxis
 
-        results.forEach(({ item1, item2 }) => {
-          const dataArray = seriesMap.get(item1)
+        results.forEach(({ status, count }) => {
+          const dataArray = seriesMap.get(status)
           if (dataArray) {
-            dataArray[dateIndex] = item2 // Assign value at the correct index
+            dataArray[dateIndex] = count // Assign value at the correct index
           }
         })
       }
     })
 
     // Generate series data
-    const composedData = Array.from(seriesMap.entries()).map(([item1, dataArray]) => ({
+    const composedData = Array.from(seriesMap.entries()).map(([status, dataArray]) => ({
       data: dataArray,
-      name: Status[item1] || `Unknown ${item1}`,
+      name: Status[status] || `Unknown ${status}`,
       type: 'line' as const,
       smooth: true,
       symbol: 'circle',
       symbolSize: 6,
       lineStyle: {
-        color: statusColors[item1] || '#999999',
+        color: statusColors[status] || '#999999',
         width: 3,
         shadowBlur: 10,
-        shadowColor: statusColors[item1] || '#999999',
+        shadowColor: statusColors[status] || '#999999',
         shadowOffsetY: 2,
       },
       itemStyle: {
-        color: statusColors[item1] || '#999999',
+        color: statusColors[status] || '#999999',
         borderColor: '#ffffff',
         borderWidth: 2,
         shadowBlur: 10,
@@ -358,15 +358,15 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
           x2: 0,
           y2: 1,
           colorStops: [
-            { offset: 0, color: (statusColors[item1] || '#999999') + '40' },
-            { offset: 1, color: (statusColors[item1] || '#999999') + '10' },
+            { offset: 0, color: (statusColors[status] || '#999999') + '40' },
+            { offset: 1, color: (statusColors[status] || '#999999') + '10' },
           ],
         },
       },
       emphasis: {
         itemStyle: {
           shadowBlur: 20,
-          shadowColor: statusColors[item1] || '#999999',
+          shadowColor: statusColors[status] || '#999999',
           scale: true,
           scaleSize: 2,
         },

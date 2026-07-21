@@ -6,6 +6,7 @@ namespace Headless.Jobs.Entities.BaseEntity;
 /// Base entity shared by <c>TimeJobEntity</c> and <c>CronJobEntity</c>. Carries the identity,
 /// function binding, and audit timestamps common to all job types.
 /// </summary>
+[PublicAPI]
 public class BaseJobEntity
 {
     /// <summary>

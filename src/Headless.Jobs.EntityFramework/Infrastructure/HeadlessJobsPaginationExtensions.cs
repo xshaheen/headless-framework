@@ -32,7 +32,13 @@ public static class HeadlessJobsPaginationExtensions
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return new PaginationResult<T>(items, count, pageNumber, pageSize);
+        return new PaginationResult<T>
+        {
+            Items = items,
+            TotalCount = count,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+        };
     }
 
     /// <summary>
@@ -60,7 +66,13 @@ public static class HeadlessJobsPaginationExtensions
         var projectedQuery = projection(paginatedSource);
         var items = await projectedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        return new PaginationResult<TResult>(items, count, pageNumber, pageSize);
+        return new PaginationResult<TResult>
+        {
+            Items = items,
+            TotalCount = count,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+        };
     }
 
     /// <summary>
@@ -75,6 +87,12 @@ public static class HeadlessJobsPaginationExtensions
         var items = await source.ToListAsync(cancellationToken).ConfigureAwait(false);
         var count = items.Count;
 
-        return new PaginationResult<T>(items, count, 1, count > 0 ? count : 1);
+        return new PaginationResult<T>
+        {
+            Items = items,
+            TotalCount = count,
+            PageNumber = 1,
+            PageSize = count > 0 ? count : 1,
+        };
     }
 }

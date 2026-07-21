@@ -46,7 +46,7 @@
       },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
-        "requested": "[4.1.5, )",
+        "requested": "[4.1.5, 4.1.5]",
         "resolved": "4.1.5",
         "contentHash": "i5z+cNu/cOcdO0AgFB8aXk8w6In2H+haaDfSgd9ImvQIK+rSHavHZIogVoAZLL8jLwYx4bAcs5b7EyuMMG4mQQ=="
       },
@@ -409,7 +409,6 @@
         "dependencies": {
           "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
@@ -419,6 +418,13 @@
           "Microsoft.EntityFrameworkCore": "[10.0.9, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.entityframework.commitcoordination": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.EntityFramework": "[1.0.0, )"
         }
       },
       "headless.entityframework.core": {
