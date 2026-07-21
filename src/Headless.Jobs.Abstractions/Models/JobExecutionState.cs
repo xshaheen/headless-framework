@@ -50,6 +50,13 @@ public class JobExecutionState
     /// <summary>Number of retry attempts already consumed for this job.</summary>
     public int RetryCount { get; set; }
 
+    /// <summary>
+    /// Tenant that owns the job row, restored around every execution attempt. <see langword="null"/> means the
+    /// attempt runs system scope. Must be carried by every entity-to-state projection or pickup after restart
+    /// silently drops the tenant.
+    /// </summary>
+    public string? TenantId { get; set; }
+
     /// <summary>Current lifecycle status of the job row.</summary>
     public JobStatus Status { get; set; }
 
