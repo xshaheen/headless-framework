@@ -160,3 +160,30 @@ production and active in development.
 The per-gate strictness setting: off (skip), warn (log and continue, recording degraded state), or
 strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
 set, otherwise from an environment-aware default keyed to its tier.
+
+## Jobs (chains)
+
+### Job chain
+
+A conditional sequential tree of one-shot time jobs persisted on the existing parent/child columns —
+each edge is a child row carrying a run condition, never a separate workflow schema. A node has at
+most one success child and one failure child, so a chain branches on outcome but never fans out in
+parallel. Chain depth (nodes along a path from the root, catch branches included) is capped by a
+configurable global limit enforced at enqueue, before persistence; building additionally applies a
+fixed structural bound.
+
+### Catch step
+
+A chain step attached to run only when its parent fails (`RunCondition.OnFailure`). Pure authoring
+sugar: it does not consume, recover, or rewrite the parent's failure — the parent stays failed, no
+catch marker is stored, and a catch step that itself fails is an ordinary failed job whose own
+continuations follow the same rules. *Avoid:* reading it as try/catch exception handling (the
+parent's outcome is immutable history, not something a catch step handles).
+
+### Timed descendant
+
+A chain child carrying an explicit execution time. Unlike untimed children (which run in-process
+when their parent completes), it is claimed independently and becomes eligible at the later of its
+parent's matching terminal state and its own execution time; a non-matching parent terminal state
+skips it with its subtree. It is never started early and never failed merely because its time
+arrived while the parent was still running.
