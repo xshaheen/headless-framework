@@ -23,7 +23,7 @@ These fields are the durable representation. Runtime retry predicates, delays, a
   date/status counts plus the exact inclusive graph boundaries without requiring occurrence entities for empty dates.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
-- **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` defines parent–child–grandchild job chains up to 3 levels / 5 siblings per level without reading ambient identity or clock state. The manager stamps the complete tree when it is added.
+- **Typed job chains**: `JobChain` / `JobChainBuilder` / `JobChainNodeBuilder` author a conditional sequential tree of descriptor-backed steps — `Then` (on-success) and `Catch` (on-failure), one of each per node — frozen by `Build()` into an immutable `JobChain` and enqueued atomically through `IJobScheduler.EnqueueAsync(JobChain, …)`.
 - **Global exception handler**: `IJobExceptionHandler` with `HandleExceptionAsync` and `HandleCanceledExceptionAsync`.
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
 
@@ -135,6 +135,21 @@ var resumeAccepted = await jobs.ResumeCronAsync(recurringId, ct);
 ```
 
 `TimeZoneId` accepts IANA identifiers only. A null value falls back to the configured scheduler-global timezone. Cron expressions are evaluated in that timezone, while every occurrence remains a UTC instant in persistence. DST gaps shift forward by the gap; overlaps select the later UTC instant deterministically.
+
+Compose a multi-step workflow with the typed `JobChain` model. Each step's identity is a generated `JobFunctionDescriptor`, resolved from the step's payload type (or supplied explicitly for a requestless step); no handler contract is named:
+
+```csharp
+using Headless.Jobs;
+
+var chain = JobChain.Start(new ProcessOrder(orderId));
+var chargeCard = chain.Root.Then(new ChargeCard(orderId));   // runs when ProcessOrder succeeds
+chargeCard.Then(new SendReceipt(orderId));                   // runs when ChargeCard succeeds
+chargeCard.Catch(new RefundPayment(orderId));                // runs when ChargeCard fails
+
+var rootJobId = await jobs.EnqueueAsync(chain.Build(), ct);
+```
+
+`Then` attaches the single on-success child and `Catch` the single on-failure child (a second edge of the same kind on one node throws `InvalidOperationException`); each returns the new child handle so a branch extends further. `Catch` is pure on-failure sugar — it never recovers the parent, which stays `Failed`. `Build()` freezes an immutable chain, and `EnqueueAsync(JobChain, …)` resolves every descriptor, enforces the configured `MaxChainDepth` (default 10, ceiling `JobChain.MaxStructuralDepth` = 64), and persists the whole tree in one atomic write — re-enqueueing a built chain yields independent trees. Per-step `EnqueueOptions` and an optional execution time apply per node; priority stays descriptor-canonical. `JobChain` replaces the removed fluent chain builder; see [docs/llms/jobs.md](../../docs/llms/jobs.md) for chain semantics, timed-descendant gating, and migration guidance.
 
 The managers remain supported public APIs. Use `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entity types, chains, or other advanced persistence scenarios:
 
