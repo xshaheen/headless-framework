@@ -36,7 +36,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            guidGenerator
+            guidGenerator,
+            Substitute.For<IServiceProvider>()
         );
         var definition = new FakeCronJob
         {
@@ -91,7 +92,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
         var definition = new FakeCronJob
         {
@@ -134,7 +136,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
         var acceptedId = Guid.NewGuid();
         var rejectedId = Guid.NewGuid();
@@ -160,7 +163,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
         var jobId = Guid.NewGuid();
         provider.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
@@ -181,7 +185,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
 
         var owned = new JobExecutionState
@@ -225,7 +230,8 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
 
         // The grandchild must keep ITS OWN RunCondition; a regression to the parent's value would

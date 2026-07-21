@@ -66,6 +66,26 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
     }
 
+    // U5/KTD3 claim gate: a timed descendant (ParentId != null AND ExecutionTime != null) with a parent-terminal-gated
+    // run condition is claimable only once its parent reached the MATCHING terminal state. Roots (ParentId == null),
+    // non-timed children (ExecutionTime == null, walked in-tree), and InProgress/null-condition timed children stay
+    // ungated. Mirrors the EF WhereClaimableUnderParentTerminalGate correlated-subquery predicate; the coherent
+    // single-process map is this provider's authority (no DB clock).
+    private bool _ParentGateAllowsClaim(TTimeJob job)
+    {
+        if (
+            job.ParentId is not { } parentId
+            || job.ExecutionTime is null
+            || !ChainRunConditionRules.IsParentTerminalGated(job.RunCondition)
+        )
+        {
+            return true;
+        }
+
+        return _timeJobs.TryGetValue(parentId, out var parent)
+            && ChainRunConditionRules.ParentTerminalMatches(job.RunCondition, parent.Status);
+    }
+
     #region Time Job Methods
 
     public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
@@ -183,6 +203,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 x.ExecutionTime != null
                 && _CanFallbackClaim(x.Status, x.LockedUntil, now)
                 && x.ExecutionTime <= fallbackThreshold
+                && _ParentGateAllowsClaim(x) // U5/KTD3: the fallback claims timed rows directly, so it is gated too
             ) // Only tasks older than 1 second
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
@@ -200,6 +221,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (
                     existingTicker.UpdatedAt <= job.UpdatedAt
                     && _CanFallbackClaim(existingTicker.Status, existingTicker.LockedUntil, now)
+                    && _ParentGateAllowsClaim(existingTicker)
                 )
                 {
                     var updatedTicker = _CloneTicker(existingTicker);
@@ -255,9 +277,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var oneSecondAgo = now.AddSeconds(-1);
 
-        // Base query: same filter as EF provider, but over the snapshot
+        // Base query: same filter as EF provider, but over the snapshot. U5/KTD3: a timed descendant surfaces here as
+        // its own candidate (excluded from the in-tree walk), so the parent gate keeps it out until its parent matched.
         var baseQuery = _timeJobs
-            .Values.Where(x => x.ExecutionTime != null && _CanAcquire(x) && x.ExecutionTime >= oneSecondAgo)
+            .Values.Where(x =>
+                x.ExecutionTime != null
+                && _CanAcquire(x)
+                && x.ExecutionTime >= oneSecondAgo
+                && _ParentGateAllowsClaim(x)
+            )
             .ToArray();
 
         // Get minimum execution time
@@ -365,6 +393,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (job.Status == JobStatus.Idle)
             {
+                // Non-timed children keep the existing cancellation handling. U5/KTD3: the cancelled parent's TIMED
+                // children are reconciled by ApplyParentTerminalRunConditionsAsync, driven post-cancellation by the
+                // manager so the released-child scheduler wake is threaded through the same path as the executor/sweep
+                // reconcile (and by the poll-time / sweep reconcile as a backstop).
                 _ApplyCancelledParentRunConditions(jobId, now);
             }
 
@@ -414,6 +446,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     childId,
                     now,
                     "Parent cancellation did not satisfy the job run condition.",
+                    "Ancestor job was skipped after parent cancellation.",
                     requireUnscheduled: true
                 );
                 break;
@@ -421,13 +454,25 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    private void _SkipRejectedBranch(Guid jobId, DateTime now, string reason, bool requireUnscheduled = false)
+    // Skips an idle branch and cascades the skip to its whole subtree, returning the number of rows skipped. The node
+    // uses <paramref name="reason"/>; every descendant uses <paramref name="cascadeReason"/>. When
+    // <paramref name="requireUnscheduled"/> is set the node is skipped only if it has no ExecutionTime (the
+    // cancellation path's non-timed filter); the cascade always skips regardless (a skipped node's whole tail dies).
+    private int _SkipRejectedBranch(
+        Guid jobId,
+        DateTime now,
+        string reason,
+        string cascadeReason,
+        bool requireUnscheduled = false
+    )
     {
+        var skippedCount = 0;
+
         while (_timeJobs.TryGetValue(jobId, out var job))
         {
             if (job.Status != JobStatus.Idle || (requireUnscheduled && job.ExecutionTime is not null))
             {
-                return;
+                return skippedCount;
             }
 
             var skipped = _CloneTicker(job);
@@ -439,14 +484,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             skipped.UpdatedAt = now;
             if (_timeJobs.TryUpdate(jobId, skipped, job))
             {
+                skippedCount++;
                 break;
             }
         }
 
         foreach (var childId in _GetChildrenIds(jobId))
         {
-            _SkipRejectedBranch(childId, now, "Ancestor job was skipped after parent cancellation.");
+            skippedCount += _SkipRejectedBranch(childId, now, cascadeReason, cascadeReason);
         }
+
+        return skippedCount;
     }
 
     private static bool _RunsAfterCancelled(RunCondition? runCondition) =>
@@ -454,6 +502,128 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             is RunCondition.OnCancelled
                 or RunCondition.OnFailureOrCancelled
                 or RunCondition.OnAnyCompletedStatus;
+
+    // U5/KTD3: skip-reason convention shared with the EF provider; "Rule RunCondition did not match!" mirrors the
+    // executor's UpdateSkipTimeJobsWithUnifiedContextAsync detail so a non-matching timed child reads identically
+    // whether it was skipped in-process or by this reconcile.
+    private const string _RunConditionMismatchReason = "Rule RunCondition did not match!";
+    private const string _AncestorSkippedReason =
+        "Ancestor job was skipped after its parent's run condition did not match.";
+
+    public Task<DateTime?> ApplyParentTerminalRunConditionsAsync(
+        Guid? parentId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var (earliest, _) = _ReconcileTerminalTimedChildren(parentId, skipOnly: false, now);
+
+        return Task.FromResult(earliest);
+    }
+
+    public Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var (_, skipped) = _ReconcileTerminalTimedChildren(parentId: null, skipOnly: true, now);
+
+        return Task.FromResult(skipped);
+    }
+
+    // The set-based release/skip reconcile (KTD3), single-process form. For every IDLE timed child whose parent has
+    // reached a terminal state: a MATCHING run condition releases (re-stamping a past-due child to now so the
+    // staleness-filtered main peek claims it promptly); a NON-matching one is skipped with its subtree. parentId
+    // constrains to one parent (post-terminal, from the executor/cancellation); null reconciles all terminal parents
+    // (the sweep follow-up). skipOnly is the poll-time safety net that never releases. Returns the earliest released
+    // ExecutionTime (for RestartIfNeeded) and the number of rows skipped.
+    private (DateTime? Earliest, int Skipped) _ReconcileTerminalTimedChildren(
+        Guid? parentId,
+        bool skipOnly,
+        DateTime now
+    )
+    {
+        DateTime? earliest = null;
+        var skipped = 0;
+
+        foreach (var child in _timeJobs.Values)
+        {
+            if (
+                child.Status != JobStatus.Idle
+                || child.ExecutionTime is null
+                || child.ParentId is not { } childParentId
+                || !ChainRunConditionRules.IsParentTerminalGated(child.RunCondition)
+            )
+            {
+                continue;
+            }
+
+            if (parentId is { } target && childParentId != target)
+            {
+                continue;
+            }
+
+            if (
+                !_timeJobs.TryGetValue(childParentId, out var parent)
+                || !ChainRunConditionRules.IsTerminal(parent.Status)
+            )
+            {
+                continue;
+            }
+
+            if (ChainRunConditionRules.ParentTerminalMatches(child.RunCondition, parent.Status))
+            {
+                if (skipOnly)
+                {
+                    continue; // the safety net never makes a child eligible early
+                }
+
+                var released = _ReleaseMatchingTimedChild(child.Id, now);
+                if (released is { } releasedTime && (earliest is null || releasedTime < earliest))
+                {
+                    earliest = releasedTime;
+                }
+            }
+            else
+            {
+                skipped += _SkipRejectedBranch(child.Id, now, _RunConditionMismatchReason, _AncestorSkippedReason);
+            }
+        }
+
+        return (earliest, skipped);
+    }
+
+    // Releases a matching idle timed child: the gate now passes (parent terminal-matched), so it is claimable at its
+    // own ExecutionTime. A future time is left untouched (it runs at its scheduled time); a past-due time is re-stamped
+    // to now so the staleness-filtered main peek claims it promptly rather than the slow fallback. Returns the
+    // effective (post-restamp) ExecutionTime so the scheduler can be woken for it.
+    private DateTime? _ReleaseMatchingTimedChild(Guid childId, DateTime now)
+    {
+        while (_timeJobs.TryGetValue(childId, out var child))
+        {
+            if (child.Status != JobStatus.Idle || child.ExecutionTime is null)
+            {
+                return null;
+            }
+
+            if (child.ExecutionTime.Value > now)
+            {
+                return child.ExecutionTime.Value;
+            }
+
+            var released = _CloneTicker(child);
+            released.ExecutionTime = now;
+            released.OwnerId = null;
+            released.LockedUntil = null;
+            released.UpdatedAt = now;
+            if (_timeJobs.TryUpdate(childId, released, child))
+            {
+                return now;
+            }
+        }
+
+        return null;
+    }
 
     public Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
         Guid[] timeJobIds,
@@ -513,7 +683,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 continue;
             }
 
-            if (!_CanAcquire(job))
+            if (!_CanAcquire(job) || !_ParentGateAllowsClaim(job))
             {
                 continue;
             }

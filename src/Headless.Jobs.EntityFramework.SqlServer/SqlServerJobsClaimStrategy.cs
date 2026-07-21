@@ -147,6 +147,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
             var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
+            // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE clause —
+            // a timed descendant is a candidate only once its parent reached its matching terminal state.
             var candidates = $"""
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
                 FROM {mapping.Table} AS root WITH ({readPastHints})
@@ -157,6 +159,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                            AND (root.{mapping.LockedUntil} IS NULL
                                 OR (root.{mapping.LockedUntil} <= @claimNow
                                     AND root.{mapping.OnNodeDeath} = @retry))))
+                  {TimedChildGateSql.Build(mapping, "root")}
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
                 """;
             claim = await _ClaimRootsAsync(

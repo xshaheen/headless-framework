@@ -138,6 +138,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
+            // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE clause —
+            // a timed descendant is a candidate only once its parent reached its matching terminal state.
             var candidates = $"""
                 SELECT root.{mapping.Id}
                 FROM {mapping.Table} AS root, claim_clock
@@ -148,6 +150,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                            AND (root.{mapping.LockedUntil} IS NULL
                                 OR (root.{mapping.LockedUntil} <= claim_clock.now
                                     AND root.{mapping.OnNodeDeath} = @retry))))
+                  {TimedChildGateSql.Build(mapping, "root")}
                 ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
                 LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
                 FOR UPDATE SKIP LOCKED

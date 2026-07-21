@@ -226,7 +226,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
-            .WhereCanAcquireUsingDatabaseClock(owner);
+            .WhereCanAcquireUsingDatabaseClock(owner)
+            // U5/KTD3: a timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
+            // parent gate keeps it out of the peek until its parent reached its matching terminal state.
+            .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>());
 
         // Find the earliest job within our window
         var minExecutionTime = await baseQuery
@@ -339,6 +342,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // U5/KTD3: _ApplyCancelledParentRunConditionsAsync (in the committed transaction) handled the NON-timed
+        // children. The cancelled parent's TIMED children are reconciled by ApplyParentTerminalRunConditionsAsync,
+        // driven post-cancellation by the manager so the released-child scheduler wake (RestartIfNeeded) is threaded
+        // through the same path as the executor/sweep reconcile — and by the poll-time / sweep reconcile as a backstop.
         return true;
     }
 
@@ -455,6 +463,187 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             );
+
+    // U5/KTD3: skip-reason convention shared with the in-memory provider; "Rule RunCondition did not match!" mirrors
+    // the executor's UpdateSkipTimeJobsWithUnifiedContextAsync detail so a non-matching timed child reads identically
+    // however it was skipped.
+    private const string _RunConditionMismatchReason = "Rule RunCondition did not match!";
+    private const string _AncestorSkippedReason =
+        "Ancestor job was skipped after its parent's run condition did not match.";
+
+    public async Task<DateTime?> ApplyParentTerminalRunConditionsAsync(
+        Guid? parentId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var (earliest, _) = await _ReconcileParentTerminalTimedChildrenAsync(
+                dbContext,
+                parentId,
+                skipOnly: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return earliest;
+    }
+
+    public async Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var (_, skipped) = await _ReconcileParentTerminalTimedChildrenAsync(
+                dbContext,
+                parentId: null,
+                skipOnly: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return skipped;
+    }
+
+    // The set-based release/skip reconcile (KTD3). For every IDLE timed child (ExecutionTime != null) with a
+    // parent-terminal-gated run condition whose parent has reached a terminal state: a MATCHING run condition releases
+    // (a past-due child is re-stamped to the database clock now so the staleness-filtered main peek claims it
+    // promptly); a NON-matching one is skipped with its whole subtree. parentId constrains to one parent (per-parent,
+    // from the executor/cancellation); null reconciles all terminal parents (the dead-node/stalled-lease sweep
+    // follow-up). skipOnly is the poll-time safety net that never releases. Returns the earliest execution time among
+    // matching children (for RestartIfNeeded) and the number of rows skipped. DB-clock discipline: DateTime.UtcNow is
+    // inside the ExecuteUpdate expression tree (translated to the server clock), never a pre-evaluated local.
+    private static async Task<(DateTime? Earliest, int Skipped)> _ReconcileParentTerminalTimedChildrenAsync(
+        TDbContext dbContext,
+        Guid? parentId,
+        bool skipOnly,
+        CancellationToken cancellationToken
+    )
+    {
+        var jobs = dbContext.Set<TTimeJob>();
+
+        var candidates = jobs.Where(x =>
+            x.Status == JobStatus.Idle
+            && x.ExecutionTime != null
+            && x.ParentId != null
+            && (
+                x.RunCondition == RunCondition.OnSuccess
+                || x.RunCondition == RunCondition.OnFailure
+                || x.RunCondition == RunCondition.OnCancelled
+                || x.RunCondition == RunCondition.OnFailureOrCancelled
+                || x.RunCondition == RunCondition.OnAnyCompletedStatus
+            )
+        );
+
+        if (parentId is { } target)
+        {
+            candidates = candidates.Where(x => x.ParentId == target);
+        }
+
+        // Children whose parent has reached ANY terminal state — the ones that need reconciling now.
+        var terminalChildIds = await candidates
+            .AsNoTracking()
+            .WhereParentIsTerminal(jobs)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (terminalChildIds.Length == 0)
+        {
+            return (null, 0);
+        }
+
+        // Among those, the ones whose parent MATCHES their run condition — for a gated timed child the claim gate
+        // reduces to exactly "parent matched".
+        var matchingChildIds = await candidates
+            .AsNoTracking()
+            .Where(x => ((IEnumerable<Guid>)terminalChildIds).Contains(x.Id))
+            .WhereClaimableUnderParentTerminalGate(jobs)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var matchingSet = matchingChildIds.ToHashSet();
+        var skipIds = terminalChildIds.Where(id => !matchingSet.Contains(id)).ToArray();
+
+        // SKIP the non-matching children and cascade the skip to their subtrees (mirror of the cancellation reconcile).
+        var skipped = 0;
+        if (skipIds.Length != 0)
+        {
+            skipped += await _SkipCancellationBranchAsync(jobs, skipIds, _RunConditionMismatchReason, cancellationToken)
+                .ConfigureAwait(false);
+
+            var frontier = skipIds;
+            while (frontier.Length != 0)
+            {
+                var frontierParentIds = frontier;
+                frontier = await jobs.AsNoTracking()
+                    .Where(x => x.ParentId != null && ((IEnumerable<Guid>)frontierParentIds).Contains(x.ParentId.Value))
+                    .Where(x => x.Status == JobStatus.Idle)
+                    .Select(x => x.Id)
+                    .ToArrayAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (frontier.Length != 0)
+                {
+                    skipped += await _SkipCancellationBranchAsync(
+                            jobs,
+                            frontier,
+                            _AncestorSkippedReason,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+
+        if (skipOnly || matchingChildIds.Length == 0)
+        {
+            return (null, skipped);
+        }
+
+        // RELEASE the matching children whose execution time already passed: re-stamp to the database clock now so the
+        // staleness-filtered main peek claims them promptly instead of the slow fallback. Future-dated matching
+        // children keep their scheduled time (the gate already makes them claimable then).
+        await candidates
+            .Where(x => ((IEnumerable<Guid>)matchingChildIds).Contains(x.Id) && x.ExecutionTime <= DateTime.UtcNow)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // Earliest execution time among matching children (past-due ones now re-stamped to ~now) → RestartIfNeeded hint.
+        var earliest = await jobs.AsNoTracking()
+            .Where(x =>
+                ((IEnumerable<Guid>)matchingChildIds).Contains(x.Id)
+                && x.Status == JobStatus.Idle
+                && x.ExecutionTime != null
+            )
+            .OrderBy(x => x.ExecutionTime)
+            .Select(x => x.ExecutionTime)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return (earliest, skipped);
+    }
 
     public async Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
@@ -588,6 +777,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
             .WhereCanAcquireUsingDatabaseClock(owner)
+            // U5/KTD3: gate the immediate-acquire path too — a timed descendant is claimable only once its parent
+            // reached its matching terminal state. Roots (ParentId == null) pass trivially.
+            .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>())
             .ExecuteUpdateAsync(
                 setter =>
                     setter

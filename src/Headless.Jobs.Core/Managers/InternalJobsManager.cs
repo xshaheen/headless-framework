@@ -17,7 +17,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     CronScheduleCache cronScheduleCache,
     ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger,
     JobsRequestSerializationOptions serializationOptions,
-    IGuidGenerator guidGenerator
+    IGuidGenerator guidGenerator,
+    IServiceProvider serviceProvider
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -26,6 +27,26 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        // U5/KTD3 poll-time safety net: skip (never release) idle timed children whose parent terminalized through a
+        // path that missed the per-parent / set-based reconcile, so a missed terminalization can never permanently
+        // strand a timed child. The skip side never makes a child eligible early, so running it before the peek is
+        // safe — it can only remove candidates that must never run. Best-effort: a failure here must NOT block normal
+        // scheduling; the fallback loop's set-based reconcile guarantees liveness regardless.
+        try
+        {
+            await persistenceProvider.SkipStrandedTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable ERP022 // The backstop is intentionally non-fatal to the scheduling poll (logged, not rethrown).
+        catch (Exception exception)
+        {
+            logger.LogTimedChildSafetyNetFailed(exception);
+        }
+#pragma warning restore ERP022
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var minCronGroupTask = _GetEarliestCronJobGroupAsync(cancellationToken);
@@ -567,6 +588,13 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             logger.LogDurableCancellationNotificationFailed(exception, jobId);
         }
 
+        // U5/KTD3: reconcile the cancelled parent's TIMED children through the same reconcile+wake path as the executor,
+        // so a released matching child (OnCancelled/OnFailureOrCancelled/OnAnyCompletedStatus) is claimed promptly via
+        // RestartIfNeeded instead of waiting for the fallback tick, and non-matching timed children are skipped with
+        // their subtree. A running (not-yet-terminal) parent makes this a no-op — the executor reconciles it when it
+        // later reaches Cancelled.
+        await ApplyParentTerminalRunConditionsAsync(jobId, cancellationToken).ConfigureAwait(false);
+
         return true;
     }
 
@@ -795,6 +823,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken);
 
         await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+
+        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
+        // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
+        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
@@ -806,7 +838,49 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         // fault surfaces as AggregateException rather than collapsing to the first task's exception.
         var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
 
+        // U5/KTD3: the stalled-lease sweep terminalizes parents in bulk (reporting only counts), so reconcile every
+        // terminal parent's timed children set-based right after — release matching (re-stamp past-due) / skip
+        // non-matching + subtree — mirroring the dead-node path.
+        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+
         return results[0] + results[1];
+    }
+
+    public async Task ApplyParentTerminalRunConditionsAsync(
+        Guid parentId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // U5/KTD3 per-parent reconcile, invoked after a parent's terminal write committed (executor / cancellation).
+        var earliest = await persistenceProvider
+            .ApplyParentTerminalRunConditionsAsync(parentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        _WakeSchedulerForReleasedChild(earliest);
+    }
+
+    private async Task _ReconcileAllTerminalTimedChildrenAsync(CancellationToken cancellationToken)
+    {
+        var earliest = await persistenceProvider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        _WakeSchedulerForReleasedChild(earliest);
+    }
+
+    private void _WakeSchedulerForReleasedChild(DateTime? earliestReleasedTime)
+    {
+        if (earliestReleasedTime is null)
+        {
+            return;
+        }
+
+        // Resolve the host scheduler lazily to break the JobsSchedulerBackgroundService (IJobsHostScheduler) ⇄
+        // IInternalJobManager constructor cycle. RestartIfNeeded runs only AFTER the releasing transaction committed
+        // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again — KTD3).
+        (serviceProvider.GetService(typeof(IJobsHostScheduler)) as IJobsHostScheduler)?.RestartIfNeeded(
+            earliestReleasedTime
+        );
     }
 }
 
@@ -834,4 +908,12 @@ internal static partial class InternalJobsManagerLog
         Guid cronJobId,
         string operation
     );
+
+    [LoggerMessage(
+        EventId = 3214,
+        Level = LogLevel.Debug,
+        Message = "Poll-time timed-descendant safety net failed; any stranded timed children will be reconciled by the "
+            + "fallback sweep's set-based reconcile instead. Scheduling continues."
+    )]
+    public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
 }

@@ -271,6 +271,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .Where(x => x.ExecutionTime != null)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= fallbackThreshold)
+            // U5/KTD3: the fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
+            // gated here too — claimable only once its parent reached its matching terminal state.
+            .WhereClaimableUnderParentTerminalGate(context)
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
             .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
@@ -288,9 +291,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
+            // U5/KTD3: re-assert the parent gate inside the atomic claim (rootMatches gates the root ExecuteUpdate), so
+            // a timed descendant is never leased if its parent had not reached its matching terminal state.
             var rootMatches = context
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
-                .WhereCanFallbackClaimUsingDatabaseClock();
+                .WhereCanFallbackClaimUsingDatabaseClock()
+                .WhereClaimableUnderParentTerminalGate(context);
             var claimedIds = await _ClaimTimeJobTreeAsync(dbContext, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 

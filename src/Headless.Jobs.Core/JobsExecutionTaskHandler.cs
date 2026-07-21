@@ -155,6 +155,29 @@ internal sealed class JobsExecutionTaskHandler
                 await Task.WhenAll(childrenToRunAfterTask).ConfigureAwait(false);
             }
         }
+
+        // U5/KTD3: once the parent's terminal write has COMMITTED and is unfenced (LeaseLost guards a reclaimed row),
+        // reconcile its TIMED children — excluded from the in-tree hydration and claimed independently — so a matching
+        // one is released (past-due re-stamped, scheduler woken) and a non-matching one is skipped with its subtree.
+        // Runs AFTER the non-timed deferred children above and is best-effort: the reconcile is a recoverable
+        // side-effect (the poll-time safety net and set-based sweep reconcile any miss), so a failure here must NEVER
+        // strand the already-claimed non-timed children that were just processed. CancellationToken.None mirrors the
+        // terminal-write discipline so this post-commit step still runs on host stop.
+        if (_ParentReachedTerminalStatus(context))
+        {
+            try
+            {
+                await _internalJobsManager
+                    .ApplyParentTerminalRunConditionsAsync(context.JobId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Non-fatal post-commit side effect: logged, not rethrown (backstops reconcile any miss).
+            catch (Exception exception)
+            {
+                _logger.LogTimedChildReconcileFailed(exception, context.JobId, context.FunctionName);
+            }
+#pragma warning restore ERP022
+        }
     }
 
     // KTD7: a parent may drive child processing only when it reached a real terminal status. A lease-lost / host-stop /
@@ -1263,6 +1286,19 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "retry on its next interval."
     )]
     public static partial void LogJobCancellationObservationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3113,
+        Level = LogLevel.Warning,
+        Message = "Post-completion timed-descendant reconcile failed for job {JobId} ({Function}); its timed children "
+            + "will be reconciled by the poll-time safety net / set-based sweep instead. Deferred children already ran."
+    )]
+    public static partial void LogTimedChildReconcileFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,

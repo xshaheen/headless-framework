@@ -229,6 +229,30 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         skipped!.Select(x => x.FunctionName).Should().BeEquivalentTo(["F", "G", "H"]);
     }
 
+    [Fact]
+    public async Task processes_deferred_children_even_when_the_timed_child_reconcile_fails()
+    {
+        // Finding 1: the post-completion timed-descendant reconcile is a recoverable side-effect. If it throws AFTER
+        // the parent's terminal write committed, the already-claimed non-timed deferred children must still be
+        // processed — otherwise they strand Idle beneath a terminal root that nothing rediscovers while the node lives.
+        var manager = _HealthyManager();
+        manager
+            .ApplyParentTerminalRunConditionsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("reconcile boom")));
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+
+        var childRan = false;
+        var root = _Node("root", () => { });
+        root.TimeJobChildren.Add(_Node("child", () => childRan = true));
+
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        childRan.Should().BeTrue("a failing timed-descendant reconcile must not strand the deferred non-timed child");
+    }
+
     private static IInternalJobManager _HealthyManager()
     {
         var manager = Substitute.For<IInternalJobManager>();

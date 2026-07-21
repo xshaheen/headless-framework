@@ -35,7 +35,8 @@ public sealed class InternalJobsManagerContextDepthTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>()
         );
     }
 
