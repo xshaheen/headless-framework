@@ -162,6 +162,65 @@ public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task a_failed_single_add_restores_the_captured_tenant_on_the_caller_entity()
+    {
+        // Final review: the single-add path mirrors the batch restore — a pre-persistence failure must not leave the
+        // inherited tenant on the caller's entities, or a retry treats the stale value as explicit.
+        var (manager, _) = _CreateManager(ambient: null);
+        var inheritedChild = _Job();
+        var root = _Job(tenantId: "t1", children: [inheritedChild]);
+        root.Function = "unknown-fn"; // fails after the chain walk, before persistence
+
+        var act = () => manager.AddAsync(root, AbortToken);
+
+        await act.Should().ThrowAsync<JobValidatorException>();
+        inheritedChild.TenantId.Should().BeNull();
+        root.TenantId.Should().Be("t1");
+    }
+
+    [Fact]
+    public async Task a_cyclic_chain_in_a_batch_is_rejected_not_hung()
+    {
+        // Final review: the tenant snapshot walk runs before the stamping walk's cycle validation, so it must tolerate
+        // a cyclic graph (visited set) and let the stamp reject it deterministically.
+        var (manager, _) = _CreateManager(ambient: null);
+        var child = _Job();
+        var root = _Job(tenantId: "t1", children: [child]);
+        child.Children.Add(root); // cycle
+
+        var act = () => manager.AddBatchAsync([root], AbortToken);
+
+        await act.Should().ThrowAsync<JobValidatorException>();
+    }
+
+    [Fact]
+    public async Task a_cron_update_carrying_a_tenant_is_rejected()
+    {
+        // Final review: updates bypass the schedule middleware, so the cron system-scope rule (R8) must hold on the
+        // update paths too — otherwise providers diverge on whether the tenant lands.
+        var (manager, persistence) = _CreateManager(ambient: null);
+        var cronManager = (ICronJobManager<CronJobEntity>)manager;
+        var cron = new CronJobEntity
+        {
+            Function = _Function,
+            Expression = "* * * * *",
+            TenantId = "t1",
+        };
+
+        var result = await cronManager.UpdateAsync(cron, AbortToken);
+
+        result.IsSucceeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<JobValidatorException>();
+        await persistence
+            .DidNotReceive()
+            .UpdateCronJobsAtomicallyAsync(
+                Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
+                Arg.Any<DateTime>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task update_with_a_new_unset_descendant_inherits_the_stored_root_tenant()
     {
         // #278 finding #5: a descendant appended through UpdateAsync bypasses the Add path's resolution, so it must

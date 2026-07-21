@@ -145,57 +145,77 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         _StampTimeJobTree(entity, now, assignIds: true);
 
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-        _StampTimeJobTree(entity, now, assignIds: false);
-        _ResolveChainTenants(entity);
+        // Mirror the batch path: on any pre-persistence failure, restore captured tenant mutations so a retried
+        // entity is not treated as explicitly tenanted with a stale captured value.
+        var tenantSnapshot = _SnapshotTreeTenants([entity]);
+        var persisted = false;
 
-        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+        try
         {
-            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
-        }
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampTimeJobTree(entity, now, assignIds: false);
+            _ResolveChainTenants(entity);
 
-        entity.ExecutionTime =
-            entity.ExecutionTime == null
-                ? timeProvider.GetUtcNow().UtcDateTime
-                : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+            {
+                throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
+            }
 
-        // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a mis-wired
-        // provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the write and any
-        // persistence fault propagate too, so on the coordinated path the caller's transaction rolls back rather than
-        // committing without the job row, the exact divergence this feature prevents.
-        var coordinated = _TryCaptureCoordinatedContext();
+            entity.ExecutionTime =
+                entity.ExecutionTime == null
+                    ? timeProvider.GetUtcNow().UtcDateTime
+                    : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-        var executionTime = entity.ExecutionTime.Value;
+            // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a
+            // mis-wired provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the
+            // write and any persistence fault propagate too, so on the coordinated path the caller's transaction rolls
+            // back rather than committing without the job row, the exact divergence this feature prevents.
+            var coordinated = _TryCaptureCoordinatedContext();
 
-        if (coordinated is { } context)
-        {
-            // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
-            // returned entity means the row was enlisted into the transaction (it commits with it), not that the
-            // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
-            await context
-                .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
+            var executionTime = entity.ExecutionTime.Value;
+
+            if (coordinated is { } context)
+            {
+                // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
+                // returned entity means the row was enlisted into the transaction (it commits with it), not that the
+                // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
+                await context
+                    .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
+                    .ConfigureAwait(false);
+
+                persisted = true;
+
+                // Re-read the clock at commit time: the deferred lambda runs when the caller's transaction commits,
+                // which can be much later than enqueue. Using the enqueue-time `now` could push a job that was within
+                // the immediate-dispatch window into the scheduler/poll-sweep path. (Direct path below stays in-band,
+                // so its `now` is already current.)
+                _DeferSideEffects(
+                    context.Coordinator,
+                    entity.Id.ToString(),
+                    ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow().UtcDateTime, executionTime, ct)
+                );
+
+                return entity;
+            }
+
+            // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
+            await persistenceProvider
+                .AddTimeJobsAsync([entity], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            // Re-read the clock at commit time: the deferred lambda runs when the caller's transaction commits, which
-            // can be much later than enqueue. Using the enqueue-time `now` could push a job that was within the
-            // immediate-dispatch window into the scheduler/poll-sweep path. (Direct path below stays in-band, so its
-            // `now` is already current.)
-            _DeferSideEffects(
-                context.Coordinator,
-                entity.Id.ToString(),
-                ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow().UtcDateTime, executionTime, ct)
-            );
+            persisted = true;
+
+            await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
 
             return entity;
         }
-
-        // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
-        await persistenceProvider
-            .AddTimeJobsAsync([entity], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
-
-        return entity;
+        finally
+        {
+            if (!persisted)
+            {
+                _RestoreTreeTenants(tenantSnapshot);
+            }
+        }
     }
 
     // Side effects for a single time-job enqueue: immediate dispatch (when due) or scheduler restart, then notify.
@@ -349,6 +369,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
             );
+        }
+
+        // Cron stays system scope on the update path too (R8): updates bypass the schedule middleware, and letting a
+        // tenant through here would produce provider-divergent rows.
+        if (cronJob.TenantId is not null)
+        {
+            return new JobResult<TCronJob>(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -883,6 +910,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private static List<(TTimeJob Node, string? TenantId)> _SnapshotTreeTenants(List<TTimeJob> roots)
     {
         var snapshot = new List<(TTimeJob, string?)>();
+        // Reference-equality visited set: this walk runs before _StampTimeJobTree's cycle validation, so a cyclic or
+        // reused-node graph must not loop here — the stamping walk rejects it right after with JobValidatorException.
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
         var pending = new Stack<TTimeJob>();
         foreach (var root in roots)
         {
@@ -891,6 +921,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         while (pending.TryPop(out var node))
         {
+            if (!visited.Add(node))
+            {
+                continue;
+            }
+
             snapshot.Add((node, node.TenantId));
 
             foreach (var child in node.Children)
@@ -1031,6 +1066,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
             {
                 errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
+                continue;
+            }
+
+            // Cron stays system scope on the batch update path too (R8); see _UpdateCronJobAsync.
+            if (cronJob.TenantId is not null)
+            {
+                errors.Add(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
                 continue;
             }
 

@@ -86,6 +86,66 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
         tenant.Id.Should().BeNull("the job tenant scope must not leak past the handler");
     }
 
+    [Fact]
+    public async Task system_job_failure_callbacks_run_system_scope_even_under_a_leaked_ambient()
+    {
+        // Final review: a system-scope job (null TenantId) on a propagation-enabled host must not let a leaked
+        // ambient tenant reach its failure callbacks — the callbacks get the same explicit null scope the execute
+        // middleware gives the handler.
+        var tenant = new AsyncLocalTenant();
+
+        var manager = Substitute.For<IInternalJobManager>();
+        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+
+        var observed = new List<string?>();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IJobExceptionHandler>(new CapturingExceptionHandler(() => observed.Add(tenant.Id)));
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsRetryOptions(),
+            tenant,
+            Microsoft.Extensions.Options.Options.Create(new JobsTenancyOptions { PropagateTenant = true })
+        );
+
+        var job = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "failing-fn",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            Retries = 0,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            TenantId = null,
+            CachedDelegate = (_, _, _) => Task.FromException(new InvalidOperationException("boom")),
+        };
+
+        using (tenant.Change("leaked"))
+        {
+            await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
+
+            tenant.Id.Should().Be("leaked", "the leaked ambient is restored after every callback scope disposes");
+        }
+
+        observed.Should().NotBeEmpty().And.AllSatisfy(id => id.Should().BeNull());
+    }
+
     private sealed class CapturingExceptionHandler(Action onHandle) : IJobExceptionHandler
     {
         public Task HandleExceptionAsync(

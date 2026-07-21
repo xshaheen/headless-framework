@@ -53,9 +53,7 @@ public sealed class TenantPropagationScheduleMiddleware(
         {
             if (job.TenantId is not null)
             {
-                throw new JobValidatorException(
-                    "Cron definitions are always system scope and cannot carry a tenant identifier."
-                );
+                throw new JobValidatorException(JobTenantValidation.CronSystemScopeMessage);
             }
 
             return;

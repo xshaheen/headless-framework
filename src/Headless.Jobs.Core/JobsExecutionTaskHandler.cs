@@ -11,6 +11,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs;
 
@@ -39,6 +40,7 @@ internal sealed class JobsExecutionTaskHandler
     // the unit path and in standalone hosts without tenancy; AddHeadlessJobs registers the NullCurrentTenant fallback,
     // so DI injection is safe. A null tenant on the job (system scope) or a null accessor here is a no-op.
     private readonly ICurrentTenant? _currentTenant;
+    private readonly bool _propagateTenant;
 
     public JobsExecutionTaskHandler(
         IServiceProvider serviceProvider,
@@ -50,9 +52,11 @@ internal sealed class JobsExecutionTaskHandler
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
         JobsRetryOptions? retryOptions = null,
-        ICurrentTenant? currentTenant = null
+        ICurrentTenant? currentTenant = null,
+        IOptions<JobsTenancyOptions>? tenancyOptions = null
     )
     {
+        _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
         _serviceProvider = serviceProvider;
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
@@ -692,7 +696,16 @@ internal sealed class JobsExecutionTaskHandler
     [MustDisposeResource]
     private IDisposable? _EnterTenantScope(JobExecutionState context)
     {
-        return context.TenantId is { } tenantId ? _currentTenant?.Change(tenantId) : null;
+        // Scope symmetry with TenantRestoreExecuteMiddleware: a persisted tenant is always restored, and a
+        // system-scope job (null TenantId) gets an explicit null scope when propagation is enabled so a leaked
+        // ambient tenant never reaches its failure callbacks either. Only a tenant-free job on a propagation-off
+        // host is a pure pass-through.
+        if (_currentTenant is null || (context.TenantId is null && !_propagateTenant))
+        {
+            return null;
+        }
+
+        return _currentTenant.Change(context.TenantId);
     }
 
     private async ValueTask _ObserveJobExceptionAsync(
