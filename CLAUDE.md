@@ -180,6 +180,8 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- CI runs unit tests only (`make ci-test`); integration suites never gate merges, so a semantics change can silently break provider-integration tests for weeks (a Redis membership test contradicted the #643 heartbeat contract unnoticed). Run the affected `*.Tests.Integration` projects locally when touching provider behavior. (2026-07-21)
+- PostgreSQL materializes `DateTime` at microsecond granularity while SQL Server `datetime2(7)` keeps ticks; conformance asserts on round-tripped values must use `BeCloseTo(1µs)` (messaging-harness precedent). Exact `.Be()` may still pass nondeterministically when the read hits the EF identity map instead of a fresh context — passing once proves nothing. (2026-07-21)
 - Broker conformance fixtures need protocol-specific anti-flake controls: Kafka container reuse stays disabled because stale log readiness can false-pass, while Pulsar.Client requires a trailing-slash-free broker URL, an explicit short negative-ack delay in tests, and cancellation of the in-flight receive when pausing. (2026-07-16)
 - Workflow trigger changes must stay synchronized with `main` branch protection: removing the CodeQL `pull_request` trigger while `Analyze (csharp)` remains required leaves PRs permanently waiting. Package publication is gated by a published GitHub Release; Release Drafter updates drafts but does not publish them. (2026-07-16)
 - Jobs generated registration freezes once only after the `AddHeadlessJobs` options callback has loaded every `AddJobsDiscovery` assembly; public descriptors remain configuration-independent, while all live runtime and Dashboard reads must use the immutable per-`IHost` registry. (2026-07-15)
