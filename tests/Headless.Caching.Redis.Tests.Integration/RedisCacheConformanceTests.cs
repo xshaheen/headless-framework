@@ -194,10 +194,32 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         idleRead.HasValue.Should().BeFalse();
     }
 
+    // Overridden with whole-second timings (see note above): the base's 150ms sliding window leaves only tens
+    // of ms of slack per keep-alive read, which parallel-suite scheduling jitter can consume. Every keep-alive
+    // read below sits 1s inside its window, and the final read lands past the absolute cap while the sliding
+    // window is still open, so the cap - not an accidental sliding lapse - is what expires the entry.
     [Fact]
-    public override Task should_expire_sliding_entry_at_absolute_duration_cap()
+    public override async Task should_expire_sliding_entry_at_absolute_duration_cap()
     {
-        return base.should_expire_sliding_entry_at_absolute_duration_cap();
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(2);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(4), SlidingExpiration = sliding };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+            (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
+        }
+
+        // 1.5s after the last keep-alive read: inside the re-armed sliding window (2s), past the 4s cap.
+        await Task.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
+        var capped = await cache.GetAsync<string>(key, AbortToken);
+
+        capped.HasValue.Should().BeFalse();
     }
 
     // Overridden with a whole-second window (see note above): ExistsAsync must not extend the window, so after
