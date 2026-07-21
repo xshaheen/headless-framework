@@ -727,6 +727,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
         var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         var functions = cronJobs.Select(x => x.Function).ToArray();
@@ -747,7 +750,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (seededToDelete.Length > 0)
         {
-            // Delete related occurrences first (if any), then the cron jobs
+            foreach (var definitionId in seededToDelete.Order())
+            {
+                await cronSet
+                    .Where(x => x.Id == definitionId)
+                    .ExecuteUpdateAsync(
+                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            // Parent rows are locked above in canonical order; delete children before parents for FK safety.
             await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
@@ -769,16 +783,43 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var existingByFunction = existing
             .GroupBy(c => c.Function, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var changedDefinitionIds = new List<Guid>();
+        var orderedCronJobs = cronJobs
+            .Select(x =>
+                (
+                    x.Function,
+                    x.Expression,
+                    Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
+                        ? existingDefinition.Id
+                        : JobsSeedId.ForCronSeed(x.Function)
+                )
+            )
+            .OrderBy(x => x.Id)
+            .ToArray();
 
-        foreach (var (function, expression) in cronJobs)
+        foreach (var (function, expression, _) in orderedCronJobs)
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
                 // Update expression if it changed
                 if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
                 {
-                    cron.Expression = expression;
-                    cron.UpdatedAt = now;
+                    await cronSet
+                        .Where(x => x.Id == cron.Id)
+                        .ExecuteUpdateAsync(
+                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
+
+                    if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                    {
+                        cron.Expression = expression;
+                        cron.ScheduleRevision++;
+                        cron.UpdatedAt = now;
+                        changedDefinitionIds.Add(cron.Id);
+                    }
                 }
             }
             else
@@ -803,6 +844,31 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            if (changedDefinitionIds.Count > 0)
+            {
+                await dbContext
+                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                    .Where(x =>
+                        changedDefinitionIds.Contains(x.CronJobId)
+                        && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                    )
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.Status, JobStatus.Skipped)
+                                .SetProperty(x => x.ExecutedAt, now)
+                                .SetProperty(x => x.UpdatedAt, now)
+                                .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                .SetProperty(x => x.OwnerId, _ => null)
+                                .SetProperty(x => x.LockedUntil, _ => null),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         }
         catch (DbUpdateException ex)
         {
@@ -1223,6 +1289,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Include(x => x.CronJob)
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
+            .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquireUsingDatabaseClock(owner)
             .OrderBy(x => x.ExecutionTime)
@@ -1271,17 +1338,50 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var startsExecution =
+            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress;
+        await using var transaction = startsExecution
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (startsExecution)
+        {
+            var definitionIds = await dbContext
+                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                .AsNoTracking()
+                .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+                .Select(x => x.CronJobId)
+                .Distinct()
+                .Order()
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var definitionId in definitionIds)
+            {
+                var active = await dbContext
+                    .Set<TCronJob>()
+                    .Where(x => x.Id == definitionId && !x.IsPaused)
+                    .ExecuteUpdateAsync(
+                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                if (active == 0)
+                {
+                    return [];
+                }
+            }
+        }
+
         var rowsToUpdate = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
             .WhereOwnedBy(owner);
 
-        if (
-            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
-            && functionContext.Status == JobStatus.InProgress
-        )
+        if (startsExecution)
         {
-            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued);
+            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued && !x.CronJob.IsPaused);
         }
 
         var affected = await rowsToUpdate
@@ -1291,6 +1391,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         if (affected == 0)
         {
             return [];
+        }
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         var updated = dbContext

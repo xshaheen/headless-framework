@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -15,7 +16,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     IJobsNotificationHubSender notificationHubSender,
     CronScheduleCache cronScheduleCache,
     ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger,
-    JobsRequestSerializationOptions serializationOptions
+    JobsRequestSerializationOptions serializationOptions,
+    IGuidGenerator guidGenerator
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -278,7 +280,12 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         foreach (var cronJob in cronJobs)
         {
-            var next = cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now);
+            if (cronJob.IsPaused)
+            {
+                continue;
+            }
+
+            var next = cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now, cronJob.TimeZoneId);
             if (next is null)
             {
                 continue;
@@ -301,6 +308,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     FunctionName = cronJob.Function,
                     Expression = cronJob.Expression,
+                    TimeZoneId = cronJob.TimeZoneId,
+                    IsPaused = cronJob.IsPaused,
+                    ScheduleRevision = cronJob.ScheduleRevision,
                     Retries = cronJob.Retries,
                     RetryIntervals = cronJob.RetryIntervals,
                     OnNodeDeath = cronJob.OnNodeDeath,
@@ -316,6 +326,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         FunctionName = cronJob.Function,
                         Expression = cronJob.Expression,
+                        TimeZoneId = cronJob.TimeZoneId,
+                        IsPaused = cronJob.IsPaused,
+                        ScheduleRevision = cronJob.ScheduleRevision,
                         Retries = cronJob.Retries,
                         RetryIntervals = cronJob.RetryIntervals,
                         OnNodeDeath = cronJob.OnNodeDeath,
@@ -332,6 +345,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             {
                 FunctionName = earliestStored.CronJob.Function,
                 Expression = earliestStored.CronJob.Expression,
+                TimeZoneId = earliestStored.CronJob.TimeZoneId,
+                IsPaused = earliestStored.CronJob.IsPaused,
+                ScheduleRevision = earliestStored.CronJob.ScheduleRevision,
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
                 OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
@@ -558,6 +574,60 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default) =>
         persistenceProvider.IsTimeJobCancellationRequestedAsync(jobId, cancellationToken);
 
+    public async Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var updated = await persistenceProvider
+            .PauseCronJobAsync(cronJobId, now, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _PublishAcceptedCronControlAsync(updated, "pause").ConfigureAwait(false);
+    }
+
+    public async Task<bool> ResumeCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var definition = await persistenceProvider
+            .GetCronJobByIdAsync(cronJobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (definition?.IsPaused != true)
+        {
+            return false;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var next = cronScheduleCache.GetNextOccurrenceOrDefault(definition.Expression, now, definition.TimeZoneId);
+        if (next is null)
+        {
+            return false;
+        }
+
+        var occurrence = CronJobOccurrenceFactory.Create(definition, next.Value, now, guidGenerator);
+        var updated = await persistenceProvider
+            .ResumeCronJobAsync(definition.Id, definition.ScheduleRevision, occurrence, now, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _PublishAcceptedCronControlAsync(updated, "resume").ConfigureAwait(false);
+    }
+
+    private async Task<bool> _PublishAcceptedCronControlAsync(TCronJob? updated, string operation)
+    {
+        if (updated is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await notificationHubSender.UpdateCronJobNotifyAsync(updated).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogCronControlNotificationFailed(exception, updated.Id, operation);
+        }
+
+        return true;
+    }
+
     public async Task UpdateSkipTimeJobsWithUnifiedContextAsync(
         JobExecutionState[] resources,
         CancellationToken cancellationToken = default
@@ -752,5 +822,17 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         Guid jobId
+    );
+
+    [LoggerMessage(
+        EventId = 3213,
+        Level = LogLevel.Warning,
+        Message = "Cron definition {CronJobId} {Operation} was committed, but the dashboard notification failed."
+    )]
+    public static partial void LogCronControlNotificationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid cronJobId,
+        string operation
     );
 }

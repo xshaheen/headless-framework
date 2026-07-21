@@ -13,10 +13,7 @@ internal sealed class RestartThrottleManager : IDisposable
 
     private readonly TimeSpan _debounceWindow = TimeSpan.FromMilliseconds(50);
 
-    public RestartThrottleManager(Action onRestartTriggered)
-        : this(onRestartTriggered, TimeProvider.System) { }
-
-    internal RestartThrottleManager(Action onRestartTriggered, TimeProvider timeProvider)
+    public RestartThrottleManager(Action onRestartTriggered, TimeProvider timeProvider)
     {
         _onRestartTriggered = onRestartTriggered;
         _timeProvider = timeProvider;

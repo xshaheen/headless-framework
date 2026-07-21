@@ -110,13 +110,13 @@
       },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
-        "requested": "[4.1.5, )",
+        "requested": "[4.1.5, 4.1.5]",
         "resolved": "4.1.5",
         "contentHash": "i5z+cNu/cOcdO0AgFB8aXk8w6In2H+haaDfSgd9ImvQIK+rSHavHZIogVoAZLL8jLwYx4bAcs5b7EyuMMG4mQQ=="
       },
       "Microsoft.Testing.Extensions.CodeCoverage": {
         "type": "Direct",
-        "requested": "[18.9.0, )",
+        "requested": "[18.9.0, 18.9.0]",
         "resolved": "18.9.0",
         "contentHash": "Odp8djWEUFTJoRV02y0zJaAwAHF31CtNaDgnKKM+8dBHbbaH7Ee0oo9gweLpbzjI7UrtMUzH6xLJSrICZw+Nwg==",
         "dependencies": {
@@ -127,7 +127,7 @@
       },
       "Microsoft.Testing.Extensions.CrashDump": {
         "type": "Direct",
-        "requested": "[2.3.1, )",
+        "requested": "[2.3.1, 2.3.1]",
         "resolved": "2.3.1",
         "contentHash": "NVXsP9x3FoeniJO146EDE0pyDvZUtfiXukOm/x/ywA65kOqaFjVHErJ1aDW32pLsxuNQhC3Q9NjK7DtoIhFPlw==",
         "dependencies": {
@@ -137,7 +137,7 @@
       },
       "Microsoft.Testing.Extensions.HangDump": {
         "type": "Direct",
-        "requested": "[2.3.1, )",
+        "requested": "[2.3.1, 2.3.1]",
         "resolved": "2.3.1",
         "contentHash": "4ys3mPSLTnYLFc/8K7vGOt4Boj/iwfT6vxe3eALZMT3qVvY+FNi+UEF8Dt3LSCmdRQwdQq3e7sGHdPZPr9r6yQ==",
         "dependencies": {
@@ -147,7 +147,7 @@
       },
       "Microsoft.Testing.Extensions.HotReload": {
         "type": "Direct",
-        "requested": "[2.3.1, )",
+        "requested": "[2.3.1, 2.3.1]",
         "resolved": "2.3.1",
         "contentHash": "9UWdC7Z33a8+SeZIQXo2mc6yuXIjCPOuV4LHFO5ufVD5CV46fygAcBk6905Ubjjb3CoNGlyayFpjEPA2Dlnp/g==",
         "dependencies": {
@@ -156,7 +156,7 @@
       },
       "Microsoft.Testing.Extensions.Retry": {
         "type": "Direct",
-        "requested": "[2.3.1, )",
+        "requested": "[2.3.1, 2.3.1]",
         "resolved": "2.3.1",
         "contentHash": "Y1lspSpTIfLgQC9A5sUjyzf5AYgpkztzsrlRjBkjiA9bS30tsAcnyE0Zv0tDyx7l1S4yEbSTz/JbkTcxjXNNAw==",
         "dependencies": {
@@ -165,7 +165,7 @@
       },
       "Microsoft.Testing.Extensions.TrxReport": {
         "type": "Direct",
-        "requested": "[2.3.1, )",
+        "requested": "[2.3.1, 2.3.1]",
         "resolved": "2.3.1",
         "contentHash": "nuYT2oV6xht8HkRWsPJvNbM1CwiHiwe6T4B5XsJv2eKCGbE68/teMJlzNybYn2TWJ0oBuYgbTroFDhgciYUMcQ==",
         "dependencies": {
@@ -715,6 +715,23 @@
           "Headless.DistributedLocks.Core": "[1.0.0, )"
         }
       },
+      "headless.domain": {
+        "type": "Project"
+      },
+      "headless.entityframework.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -785,22 +802,12 @@
           "Headless.Jobs.Core": "[1.0.0, )"
         }
       },
-      "headless.jobs.discoveryfixture": {
-        "type": "Project",
-        "dependencies": {
-          "AwesomeAssertions": "[9.4.0, )",
-          "AwesomeAssertions.Json": "[9.0.0, )",
-          "Bogus": "[35.6.5, )",
-          "DeepCloner": "[0.10.4, )",
-          "Headless.Jobs.Core": "[1.0.0, )",
-          "NSubstitute": "[5.3.0, )"
-        }
-      },
       "headless.jobs.entityframework": {
         "type": "Project",
         "dependencies": {
           "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"

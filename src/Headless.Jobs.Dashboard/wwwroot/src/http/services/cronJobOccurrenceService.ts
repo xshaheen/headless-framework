@@ -85,7 +85,7 @@ const getCronJobOccurrenceGraphData = () => {
                 ...item,
                 date: formatDate(item.date, false, timeZoneStore.effectiveTimeZone),
                 type: "line",
-                statuses: item.results.map(x => Status[x.item1])
+                statuses: item.results.map(x => Status[x.status])
             }
         });
 

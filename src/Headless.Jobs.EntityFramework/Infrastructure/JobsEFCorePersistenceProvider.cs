@@ -254,6 +254,240 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
     }
 
+    public async Task<TCronJob?> PauseCronJobAsync(
+        Guid cronJobId,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var accepted = await dbContext
+            .Set<TCronJob>()
+            .Where(x => x.Id == cronJobId && !x.IsPaused)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.IsPaused, valueExpression: true)
+                        .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (accepted == 0)
+        {
+            return null;
+        }
+
+        await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x => x.CronJobId == cronJobId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc)
+                        .SetProperty(x => x.SkippedReason, "Cron definition paused")
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var result = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+        return result;
+    }
+
+    public async Task<TCronJob?> ResumeCronJobAsync(
+        Guid cronJobId,
+        long expectedScheduleRevision,
+        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (nextOccurrence.CronJobId != cronJobId)
+        {
+            return null;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var accepted = await dbContext
+            .Set<TCronJob>()
+            .Where(x => x.Id == cronJobId && x.IsPaused && x.ScheduleRevision == expectedScheduleRevision)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.IsPaused, valueExpression: false)
+                        .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (accepted == 0)
+        {
+            return null;
+        }
+
+        nextOccurrence.CronJob = null!;
+        await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var result = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+        return result;
+    }
+
+    public async Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
+        CronJobAtomicUpdate<TCronJob>[] updates,
+        DateTime operationTimeUtc,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (updates.Select(x => x.Definition.Id).ToHashSet().Count != updates.Length)
+        {
+            return null;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitionIds = updates.Select(x => x.Definition.Id).ToArray();
+        var currentById = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => definitionIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken)
+            .ConfigureAwait(false);
+        var results = new TCronJob[updates.Length];
+
+        foreach (
+            var (update, inputIndex) in updates
+                .Select((update, index) => (update, index))
+                .OrderBy(x => x.update.Definition.Id)
+        )
+        {
+            if (
+                !currentById.TryGetValue(update.Definition.Id, out var current)
+                || current.ScheduleRevision != update.ExpectedScheduleRevision
+            )
+            {
+                return null;
+            }
+
+            var scheduleChanged =
+                !string.Equals(current.Expression, update.Definition.Expression, StringComparison.Ordinal)
+                || !string.Equals(current.TimeZoneId, update.Definition.TimeZoneId, StringComparison.Ordinal);
+
+            if (scheduleChanged && !current.IsPaused && update.NextOccurrence is null)
+            {
+                return null;
+            }
+
+            var affected = await dbContext
+                .Set<TCronJob>()
+                .Where(x => x.Id == current.Id && x.ScheduleRevision == update.ExpectedScheduleRevision)
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.Function, update.Definition.Function)
+                            .SetProperty(x => x.Description, update.Definition.Description)
+                            .SetProperty(x => x.Expression, update.Definition.Expression)
+                            .SetProperty(x => x.TimeZoneId, update.Definition.TimeZoneId)
+                            .SetProperty(x => x.Request, update.Definition.Request)
+                            .SetProperty(x => x.Retries, update.Definition.Retries)
+                            .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
+                            .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
+                            .SetProperty(
+                                x => x.ScheduleRevision,
+                                scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
+                            )
+                            .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (affected == 0)
+            {
+                return null;
+            }
+
+            if (scheduleChanged)
+            {
+                await dbContext
+                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                    .Where(x =>
+                        x.CronJobId == current.Id && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                    )
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.Status, JobStatus.Skipped)
+                                .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                                .SetProperty(x => x.UpdatedAt, operationTimeUtc)
+                                .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                .SetProperty(x => x.OwnerId, _ => null)
+                                .SetProperty(x => x.LockedUntil, _ => null),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (!current.IsPaused)
+                {
+                    update.NextOccurrence!.CronJobId = current.Id;
+                    update.NextOccurrence.CronJob = null!;
+                    await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .AddAsync(update.NextOccurrence, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            var result = update.Definition;
+            result.IsPaused = current.IsPaused;
+            result.ScheduleRevision = scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
+            result.CreatedAt = current.CreatedAt;
+            result.UpdatedAt = operationTimeUtc;
+            results[inputIndex] = result;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+        return results;
+    }
+
     public async Task<TCronJob[]> GetCronJobsAsync(
         Expression<Func<TCronJob, bool>>? predicate,
         CancellationToken cancellationToken = default

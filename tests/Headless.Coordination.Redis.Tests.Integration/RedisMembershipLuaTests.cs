@@ -84,9 +84,13 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var cluster = _Cluster();
         var db = fixture.ConnectionMultiplexer.GetDatabase();
 
-        // Incarnation 1 will be allowed to expire; incarnation 2 (same node-id) stays alive.
+        // Incarnation 1 is allowed to expire past the prune threshold before incarnation 2 (same
+        // node-id) registers: an expired member cannot be revived by a heartbeat, it must re-register.
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
 
@@ -98,8 +102,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
         (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
 
-        // Expire incarnation 1's member payload, then refresh incarnation 2 so it survives the prune.
-        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        // Incarnation 2 is inside its liveness window, so its heartbeat is accepted and it survives the prune.
         (await second.Services.GetRequiredService<IMembershipStore>().HeartbeatAsync(secondIdentity, AbortToken))
             .Should()
             .BeTrue();

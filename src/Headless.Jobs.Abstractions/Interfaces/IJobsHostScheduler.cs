@@ -7,6 +7,7 @@ namespace Headless.Jobs.Interfaces;
 /// manually start or stop job processing, for example in response to maintenance windows or when
 /// <c>JobsStartMode.Manual</c> is configured.
 /// </summary>
+[PublicAPI]
 public interface IJobsHostScheduler
 {
     /// <summary>

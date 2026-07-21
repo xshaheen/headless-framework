@@ -136,12 +136,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        _StampTimeJobTree(entity, now, assignIds: true);
 
-        if (entity.Id == Guid.Empty)
-        {
-            entity.Id = guidGenerator.Create();
-        }
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        _StampTimeJobTree(entity, now, assignIds: false);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -153,16 +152,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 ? timeProvider.GetUtcNow().UtcDateTime
                 : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
-
         // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a mis-wired
         // provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the write and any
         // persistence fault propagate too, so on the coordinated path the caller's transaction rolls back rather than
         // committing without the job row, the exact divergence this feature prevents.
         var coordinated = _TryCaptureCoordinatedContext();
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         var executionTime = entity.ExecutionTime.Value;
 
         if (coordinated is { } context)
@@ -231,28 +226,31 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        _StampJob(entity, now, assignId: true);
 
-        if (entity.Id == Guid.Empty)
-        {
-            entity.Id = guidGenerator.Create();
-        }
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        _StampJob(entity, now, assignId: false);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
-        if (
-            _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
-            is not { } nextOccurrence
-        )
+        DateTime? nextOccurrence;
+        try
+        {
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, now, entity.TimeZoneId);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new JobValidatorException(exception.Message);
+        }
+
+        if (nextOccurrence is null)
         {
             throw new JobValidatorException($"Cannot parse expression {entity.Expression}");
         }
-
-        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
@@ -267,7 +265,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _DeferSideEffects(
                 context.Coordinator,
                 entity.Id.ToString(),
-                ct => _RunCoordinatedCronJobSideEffectsAsync(context.Writer, entity, nextOccurrence, ct)
+                ct => _RunCoordinatedCronJobSideEffectsAsync(context.Writer, entity, nextOccurrence.Value, ct)
             );
 
             return entity;
@@ -277,7 +275,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             .InsertCronJobsAsync([entity], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
+        _jobsHostScheduler.RestartIfNeeded(nextOccurrence.Value);
 
         await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
 
@@ -339,36 +337,61 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
-        if (
-            _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
-            is not { } nextOccurrence
-        )
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        DateTime? nextOccurrence;
+        try
+        {
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now, cronJob.TimeZoneId);
+        }
+        catch (ArgumentException exception)
+        {
+            return new JobResult<TCronJob>(new JobValidatorException(exception.Message));
+        }
+
+        if (nextOccurrence is null)
         {
             return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
         }
 
         try
         {
-            cronJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            var current = await persistenceProvider
+                .GetCronJobByIdAsync(cronJob.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (current is null)
+            {
+                return new JobResult<TCronJob>(cronJob, affectedRows: 0);
+            }
 
-            var affectedRows = await persistenceProvider
-                .UpdateCronJobsAsync([cronJob], cancellationToken: cancellationToken)
+            var scheduleChanged =
+                !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
+                || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
+            var replacement =
+                scheduleChanged && !current.IsPaused
+                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence.Value, now, guidGenerator)
+                    : null;
+            var updated = await persistenceProvider
+                .UpdateCronJobsAtomicallyAsync(
+                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement)],
+                    now,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
-            if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
+            if (updated is null)
             {
-                internalFunction.ResetUpdateProps().SetProperty(x => x.ExecutionTime, nextOccurrence);
+                return new JobResult<TCronJob>(cronJob, affectedRows: 0);
+            }
 
-                await persistenceProvider
-                    .UpdateCronJobOccurrenceAsync(internalFunction, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-
+            cronJob = updated[0];
+            if (scheduleChanged)
+            {
                 _jobsHostScheduler.Restart();
             }
 
-            _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
+            await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
 
-            return new JobResult<TCronJob>(cronJob, affectedRows);
+            return new JobResult<TCronJob>(cronJob, affectedRows: 1);
         }
         catch (Exception e)
         {
@@ -526,10 +549,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         List<string>? errors = null;
         foreach (var entity in entities)
         {
-            if (entity.Id == Guid.Empty)
-            {
-                entity.Id = guidGenerator.Create();
-            }
+            _StampTimeJobTree(entity, now, assignIds: true);
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
             {
@@ -540,13 +560,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampTimeJobTree(entity, now, assignIds: false);
 
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
-
-            // Align with single AddTimeJobAsync: initialize timestamps
-            entity.CreatedAt = now;
-            entity.UpdatedAt = now;
 
             if (entity.ExecutionTime.Value <= now.AddSeconds(1))
             {
@@ -631,13 +648,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
         var nextOccurrences = new List<DateTime>();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var entity in entities)
         {
-            if (entity.Id == Guid.Empty)
-            {
-                entity.Id = guidGenerator.Create();
-            }
+            _StampJob(entity, now, assignId: true);
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
@@ -646,21 +661,31 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampJob(entity, now, assignId: false);
 
-            if (
-                _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
-                is not { } nextOccurrence
-            )
+            DateTime? nextOccurrence;
+            try
+            {
+                nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                    entity.Expression,
+                    now,
+                    entity.TimeZoneId
+                );
+            }
+            catch (ArgumentException exception)
+            {
+                (errors ??= []).Add(exception.Message);
+                continue;
+            }
+
+            if (nextOccurrence is null)
             {
                 (errors ??= []).Add($"Cannot parse expression {entity.Expression}");
                 continue;
             }
 
-            entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
-            entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
-
             validEntities.Add(entity);
-            nextOccurrences.Add(nextOccurrence);
+            nextOccurrences.Add(nextOccurrence.Value);
         }
 
         // Batch is all-or-nothing: any invalid entity aggregates here and throws, writing nothing.
@@ -705,6 +730,39 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         return validEntities;
+    }
+
+    private void _StampTimeJobTree(TTimeJob root, DateTime now, bool assignIds)
+    {
+        var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, null));
+
+        while (pending.TryPop(out var current))
+        {
+            if (!visited.Add(current.Job))
+            {
+                throw new JobValidatorException("A time-job chain cannot contain cycles or reuse one child instance.");
+            }
+
+            _StampJob(current.Job, now, assignIds);
+            current.Job.ParentId = current.ParentId;
+
+            foreach (var child in current.Job.Children.Reverse())
+            {
+                pending.Push((child, current.Job.Id));
+            }
+        }
+    }
+
+    private void _StampJob(BaseJobEntity entity, DateTime now, bool assignId)
+    {
+        if (assignId)
+        {
+            entity.Id = guidGenerator.Create();
+        }
+        entity.CreatedAt = now;
+        entity.UpdatedAt = now;
     }
 
     private async Task<JobResult<List<TTimeJob>>> _UpdateTimeJobsBatchAsync(
@@ -775,11 +833,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var validTickers = new List<TCronJob>();
         var errors = new List<Exception>();
-        var nextOccurrences = new List<DateTime>();
+        var candidates = new List<(TCronJob Definition, DateTime NextOccurrence)>();
+        var updates = new List<CronJobAtomicUpdate<TCronJob>>();
         var needsRestart = false;
-        var internalFunctionsToUpdate = new List<JobExecutionState>();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var cronJob in cronJobs)
         {
@@ -795,26 +853,59 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            if (
-                _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
-                is not { } nextOccurrence
-            )
+            DateTime? nextOccurrence;
+            try
+            {
+                nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                    cronJob.Expression,
+                    now,
+                    cronJob.TimeZoneId
+                );
+            }
+            catch (ArgumentException exception)
+            {
+                errors.Add(new JobValidatorException(exception.Message));
+                continue;
+            }
+
+            if (nextOccurrence is null)
             {
                 errors.Add(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
                 continue;
             }
 
-            cronJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            candidates.Add((cronJob, nextOccurrence.Value));
+        }
 
-            if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
+        if (errors.Count != 0)
+        {
+            return new JobResult<List<TCronJob>>(errors[0]);
+        }
+
+        var definitionIds = candidates.Select(x => x.Definition.Id).Distinct().ToArray();
+        var currentById = (
+            await persistenceProvider
+                .GetCronJobsAsync(x => definitionIds.Contains(x.Id), cancellationToken)
+                .ConfigureAwait(false)
+        ).ToDictionary(x => x.Id);
+
+        foreach (var (cronJob, nextOccurrence) in candidates)
+        {
+            if (!currentById.TryGetValue(cronJob.Id, out var current))
             {
-                internalFunction.ResetUpdateProps().SetProperty(x => x.ExecutionTime, nextOccurrence);
-                internalFunctionsToUpdate.Add(internalFunction);
-                needsRestart = true;
+                errors.Add(new JobValidatorException($"Cannot find cron job with id {cronJob.Id}"));
+                continue;
             }
 
-            validTickers.Add(cronJob);
-            nextOccurrences.Add(nextOccurrence);
+            var scheduleChanged =
+                !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
+                || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
+            var replacement =
+                scheduleChanged && !current.IsPaused
+                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now, guidGenerator)
+                    : null;
+            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement));
+            needsRestart |= scheduleChanged;
         }
 
         if (errors.Count != 0)
@@ -824,33 +915,43 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         try
         {
-            var affectedRows = await persistenceProvider
-                .UpdateCronJobsAsync([.. validTickers], cancellationToken: cancellationToken)
+            var updated = await persistenceProvider
+                .UpdateCronJobsAtomicallyAsync([.. updates], now, cancellationToken)
                 .ConfigureAwait(false);
-
-            // Update internal functions for those that need it
-            foreach (var internalFunction in internalFunctionsToUpdate)
+            if (updated is null)
             {
-                await persistenceProvider
-                    .UpdateCronJobOccurrenceAsync(internalFunction, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
+                return new JobResult<List<TCronJob>>(
+                    new InvalidOperationException("Cron definitions changed while the batch update was being applied.")
+                );
             }
 
             if (needsRestart)
             {
                 _jobsHostScheduler.Restart();
             }
-            else if (nextOccurrences.Count != 0)
+
+            foreach (var cronJob in updated)
             {
-                var earliestOccurrence = nextOccurrences.Min();
-                _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
+                await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
             }
 
-            return new JobResult<List<TCronJob>>(validTickers, affectedRows);
+            return new JobResult<List<TCronJob>>([.. updated], updated.Length);
         }
         catch (Exception e)
         {
             return new JobResult<List<TCronJob>>(e);
+        }
+    }
+
+    private async Task _NotifyCronJobUpdatedAsync(TCronJob cronJob)
+    {
+        try
+        {
+            await notificationHubSender.UpdateCronJobNotifyAsync(cronJob).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCronControlNotificationFailed(exception, cronJob.Id, "update");
         }
     }
 

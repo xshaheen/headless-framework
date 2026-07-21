@@ -156,6 +156,36 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     {
         return base.cron_unified_context_inprogress_stamp_requires_a_queued_row();
     }
+
+    [Fact]
+    public override Task should_pause_skip_pending_preserve_running_and_fence_stale_materialization()
+    {
+        return base.should_pause_skip_pending_preserve_running_and_fence_stale_materialization();
+    }
+
+    [Fact]
+    public override Task should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron()
+    {
+        return base.should_create_one_next_utc_occurrence_when_two_nodes_resume_the_same_cron();
+    }
+
+    [Fact]
+    public override Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
+    {
+        return base.should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes();
+    }
+
+    [Fact]
+    public override Task should_preserve_input_order_when_cron_batch_updates_are_applied()
+    {
+        return base.should_preserve_input_order_when_cron_batch_updates_are_applied();
+    }
+
+    [Fact]
+    public override Task should_retire_pending_seed_work_when_code_defined_expression_changes()
+    {
+        return base.should_retire_pending_seed_work_when_code_defined_expression_changes();
+    }
 }
 
 /// <summary>Runs native Jobs claim conformance through PostgreSQL production registration.</summary>

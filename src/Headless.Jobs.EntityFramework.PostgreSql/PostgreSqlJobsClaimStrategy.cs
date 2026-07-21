@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -17,6 +19,7 @@ namespace Headless.Jobs.Infrastructure;
 internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
+    [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
@@ -209,9 +212,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+            var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             foreach (var item in cronJobOccurrences.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (
+                    !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, cancellationToken)
+                        .ConfigureAwait(false)
+                )
+                {
+                    continue;
+                }
+
                 var occurrence = item.NextCronOccurrence is null
                     ? await _InsertCronOccurrenceAsync(
                             dbContext,
@@ -273,6 +285,34 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
+    }
+
+    private static async Task<bool> _LockActiveCronDefinitionAsync(
+        IDbContextTransaction transaction,
+        CronDefinitionRelationalMapping mapping,
+        JobManagerDispatchContext item,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = (NpgsqlConnection)transaction.GetDbTransaction().Connection!;
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
+        await using var command = new NpgsqlCommand(
+            $"""
+            SELECT 1
+            FROM {mapping.Table}
+            WHERE {mapping.Id} = @id
+              AND {mapping.IsPaused} = FALSE
+              AND {mapping.ScheduleRevision} = @scheduleRevision
+            FOR UPDATE
+            """,
+            connection,
+            (NpgsqlTransaction)transaction.GetDbTransaction()
+        );
+#pragma warning restore CA2100
+        command.Parameters.Add(new NpgsqlParameter<Guid>("id", item.Id));
+        command.Parameters.Add(new NpgsqlParameter<long>("scheduleRevision", item.ScheduleRevision));
+
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> ClaimTimedOutCronJobOccurrencesAsync(
@@ -359,7 +399,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         return (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
-    private static async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
+    private async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
@@ -371,7 +411,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         CancellationToken cancellationToken
     )
     {
-        var id = Guid.NewGuid();
+        var id = guidGenerator.Create();
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
@@ -387,7 +427,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
                 @elapsedTime, @retryCount, claim_clock.now, claim_clock.now
             FROM claim_clock
-            ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId}) DO NOTHING
+            ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId})
+                WHERE {mapping.Status} IN ('Idle', 'Queued', 'InProgress')
+                DO NOTHING
             RETURNING {mapping.Id};
             """;
 #pragma warning restore CA2100

@@ -532,6 +532,9 @@ internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMap
             entity.Property(x => x.RetryCount).HasColumnName("retry_count");
             entity.Property(x => x.CreatedAt).HasColumnName("created_on");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_on");
+            entity
+                .HasIndex(x => new { x.CronJobId, x.ExecutionTime })
+                .HasFilter("[occurrence_status] IN (N'Idle', N'Queued', N'InProgress')");
         });
     }
 }

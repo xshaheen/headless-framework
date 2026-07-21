@@ -6,10 +6,13 @@ namespace Headless.Jobs.Entities.BaseEntity;
 /// Base entity shared by <c>TimeJobEntity</c> and <c>CronJobEntity</c>. Carries the identity,
 /// function binding, and audit timestamps common to all job types.
 /// </summary>
+[PublicAPI]
 public class BaseJobEntity
 {
-    /// <summary>Unique identifier for this job row. Defaults to a new <see cref="Guid"/>.</summary>
-    public virtual Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>
+    /// Unique identifier for this job row. The Jobs manager assigns an <c>IGuidGenerator</c> value when this is empty.
+    /// </summary>
+    public virtual Guid Id { get; set; }
 
     /// <summary>
     /// The registered function name that binds this job to its handler delegate. Must match a name
@@ -30,8 +33,8 @@ public class BaseJobEntity
     public virtual string? InitIdentifier { get; internal set; }
 
     /// <summary>UTC timestamp when this row was first persisted.</summary>
-    public virtual DateTime CreatedAt { get; internal set; } = DateTime.UtcNow;
+    public virtual DateTime CreatedAt { get; internal set; }
 
     /// <summary>UTC timestamp of the most recent update to this row.</summary>
-    public virtual DateTime UpdatedAt { get; internal set; } = DateTime.UtcNow;
+    public virtual DateTime UpdatedAt { get; internal set; }
 }

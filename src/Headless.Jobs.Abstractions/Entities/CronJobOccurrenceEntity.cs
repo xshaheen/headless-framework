@@ -10,6 +10,7 @@ namespace Headless.Jobs.Entities;
 /// <c>JobStatus</c> lifecycle.
 /// </summary>
 /// <typeparam name="TCronJob">The concrete cron job definition type that owns this occurrence.</typeparam>
+[PublicAPI]
 public class CronJobOccurrenceEntity<TCronJob>
     where TCronJob : CronJobEntity
 {
@@ -17,13 +18,13 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual Guid Id { get; set; }
 
     /// <summary>Current lifecycle state of this occurrence.</summary>
-    public virtual JobStatus Status { get; set; }
+    public virtual JobStatus Status { get; internal set; }
 
     /// <summary>
     /// The <c>node@incarnation</c> identifier of the node that claimed and is executing this
     /// occurrence, or <see langword="null"/> when unleased.
     /// </summary>
-    public virtual string? OwnerId { get; set; }
+    public virtual string? OwnerId { get; internal set; }
 
     /// <summary>UTC timestamp when this occurrence was scheduled to run.</summary>
     public virtual DateTime ExecutionTime { get; set; }
@@ -37,8 +38,10 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// using the provider's time authority (injected <see cref="TimeProvider"/> for in-memory storage; database UTC
     /// clock for relational storage). Null means unleased.
     /// </summary>
-    public virtual DateTime? LockedUntil { get; set; }
-    public virtual DateTime? ExecutedAt { get; set; }
+    public virtual DateTime? LockedUntil { get; internal set; }
+
+    /// <summary>UTC timestamp when execution completed, or <see langword="null"/> if not yet completed.</summary>
+    public virtual DateTime? ExecutedAt { get; internal set; }
 
     /// <summary>
     /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
@@ -51,20 +54,20 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual TCronJob CronJob { get; set; } = null!;
 
     /// <summary>Serialized exception message when the occurrence ended in <c>Failed</c> status.</summary>
-    public virtual string? ExceptionMessage { get; set; }
+    public virtual string? ExceptionMessage { get; internal set; }
 
     /// <summary>Human-readable reason when the occurrence was skipped.</summary>
-    public virtual string? SkippedReason { get; set; }
+    public virtual string? SkippedReason { get; internal set; }
 
     /// <summary>Wall-clock execution duration in milliseconds, set after the function completes.</summary>
-    public virtual long ElapsedTime { get; set; }
+    public virtual long ElapsedTime { get; internal set; }
 
     /// <summary>Number of retry attempts consumed so far for this occurrence.</summary>
-    public virtual int RetryCount { get; set; }
+    public virtual int RetryCount { get; internal set; }
 
     /// <summary>UTC timestamp when this occurrence row was first created.</summary>
-    public virtual DateTime CreatedAt { get; set; }
+    public virtual DateTime CreatedAt { get; internal set; }
 
     /// <summary>UTC timestamp of the most recent update to this occurrence row.</summary>
-    public virtual DateTime UpdatedAt { get; set; }
+    public virtual DateTime UpdatedAt { get; internal set; }
 }

@@ -51,7 +51,10 @@ public sealed class PostgreSqlJobsCoordinationFixture
         return base.Configure()
             .WithDatabase("jobs_coordination_test")
             .WithUsername("postgres")
-            .WithPassword("postgres");
+            .WithPassword("postgres")
+            // The process-boundary smoke test starts a second host while the suite fixture still owns pooled
+            // connections. Leave headroom so provider validation cannot fail before the child reaches Jobs code.
+            .WithCommand("-c", "max_connections=300");
     }
 
     public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id integer);";

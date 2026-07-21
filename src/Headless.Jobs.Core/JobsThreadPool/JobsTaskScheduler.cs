@@ -57,10 +57,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     public JobsTaskScheduler(
         int maxConcurrency,
+        TimeProvider timeProvider,
         int? maxLongRunningConcurrency = null,
         TimeSpan? idleWorkerTimeout = null,
         SoftSchedulerNotifyDebounce? notifyDebounce = null,
-        TimeProvider? timeProvider = null,
         ILogger<JobsTaskScheduler>? logger = null,
         Func<int, CancellationToken, Task>? workerStartGate = null
     )
@@ -69,7 +69,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _idleWorkerTimeout = idleWorkerTimeout ?? TimeSpan.FromSeconds(60);
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeProvider = Argument.IsNotNull(timeProvider);
         _logger = logger ?? NullLogger<JobsTaskScheduler>.Instance;
         _workerStartGate = workerStartGate;
         var longRunningSlotCount = Argument.IsPositive(maxLongRunningConcurrency ?? Math.Min(maxConcurrency, 4));
@@ -296,7 +296,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 try
                 {
-                    await Task.Delay(_GetWorkerFaultRestartDelay(consecutiveFaults), _shutdownCts.Token)
+                    await _timeProvider
+                        .Delay(_GetWorkerFaultRestartDelay(consecutiveFaults), _shutdownCts.Token)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)

@@ -35,6 +35,12 @@ internal interface IInternalJobManager
     /// <summary>Requests the durable time-job cancellation transition and publishes its post-commit side effects.</summary>
     Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Applies the durable cron pause transition and publishes its accepted definition update.</summary>
+    Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Applies the durable cron resume transition and publishes its accepted definition update.</summary>
+    Task<bool> ResumeCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default);
+
     /// <summary>Reads the durable cancellation flag through the provider's current owner/status fence.</summary>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
 
