@@ -29,7 +29,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     SchedulerOptionsBuilder schedulerOptions,
     JobFunctionRegistry functionRegistry,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger,
-    IServiceScopeFactory? serviceScopeFactory = null
+    IServiceScopeFactory? serviceScopeFactory = null,
+    ICurrentTenant? currentTenant = null
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -43,6 +44,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
     private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
+
+    // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
+    // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
+    private readonly ICurrentTenant? _currentTenant = currentTenant;
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
     // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
@@ -141,6 +146,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
         _StampTimeJobTree(entity, now, assignIds: false);
+        _ResolveChainTenants(entity);
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
@@ -522,6 +528,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             Retries = job.Retries,
             RetryCount = job.RetryCount,
             RetryIntervals = job.RetryIntervals,
+            TenantId = job.TenantId,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
@@ -561,6 +568,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
             _StampTimeJobTree(entity, now, assignIds: false);
+            _ResolveChainTenants(entity);
 
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
@@ -763,6 +771,81 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
         entity.CreatedAt = now;
         entity.UpdatedAt = now;
+    }
+
+    // Propagate the middleware-resolved root tenant onto chain descendants before persistence (KTD6). The schedule
+    // middleware only sees the BaseJobEntity root; the typed Children live on TimeJobEntity<TTicker> and are unreachable
+    // from there, so the resolution rules are re-applied per descendant here: an unset non-system descendant inherits
+    // the root's resolved tenant, a pre-set explicit value wins (validated for blank/length), and a descendant marked
+    // IsSystemJob follows the same escalation rule as the root. Without this, chain descendants would persist a null
+    // tenant and run system scope — a silent security divergence.
+    private void _ResolveChainTenants(TTimeJob root)
+    {
+        if (root.Children.Count == 0)
+        {
+            return;
+        }
+
+        var ambientPresent = !string.IsNullOrWhiteSpace(_currentTenant?.Id);
+        var rootTenantId = root.TenantId;
+
+        var pending = new Stack<TTimeJob>();
+        foreach (var child in root.Children)
+        {
+            pending.Push(child);
+        }
+
+        while (pending.TryPop(out var node))
+        {
+            _ResolveDescendantTenant(node, rootTenantId, ambientPresent);
+
+            foreach (var child in node.Children)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private void _ResolveDescendantTenant(TTimeJob node, string? rootTenantId, bool ambientPresent)
+    {
+        if (node.IsSystemJob)
+        {
+            if (node.TenantId is not null)
+            {
+                throw new JobValidatorException("A system job cannot also specify an explicit tenant identifier.");
+            }
+
+            if (ambientPresent)
+            {
+                throw new JobValidatorException(
+                    "A system job cannot be scheduled while an ambient tenant is present; tenant code cannot escalate to system scope."
+                );
+            }
+
+            node.TenantId = null;
+            _logger.ChainDescendantSystemScope(node.Function);
+
+            return;
+        }
+
+        if (node.TenantId is { } explicitTenant)
+        {
+            if (string.IsNullOrWhiteSpace(explicitTenant))
+            {
+                throw new JobValidatorException("A tenant identifier must not be blank.");
+            }
+
+            if (explicitTenant.Length > JobsTenancyOptions.TenantIdMaxLength)
+            {
+                throw new JobValidatorException(
+                    $"The tenant identifier length ({explicitTenant.Length}) exceeds the maximum of {JobsTenancyOptions.TenantIdMaxLength}."
+                );
+            }
+
+            return;
+        }
+
+        node.TenantId = rootTenantId;
     }
 
     private async Task<JobResult<List<TTimeJob>>> _UpdateTimeJobsBatchAsync(
@@ -988,4 +1071,15 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         return new JobResult<TCronJob>(affectedRows);
     }
+}
+
+internal static partial class JobsManagerTenancyLog
+{
+    [LoggerMessage(
+        EventId = 3223,
+        EventName = "JobChainDescendantSystemScope",
+        Level = LogLevel.Debug,
+        Message = "Chain descendant job for function '{Function}' resolved to system scope (tenantless)."
+    )]
+    public static partial void ChainDescendantSystemScope(this ILogger logger, string function);
 }

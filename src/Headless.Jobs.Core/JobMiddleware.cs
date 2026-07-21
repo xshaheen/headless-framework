@@ -13,6 +13,14 @@ public static class JobMiddlewarePriority
     /// <summary>Runs before the default middleware position.</summary>
     public const int Early = -1000;
 
+    /// <summary>
+    /// Position of the framework tenancy middleware. Ties with <see cref="Early"/>: no framework middleware registers
+    /// at <see cref="Early"/> today, so a tie is possible only with consumer-declared middleware and resolves
+    /// deterministically by ordinal middleware identity (<c>{assembly}:{fully-qualified-type}</c>). Relative order
+    /// against consumer <see cref="Early"/> middleware is not contractual.
+    /// </summary>
+    public const int Tenancy = -1000;
+
     /// <summary>The default middleware position.</summary>
     public const int Default = 0;
 
@@ -140,10 +148,21 @@ public sealed class JobExecuteContext(
 public static class JobMiddlewareRegistry
 {
     private static bool _frozen;
+    private static int _tenancyMiddlewareReserved;
     private static readonly List<ScheduleRegistration> _ScheduleRegistrations = [];
     private static readonly List<ExecuteRegistration> _ExecuteRegistrations = [];
     private static ScheduleRegistration[] _schedule = [];
     private static ExecuteRegistration[] _execute = [];
+
+    /// <summary>
+    /// Reserves the one-shot, process-global insertion of the framework tenancy middleware pair. Returns
+    /// <see langword="true"/> for the first caller of the current registry generation; later callers (overlapping host
+    /// configuration, a post-freeze ExistingCatalog host) get <see langword="false"/> so the middleware is never
+    /// inserted — and therefore dispatched — twice. Reset alongside the generated registrations by
+    /// <see cref="ResetUnderProviderLock"/> so unit tests that rebuild the catalog re-register cleanly.
+    /// </summary>
+    internal static bool TryReserveTenancyRegistration() =>
+        Interlocked.Exchange(ref _tenancyMiddlewareReserved, 1) == 0;
 
     /// <summary>Registers generated schedule dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
     /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
@@ -197,6 +216,7 @@ public static class JobMiddlewareRegistry
     internal static void ResetUnderProviderLock()
     {
         _frozen = false;
+        _tenancyMiddlewareReserved = 0;
         _ScheduleRegistrations.Clear();
         _ExecuteRegistrations.Clear();
         _schedule = [];
