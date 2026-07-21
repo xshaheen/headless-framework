@@ -1558,7 +1558,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             foreach (var pending in occurrences.Where(x => x.Id == idle.Id || x.Id == queued.Id))
             {
                 pending.Status.Should().Be(JobStatus.Skipped);
-                pending.ExecutedAt.Should().Be(operationTime);
+                // Persisted at the storage clock's granularity (PostgreSQL truncates to microseconds).
+                pending.ExecutedAt.Should().BeCloseTo(operationTime, TimeSpan.FromMicroseconds(1));
                 pending.SkippedReason.Should().Be("Cron definition paused");
                 pending.OwnerId.Should().BeNull();
                 pending.LockedUntil.Should().BeNull();
@@ -1567,7 +1568,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var preserved = occurrences.Single(x => x.Id == running.Id);
             preserved.Status.Should().Be(JobStatus.InProgress);
             preserved.OwnerId.Should().Be("worker-a@incarnation");
-            preserved.LockedUntil.Should().Be(operationTime.AddMinutes(10));
+            preserved.LockedUntil.Should().BeCloseTo(operationTime.AddMinutes(10), TimeSpan.FromMicroseconds(1));
 
             var staleProjection = _CronDispatch(definition, revision: 3);
             var staleResults = await persistence
@@ -1629,7 +1630,9 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var occurrences = await first.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct);
             occurrences.Should().ContainSingle();
             occurrences[0].Status.Should().Be(JobStatus.Idle);
-            occurrences[0].ExecutionTime.Should().Be(executionTime);
+            // ExecutionTime is materialized at the storage clock's granularity (PostgreSQL truncates to
+            // microseconds), so allow 1 microsecond of truncation from the tick-precision expected value.
+            occurrences[0].ExecutionTime.Should().BeCloseTo(executionTime, TimeSpan.FromMicroseconds(1));
             occurrences[0].ExecutionTime.Kind.Should().Be(DateTimeKind.Utc);
         }
         finally
