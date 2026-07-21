@@ -1,0 +1,1 @@
+[IntentType] [smallint] NOT NULL,

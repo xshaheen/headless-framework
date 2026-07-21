@@ -121,6 +121,13 @@ public static class SetupAzureServiceBusMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Azure Service Bus"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Azure Service Bus",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: true
+                )
+            );
 
             configureOptions(services);
 

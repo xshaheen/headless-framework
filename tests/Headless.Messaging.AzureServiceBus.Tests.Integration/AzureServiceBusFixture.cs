@@ -22,6 +22,8 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     );
     private ServiceBusAdministrationClient? _administrationClient;
 
+    public string ConnectionString => _RequireConnectionString();
+
     public ValueTask InitializeAsync()
     {
         if (!string.IsNullOrWhiteSpace(_connectionString))
@@ -43,7 +45,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         try
         {
             return await _CreateSessionAsync(
-                IntentType.Queue,
+                MessageLane.Queue,
                 queueName,
                 group,
                 AzureServiceBusMessagingOptions.DefaultTopicPath,
@@ -51,7 +53,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                 cancellationToken,
                 replacementToken =>
                     _CreateSessionAsync(
-                        IntentType.Queue,
+                        MessageLane.Queue,
                         queueName,
                         group,
                         AzureServiceBusMessagingOptions.DefaultTopicPath,
@@ -93,7 +95,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         await administrationClient.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
 
         return await _CreateSessionAsync(
-            IntentType.Bus,
+            MessageLane.Bus,
             messageName,
             subscriptionName,
             topicName,
@@ -126,7 +128,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     }
 
     private async ValueTask<TransportConsumerConformanceSession> _CreateSessionAsync(
-        IntentType intent,
+        MessageLane lane,
         string destination,
         string group,
         string topicPath,
@@ -153,16 +155,11 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         try
         {
             var producer =
-                intent == IntentType.Queue
+                lane == MessageLane.Queue
                     ? (ITransport)serviceProvider.GetRequiredService<IQueueTransport>()
                     : serviceProvider.GetRequiredService<IBusTransport>();
             var factory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await ((IIntentAwareConsumerClientFactory)factory).CreateAsync(
-                group,
-                2,
-                intent,
-                cancellationToken
-            );
+            var consumer = await factory.CreateAsync(group, 2, lane, cancellationToken);
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try

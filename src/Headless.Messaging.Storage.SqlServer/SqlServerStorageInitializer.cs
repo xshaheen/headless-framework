@@ -199,9 +199,25 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            -- Repair the pre-lane retry index in place. Name-only existence checks would preserve
+            -- (Version, NextRetryAt), leaving IntentType as a residual predicate for every lane claim.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes i
+                WHERE i.name = N'IX_{receivedPrefix}_Version_NextRetryAt'
+                  AND i.object_id = OBJECT_ID(N'{GetReceivedTableName()}')
+                  AND (
+                      (SELECT COUNT(*) FROM sys.index_columns ic WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0) <> 3
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1 AND c.name = N'Version')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 2 AND c.name = N'IntentType')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 3 AND c.name = N'NextRetryAt')
+                  )
+            )
+                DROP INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()};
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -267,9 +283,24 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            -- Apply the same migration-safe shape repair to Published retry pickup.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes i
+                WHERE i.name = N'IX_{publishedPrefix}_Version_NextRetryAt'
+                  AND i.object_id = OBJECT_ID(N'{GetPublishedTableName()}')
+                  AND (
+                      (SELECT COUNT(*) FROM sys.index_columns ic WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0) <> 3
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1 AND c.name = N'Version')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 2 AND c.name = N'IntentType')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 3 AND c.name = N'NextRetryAt')
+                  )
+            )
+                DROP INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()};
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

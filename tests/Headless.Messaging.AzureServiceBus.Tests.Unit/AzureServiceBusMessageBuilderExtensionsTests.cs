@@ -12,7 +12,7 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
     [Fact]
     public void should_store_partition_key_header_contribution()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAzureServiceBus(asb => asb.PartitionKey(static message => message.TenantId));
         var contribution = (
@@ -26,7 +26,7 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
     [Fact]
     public void should_reject_partition_key_longer_than_service_bus_limit()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAzureServiceBus(asb => asb.PartitionKey(static _ => new string('x', 129)));
         var contribution = (

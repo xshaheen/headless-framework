@@ -10,7 +10,7 @@ Integration-testing a messaging pipeline typically requires a running broker and
 
 - **Zero Infrastructure**: No broker, no Docker — runs entirely in-process
 - **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted`, and `WaitForExhausted` block until observed or timed out
-- **Intent-Aware Observations**: `WaitForPublished<T>(IntentType.Bus)` and `WaitForPublished<T>(IntentType.Queue)` distinguish identical payloads on bus vs queue paths
+- **Lane-Aware Observations**: registrations use `setup.Bus` / `setup.Queue`, while the testing observation projection intentionally retains `WaitForPublished<T>(IntentType.Bus)` / `IntentType.Queue` compatibility until #350; identical payloads on the two lanes remain distinct
 - **Full Pipeline Coverage**: Decorates the real bus/queue transports and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
 - **Host Integration**: `AddMessagingTestHarness()` extension decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
@@ -29,8 +29,8 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
-        options.ForMessage<OrderCreated>(message =>
-            message.MessageName("orders.created").OnBus<OrderCreatedConsumer>(consumer => consumer.Group("order-svc"))
+        options.Bus.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").Consumer<OrderCreatedConsumer>(consumer => consumer.Group("order-svc"))
         );
         options.UseInMemory();
         options.UseInMemoryStorage();
@@ -94,8 +94,8 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 
     services.AddHeadlessMessaging(options =>
     {
-        options.ForMessage<OrderCreated>(message =>
-            message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>()
+        options.Bus.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>()
         );
         options.UseInMemory();
         options.UseInMemoryStorage();
@@ -132,8 +132,8 @@ public sealed class OrderMessagingTests : TestBase
         {
             services.AddHeadlessMessaging(options =>
             {
-                options.ForMessage<OrderCreated>(message =>
-                    message.MessageName("orders.created").OnBus<OrderCreatedConsumer>()
+                options.Bus.ForMessage<OrderCreated>(message =>
+                    message.MessageName("orders.created").Consumer<OrderCreatedConsumer>()
                 );
                 options.UseInMemory();
                 options.UseInMemoryStorage();
@@ -164,8 +164,8 @@ public sealed class OrderHarnessFixture : IAsyncLifetime
             services.AddSingleton<TestConsumer<OrderCreated>>();
             services.AddHeadlessMessaging(options =>
             {
-                options.ForMessage<OrderCreated>(message =>
-                    message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>()
+                options.Bus.ForMessage<OrderCreated>(message =>
+                    message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>()
                 );
                 options.UseInMemory();
                 options.UseInMemoryStorage();
@@ -244,8 +244,8 @@ public sealed class OrderApiTests : TestBase
 
         builder.Services.AddHeadlessMessaging(options =>
         {
-            options.ForMessage<OrderCreated>(message =>
-                message.MessageName("orders.created").OnBus<OrderCreatedConsumer>()
+            options.Bus.ForMessage<OrderCreated>(message =>
+                message.MessageName("orders.created").Consumer<OrderCreatedConsumer>()
             );
             options.UseInMemory();
             options.UseInMemoryStorage();

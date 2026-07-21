@@ -9,7 +9,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 ## Key Features
 
 - **SNS Bus**: Broadcasts messages through SNS topics.
-- **SQS Queue**: Sends queue-intent messages directly to SQS queues.
+- **SQS Queue**: Sends Queue-lane messages directly to SQS queues.
 - **SQS Consumer**: Receives both SNS-enveloped bus messages and direct queue messages.
 - **Auto-Provisioning**: Automatic queue and topic creation
 - **Malformed Message Handling**: Releases malformed SNS envelopes with a 3-second visibility timeout; an external SQS redrive policy controls eventual dead-letter delivery
@@ -19,7 +19,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 
 ## Design Notes
 
-The package registers both bus and queue capabilities. Bus publishes use SNS and subscribes SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message.
+The package registers immutable Bus and Queue transport capabilities with independent physical lane topology. Bus publishes use SNS and subscribe SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message, so the same contract/logical name may be registered independently on both lane roots.
 
 Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from `AwsMessagingHeaders.MessageGroupId` when present, then `headless-msg-group` when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
 
@@ -38,7 +38,7 @@ dotnet add package Headless.Messaging.Aws
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseAws(sqs =>
@@ -60,7 +60,7 @@ options.UseAws(sqs =>
     sqs.SqsServiceUrl = "https://sqs.us-east-1.amazonaws.com";
 });
 
-options.ForMessage<OrderEvent>(message =>
+options.Bus.ForMessage<OrderEvent>(message =>
     message.MessageName("orders.events.fifo").UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
 );
 ```
@@ -80,5 +80,5 @@ options.ForMessage<OrderEvent>(message =>
 - Creates SQS queues and SNS topics when they do not exist.
 - Configures IAM policies for bus queue access.
 - Establishes persistent connections to AWS services.
-- Queue-intent consumers subscribe directly to queue URLs and do not create the bus group queue.
+- Queue-lane consumers subscribe directly to queue URLs and do not create the Bus group queue.
 - Malformed SNS envelopes are released with a 3-second visibility timeout; dead-letter delivery requires an SQS redrive policy configured outside this package.

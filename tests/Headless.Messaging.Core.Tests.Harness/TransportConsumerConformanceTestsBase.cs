@@ -4,8 +4,10 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading.Channels;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
@@ -217,6 +219,34 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         CancellationToken cancellationToken
     );
 
+    protected virtual void ConfigureTransport(MessagingSetupBuilder setup)
+    {
+        throw new NotSupportedException(
+            $"{GetType().Name} does not execute the production-capability conformance scenario."
+        );
+    }
+
+    public virtual async Task should_match_production_runtime_capabilities()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(ConfigureTransport);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var actual = serviceProvider
+            .GetServices<MessagingProviderCapabilities>()
+            .Where(capabilities => capabilities.Role == MessagingProviderRole.Transport)
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        TransportConformanceManifest
+            .Providers[ProviderName]
+            .ExpectedRuntimeCapabilities.GetMismatchErrors(actual)
+            .Should()
+            .BeEmpty("the broker-backed manifest must describe the shipped provider descriptor exactly");
+    }
+
     public virtual async Task should_round_trip_queue_message_body_and_headers()
     {
         _RequireSupport(TransportConformanceScenario.QueueRoundTrip);
@@ -236,6 +266,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         delivery.Message.Body.ToArray().Should().Equal(expectedBody);
         delivery.Message.Id.Should().Be(expectedId);
         delivery.Message.Name.Should().Be(session.Destination);
+        delivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Queue));
         delivery.Message.Headers["x-headless-conformance"].Should().Be("round-trip");
         delivery.SettlementValue.Should().NotBeNull();
 
@@ -421,6 +452,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         {
             [MessagingHeaders.MessageId] = messageId,
             [MessagingHeaders.MessageName] = destination,
+            [MessagingHeaders.Intent] = nameof(IntentType.Queue),
             ["x-headless-conformance"] = "round-trip",
         };
 

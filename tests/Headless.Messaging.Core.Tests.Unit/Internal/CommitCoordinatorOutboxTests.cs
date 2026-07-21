@@ -391,6 +391,22 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
     private sealed class NoopPublishMiddlewarePipeline(bool expectTransactional = true) : IPublishMiddlewarePipeline
     {
+        public Task ExecuteAsync(
+            object? contentObj,
+            Type declaredMessageType,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            TimeSpan? delayTime,
+            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+            bool isTransactional = false,
+            CancellationToken cancellationToken = default
+        )
+        {
+            isTransactional.Should().Be(expectTransactional);
+
+            return innerPublish(messageOptions, delayTime, cancellationToken);
+        }
+
         public Task ExecuteAsync<T>(
             T? contentObj,
             IntentType intentType,

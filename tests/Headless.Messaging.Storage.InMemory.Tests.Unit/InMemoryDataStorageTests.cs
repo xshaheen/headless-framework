@@ -75,6 +75,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithRetryBatchSize(int retryBatchSize)
+    {
+        return _CreateStorage(retryBatchSize);
+    }
+
+    /// <inheritdoc />
     protected override IStorageInitializer GetInitializer()
     {
         _EnsureInitialized();
@@ -180,6 +186,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_store_published_message_with_intent_type()
+    {
+        return base.should_store_published_message_with_intent_type();
+    }
+
+    [Fact]
     public override Task should_store_received_message()
     {
         return base.should_store_received_message();
@@ -231,6 +243,18 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_get_received_messages_of_need_retry()
     {
         return base.should_get_received_messages_of_need_retry();
+    }
+
+    [Fact]
+    public override Task should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane();
     }
 
     [Fact]
@@ -432,13 +456,13 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var leased = await storage.LeasePublishAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -837,13 +861,13 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var leased = await storage.LeaseReceiveAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -943,7 +967,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         }
 
         // when
-        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
 
         // then
         retriable.Should().HaveCount(3);

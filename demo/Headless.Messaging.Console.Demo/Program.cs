@@ -13,11 +13,11 @@ container.AddLogging(x => x.AddConsole());
 container
     .AddHeadlessMessaging(setup =>
     {
-        setup.ForMessage<ShowTimeEvent>(message =>
-            message.MessageName("sample.console.showtime").OnBus<EventConsumer>()
+        setup.Bus.ForMessage<ShowTimeEvent>(message =>
+            message.MessageName("sample.console.showtime").Consumer<EventConsumer>()
         );
-        setup.ForMessage<ShowTimeResponse>(message =>
-            message.MessageName("sample.console.showtime.response").OnBus<ShowTimeResponseConsumer>()
+        setup.Bus.ForMessage<ShowTimeResponse>(message =>
+            message.MessageName("sample.console.showtime.response").Consumer<ShowTimeResponseConsumer>()
         );
         // Console app does not support dashboard
         setup.UseInMemoryStorage();

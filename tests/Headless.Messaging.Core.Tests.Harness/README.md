@@ -80,7 +80,7 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 | Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus |
 |---|---:|---:|---:|---:|---:|---:|
 | `QueueRoundTrip` | S | S | S | S | S | S† |
-| `BusRoundTrip` | U | U | U | N/A | S | S† |
+| `BusRoundTrip` | S | S | S | N/A | S | S† |
 | `HeaderRoundTrip` | S | S | S | S | S | S† |
 | `EmptyBodyDispatch` | S | S | N/A | U | U | U |
 | `CommitSettlement` | S | S | S | S | S | S† |
@@ -96,7 +96,7 @@ Evidence anchors:
 - Queue/body/header, commit, reject, isolation, and shutdown: `TransportConsumerConformanceTestsBase` provider overrides.
 - Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
 - Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
-- Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
+- NATS, RabbitMQ, and AWS Bus fan-out: their `TransportConsumerConformanceTestsBase` provider leaves; Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities

@@ -36,7 +36,9 @@ public sealed class MessagingIntentSplitTests : TestBase
         var services = new ServiceCollection();
 
         services.AddHeadlessMessaging(setup =>
-            setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>())
+            setup.Bus.ForMessage<TestMessage>(message =>
+                message.MessageName("events.orders").Consumer<TestBusConsumer>()
+            )
         );
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
@@ -51,7 +53,9 @@ public sealed class MessagingIntentSplitTests : TestBase
         var services = new ServiceCollection();
 
         services.AddHeadlessMessaging(setup =>
-            setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>())
+            setup.Queue.ForMessage<TestMessage>(message =>
+                message.MessageName("jobs.orders").Consumer<TestQueueConsumer>()
+            )
         );
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
@@ -110,12 +114,19 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
         services.AddSingleton<IConsumerRegistry>(registry);
         services.AddSingleton(registry);
+        _AddCapabilityModel(
+            services,
+            MessagingProviderCapabilities.Transport(
+                "BusOnly",
+                [MessageLane.Bus],
+                supportsIndependentLaneTopology: true
+            ),
+            _StorageCapabilities()
+        );
 
         await using var provider = services.BuildServiceProvider();
 
         await using var bootstrapper = new Bootstrapper(
-            [],
-            new NoOpStorageInitializer(),
             provider,
             Options.Create(new MessagingOptions()),
             NullLogger<IBootstrapper>.Instance
@@ -123,7 +134,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IQueueTransport*available*");
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*Queue*unsupported*");
     }
 
     [Fact]
@@ -150,12 +161,19 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
         services.AddSingleton<IConsumerRegistry>(registry);
         services.AddSingleton(registry);
+        _AddCapabilityModel(
+            services,
+            MessagingProviderCapabilities.Transport(
+                "QueueOnly",
+                [MessageLane.Queue],
+                supportsIndependentLaneTopology: true
+            ),
+            _StorageCapabilities()
+        );
 
         await using var provider = services.BuildServiceProvider();
 
         await using var bootstrapper = new Bootstrapper(
-            [],
-            new NoOpStorageInitializer(),
             provider,
             Options.Create(new MessagingOptions()),
             NullLogger<IBootstrapper>.Instance
@@ -163,7 +181,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IBusTransport*available*");
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*Bus*unsupported*");
     }
 
     [Fact]
@@ -190,12 +208,19 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(Substitute.For<IQueueTransport>());
         services.AddSingleton(Substitute.For<IBus>());
         services.AddSingleton(Substitute.For<IOutboxBus>());
+        _AddCapabilityModel(
+            services,
+            MessagingProviderCapabilities.Transport(
+                "QueueOnly",
+                [MessageLane.Queue],
+                supportsIndependentLaneTopology: true
+            ),
+            _StorageCapabilities()
+        );
 
         await using var provider = services.BuildServiceProvider();
 
         await using var bootstrapper = new Bootstrapper(
-            [],
-            new NoOpStorageInitializer(),
             provider,
             Options.Create(new MessagingOptions()),
             NullLogger<IBootstrapper>.Instance
@@ -205,7 +230,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_register_only_queue_publishers_for_queue_only_transport_when_add_headless_messaging()
+    public void should_register_generic_publishers_for_queue_only_transport_when_add_headless_messaging()
     {
         var services = new ServiceCollection();
 
@@ -213,12 +238,12 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IBus));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
     }
 
     [Fact]
-    public void should_register_only_bus_publishers_for_bus_only_transport_when_add_headless_messaging()
+    public void should_register_generic_publishers_for_bus_only_transport_when_add_headless_messaging()
     {
         var services = new ServiceCollection();
 
@@ -226,54 +251,8 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueue));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
-    }
-
-    [Fact]
-    public async Task should_fail_when_bootstrap_bus_publisher_is_registered_without_bus_transport()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new QueueOnlyMessagingExtension()));
-        services.AddSingleton(Substitute.For<IBus>());
-
-        await using var provider = services.BuildServiceProvider();
-
-        await using var bootstrapper = new Bootstrapper(
-            [],
-            new NoOpStorageInitializer(),
-            provider,
-            Options.Create(new MessagingOptions()),
-            NullLogger<IBootstrapper>.Instance
-        );
-
-        var act = () => bootstrapper.BootstrapAsync(AbortToken);
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IBusTransport*available*");
-    }
-
-    [Fact]
-    public async Task should_fail_when_bootstrap_queue_publisher_is_registered_without_queue_transport()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new BusOnlyMessagingExtension()));
-        services.AddSingleton(Substitute.For<IQueue>());
-
-        await using var provider = services.BuildServiceProvider();
-
-        await using var bootstrapper = new Bootstrapper(
-            [],
-            new NoOpStorageInitializer(),
-            provider,
-            Options.Create(new MessagingOptions()),
-            NullLogger<IBootstrapper>.Instance
-        );
-
-        var act = () => bootstrapper.BootstrapAsync(AbortToken);
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IQueueTransport*available*");
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
     }
 
     [Fact]
@@ -296,7 +275,13 @@ public sealed class MessagingIntentSplitTests : TestBase
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
         publishRequestFactory
-            .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Bus)
+            .Create(
+                Arg.Any<object?>(),
+                typeof(TestMessage),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<TimeSpan?>(),
+                IntentType.Bus
+            )
             .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
 
         await using var transport = new CapturingBusTransport();
@@ -311,7 +296,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         _ = publishRequestFactory
             .Received(1)
             .Create(
-                Arg.Any<TestMessage>(),
+                Arg.Any<object?>(),
+                typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Bus
@@ -346,7 +332,13 @@ public sealed class MessagingIntentSplitTests : TestBase
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
         publishRequestFactory
-            .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Queue)
+            .Create(
+                Arg.Any<object?>(),
+                typeof(TestMessage),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<TimeSpan?>(),
+                IntentType.Queue
+            )
             .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
 
         await using var transport = new CapturingQueueTransport();
@@ -361,7 +353,8 @@ public sealed class MessagingIntentSplitTests : TestBase
         _ = publishRequestFactory
             .Received(1)
             .Create(
-                Arg.Any<TestMessage>(),
+                Arg.Any<object?>(),
+                typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 IntentType.Queue
@@ -427,6 +420,8 @@ public sealed class MessagingIntentSplitTests : TestBase
                 new TestMessage()
             ),
             IntentType = intentType,
+            DeclaredMessageType = typeof(TestMessage),
+            ConcreteMessageType = typeof(TestMessage),
         };
     }
 
@@ -530,12 +525,40 @@ public sealed class MessagingIntentSplitTests : TestBase
         }
     }
 
+    private static MessagingProviderCapabilities _StorageCapabilities()
+    {
+        return MessagingProviderCapabilities.Storage(
+            "TestStorage",
+            [MessageLane.Bus, MessageLane.Queue],
+            supportsDelayedScheduling: true
+        );
+    }
+
+    private static void _AddCapabilityModel(
+        IServiceCollection services,
+        params MessagingProviderCapabilities[] capabilities
+    )
+    {
+        var model = MessagingCapabilityModel.Compose(capabilities);
+        services.AddSingleton<IMessagingCapabilityModel>(model);
+        services.AddSingleton<IMessageCapabilityGate>(model);
+        services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+    }
+
     private sealed class QueueOnlyMessagingExtension : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("QueueOnly"));
             services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "QueueOnly",
+                    [MessageLane.Queue],
+                    supportsIndependentLaneTopology: true
+                )
+            );
+            services.AddMessagingProviderCapabilities(_StorageCapabilities());
             services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
             services.AddSingleton<IQueueTransport, CapturingQueueTransport>();
         }
@@ -547,6 +570,14 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             services.AddSingleton(new MessageQueueMarkerService("BusOnly"));
             services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "BusOnly",
+                    [MessageLane.Bus],
+                    supportsIndependentLaneTopology: true
+                )
+            );
+            services.AddMessagingProviderCapabilities(_StorageCapabilities());
             services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
             services.AddSingleton<IBusTransport, CapturingBusTransport>();
         }

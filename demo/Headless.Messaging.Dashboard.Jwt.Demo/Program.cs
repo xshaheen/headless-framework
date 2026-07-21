@@ -47,7 +47,7 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
+    setup.Bus.ForConsumersFromAssembly(typeof(Program).Assembly);
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {

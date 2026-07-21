@@ -6,6 +6,7 @@ namespace Headless.Messaging.Registration;
 
 internal sealed record MessageRegistration(
     Type MessageType,
+    MessageLane Lane,
     string? MessageName,
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
@@ -14,7 +15,7 @@ internal sealed record MessageRegistration(
 
 internal sealed record MessageConsumerRegistration(
     Type ConsumerType,
-    IntentType IntentType,
+    MessageLane Lane,
     bool IsAssemblyScan,
     string? Group,
     byte Concurrency,

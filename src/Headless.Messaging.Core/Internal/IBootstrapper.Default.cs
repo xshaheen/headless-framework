@@ -4,6 +4,7 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,14 +15,13 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>Default implement of <see cref="IBootstrapper" />.</summary>
 internal sealed class Bootstrapper(
-    IEnumerable<IProcessingServer> processors,
-    IStorageInitializer storageInitializer,
     IServiceProvider serviceProvider,
     IOptions<MessagingOptions> options,
     ILogger<IBootstrapper> logger
 ) : BackgroundService, IBootstrapper
 {
     private readonly Lock _bootstrapLock = new();
+    private IReadOnlyList<IProcessingServer> _processors = [];
     private bool _disposed;
     private bool _isStopping;
     private CancellationTokenSource? _runtimeCts;
@@ -99,6 +99,7 @@ internal sealed class Bootstrapper(
 
             try
             {
+                var storageInitializer = serviceProvider.GetRequiredService<IStorageInitializer>();
                 await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
             }
             catch (Exception e) when (e is not InvalidOperationException)
@@ -173,8 +174,9 @@ internal sealed class Bootstrapper(
     private async Task _BootstrapCoreAsync(CancellationToken cancellationToken)
     {
         List<Exception>? failures = null;
+        _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
 
-        foreach (var item in processors)
+        foreach (var item in _processors)
         {
             try
             {
@@ -325,143 +327,121 @@ internal sealed class Bootstrapper(
             );
 
         _DrainPendingMessageRegistrations();
-
-        _ =
-            serviceProvider.GetService<MessageQueueMarkerService>()
-            ?? throw new InvalidOperationException(
-                "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
-                    + "(e.g., UseRabbitMq, UseKafka, UseAzureServiceBus)."
-                    + Environment.NewLine
-                    + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
-            );
-
-        var databaseMarkers = serviceProvider.GetServices<MessageStorageMarkerService>().ToArray();
-
-        if (databaseMarkers.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "Messaging requires a storage provider. Register one (e.g., UseSqlServer, UsePostgreSql, "
-                    + "UseInMemoryStorage) so persisted publishes and the inbox/outbox can be backed."
-                    + Environment.NewLine
-                    + "Example: services.AddHeadlessMessaging(setup => { setup.UseSqlServer(...); });"
-            );
-        }
-
-        if (databaseMarkers.Length > 1)
-        {
-            throw new InvalidOperationException(
-                "Messaging requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
         _CheckMessageNameCollisions();
-        _CheckIntentTransportSupport();
+        serviceProvider.GetRequiredService<IMessageCapabilityGate>().ValidateStartup(_GetRegisteredRoutes());
+    }
+
+    private HashSet<MessageRouteKey> _GetRegisteredRoutes()
+    {
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+        var routes = registry
+            .GetAll()
+            .Select(static consumer => new MessageRouteKey(
+                consumer.MessageType,
+                consumer.MessageName,
+                MessageLaneCompatibility.ToLane(consumer.IntentType)
+            ))
+            .ToHashSet();
+
+        foreach (var registration in serviceProvider.GetServices<MessageRegistration>())
+        {
+            var rawName = registration.MessageName;
+            if (
+                rawName is null
+                && !registry.TryGetRawMessageName(registration.MessageType, registration.Lane, out rawName)
+            )
+            {
+                rawName = options.Value.Conventions.GetMessageName(registration.MessageType);
+            }
+
+            routes.Add(
+                new MessageRouteKey(
+                    registration.MessageType,
+                    options.Value.ApplyMessageNamePrefix(rawName),
+                    registration.Lane
+                )
+            );
+        }
+
+        foreach (var mapping in registry.GetMessageNameMappings())
+        {
+            var name = options.Value.ApplyMessageNamePrefix(mapping.Value);
+            routes.Add(new MessageRouteKey(mapping.Key, name, MessageLane.Bus));
+            routes.Add(new MessageRouteKey(mapping.Key, name, MessageLane.Queue));
+        }
+
+        foreach (var mapping in registry.GetLaneMessageNameMappings())
+        {
+            routes.Add(
+                new MessageRouteKey(
+                    mapping.Key.MessageType,
+                    options.Value.ApplyMessageNamePrefix(mapping.Value),
+                    mapping.Key.Lane
+                )
+            );
+        }
+
+        return routes;
     }
 
     private void _CheckMessageNameCollisions()
     {
         var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
         var consumers = registry.GetAll();
-        var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
+        var namesByLane = new Dictionary<MessageLane, Dictionary<string, HashSet<Type>>>
+        {
+            [MessageLane.Bus] = new(StringComparer.OrdinalIgnoreCase),
+            [MessageLane.Queue] = new(StringComparer.OrdinalIgnoreCase),
+        };
 
         foreach (var consumer in consumers)
         {
-            _TrackMessageName(nameToTypes, consumer.MessageName, consumer.MessageType);
+            _TrackMessageName(namesByLane, consumer.Lane, consumer.MessageName, consumer.MessageType);
         }
 
         var mappings = registry.GetMessageNameMappings();
 
         foreach (var mapping in mappings)
         {
-            _TrackMessageName(nameToTypes, options.Value.ApplyMessageNamePrefix(mapping.Value), mapping.Key);
+            var name = options.Value.ApplyMessageNamePrefix(mapping.Value);
+            _TrackMessageName(namesByLane, MessageLane.Bus, name, mapping.Key);
+            _TrackMessageName(namesByLane, MessageLane.Queue, name, mapping.Key);
         }
 
-        var collision = nameToTypes.FirstOrDefault(static pair => pair.Value.Count > 1);
+        foreach (var mapping in registry.GetLaneMessageNameMappings())
+        {
+            _TrackMessageName(
+                namesByLane,
+                mapping.Key.Lane,
+                options.Value.ApplyMessageNamePrefix(mapping.Value),
+                mapping.Key.MessageType
+            );
+        }
 
-        if (collision.Value is null)
+        var (collisionLane, collisionName, types) = namesByLane
+            .SelectMany(static lane => lane.Value.Select(name => (Lane: lane.Key, Name: name.Key, Types: name.Value)))
+            .FirstOrDefault(static pair => pair.Types.Count > 1);
+
+        if (types is null)
         {
             return;
         }
 
-        var typeNames = collision
-            .Value.Select(static type => type.FullName ?? type.Name)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var typeNames = types.Select(static type => type.FullName ?? type.Name).Order(StringComparer.Ordinal).ToArray();
 
         throw new InvalidOperationException(
-            $"Message name '{collision.Key}' is mapped to multiple message types: {string.Join(", ", typeNames)}."
+            $"Message name '{collisionName}' on lane {collisionLane} is mapped to multiple message types: {string.Join(", ", typeNames)}."
         );
-    }
-
-    private void _CheckIntentTransportSupport()
-    {
-        var registry = serviceProvider.GetService<IConsumerRegistry>();
-        var consumers = registry?.GetAll() ?? [];
-
-        var consumerRequiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
-        var consumerRequiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
-        // Scan the registered service descriptors rather than resolving publishers. Resolving IBus/IQueue
-        // can instantiate user-supplied substitutes or trigger side-effects during bootstrap. IServiceCollection
-        // is registered by AddHeadlessMessaging so this is available in all production setups; it returns null
-        // in standalone test harnesses that wire services manually (where publisher gating is irrelevant).
-        var registeredServices = serviceProvider.GetService<IServiceCollection>();
-        var publisherRequiresBus = _HasService<IBus>(registeredServices) || _HasService<IOutboxBus>(registeredServices);
-        var publisherRequiresQueue =
-            _HasService<IQueue>(registeredServices) || _HasService<IOutboxQueue>(registeredServices);
-
-        _RequireTransportFor<IBusTransport>(
-            "bus",
-            consumerRequiresBus || publisherRequiresBus,
-            consumerSide: consumerRequiresBus,
-            publisherSide: publisherRequiresBus
-        );
-
-        _RequireTransportFor<IQueueTransport>(
-            "queue",
-            consumerRequiresQueue || publisherRequiresQueue,
-            consumerSide: consumerRequiresQueue,
-            publisherSide: publisherRequiresQueue
-        );
-    }
-
-    private void _RequireTransportFor<TTransport>(string intent, bool required, bool consumerSide, bool publisherSide)
-        where TTransport : class
-    {
-        if (!required)
-        {
-            return;
-        }
-
-        if (serviceProvider.GetService<TTransport>() is not null)
-        {
-            return;
-        }
-
-        var caller = (consumerSide, publisherSide) switch
-        {
-            (true, true) => $"Add{intent}Consumer<...>/I{intent} publisher",
-            (true, false) => $"Add{intent}Consumer<...>",
-            (false, true) => $"I{intent}/IOutbox{intent} publisher",
-            _ => $"{intent} subsystem",
-        };
-
-        throw new InvalidOperationException(
-            $"{caller} was registered but no I{(string.Equals(intent, "bus", StringComparison.Ordinal) ? "Bus" : "Queue")}Transport is available. "
-                + $"Register a {intent}-capable transport provider before messaging bootstrap starts."
-        );
-    }
-
-    private static bool _HasService<TService>(IServiceCollection? services)
-    {
-        return services?.Any(static descriptor => descriptor.ServiceType == typeof(TService)) == true;
     }
 
     private static void _TrackMessageName(
-        Dictionary<string, HashSet<Type>> nameToTypes,
+        Dictionary<MessageLane, Dictionary<string, HashSet<Type>>> namesByLane,
+        MessageLane lane,
         string messageName,
         Type messageType
     )
     {
+        var nameToTypes = namesByLane[lane];
         if (!nameToTypes.TryGetValue(messageName, out var types))
         {
             types = [];
@@ -555,7 +535,7 @@ internal sealed class Bootstrapper(
 
         List<Exception>? failures = null;
 
-        foreach (var item in processors)
+        foreach (var item in _processors)
         {
             try
             {
@@ -594,7 +574,7 @@ internal sealed class Bootstrapper(
         // by blocking the cancellation callback until the processors stop.
         logger.MessagingStopping();
 
-        foreach (var item in processors)
+        foreach (var item in _processors)
         {
             try
             {

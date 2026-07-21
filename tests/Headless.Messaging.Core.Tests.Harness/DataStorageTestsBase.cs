@@ -53,6 +53,14 @@ public abstract class DataStorageTestsBase : TestBase
         return null;
     }
 
+    /// <summary>
+    /// Creates a storage instance with a small retry batch for lane-isolation conformance tests.
+    /// </summary>
+    protected virtual IDataStorage? CreateStorageWithRetryBatchSize(int retryBatchSize)
+    {
+        return null;
+    }
+
     /// <summary>Overrides the dispatch timeout when the provider exposes mutable test options.</summary>
     protected virtual bool TrySetDispatchTimeout(TimeSpan dispatchTimeout)
     {
@@ -181,23 +189,33 @@ public abstract class DataStorageTestsBase : TestBase
         }
 
         var storage = GetStorage();
-        var message = CreateMessage();
-        var envelope = new MediumMessage
+        var legacyIntents = new[] { (IntentType.Bus, Value: (short)0), (IntentType.Queue, Value: (short)1) };
+
+        foreach (var (intentType, value) in legacyIntents)
         {
-            StorageId = Guid.Empty,
-            Origin = message,
-            Content = string.Empty,
-            IntentType = IntentType.Queue,
-        };
+            var envelope = new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = intentType,
+            };
 
-        // when
-        var result = await storage.StoreMessageAsync("test-published-message", envelope, cancellationToken: AbortToken);
+            // when
+            var result = await storage.StoreMessageAsync(
+                $"test-published-message-{intentType}",
+                envelope,
+                cancellationToken: AbortToken
+            );
 
-        // then
-        result.IntentType.Should().Be(IntentType.Queue);
-        var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(result.StorageId, AbortToken);
-        roundTripped.Should().NotBeNull();
-        roundTripped!.IntentType.Should().Be(IntentType.Queue);
+            // then
+            result.IntentType.Should().Be(intentType);
+            ((short)result.IntentType).Should().Be(value);
+            var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(result.StorageId, AbortToken);
+            roundTripped.Should().NotBeNull();
+            roundTripped!.IntentType.Should().Be(intentType);
+            ((short)roundTripped.IntentType).Should().Be(value);
+        }
     }
 
     public virtual async Task should_filter_monitoring_messages_by_intent_type()
@@ -459,7 +477,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
         lateChange.Should().BeFalse("the terminal seal must survive a late scheduler flush");
 
-        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -492,7 +510,7 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         // when
-        var result = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var result = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -503,10 +521,20 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         // when
-        var result = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var result = await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         // then
         result.Should().NotBeNull();
+    }
+
+    public virtual Task should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return _ShouldClaimRetryMessagesByLaneAsync(published: true);
+    }
+
+    public virtual Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return _ShouldClaimRetryMessagesByLaneAsync(published: false);
     }
 
     public virtual async Task should_delete_expired_messages()
@@ -954,7 +982,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then — the failed message should appear in retry results once its scheduled retry time is due.
-        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -985,7 +1013,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1023,7 +1051,7 @@ public abstract class DataStorageTestsBase : TestBase
         // then — the terminal guard rejects the write and the pickup never re-sends the row.
         lateChange.Should().BeFalse("a Succeeded row with no scheduled retry is terminal");
 
-        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1049,7 +1077,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1075,7 +1103,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1102,7 +1130,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1135,13 +1163,13 @@ public abstract class DataStorageTestsBase : TestBase
         var leased = await storage.LeasePublishAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1169,13 +1197,13 @@ public abstract class DataStorageTestsBase : TestBase
         var leased = await storage.LeaseReceiveAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1198,7 +1226,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
 
-        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1290,7 +1318,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
         (await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
 
-        (await fastClockStorage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await fastClockStorage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1315,7 +1343,7 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
 
         (await fastClockStorage.ReclaimDeadPublishedOwnersAsync([deadOwner.ToString()], AbortToken)).Should().Be(1);
-        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1336,7 +1364,7 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        var claimed = (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        var claimed = (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
             .Subject;
@@ -1359,13 +1387,13 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         schedulingClock.Advance(TimeSpan.FromMinutes(2));
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1386,13 +1414,13 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         schedulingClock.Advance(TimeSpan.FromMinutes(2));
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1462,14 +1490,14 @@ public abstract class DataStorageTestsBase : TestBase
         var liveLease = await storage.LeasePublishAsync(liveOwned, TimeSpan.FromHours(1), AbortToken);
         liveLease.Should().BeTrue("the live-owned row must be actively leased before reclaim runs");
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == deadOwned.StorageId || m.StorageId == liveOwned.StorageId);
 
         var reclaimed = await storage.ReclaimDeadPublishedOwnersAsync([deadOwner.ToString()], AbortToken);
 
         reclaimed.Should().Be(1);
-        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         retriable.Should().Contain(m => m.StorageId == deadOwned.StorageId);
         retriable.Should().NotContain(m => m.StorageId == liveOwned.StorageId);
         deadOwner.ToString().Should().NotBe(liveOwner.ToString());
@@ -1488,14 +1516,14 @@ public abstract class DataStorageTestsBase : TestBase
         var liveLease = await storage.LeaseReceiveAsync(liveOwned, TimeSpan.FromHours(1), AbortToken);
         liveLease.Should().BeTrue("the live-owned row must be actively leased before reclaim runs");
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == deadOwned.StorageId || m.StorageId == liveOwned.StorageId);
 
         var reclaimed = await storage.ReclaimDeadReceivedOwnersAsync([deadOwner.ToString()], AbortToken);
 
         reclaimed.Should().Be(1);
-        var retriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var retriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         retriable.Should().Contain(m => m.StorageId == deadOwned.StorageId);
         retriable.Should().NotContain(m => m.StorageId == liveOwned.StorageId);
         deadOwner.ToString().Should().NotBe(liveOwner.ToString());
@@ -1508,7 +1536,7 @@ public abstract class DataStorageTestsBase : TestBase
         var expectedOwner = owner.ToString();
 
         var published = await _StoreFailedPublishedMessageAsync("claim-owner-published");
-        var claimedPublished = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        var claimedPublished = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == published.StorageId)
             .Subject;
@@ -1517,7 +1545,7 @@ public abstract class DataStorageTestsBase : TestBase
         claimedPublished.LockedUntil.Should().NotBeNull();
 
         var received = await _StoreFailedReceivedMessageAsync("claim-owner-received", "claim-group");
-        var claimedReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        var claimedReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == received.StorageId)
             .Subject;
@@ -1550,12 +1578,16 @@ public abstract class DataStorageTestsBase : TestBase
         var deadOwners = new[] { deadOwner.ToString() };
 
         (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
-        var publishedRetriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var publishedRetriable = (
+            await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+        ).ToList();
         publishedRetriable.Should().Contain(m => m.StorageId == oldPublished.StorageId);
         publishedRetriable.Should().NotContain(m => m.StorageId == livePublished.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
-        var receivedRetriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var receivedRetriable = (
+            await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+        ).ToList();
         receivedRetriable.Should().Contain(m => m.StorageId == oldReceived.StorageId);
         receivedRetriable.Should().NotContain(m => m.StorageId == liveReceived.StorageId);
     }
@@ -1599,12 +1631,12 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken))
             .Should()
             .Be(0);
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
     }
@@ -1618,12 +1650,12 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.LeaseReceiveAsync(received, _FutureLease(), AbortToken)).Should().BeTrue();
 
         (await storage.ReclaimDeadPublishedOwnersAsync([], AbortToken)).Should().Be(0);
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync([], AbortToken)).Should().Be(0);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
     }
@@ -1641,12 +1673,12 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.ReclaimDeadPublishedOwnersAsync(["dead-owner-x"], AbortToken))
             .Should()
             .Be(0);
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync(["dead-owner-x"], AbortToken)).Should().Be(0);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
     }
@@ -1664,13 +1696,13 @@ public abstract class DataStorageTestsBase : TestBase
 
         (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
         (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == published.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
         (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == received.StorageId);
     }
@@ -1693,10 +1725,10 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
 
         // The floor still recovers them: an expired lease is already retriable via normal pickup.
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == published.StorageId);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == received.StorageId);
     }
@@ -2187,7 +2219,7 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var stored = await storage.StoreMessageAsync("grace-base", CreateMessage(), cancellationToken: AbortToken);
 
-        var beforeGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var beforeGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         beforeGrace
             .Should()
             .NotContain(
@@ -2199,7 +2231,7 @@ public abstract class DataStorageTestsBase : TestBase
         fakeClock!.Advance(TimeSpan.FromMinutes(2));
 
         // then — the row is now eligible for pickup.
-        var afterGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var afterGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         afterGrace
             .Should()
             .Contain(
@@ -2245,7 +2277,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // when
-        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
 
         // then
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
@@ -2282,7 +2314,9 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        var retriableReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var retriableReceived = (
+            await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+        ).ToList();
         retriableReceived.Should().Contain(m => m.StorageId == atLimitRecv.StorageId);
         retriableReceived.Should().NotContain(m => m.StorageId == aboveLimitRecv.StorageId);
     }
@@ -2300,6 +2334,91 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         return stored;
+    }
+
+    private async Task _ShouldClaimRetryMessagesByLaneAsync(bool published)
+    {
+        const int batchSize = 2;
+        var storage = CreateStorageWithRetryBatchSize(batchSize);
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a configurable retry-batch test seam");
+            return;
+        }
+
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        {
+            for (var index = 0; index < batchSize + 1; index++)
+            {
+                var intentType = lane switch
+                {
+                    MessageLane.Bus => IntentType.Bus,
+                    MessageLane.Queue => IntentType.Queue,
+                    _ => throw new InvalidOperationException($"Unsupported test lane '{lane}'."),
+                };
+                var envelope = new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = CreateMessage(),
+                    Content = string.Empty,
+                    IntentType = intentType,
+                };
+                var stored = published
+                    ? await storage.StoreMessageAsync(
+                        $"lane-batch-published-{lane}-{index}",
+                        envelope,
+                        cancellationToken: AbortToken
+                    )
+                    : await storage.StoreReceivedMessageAsync(
+                        $"lane-batch-received-{lane}-{index}",
+                        $"lane-batch-group-{lane}-{index}",
+                        envelope,
+                        AbortToken
+                    );
+
+                if (published)
+                {
+                    await storage.ChangePublishStateAsync(
+                        stored,
+                        StatusName.Failed,
+                        nextRetryAt: _Now().AddMinutes(-10 + index),
+                        cancellationToken: AbortToken
+                    );
+                }
+                else
+                {
+                    await storage.ChangeReceiveStateAsync(
+                        stored,
+                        StatusName.Failed,
+                        nextRetryAt: _Now().AddMinutes(-10 + index),
+                        cancellationToken: AbortToken
+                    );
+                }
+            }
+        }
+
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        {
+            var firstClaim = (
+                published
+                    ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
+                    : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)
+            ).ToList();
+
+            firstClaim.Should().HaveCount(batchSize);
+            firstClaim.Should().OnlyContain(message => (short)message.IntentType == (short)lane);
+        }
+
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        {
+            var secondClaim = (
+                published
+                    ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
+                    : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)
+            ).ToList();
+
+            ((short)secondClaim.Should().ContainSingle().Which.IntentType).Should().Be((short)lane);
+        }
     }
 
     private async Task<MediumMessage> _StoreFailedReceivedMessageAsync(string name, string group)

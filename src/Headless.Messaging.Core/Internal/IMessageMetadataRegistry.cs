@@ -1,78 +1,101 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Registration;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
 internal interface IMessageMetadataRegistry
 {
-    bool TryGet(Type messageType, [NotNullWhen(true)] out MessageMetadata? metadata);
+    bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata);
 }
 
 internal sealed record MessageMetadata(
+    MessageRouteKey Route,
     Type MessageType,
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs
 );
 
-internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> registrations) : IMessageMetadataRegistry
+internal sealed class MessageMetadataRegistry(
+    IEnumerable<MessageRegistration> registrations,
+    IConsumerRegistry? consumerRegistry = null,
+    IOptions<MessagingOptions>? optionsAccessor = null
+) : IMessageMetadataRegistry
 {
-    private readonly Dictionary<Type, MessageMetadata> _metadataByType = _Build(registrations);
-    private readonly ConcurrentDictionary<Type, MessageMetadata?> _resolvedMetadata = new();
+    private readonly Dictionary<MessageRouteKey, MessageMetadata> _metadataByRoute = _Build(
+        registrations,
+        consumerRegistry,
+        optionsAccessor?.Value
+    );
 
-    public bool TryGet(Type messageType, [NotNullWhen(true)] out MessageMetadata? metadata)
+    public bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata)
     {
-        if (_resolvedMetadata.TryGetValue(messageType, out metadata))
-        {
-            return metadata is not null;
-        }
-
-        metadata = _resolvedMetadata.GetOrAdd(messageType, static (type, registry) => registry._Resolve(type), this);
-        return metadata is not null;
+        return _metadataByRoute.TryGetValue(route, out metadata);
     }
 
-    private MessageMetadata? _Resolve(Type messageType)
+    private static Dictionary<MessageRouteKey, MessageMetadata> _Build(
+        IEnumerable<MessageRegistration> registrations,
+        IConsumerRegistry? consumerRegistry,
+        MessagingOptions? options
+    )
     {
-        if (_metadataByType.TryGetValue(messageType, out var exact))
+        var metadata = new Dictionary<MessageRouteKey, MessageMetadata>();
+
+        foreach (
+            var group in registrations.GroupBy(registration =>
+                (
+                    registration.MessageType,
+                    registration.Lane,
+                    MessageName: _ResolveMessageName(registration, consumerRegistry, options)
+                )
+            )
+        )
         {
-            return exact;
-        }
+            if (group.Key.MessageName is null)
+            {
+                continue;
+            }
 
-        var candidates = _metadataByType
-            .Where(pair => pair.Key.IsAssignableFrom(messageType))
-            .Select(static pair => pair.Value)
-            .ToArray();
-
-        return candidates.Length switch
-        {
-            0 => null,
-            1 => candidates[0],
-            _ => throw new InvalidOperationException(
-                $"Message type '{messageType.FullName ?? messageType.Name}' matches multiple registered metadata types: "
-                    + string.Join(
-                        ", ",
-                        candidates
-                            .Select(static candidate => candidate.MessageType.FullName ?? candidate.MessageType.Name)
-                            .Order(StringComparer.Ordinal)
-                    )
-                    + ". Register a more specific message metadata mapping or publish using an exact message type."
-            ),
-        };
-    }
-
-    private static Dictionary<Type, MessageMetadata> _Build(IEnumerable<MessageRegistration> registrations)
-    {
-        var metadata = new Dictionary<Type, MessageMetadata>();
-
-        foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
-        {
             var correlationSelector = _MergeCorrelationSelector(group);
             var providerConfigs = _MergeProviderConfigs(group);
-            metadata[group.Key] = new MessageMetadata(group.Key, correlationSelector, providerConfigs);
+
+            var route = new MessageRouteKey(group.Key.MessageType, group.Key.MessageName, group.Key.Lane);
+            metadata[route] = new MessageMetadata(route, group.Key.MessageType, correlationSelector, providerConfigs);
         }
 
         return metadata;
+    }
+
+    private static string? _ResolveMessageName(
+        MessageRegistration registration,
+        IConsumerRegistry? consumerRegistry,
+        MessagingOptions? options
+    )
+    {
+        var rawName = registration.MessageName;
+
+        if (
+            string.IsNullOrWhiteSpace(rawName)
+            && consumerRegistry?.TryGetRawMessageName(registration.MessageType, registration.Lane, out var mappedName)
+                == true
+        )
+        {
+            rawName = mappedName;
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(rawName)
+            && options?.Conventions?.GetMessageName(registration.MessageType) is { } conventionName
+        )
+        {
+            rawName = conventionName;
+        }
+
+        return string.IsNullOrWhiteSpace(rawName) || options is null
+            ? rawName
+            : options.ApplyMessageNamePrefix(rawName);
     }
 
     private static Func<object, string?>? _MergeCorrelationSelector(IEnumerable<MessageRegistration> registrations)

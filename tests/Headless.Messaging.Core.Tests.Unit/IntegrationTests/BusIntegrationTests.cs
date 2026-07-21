@@ -36,8 +36,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("direct-test-messageName").OnBus<DirectTestConsumer>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("direct-test-messageName").Consumer<DirectTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -78,8 +78,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("direct-test-messageName").OnBus<DirectTestConsumer>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("direct-test-messageName").Consumer<DirectTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -113,8 +113,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("custom-messageName-name").OnBus<DirectTestConsumer>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("custom-messageName-name").Consumer<DirectTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -147,11 +147,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
             {
                 message.MessageName("multi-group-test");
-                message.OnBus<DirectTestConsumer>(consumer => consumer.Group("direct.primary"));
-                message.OnBus<DirectAnalyticsConsumer>(consumer => consumer.Group("direct.analytics"));
+                message.Consumer<DirectTestConsumer>(consumer => consumer.Group("direct.primary"));
+                message.Consumer<DirectAnalyticsConsumer>(consumer => consumer.Group("direct.analytics"));
             });
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -186,8 +186,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("prefixed-test").OnBus<DirectTestConsumer>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("prefixed-test").Consumer<DirectTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -220,8 +220,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("header-test-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("header-test-messageName").Consumer<DirectTestConsumerWithHeaders>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -267,8 +267,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("tenant-test-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("tenant-test-messageName").Consumer<DirectTestConsumerWithHeaders>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -308,8 +308,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("tenant-unset-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("tenant-unset-messageName").Consumer<DirectTestConsumerWithHeaders>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
@@ -347,8 +347,8 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("sequential-test").OnBus<DirectTestConsumer>()
+            messaging.Bus.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("sequential-test").Consumer<DirectTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";

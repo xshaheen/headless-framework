@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -48,7 +49,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("test-group", 5, AbortToken);
+        var client = await factory.CreateAsync("test-group", 5, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -74,7 +75,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("my-custom-group", 3, AbortToken);
+        var client = await factory.CreateAsync("my-custom-group", 3, MessageLane.Queue, AbortToken);
 
         // then - broker address should contain the group info after connection
         client.Should().NotBeNull();
@@ -100,8 +101,8 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 2, AbortToken);
-        var client2 = await factory.CreateAsync("group-2", 4, AbortToken);
+        var client1 = await factory.CreateAsync("group-1", 2, MessageLane.Queue, AbortToken);
+        var client2 = await factory.CreateAsync("group-2", 4, MessageLane.Queue, AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);
@@ -127,7 +128,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when
-        var client = await factory.CreateAsync("test-group", 10, AbortToken);
+        var client = await factory.CreateAsync("test-group", 10, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -153,7 +154,7 @@ public sealed class AmazonSqsConsumerClientFactoryTests : TestBase
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
 
         // when - groupConcurrent = 0 means synchronous processing
-        var client = await factory.CreateAsync("sync-group", 0, AbortToken);
+        var client = await factory.CreateAsync("sync-group", 0, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();

@@ -33,7 +33,7 @@ dotnet add package Headless.Messaging.Nats
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseNats(nats =>
@@ -68,13 +68,15 @@ options.UseNats(nats =>
     nats.ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) };
 });
 
-options.ForMessage<OrderEvent>(message =>
+options.Bus.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
         .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-        .OnBus<OrderEventConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+        .Consumer<OrderEventConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
 );
 ```
+
+NATS declares Bus and Queue capabilities, but its current subject/stream topology cannot isolate the same contract and logical name on both lanes. That combination fails capability validation before readiness; use distinct logical names until #359 adds physical lane isolation.
 
 `SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 

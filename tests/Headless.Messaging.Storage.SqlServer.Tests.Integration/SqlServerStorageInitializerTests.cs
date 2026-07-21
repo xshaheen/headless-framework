@@ -169,11 +169,12 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     [Theory]
     [InlineData("Published", "IX_{schema}_Published_Version_NextRetryAt")]
     [InlineData("Received", "IX_{schema}_Received_Version_NextRetryAt")]
-    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string table, string indexNamePattern)
+    public async Task should_key_retry_pickup_index_on_version_lane_then_next_retry_at(
+        string table,
+        string indexNamePattern
+    )
     {
-        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
-        // seek predicate, not a residual filter. Regression here would silently fan the planner
-        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        // Pin every equality predicate before the NextRetryAt range so each lane gets an isolated seek.
         const string schema = "index_shape_test";
         var initializer = _CreateInitializer(schema, useStorageLock: false);
 
@@ -183,6 +184,17 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await connection.OpenAsync(AbortToken);
 
         var indexName = indexNamePattern.Replace("{schema}", schema, StringComparison.Ordinal);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                DROP INDEX [{indexName}] ON [{schema}].[{table}];
+                CREATE NONCLUSTERED INDEX [{indexName}] ON [{schema}].[{table}] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+        await initializer.InitializeAsync(AbortToken);
 
         var keyColumns = (
             await connection.QueryAsync<string>(
@@ -211,7 +223,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         ).ToList();
 
-        keyColumns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+        keyColumns.Should().BeEquivalentTo(["Version", "IntentType", "NextRetryAt"], opts => opts.WithStrictOrdering());
 
         // Filtered predicate must be `[NextRetryAt] IS NOT NULL` so terminal rows are physically
         // excluded — keeps the index small even under high failed-message volume.

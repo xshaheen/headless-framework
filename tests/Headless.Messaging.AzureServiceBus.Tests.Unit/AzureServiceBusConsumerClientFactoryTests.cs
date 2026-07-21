@@ -31,7 +31,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -58,7 +58,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5);
+        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -85,7 +85,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5);
+        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -109,7 +109,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var groupName = new string('a', 80);
 
         // when
-        var act = async () => await factory.CreateAsync(groupName, 5, IntentType.Queue);
+        var act = async () => await factory.CreateAsync(groupName, 5, MessageLane.Queue);
 
         // then - reaches connection setup instead of rejecting the framework-local group name.
         await act.Should().ThrowAsync<BrokerConnectionException>();

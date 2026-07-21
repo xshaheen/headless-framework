@@ -106,6 +106,13 @@ public static class SetupKafkaMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Kafka"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Kafka",
+                    [MessageLane.Queue],
+                    supportsIndependentLaneTopology: false
+                )
+            );
 
             configureOptions(services);
 

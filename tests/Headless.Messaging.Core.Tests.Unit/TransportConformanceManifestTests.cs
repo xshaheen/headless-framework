@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
 
@@ -95,6 +97,50 @@ public sealed class TransportConformanceManifestTests : TestBase
     }
 
     [Fact]
+    public void should_compare_test_manifest_snapshot_with_production_descriptor()
+    {
+        var expected = TransportConformanceManifest.Providers["NATS"].ExpectedRuntimeCapabilities;
+        var matching = MessagingProviderCapabilities.Transport(
+            "NATS JetStream",
+            [MessageLane.Bus, MessageLane.Queue],
+            supportsIndependentLaneTopology: false
+        );
+        var drifted = MessagingProviderCapabilities.Transport(
+            "NATS JetStream",
+            [MessageLane.Bus],
+            supportsIndependentLaneTopology: true
+        );
+
+        expected.GetMismatchErrors(matching).Should().BeEmpty();
+        expected
+            .GetMismatchErrors(drifted)
+            .Should()
+            .Contain(error => error.Contains("Queue", StringComparison.Ordinal));
+        expected
+            .GetMismatchErrors(drifted)
+            .Should()
+            .Contain(error => error.Contains("independent-lane", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_keep_test_manifest_out_of_runtime_capability_authority()
+    {
+        typeof(TransportConformanceManifest)
+            .Assembly.Should()
+            .NotBeSameAs(typeof(MessagingProviderCapabilities).Assembly);
+        typeof(MessagingCapabilityModel)
+            .Assembly.GetReferencedAssemblies()
+            .Should()
+            .NotContain(reference =>
+                string.Equals(
+                    reference.Name,
+                    typeof(TransportConformanceManifest).Assembly.GetName().Name,
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
+    [Fact]
     public void should_keep_readme_matrix_aligned_with_manifest_roster()
     {
         var readme = File.ReadAllText(
@@ -112,11 +158,12 @@ public sealed class TransportConformanceManifestTests : TestBase
                 var support = profile.Scenarios[scenario];
                 return support.Status switch
                 {
-                    ConformanceStatus.Supported when profile.Provider == "Azure Service Bus" => "S†",
+                    ConformanceStatus.Supported
+                        when string.Equals(profile.Provider, "Azure Service Bus", StringComparison.Ordinal) => "S†",
                     ConformanceStatus.Supported => "S",
                     ConformanceStatus.Unsupported => "U",
                     ConformanceStatus.NotApplicable => "N/A",
-                    _ => throw new ArgumentOutOfRangeException(nameof(support.Status), support.Status, null),
+                    _ => throw new InvalidOperationException("Unknown conformance status."),
                 };
             });
 

@@ -115,10 +115,10 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<ShardTestMessage>(message =>
+                setup.Bus.ForMessage<ShardTestMessage>(message =>
                     message
                         .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                        .OnBus<ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+                        .Consumer<ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
                 );
             });
 
@@ -138,8 +138,8 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<ShardTestMessage>(message =>
-                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).OnBus<ShardTestConsumer>()
+                setup.Bus.ForMessage<ShardTestMessage>(message =>
+                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).Consumer<ShardTestConsumer>()
                 );
             });
 
@@ -163,7 +163,7 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<ShardTestMessage>(message => message.OnBus<ShardTestConsumer>());
+                setup.Bus.ForMessage<ShardTestMessage>(message => message.Consumer<ShardTestConsumer>());
             });
 
         // then

@@ -1,0 +1,1 @@
+"IntentType" SMALLINT NOT NULL,

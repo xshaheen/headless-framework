@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,7 +9,7 @@ using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
 
-internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFactory
+internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
 {
     private readonly IConnectionFactory _connection;
     private readonly IOptions<PulsarMessagingOptions> _pulsarOptions;
@@ -28,19 +29,10 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
         }
     }
 
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
-    }
-
     public async Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
@@ -52,7 +44,7 @@ internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFa
                 client,
                 groupName,
                 groupConcurrent,
-                intentType
+                MessageLaneCompatibility.ToIntentType(lane)
             );
             return consumerClient;
         }

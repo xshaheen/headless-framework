@@ -18,7 +18,7 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 
 ## Design Notes
 
-Kafka is queue-intent only in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; the uncertain `PossiblyPersisted` result is retried, so producer retries can create duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate in-flight offsets for revoked or lost partitions, so late handlers cannot commit or seek partitions now owned by another consumer.
+Kafka supports only the Queue lane in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; the uncertain `PossiblyPersisted` result is retried, so producer retries can create duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate in-flight offsets for revoked or lost partitions, so late handlers cannot commit or seek partitions now owned by another consumer.
 
 ## Installation
 
@@ -31,7 +31,7 @@ dotnet add package Headless.Messaging.Kafka
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Queue.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseKafka(kafka =>
@@ -59,10 +59,10 @@ options.UseKafka(kafka =>
 });
 ```
 
-Message-level Kafka knobs attach to `ForMessage<TMessage>(...)`:
+Message-level Kafka knobs attach to the Queue registration root:
 
 ```csharp
-options.ForMessage<OrderEvent>(message =>
+options.Queue.ForMessage<OrderEvent>(message =>
     message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
 );
 ```
@@ -72,8 +72,8 @@ options.ForMessage<OrderEvent>(message =>
 Consumer-side Kafka knobs attach to the consumer registration:
 
 ```csharp
-options.ForMessage<OrderEvent>(message =>
-    message.OnQueue<OrderWorker>(consumer =>
+options.Queue.ForMessage<OrderEvent>(message =>
+    message.Consumer<OrderWorker>(consumer =>
         consumer.Group("orders").UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
     )
 );
@@ -88,7 +88,7 @@ Kafka provides **strict FIFO ordering within partitions**:
 Messages sent to the same partition are delivered in order. Use `UseKafka(...).PartitionBy(...)` to route related messages to the same partition:
 
 ```csharp
-options.ForMessage<OrderEvent>(message =>
+options.Queue.ForMessage<OrderEvent>(message =>
     message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
 );
 ```

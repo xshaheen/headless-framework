@@ -68,7 +68,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         var builder = new MessagingBuilder(services);
 
         // when
-        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout");
+        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
 
         // then
         var descriptor = _GetRegistry(services)
@@ -87,7 +87,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         var builder = services.AddHeadlessMessaging(options => options.Options.GroupNamePrefix = "tenant");
 
         // when
-        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout");
+        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
 
         // then
         var descriptor = _GetRegistry(services)
@@ -103,7 +103,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         var builder = new MessagingBuilder(services);
 
         // when
-        builder.AddPublishMiddlewareFor<TypedPublishMiddleware, OrderPlaced>();
+        builder.AddPublishMiddlewareFor<TypedPublishMiddleware, OrderPlaced>(MessageLane.Bus);
 
         // then
         var descriptor = _GetRegistry(services)
@@ -211,7 +211,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         services.AddSingleton(recorder);
         var builder = new MessagingBuilder(services);
         builder.AddBusPublishMiddleware<PriorityZeroPublishMiddlewareA>();
-        builder.AddPublishMiddlewareFor<TypedPublishMiddleware, OrderPlaced>();
+        builder.AddPublishMiddlewareFor<TypedPublishMiddleware, OrderPlaced>(MessageLane.Bus);
         var provider = services.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(
             provider,

@@ -153,13 +153,14 @@ public sealed class ProviderHeaderContributionTests
         var consumerConfig = new FakeProviderConfig(_ProviderHeader, static message => message.Key);
         var registration = new MessageRegistration(
             typeof(TestMessage),
+            MessageLane.Bus,
             null,
             null,
             new Dictionary<Type, object>(),
             [
                 new MessageConsumerRegistration(
                     typeof(TestConsumer),
-                    IntentType.Bus,
+                    MessageLane.Bus,
                     IsAssemblyScan: false,
                     Group: null,
                     Concurrency: 1,
@@ -183,6 +184,7 @@ public sealed class ProviderHeaderContributionTests
         return _CreateFactory(
             new MessageRegistration(
                 typeof(TestMessage),
+                MessageLane.Bus,
                 null,
                 null,
                 providerConfigs.ToDictionary(static config => config.GetType(), static config => config),
@@ -202,7 +204,7 @@ public sealed class ProviderHeaderContributionTests
             Options.Create(new MessagingOptions()),
             registry,
             new NullCurrentTenant(),
-            new MessageMetadataRegistry([registration])
+            new MessageMetadataRegistry([registration], registry)
         );
     }
 

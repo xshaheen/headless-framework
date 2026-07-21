@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
 
@@ -16,6 +17,7 @@ public abstract class PublishContext
     private protected PublishContext(
         object? content,
         Type messageType,
+        Type concreteMessageType,
         IntentType intentType,
         MessageOptions? options,
         TimeSpan? delayTime,
@@ -24,7 +26,9 @@ public abstract class PublishContext
     {
         Content = content;
         MessageType = Argument.IsNotNull(messageType);
+        ConcreteMessageType = Argument.IsNotNull(concreteMessageType);
         IntentType = intentType;
+        Lane = MessageLaneCompatibility.ToLane(intentType);
         OptionsCore = options;
         DelayTimeCore = delayTime;
         Headers = _CreateHeaders(options);
@@ -35,14 +39,20 @@ public abstract class PublishContext
     /// <summary>Gets the message payload being published. May be <see langword="null"/>.</summary>
     public object? Content { get; }
 
-    /// <summary>Gets the runtime message type being published.</summary>
+    /// <summary>Gets the declared message contract used for middleware and routing.</summary>
     public Type MessageType { get; }
+
+    /// <summary>Gets the concrete payload type while <see cref="MessageType"/> retains the declared contract.</summary>
+    public Type ConcreteMessageType { get; internal set; }
 
     /// <summary>
     /// Gets the publish intent for this operation (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).
     /// Available to middleware to make intent-aware decisions without inspecting the concrete options type.
     /// </summary>
     public IntentType IntentType { get; }
+
+    /// <summary>Gets the checked runtime lane for this publish operation.</summary>
+    public MessageLane Lane { get; }
 
     /// <summary>Gets the currently active cancellation token for this publish operation.</summary>
     public CancellationToken CancellationToken { get; private set; }
@@ -143,9 +153,31 @@ public sealed class PublishContext<TMessage>(
     bool isTransactional = false,
     CancellationToken cancellationToken = default
 )
-    : PublishContext(content, typeof(TMessage), intentType, options, delayTime, cancellationToken),
+    : PublishContext(
+        content,
+        typeof(TMessage),
+        content?.GetType() ?? typeof(TMessage),
+        intentType,
+        options,
+        delayTime,
+        cancellationToken
+    ),
         ICompletablePublishContext
 {
+    internal PublishContext(
+        TMessage? content,
+        Type concreteMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        bool isTransactional,
+        CancellationToken cancellationToken
+    )
+        : this(content, intentType, options, delayTime, isTransactional, cancellationToken)
+    {
+        ConcreteMessageType = concreteMessageType;
+    }
+
     /// <summary>Gets the strongly-typed message payload being published. May be <see langword="null"/>.</summary>
     public new TMessage? Content => (TMessage?)base.Content;
 

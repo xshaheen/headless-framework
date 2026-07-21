@@ -668,10 +668,11 @@ internal sealed partial class PostgreSqlDataStorage(
     /// to lease and return rows in a single round-trip, preventing double-dispatch across replicas.
     /// </summary>
     public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -692,10 +693,11 @@ internal sealed partial class PostgreSqlDataStorage(
     /// to lease and return rows in a single round-trip, preventing double-dispatch across replicas.
     /// </summary>
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1096,9 +1098,12 @@ internal sealed partial class PostgreSqlDataStorage(
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
+        var intentType = MessageLaneCompatibility.ToIntentType(lane);
+        var intentValue = checked((short)intentType);
         // Atomic claim-and-return: a single UPDATE statement leases the rows (sets LockedUntil)
         // and RETURNS the selected columns in one round-trip. Replaces the previous two-step
         // SELECT-FOR-UPDATE-then-Lease pattern, which committed the SELECT transaction before
@@ -1117,11 +1122,31 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            WITH candidates AS (
-                SELECT message."Id"
+            WITH invalid_lane AS MATERIALIZED (
+                SELECT message."IntentType"
                 FROM {tableName} AS message
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
+                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
+                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
+                  AND {_TerminalRowGuardSimple}
+                  AND message."IntentType" NOT IN (0, 1)
+                LIMIT 1
+            ),
+            validated_lane AS MATERIALIZED (
+                SELECT CASE
+                    WHEN EXISTS (SELECT 1 FROM invalid_lane)
+                    THEN (SELECT "IntentType" / ("IntentType" - "IntentType") FROM invalid_lane)
+                    ELSE @IntentType
+                END::smallint AS "IntentType"
+            ),
+            candidates AS (
+                SELECT message."Id"
+                FROM {tableName} AS message
+                CROSS JOIN validated_lane
+                WHERE "Retries" <= @Retries
+                  AND "Version" = @Version
+                  AND message."IntentType" = validated_lane."IntentType"
                   AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
@@ -1142,6 +1167,7 @@ internal sealed partial class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
@@ -1165,6 +1191,14 @@ internal sealed partial class PostgreSqlDataStorage(
                     {
                         var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
+                        var persistedIntentType = (IntentType)reader.GetInt16(2);
+                        var persistedLane = MessageLaneCompatibility.ToLane(persistedIntentType);
+                        if (persistedLane != lane)
+                        {
+                            throw new InvalidOperationException(
+                                $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
+                            );
+                        }
 
                         MediumMessage mediumMessage;
                         try
@@ -1174,7 +1208,7 @@ internal sealed partial class PostgreSqlDataStorage(
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                IntentType = persistedIntentType,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),

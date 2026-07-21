@@ -1,19 +1,80 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class Queue(
-    ISerializer serializer,
-    IQueueTransport transport,
-    IMessagePublishRequestFactory publishRequestFactory,
-    IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider,
-    MessagingTelemetry? telemetry = null
-) : IQueue
+internal sealed class Queue : IQueue
 {
-    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
+    private static readonly IMessageCapabilityGate _DirectConstructionCapabilities = MessagingCapabilityModel.Compose([
+        MessagingProviderCapabilities.Transport("Direct", [MessageLane.Queue], supportsIndependentLaneTopology: true),
+    ]);
+
+    private readonly Func<IQueueTransport> _transportResolver;
+    private readonly ISerializer _serializer;
+    private readonly IMessagePublishRequestFactory _publishRequestFactory;
+    private readonly IPublishMiddlewarePipeline _publishPipeline;
+    private readonly TimeProvider _timeProvider;
+    private readonly IMessageCapabilityGate _capabilities;
+    private readonly MessagingTelemetry _telemetry;
+
+    internal Queue(
+        ISerializer serializer,
+        IServiceProvider serviceProvider,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        IMessageCapabilityGate capabilities,
+        MessagingTelemetry? telemetry = null
+    )
+        : this(
+            serializer,
+            () => serviceProvider.GetRequiredService<IQueueTransport>(),
+            publishRequestFactory,
+            publishPipeline,
+            timeProvider,
+            capabilities,
+            telemetry
+        ) { }
+
+    internal Queue(
+        ISerializer serializer,
+        IQueueTransport transport,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        MessagingTelemetry? telemetry = null
+    )
+        : this(
+            serializer,
+            () => transport,
+            publishRequestFactory,
+            publishPipeline,
+            timeProvider,
+            _DirectConstructionCapabilities,
+            telemetry
+        ) { }
+
+    private Queue(
+        ISerializer serializer,
+        Func<IQueueTransport> transportResolver,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        IMessageCapabilityGate capabilities,
+        MessagingTelemetry? telemetry
+    )
+    {
+        _serializer = serializer;
+        _transportResolver = transportResolver;
+        _publishRequestFactory = publishRequestFactory;
+        _publishPipeline = publishPipeline;
+        _timeProvider = timeProvider;
+        _capabilities = capabilities;
+        _telemetry = telemetry ?? MessagingTelemetry.Default;
+    }
 
     public Task EnqueueAsync<T>(
         T? contentObj,
@@ -21,7 +82,11 @@ internal sealed class Queue(
         CancellationToken cancellationToken = default
     )
     {
-        return publishPipeline.ExecuteAsync(
+        _capabilities.EnsureDirectSupported(MessageLane.Queue);
+        var transport = _transportResolver();
+        var declaredMessageType = options?.MessageType ?? typeof(T);
+
+        return _publishPipeline.ExecuteAsync(
             contentObj,
             IntentType.Queue,
             // Delay on EnqueueOptions is ignored by the direct publisher; delayTime=null ensures
@@ -30,15 +95,16 @@ internal sealed class Queue(
             delayTime: null,
             innerPublish: (middlewareOptions, _, ct) =>
             {
-                var publishRequest = publishRequestFactory.Create(
+                var publishRequest = _publishRequestFactory.Create(
                     contentObj,
+                    declaredMessageType,
                     middlewareOptions,
                     intentType: IntentType.Queue
                 );
                 return DirectPublisherCore.SendAsync(
                     publishRequest.Message,
                     publishRequest.IntentType,
-                    serializer,
+                    _serializer,
                     transport.BrokerAddress,
                     transport.SendAsync,
                     _NowUnixTimeMilliseconds,
@@ -53,6 +119,6 @@ internal sealed class Queue(
 
     private long _NowUnixTimeMilliseconds()
     {
-        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        return _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
     }
 }

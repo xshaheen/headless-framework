@@ -23,11 +23,11 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         }
 
         //Check whether the ConsumerExecutorDescriptor' properties are equal.
-        //IntentType is part of the identity: a (MessageName, Group) pair under Bus and the same pair
-        //under Queue are two independent subscriptions and must not collapse.
+        // Lane is part of the identity: a (MessageName, Group) pair under Bus and the same pair
+        // under Queue are two independent subscriptions and must not collapse.
         var ret =
             x.MessageName.Equals(y.MessageName, StringComparison.OrdinalIgnoreCase)
-            && x.IntentType == y.IntentType
+            && x.Lane == y.Lane
             && (
                 (y.GroupName is null && x.GroupName is null)
                 || x.GroupName?.Equals(y.GroupName, StringComparison.OrdinalIgnoreCase) == true
@@ -55,7 +55,7 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         //Get hash code for the MessageName field.
         var hashMessageName = StringComparer.Ordinal.GetHashCode(obj.MessageName);
 
-        //Calculate the hash code (IntentType participates so Bus and Queue do not collide).
-        return HashCode.Combine(hashMessageName, hashGroup, obj.IntentType);
+        // Calculate the hash code with the runtime lane so Bus and Queue do not collide.
+        return HashCode.Combine(hashMessageName, hashGroup, obj.Lane);
     }
 }

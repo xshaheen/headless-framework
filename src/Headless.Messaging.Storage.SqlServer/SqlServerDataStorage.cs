@@ -670,10 +670,11 @@ internal sealed partial class SqlServerDataStorage(
     /// double-dispatch across replicas.
     /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken);
     }
 
     /// <summary>
@@ -695,10 +696,11 @@ internal sealed partial class SqlServerDataStorage(
     /// double-dispatch across replicas.
     /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken);
     }
 
     /// <summary>
@@ -1152,9 +1154,12 @@ internal sealed partial class SqlServerDataStorage(
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
+        var intentType = MessageLaneCompatibility.ToIntentType(lane);
+        var intentValue = checked((short)intentType);
         // Atomic claim-and-return: UPDATE TOP (N) ... OUTPUT inserted.* leases the rows (sets
         // LockedUntil) and returns the selected columns in one round-trip. Replaces the previous
         // two-step SELECT-UPDLOCK-then-Lease pattern, which committed the SELECT transaction
@@ -1173,11 +1178,24 @@ internal sealed partial class SqlServerDataStorage(
         var sql = $"""
             DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
 
+            IF EXISTS (
+                SELECT TOP (1) 1
+                FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
+                WHERE Retries <= @Retries
+                  AND Version = @Version
+                  AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
+                  AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
+                  AND {_TerminalRowGuardSimple}
+                  AND IntentType NOT IN (0, 1)
+            )
+                THROW 51000, 'Unsupported persisted messaging lane in retry pickup.', 1;
+
             WITH Candidates AS (
                 SELECT TOP (@BatchSize) Id
                 FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Retries <= @Retries
                   AND Version = @Version
+                  AND IntentType = @IntentType
                   AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
                   AND {_TerminalRowGuardSimple}
@@ -1199,6 +1217,7 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
+            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },
             new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
             new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
             new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
@@ -1220,6 +1239,14 @@ internal sealed partial class SqlServerDataStorage(
                     {
                         var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
+                        var persistedIntentType = (IntentType)reader.GetInt16(2);
+                        var persistedLane = MessageLaneCompatibility.ToLane(persistedIntentType);
+                        if (persistedLane != lane)
+                        {
+                            throw new InvalidOperationException(
+                                $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
+                            );
+                        }
 
                         MediumMessage mediumMessage;
                         try
@@ -1229,7 +1256,7 @@ internal sealed partial class SqlServerDataStorage(
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                IntentType = persistedIntentType,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
