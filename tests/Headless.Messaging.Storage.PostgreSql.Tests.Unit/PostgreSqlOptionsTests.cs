@@ -9,16 +9,6 @@ namespace Tests;
 public sealed class PostgreSqlOptionsTests : TestBase
 {
     [Fact]
-    public void should_be_a_raw_storage_options_type()
-    {
-        // when
-        var options = new PostgreSqlOptions();
-
-        // then
-        options.Should().BeOfType<PostgreSqlOptions>();
-    }
-
-    [Fact]
     public void should_have_default_schema()
     {
         // when
