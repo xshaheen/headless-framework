@@ -19,6 +19,8 @@
     <InternalsVisibleTo Include="Headless.Messaging.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.InMemory" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Benchmarks" />

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Threading.Channels;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -154,7 +155,7 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     public async Task EnqueueToScheduler(
         MediumMessage message,
         DateTimeOffset publishTime,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     )
     {

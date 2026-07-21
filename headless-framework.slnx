@@ -302,11 +302,13 @@
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql/Headless.Messaging.Storage.PostgreSql.csproj" />
+        <Project Path="src/Headless.Messaging.Storage.PostgreSql.EntityFramework/Headless.Messaging.Storage.PostgreSql.EntityFramework.csproj" />
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
         <Project Path="src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj" />
         <Project Path="src/Headless.Messaging.Storage.SqlServer/Headless.Messaging.Storage.SqlServer.csproj" />
+        <Project Path="src/Headless.Messaging.Storage.SqlServer.EntityFramework/Headless.Messaging.Storage.SqlServer.EntityFramework.csproj" />
         <Project Path="src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj" />
     </Folder>
     <Folder Name="/Messaging/Tests/">
@@ -326,11 +328,13 @@
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PackageReference.Tests.Unit/Headless.Messaging.PackageReference.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Unit/Headless.Messaging.Storage.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Storage.PostgreSql.EntityFramework.Tests.Unit/Headless.Messaging.Storage.PostgreSql.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Integration/Headless.Messaging.Pulsar.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Unit/Headless.Messaging.RabbitMq.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Unit/Headless.Messaging.Storage.SqlServer.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Core.Tests.Harness/Headless.Messaging.Core.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj" />

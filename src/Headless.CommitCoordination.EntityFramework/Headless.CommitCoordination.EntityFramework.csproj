@@ -19,8 +19,8 @@
   <ItemGroup>
     <!-- The Type-based wiring helpers in Setup.cs are infrastructure seams for the messaging EF storage
          packages (and their own unit tests), not part of the consumer-facing NuGet contract. -->
-    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql" />
-    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.EntityFramework" />
     <InternalsVisibleTo Include="Headless.CommitCoordination.EntityFramework.Tests.Unit" />
   </ItemGroup>
 </Project>

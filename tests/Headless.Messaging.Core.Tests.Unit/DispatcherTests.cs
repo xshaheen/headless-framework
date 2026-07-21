@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
@@ -136,7 +137,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -281,7 +282,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -345,7 +346,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -404,7 +405,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -445,7 +446,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -486,7 +487,7 @@ public sealed class DispatcherTests : TestBase
         var storageWrite = _storage.ChangePublishStateAsync(
             Arg.Any<MediumMessage>(),
             StatusName.Delayed,
-            Arg.Any<object?>(),
+            Arg.Any<DbTransaction?>(),
             Arg.Any<DateTimeOffset?>(),
             cancellationToken: operationToken
         );
@@ -514,7 +515,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Delayed,
-                Arg.Any<object?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: operationToken
             );
@@ -528,7 +529,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -578,7 +579,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Queued,
-                Arg.Any<object?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -888,7 +889,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -941,7 +942,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -986,7 +987,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )

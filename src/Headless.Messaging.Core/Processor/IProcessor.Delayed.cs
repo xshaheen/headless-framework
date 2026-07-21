@@ -47,7 +47,7 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
                 return;
             }
 
-            async ValueTask scheduleTask(object? transaction, IEnumerable<MediumMessage> messages)
+            async ValueTask scheduleTask(DbTransaction? transaction, IEnumerable<MediumMessage> messages)
             {
                 foreach (var message in messages)
                 {

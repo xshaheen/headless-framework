@@ -3,30 +3,19 @@
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Npgsql;
-using PostgreSqlEntityFrameworkMessagingOptions = Headless.Messaging.Storage.PostgreSql.PostgreSqlEntityFrameworkMessagingOptions;
 
 namespace Tests;
 
 public sealed class PostgreSqlOptionsTests : TestBase
 {
     [Fact]
-    public void should_inherit_from_entity_framework_messaging_options()
+    public void should_have_default_schema()
     {
         // when
         var options = new PostgreSqlOptions();
 
         // then
-        options.Should().BeAssignableTo<PostgreSqlEntityFrameworkMessagingOptions>();
-    }
-
-    [Fact]
-    public void should_have_default_schema_from_base()
-    {
-        // when
-        var options = new PostgreSqlOptions();
-
-        // then
-        options.Schema.Should().Be(PostgreSqlEntityFrameworkMessagingOptions.DefaultSchema);
+        options.Schema.Should().Be(PostgreSqlOptions.DefaultSchema);
     }
 
     [Fact]

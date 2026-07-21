@@ -75,7 +75,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -233,7 +233,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -298,7 +298,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -362,7 +362,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -433,7 +433,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -487,7 +487,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -508,7 +508,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -606,7 +606,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -707,7 +707,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -766,7 +766,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -1016,7 +1016,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<object?>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),

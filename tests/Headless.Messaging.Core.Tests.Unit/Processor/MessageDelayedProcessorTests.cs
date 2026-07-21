@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
@@ -20,10 +21,10 @@ public sealed class MessageDelayedProcessorTests : TestBase
         var message = _CreateDelayedMessage();
         storage
             .ScheduleMessagesOfDelayedAsync(
-                Arg.Any<Func<object?, IEnumerable<MediumMessage>, ValueTask>>(),
+                Arg.Any<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(call => call.Arg<Func<object?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
+            .Returns(call => call.Arg<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
         using var context = _CreateContext(storage);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
@@ -60,7 +61,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<DateTimeOffset>(),
-                Arg.Any<object?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -98,10 +99,10 @@ public sealed class MessageDelayedProcessorTests : TestBase
         var message = _CreateDelayedMessage();
         storage
             .ScheduleMessagesOfDelayedAsync(
-                Arg.Any<Func<object?, IEnumerable<MediumMessage>, ValueTask>>(),
+                Arg.Any<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(call => call.Arg<Func<object?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
+            .Returns(call => call.Arg<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
         using var context = _CreateContext(storage);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
@@ -113,7 +114,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
         await storage
             .Received(1)
             .ScheduleMessagesOfDelayedAsync(
-                Arg.Any<Func<object?, IEnumerable<MediumMessage>, ValueTask>>(),
+                Arg.Any<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>(),
                 Arg.Any<CancellationToken>()
             );
         await dispatcher

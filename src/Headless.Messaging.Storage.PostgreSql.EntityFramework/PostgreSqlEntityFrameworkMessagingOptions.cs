@@ -4,7 +4,7 @@ using Headless.Checks;
 using Headless.Constants;
 using Headless.Messaging.Persistence;
 
-namespace Headless.Messaging.Storage.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql.EntityFramework;
 
 [PublicAPI]
 public class PostgreSqlEntityFrameworkMessagingOptions
@@ -50,8 +50,6 @@ public class PostgreSqlEntityFrameworkMessagingOptions
     /// </summary>
     public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
 
-    internal Type? DbContextType { get; set; }
-
     /// <summary>
     /// Gets or sets whether the transactional (atomic) outbox is enabled for this EF-context storage path.
     /// Default <see langword="true" />: a publish issued inside a coordinated transaction writes its outbox row in
@@ -61,9 +59,4 @@ public class PostgreSqlEntityFrameworkMessagingOptions
     /// transactional by default.
     /// </summary>
     public bool EnableTransactionalOutbox { get; set; } = true;
-
-    /// <summary>
-    /// Data version
-    /// </summary>
-    internal string Version { get; set; } = null!;
 }

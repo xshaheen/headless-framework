@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 
@@ -32,7 +33,7 @@ public interface IDataStorage
     /// </remarks>
     /// <param name="message">The message whose state is changing.</param>
     /// <param name="state">The new status to persist.</param>
-    /// <param name="transaction">Optional ambient transaction (<see cref="System.Data.Common.DbTransaction"/> or an EF Core <c>IDbContextTransaction</c>).</param>
+    /// <param name="transaction">Optional ambient relational transaction.</param>
     /// <param name="nextRetryAt">
     /// UTC timestamp at which the retry processor should re-dispatch this message.
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
@@ -58,7 +59,7 @@ public interface IDataStorage
     ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -232,15 +233,14 @@ public interface IDataStorage
     /// <param name="name">The message name (topic or queue name) resolved at publish time.</param>
     /// <param name="message">The message envelope to persist.</param>
     /// <param name="transaction">
-    /// Optional ambient transaction (<see cref="System.Data.Common.DbTransaction"/> or an EF Core
-    /// <c>IDbContextTransaction</c>). When supplied, the insert participates in the caller's transaction.
+    /// Optional ambient relational transaction. When supplied, the insert participates in the caller's transaction.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     );
 
@@ -258,7 +258,7 @@ public interface IDataStorage
     ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
-        object? transaction = null,
+        DbTransaction? transaction = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -424,7 +424,7 @@ public interface IDataStorage
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     );
 
