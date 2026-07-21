@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
   <Target Name="CopyAnalyzer" AfterTargets="Build">
     <MakeDir Directories="$(OutputPath)analyzers/dotnet/cs" />
