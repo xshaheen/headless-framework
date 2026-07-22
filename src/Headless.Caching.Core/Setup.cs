@@ -87,6 +87,16 @@ public static class SetupCachingCore
         // coordinator / hybrid span emission. Registered once here from the setup builder's flag.
         services.TryAddSingleton(new CacheInstrumentationConfig { IncludeKeyInTraces = setup.IncludeKeyInTraces });
 
+        // Caching-wide event-handler execution config (#385): resolved by every provider from DI and threaded into
+        // its CacheEventsHub. Registered once here from the setup builder.
+        services.TryAddSingleton(
+            new CacheEventsConfig
+            {
+                SyncHandlers = setup.SyncHandlers,
+                HandlerErrorLogLevel = setup.EventHandlerErrorLogLevel,
+            }
+        );
+
         // Named instances only — the default and the role keys are resolvable via GetCache but excluded here.
         var registeredNames = setup.InstanceNames.ToFrozenSet(StringComparer.Ordinal);
         services.AddCacheProvider(registeredNames);

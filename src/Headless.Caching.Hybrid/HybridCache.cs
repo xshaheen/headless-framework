@@ -44,7 +44,8 @@ public sealed partial class HybridCache(
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
     ICacheFactoryLockProvider? factoryLockProvider = null,
-    CacheInstrumentationConfig? instrumentation = null
+    CacheInstrumentationConfig? instrumentation = null,
+    CacheEventsConfig? eventsConfig = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
@@ -69,7 +70,8 @@ public sealed partial class HybridCache(
         factoryLockProvider,
         string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
         CachingMetrics.TierHybrid,
-        instrumentation?.IncludeKeyInTraces ?? false
+        instrumentation?.IncludeKeyInTraces ?? false,
+        eventsConfig
     );
 
     private long _localCacheHits;
@@ -78,6 +80,9 @@ public sealed partial class HybridCache(
 
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
+
+    /// <inheritdoc />
+    public ICacheEvents Events => _coordinator.EventsHub;
 
     /// <summary>Gets the number of L1 cache hits.</summary>
     public long LocalCacheHits => Interlocked.Read(ref _localCacheHits);

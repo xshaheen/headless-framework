@@ -36,7 +36,8 @@ public sealed class RedisCache(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null,
-    CacheInstrumentationConfig? instrumentation = null
+    CacheInstrumentationConfig? instrumentation = null,
+    CacheEventsConfig? eventsConfig = null
 ) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
@@ -124,8 +125,12 @@ public sealed class RedisCache(
         factoryLockProvider,
         string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
         CachingMetrics.TierL2,
-        instrumentation?.IncludeKeyInTraces ?? false
+        instrumentation?.IncludeKeyInTraces ?? false,
+        eventsConfig
     );
+
+    /// <inheritdoc />
+    public ICacheEvents Events => _coordinator.EventsHub;
 
     // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
     // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.

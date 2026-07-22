@@ -20,12 +20,41 @@ public sealed partial class FactoryCacheCoordinator(
     ICacheFactoryLockProvider? factoryLockProvider = null,
     string? cacheName = null,
     string? cacheTier = null,
-    bool includeKeyInTraces = false
+    bool includeKeyInTraces = false,
+    CacheEventsConfig? eventsConfig = null
 ) : IDisposable
 {
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
+
+    // The owning cache's event hub. Constructed here (rather than by the provider) so a provider using a primary
+    // constructor can share the single hub without a field-initializer cross-reference. Providers read it via
+    // EventsHub to surface cache.Events and to fire their own direct-op events. When it has no subscribers the hot
+    // path short-circuits (HasSubscribers). Coordinator-owned events (factory outcome, fail-safe, refresh,
+    // factory-write set) always dispatch on a background task (see CacheEventsHub) because they are emitted while the
+    // per-key factory lock is held. Hybrid (tier == hybrid) also gets the L1/L2 Memory/Distributed sub-hubs.
+    /// <summary>The event hub owned by this coordinator and shared with the provider (its <c>cache.Events</c> and direct-op emissions).</summary>
+    public CacheEventsHub EventsHub { get; } =
+        new(
+            string.IsNullOrEmpty(cacheName) ? CachingDiagnostics.DefaultCacheName : cacheName,
+            _MapTierEnum(cacheTier),
+            eventsConfig,
+            logger,
+            withTierSubHubs: string.Equals(
+                cacheTier ?? CachingMetrics.TierHybrid,
+                CachingMetrics.TierHybrid,
+                StringComparison.Ordinal
+            )
+        );
+
+    private static CacheTier _MapTierEnum(string? cacheTier) =>
+        cacheTier switch
+        {
+            CachingMetrics.TierL1 => CacheTier.L1,
+            CachingMetrics.TierL2 => CacheTier.L2,
+            _ => CacheTier.Hybrid,
+        };
 
     // Instrumentation identity (see CachingDiagnostics): the headless.cache.name / headless.cache.tier dimensions
     // and whether the raw key may appear on spans. Supplied by the constructing provider (in-memory=l1, redis=l2,
@@ -128,16 +157,27 @@ public sealed partial class FactoryCacheCoordinator(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Zero-overhead when unobserved: no listener means no span and no outcome recording.
-        if (!CachingDiagnostics.IsEnabled)
+        var diagnosticsEnabled = CachingDiagnostics.IsEnabled;
+        var eventsActive = EventsHub.HasSubscribers;
+
+        // Zero-overhead when unobserved: no metric/span listener AND no event subscriber means no span, no outcome
+        // resolution, and no event work.
+        if (!diagnosticsEnabled && !eventsActive)
         {
-            var (value, _) = await _RunGetOrAddAsync(store, key, factory, options, activity: null, cancellationToken)
+            var (fastValue, _) = await _RunGetOrAddAsync(
+                    store,
+                    key,
+                    factory,
+                    options,
+                    activity: null,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
-            return value;
+            return fastValue;
         }
 
-        using var activity = _StartGetOrAddActivity(key);
+        using var activity = diagnosticsEnabled ? _StartGetOrAddActivity(key) : null;
 
         try
         {
@@ -152,8 +192,16 @@ public sealed partial class FactoryCacheCoordinator(
                 .ConfigureAwait(false);
 
             var outcome = _ResolveGetOrAddOutcome(value, reachedFactory);
-            CachingMetrics.RecordRequest(_cacheName, CachingMetrics.OperationGetOrAdd, outcome, _cacheTier);
-            activity?.SetTag(CachingMetrics.TagOutcome, outcome);
+
+            if (diagnosticsEnabled)
+            {
+                CachingMetrics.RecordRequest(_cacheName, CachingMetrics.OperationGetOrAdd, outcome, _cacheTier);
+                activity?.SetTag(CachingMetrics.TagOutcome, outcome);
+            }
+
+            // Aggregate get-or-add outcome event, emitted exactly once here (after _RunGetOrAddAsync has released the
+            // per-key lock) so it is deadlock-safe and reflects the resolved outcome (never a premature miss).
+            _EmitGetOrAddOutcome(key, outcome);
 
             return value;
         }
@@ -286,7 +334,7 @@ public sealed partial class FactoryCacheCoordinator(
                         .ConfigureAwait(false);
 
                     _logger.LogCacheFactoryLockAcquireFailed(exception, key, exception.GetType().Name);
-                    _RecordFailSafe(activity, CachingMetrics.TriggerLockAcquireFailed);
+                    _RecordFailSafe(activity, key, CachingMetrics.TriggerLockAcquireFailed);
                     return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
                 catch
@@ -369,7 +417,7 @@ public sealed partial class FactoryCacheCoordinator(
             }
             catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
             {
-                _RecordFactoryOutcome(factoryActivity, factoryStart, CachingMetrics.OutcomeError);
+                _RecordFactoryOutcome(factoryActivity, factoryStart, key, CachingMetrics.OutcomeError);
                 factoryActivity?.Dispose();
                 now = _GetUtcNow();
 
@@ -382,7 +430,7 @@ public sealed partial class FactoryCacheCoordinator(
                     .ConfigureAwait(false);
 
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
-                _RecordFailSafe(activity, CachingMetrics.TriggerFactoryError);
+                _RecordFailSafe(activity, key, CachingMetrics.TriggerFactoryError);
                 return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
             }
             catch
@@ -395,7 +443,7 @@ public sealed partial class FactoryCacheCoordinator(
 
             if (factoryResult.IsTimedOut)
             {
-                _RecordFactoryOutcome(factoryActivity, factoryStart, CachingMetrics.OutcomeTimeout);
+                _RecordFactoryOutcome(factoryActivity, factoryStart, key, CachingMetrics.OutcomeTimeout);
                 factoryActivity?.Dispose();
 
                 _logger.LogCacheFactoryTimedOut(
@@ -421,7 +469,7 @@ public sealed partial class FactoryCacheCoordinator(
                     );
 
                     ownsReleaser = false;
-                    _RecordFailSafe(activity, CachingMetrics.TriggerFactoryTimeout);
+                    _RecordFailSafe(activity, key, CachingMetrics.TriggerFactoryTimeout);
                     return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
 
@@ -439,14 +487,14 @@ public sealed partial class FactoryCacheCoordinator(
                         .ConfigureAwait(false);
 
                     _logger.LogFailSafeActivated(key, nameof(CacheFactoryTimeoutException));
-                    _RecordFailSafe(activity, CachingMetrics.TriggerFactoryTimeout);
+                    _RecordFailSafe(activity, key, CachingMetrics.TriggerFactoryTimeout);
                     return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
                 }
 
                 throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout);
             }
 
-            _RecordFactoryOutcome(factoryActivity, factoryStart, CachingMetrics.OutcomeSuccess);
+            _RecordFactoryOutcome(factoryActivity, factoryStart, key, CachingMetrics.OutcomeSuccess);
             factoryActivity?.Dispose();
 
             var written = await _WriteFactoryResultAsync(
@@ -599,7 +647,13 @@ public sealed partial class FactoryCacheCoordinator(
 
         var persisted = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
 
-        if (!persisted)
+        if (persisted)
+        {
+            // A genuinely new signal (there is no `set` write metric on the factory path). Emitted on a background
+            // task (forceBackground) because this write runs while the per-key factory lock is held.
+            EventsHub.OnSet(key, forceBackground: true);
+        }
+        else
         {
             // CAS lost: a concurrent write changed the entry under the lock between our read and this set. Best-effort
             // by design — the freshly computed value still goes to the caller and the next read recomputes; we only

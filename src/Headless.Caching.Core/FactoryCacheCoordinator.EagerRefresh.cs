@@ -300,6 +300,7 @@ public sealed partial class FactoryCacheCoordinator
                     .ConfigureAwait(false);
                 _logger.LogEagerRefreshSucceeded(key);
                 CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshEager, CachingMetrics.OutcomeSuccess);
+                EventsHub.OnEagerRefresh(key, CacheFactoryOutcome.Success);
             }
         }
         // Genuine failures only. When internalCts fired this OperationCanceledException is OUR deliberate ceiling
@@ -312,6 +313,7 @@ public sealed partial class FactoryCacheCoordinator
             // fail-safe (when enabled) take over from here, so log and move on without touching the entry.
             _logger.LogEagerRefreshFailed(exception, key, exception.GetType().Name);
             CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshEager, CachingMetrics.OutcomeError);
+            EventsHub.OnEagerRefresh(key, CacheFactoryOutcome.Error);
         }
 #pragma warning restore VSTHRD003
     }

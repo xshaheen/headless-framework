@@ -59,6 +59,7 @@ public sealed class InMemoryCache
 
     private readonly AsyncLock _lock = new();
     private readonly FactoryCacheCoordinator _coordinator;
+    private readonly CacheEventsHub _events;
     private readonly string _cacheName;
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
@@ -92,12 +93,16 @@ public sealed class InMemoryCache
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions { get; }
 
+    /// <inheritdoc />
+    public ICacheEvents Events => _events;
+
     public InMemoryCache(
         TimeProvider timeProvider,
         InMemoryCacheOptions options,
         ILogger<InMemoryCache>? logger = null,
         ICacheFactoryLockProvider? factoryLockProvider = null,
-        CacheInstrumentationConfig? instrumentation = null
+        CacheInstrumentationConfig? instrumentation = null,
+        CacheEventsConfig? eventsConfig = null
     )
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
@@ -108,8 +113,10 @@ public sealed class InMemoryCache
             factoryLockProvider,
             _cacheName,
             CachingMetrics.TierL1,
-            instrumentation?.IncludeKeyInTraces ?? false
+            instrumentation?.IncludeKeyInTraces ?? false,
+            eventsConfig
         );
+        _events = _coordinator.EventsHub;
         _timeProvider = timeProvider;
         DefaultEntryOptions = options.DefaultEntryOptions;
         _keyPrefix = options.KeyPrefix ?? "";
