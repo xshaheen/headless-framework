@@ -120,10 +120,10 @@ builder.Services.AddHeadlessCaching(setup =>
 });
 ```
 
-Cache events (native .NET events; handlers run on a background task by default):
+Cache events (`IAsyncEvent<TArgs>` per signal; async or sync handlers run on a background task by default):
 
 ```csharp
-cache.Events.Hit += (sender, e) => logger.LogDebug("cache hit {Key}", e.Key);
+cache.Events.Hit.AddHandler((sender, e) => logger.LogDebug("cache hit {Key}", e.Key));
 ```
 
 ## Configuration

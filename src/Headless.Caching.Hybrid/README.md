@@ -115,8 +115,8 @@ A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot"
 Cache events — the hybrid adds per-tier `Events.Memory` / `Events.Distributed` reads and `Invalidation` (publish/receive):
 
 ```csharp
-cache.Events.Hit += (sender, e) => logger.LogDebug("cache hit {Key} tier={Tier}", e.Key, e.Tier);
-cache.Events.Invalidation += (sender, e) => logger.LogDebug("invalidation {Kind} {Direction}", e.Kind, e.Direction);
+cache.Events.Hit.AddHandler((sender, e) => logger.LogDebug("cache hit {Key} tier={Tier}", e.Key, e.Tier));
+cache.Events.Invalidation.AddHandler((sender, e) => logger.LogDebug("invalidation {Kind} {Direction}", e.Kind, e.Direction));
 ```
 
 ## Configuration

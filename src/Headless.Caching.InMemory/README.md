@@ -84,8 +84,8 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 Cache events — in-memory adds `Eviction` (handlers run on a background task by default; opt into synchronous execution with `setup.SyncHandlers = true`):
 
 ```csharp
-cache.Events.Hit += (sender, e) => logger.LogDebug("cache hit {Key}", e.Key);
-cache.Events.Eviction += (sender, e) => logger.LogDebug("evicted {Key}: {Reason}", e.Key, e.Reason);
+cache.Events.Hit.AddHandler((sender, e) => logger.LogDebug("cache hit {Key}", e.Key));
+cache.Events.Eviction.AddHandler((sender, e) => logger.LogDebug("evicted {Key}: {Reason}", e.Key, e.Reason));
 ```
 
 ## Configuration
