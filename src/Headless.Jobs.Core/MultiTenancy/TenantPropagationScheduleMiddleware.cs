@@ -76,6 +76,20 @@ public sealed class TenantPropagationScheduleMiddleware(
         {
             JobTenantValidation.ValidateExplicitTenantId(explicitTenant);
 
+            // Lateral guard: an explicit tenant differing from the ambient one is rejected only when the seam
+            // opted in; by default explicit wins and the mismatch is logged so accidental cross-tenant
+            // scheduling is at least visible.
+            if (
+                JobTenantValidation.CheckCrossTenant(
+                    explicitTenant,
+                    _currentTenant.Id,
+                    _options.RejectCrossTenantEnqueue
+                )
+            )
+            {
+                logger?.CrossTenantEnqueue(job.Function);
+            }
+
             return;
         }
 
@@ -123,4 +137,12 @@ internal static partial class TenantPropagationScheduleMiddlewareLog
         Message = "The ambient tenant identifier was rejected by Jobs tenant propagation because its length ({Length}) is blank or exceeds JobsTenancyOptions.TenantIdMaxLength. The enqueue fails closed; investigate the ambient tenant source if this repeats."
     )]
     public static partial void AmbientTenantRejected(this ILogger logger, int length);
+
+    [LoggerMessage(
+        EventId = 3225,
+        EventName = "JobCrossTenantEnqueue",
+        Level = LogLevel.Warning,
+        Message = "A job for function '{Function}' was enqueued with an explicit tenant that differs from the present ambient tenant. Explicit wins by design; enable RejectCrossTenantEnqueue() on the Jobs tenancy seam to reject the lateral path."
+    )]
+    public static partial void CrossTenantEnqueue(this ILogger logger, string function);
 }

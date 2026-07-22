@@ -180,12 +180,67 @@ public sealed class TenantPropagationScheduleMiddlewareTests : TestBase
         await act.Should().ThrowAsync<JobValidatorException>();
     }
 
-    private async Task<bool> _InvokeAsync(BaseJobEntity job, string? ambientTenant, bool propagate, bool strict = false)
+    [Fact]
+    public async Task an_explicit_tenant_differing_from_ambient_is_kept_by_default()
+    {
+        // Lateral path default: explicit wins even against a different ambient tenant (documented in-process trust
+        // model); the mismatch is logged, never rejected, unless the seam opts in.
+        var job = new TimeJobEntity { Function = _Function, TenantId = "t2" };
+
+        await _InvokeAsync(job, ambientTenant: "t1", propagate: true);
+
+        job.TenantId.Should().Be("t2");
+    }
+
+    [Fact]
+    public async Task an_explicit_tenant_differing_from_ambient_is_rejected_when_opted_in()
+    {
+        var job = new TimeJobEntity { Function = _Function, TenantId = "t2" };
+
+        var act = () => _InvokeAsync(job, ambientTenant: "t1", propagate: true, rejectCrossTenant: true);
+
+        await act.Should().ThrowAsync<JobValidatorException>();
+    }
+
+    [Fact]
+    public async Task an_explicit_tenant_matching_ambient_passes_with_rejection_enabled()
+    {
+        var job = new TimeJobEntity { Function = _Function, TenantId = "t1" };
+
+        await _InvokeAsync(job, ambientTenant: "t1", propagate: true, rejectCrossTenant: true);
+
+        job.TenantId.Should().Be("t1");
+    }
+
+    [Fact]
+    public async Task an_explicit_tenant_from_system_scope_passes_with_rejection_enabled()
+    {
+        // Cron fan-out shape: system-scope code (no ambient tenant) schedules explicit-tenant jobs — the lateral
+        // guard never applies without a present ambient tenant.
+        var job = new TimeJobEntity { Function = _Function, TenantId = "t2" };
+
+        await _InvokeAsync(job, ambientTenant: null, propagate: true, rejectCrossTenant: true);
+
+        job.TenantId.Should().Be("t2");
+    }
+
+    private async Task<bool> _InvokeAsync(
+        BaseJobEntity job,
+        string? ambientTenant,
+        bool propagate,
+        bool strict = false,
+        bool rejectCrossTenant = false
+    )
     {
         var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns(ambientTenant);
         var options = Options.Create(
-            new JobsTenancyOptions { PropagateTenant = propagate, TenantContextRequired = strict }
+            new JobsTenancyOptions
+            {
+                PropagateTenant = propagate,
+                TenantContextRequired = strict,
+                RejectCrossTenantEnqueue = rejectCrossTenant,
+            }
         );
         var middleware = new TenantPropagationScheduleMiddleware(tenant, options);
         var context = new JobScheduleContext(_Descriptor, job, NullServiceProvider.Instance);

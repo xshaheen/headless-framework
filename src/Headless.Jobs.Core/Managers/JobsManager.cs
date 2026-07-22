@@ -14,6 +14,7 @@ using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Managers;
 
@@ -31,7 +32,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     JobFunctionRegistry functionRegistry,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger,
     IServiceScopeFactory? serviceScopeFactory = null,
-    ICurrentTenant? currentTenant = null
+    ICurrentTenant? currentTenant = null,
+    IOptions<JobsTenancyOptions>? tenancyOptions = null
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -49,6 +51,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
     // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
     private readonly ICurrentTenant? _currentTenant = currentTenant;
+    private readonly bool _rejectCrossTenant = tenancyOptions?.Value.RejectCrossTenantEnqueue ?? false;
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
     // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
@@ -862,7 +865,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return;
         }
 
-        var ambientPresent = !string.IsNullOrWhiteSpace(_currentTenant?.Id);
+        var ambientTenantId = _currentTenant?.Id;
         var rootTenantId = root.TenantId;
 
         var pending = new Stack<TTimeJob>();
@@ -873,7 +876,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         while (pending.TryPop(out var node))
         {
-            _ResolveDescendantTenant(node, rootTenantId, ambientPresent);
+            _ResolveDescendantTenant(node, rootTenantId, ambientTenantId);
 
             foreach (var child in node.Children)
             {
@@ -882,11 +885,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private void _ResolveDescendantTenant(TTimeJob node, string? rootTenantId, bool ambientPresent)
+    private void _ResolveDescendantTenant(TTimeJob node, string? rootTenantId, string? ambientTenantId)
     {
         if (node.IsSystemJob)
         {
-            JobTenantValidation.ValidateSystemJob(node.TenantId, ambientPresent);
+            JobTenantValidation.ValidateSystemJob(node.TenantId, !string.IsNullOrWhiteSpace(ambientTenantId));
 
             node.TenantId = null;
             _logger.ChainDescendantSystemScope(node.Function);
@@ -897,6 +900,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (node.TenantId is { } explicitTenant)
         {
             JobTenantValidation.ValidateExplicitTenantId(explicitTenant);
+
+            // Same lateral guard as the root resolution: reject only when the seam opted in, warn otherwise.
+            if (JobTenantValidation.CheckCrossTenant(explicitTenant, ambientTenantId, _rejectCrossTenant))
+            {
+                _logger.ChainDescendantCrossTenant(node.Function);
+            }
 
             return;
         }
@@ -1222,4 +1231,12 @@ internal static partial class JobsManagerTenancyLog
         Message = "Chain descendant job for function '{Function}' resolved to system scope (tenantless)."
     )]
     public static partial void ChainDescendantSystemScope(this ILogger logger, string function);
+
+    [LoggerMessage(
+        EventId = 3224,
+        EventName = "JobChainDescendantCrossTenant",
+        Level = LogLevel.Warning,
+        Message = "A chain descendant for function '{Function}' carries an explicit tenant that differs from the present ambient tenant. Explicit wins by design; enable RejectCrossTenantEnqueue() on the Jobs tenancy seam to reject the lateral path."
+    )]
+    public static partial void ChainDescendantCrossTenant(this ILogger logger, string function);
 }

@@ -4,7 +4,7 @@ Source: x-code-review run `20260721-213859-79834ed6` (verdict: Ready with fixes)
 
 ## Settled-decision conflicts (proceeded and flagged)
 
-- **Lateral tenant-to-tenant scheduling stays open by design.** An explicit `TenantId` is honored even when it differs from a present ambient tenant (settled "explicit wins" decision, `user-directed`, issue #278). The planning-stage security review flagged the lateral path (P1); it proceeded under the documented in-process trust model (any code in the process already holds `ICurrentTenant.Change`; Messaging publish middleware has the identical shape). Conflict note recorded on the capture Key Decision in `docs/plans/2026-07-21-001-feat-jobs-tenant-propagation-plan.md`. Revisit only if cross-tenant scheduling from tenant context should become a rejected contradiction.
+- **Lateral tenant-to-tenant scheduling — resolved with the user (2026-07-22).** An explicit `TenantId` is honored even when it differs from a present ambient tenant (settled "explicit wins" decision, `user-directed`, issue #278); the planning-stage security review had flagged the lateral path (P1). Resolution: the default now logs a warning on the mismatch (`JobCrossTenantEnqueue` / `JobChainDescendantCrossTenant`), and hosts opt into hard rejection with `RejectCrossTenantEnqueue()` on the tenancy seam (posture Enforcing, clobber validator `HEADLESS_TENANCY_JOBS_REJECT_CROSS_TENANT_DISABLED`). Explicit values from system scope stay honored, so cron fan-out is unaffected. Messaging's publish middleware still has the unguarded explicit-wins shape — the opt-in twin belongs in the queued Messaging follow-up below.
 
 ## Validator-dropped findings (recorded for transparency)
 

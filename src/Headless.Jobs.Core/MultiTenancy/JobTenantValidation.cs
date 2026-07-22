@@ -17,6 +17,30 @@ internal static class JobTenantValidation
     internal const string CronSystemScopeMessage =
         "Cron definitions are always system scope and cannot carry a tenant identifier.";
 
+    /// <summary>Shared rejection message for the opt-in lateral cross-tenant guard.</summary>
+    internal const string CrossTenantEnqueueMessage =
+        "The explicit tenant identifier differs from the present ambient tenant; cross-tenant enqueue is rejected "
+        + "because RejectCrossTenantEnqueue is enabled.";
+
+    /// <summary>
+    /// Returns whether <paramref name="explicitTenantId"/> targets a different tenant than the present ambient
+    /// tenant; throws when <paramref name="rejectCrossTenant"/> is enabled. A blank ambient is not a real tenant
+    /// and never counts as a mismatch, so explicit values from system scope are always honored.
+    /// </summary>
+    internal static bool CheckCrossTenant(string explicitTenantId, string? ambientTenantId, bool rejectCrossTenant)
+    {
+        var crossTenant =
+            !string.IsNullOrWhiteSpace(ambientTenantId)
+            && !string.Equals(ambientTenantId, explicitTenantId, StringComparison.Ordinal);
+
+        if (crossTenant && rejectCrossTenant)
+        {
+            throw new JobValidatorException(CrossTenantEnqueueMessage);
+        }
+
+        return crossTenant;
+    }
+
     /// <summary>Rejects a blank or over-length explicit tenant identifier.</summary>
     internal static void ValidateExplicitTenantId(string tenantId)
     {

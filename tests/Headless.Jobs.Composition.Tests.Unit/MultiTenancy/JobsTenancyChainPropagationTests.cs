@@ -11,6 +11,7 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Tests.MultiTenancy;
 
@@ -194,6 +195,32 @@ public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task a_cross_tenant_descendant_is_kept_and_only_warned_by_default()
+    {
+        // Lateral path default at chain level: a descendant's explicit tenant differing from ambient is kept.
+        var (manager, _) = _CreateManager(ambient: "t1");
+        var crossChild = _Job(tenantId: "t2");
+        var root = _Job(tenantId: "t1", children: [crossChild]);
+
+        await manager.AddAsync(root, AbortToken);
+
+        crossChild.TenantId.Should().Be("t2");
+    }
+
+    [Fact]
+    public async Task a_cross_tenant_descendant_is_rejected_when_opted_in()
+    {
+        var (manager, _) = _CreateManager(ambient: "t1", rejectCrossTenant: true);
+        var crossChild = _Job(tenantId: "t2");
+        var root = _Job(tenantId: "t1", children: [crossChild]);
+
+        var act = () => manager.AddAsync(root, AbortToken);
+
+        await act.Should().ThrowAsync<JobValidatorException>();
+        crossChild.TenantId.Should().Be("t2", "the failed add restores the caller entity's original values");
+    }
+
+    [Fact]
     public async Task a_cron_update_carrying_a_tenant_is_rejected()
     {
         // Final review: updates bypass the schedule middleware, so the cron system-scope rule (R8) must hold on the
@@ -296,7 +323,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
     private static (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence
-    ) _CreateManager(string? ambient)
+    ) _CreateManager(string? ambient, bool rejectCrossTenant = false)
     {
         var persistence = Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var tenant = Substitute.For<ICurrentTenant>();
@@ -317,7 +344,8 @@ public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
             new SchedulerOptionsBuilder(),
             JobFunctionProvider.CreateHostRegistry(configuration: null),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
-            currentTenant: tenant
+            currentTenant: tenant,
+            tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
         );
 
         return (manager, persistence);

@@ -22,4 +22,13 @@ public sealed class JobsTenancyOptions
     /// Reject a time-job enqueue that resolves no explicit or ambient tenant unless the job is a system job.
     /// </summary>
     public bool TenantContextRequired { get; set; }
+
+    /// <summary>
+    /// Reject an enqueue whose explicit tenant differs from the present ambient tenant (the lateral
+    /// tenant-to-tenant path). Off by default: explicit values win and a mismatch logs a warning — an in-process
+    /// guardrail against accidental cross-tenant scheduling, not a security boundary (any code in the process can
+    /// change the ambient tenant). Explicit values supplied from system scope (no ambient tenant) are always
+    /// honored, so cron fan-out is unaffected.
+    /// </summary>
+    public bool RejectCrossTenantEnqueue { get; set; }
 }

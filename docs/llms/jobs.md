@@ -287,7 +287,7 @@ Without this walk, chain descendants would persist `TenantId = null` and run sys
 
 #### Trust Model
 
-An explicit `TenantId` is honored even when it differs from the current ambient tenant. This lateral tenant-to-tenant path is intentional and matches the Messaging publish middleware: any in-process code already holds `ICurrentTenant.Change`, so an explicit value adds no escalation vector the process did not already have. The one path that is closed is tenant-to-**system** escalation — `IsSystemJob` under an ambient tenant is always rejected.
+An explicit `TenantId` is honored even when it differs from the current ambient tenant, and the mismatch logs a warning (`JobCrossTenantEnqueue` / `JobChainDescendantCrossTenant`). This lateral tenant-to-tenant path is open by default and matches the Messaging publish middleware: any in-process code already holds `ICurrentTenant.Change`, so an explicit value adds no escalation vector the process did not already have — the guard exists for accidents (a stale `TenantId` on a reused options object), not attackers. Hosts that want hard isolation opt in with `RejectCrossTenantEnqueue()` on the tenancy seam, which turns the mismatch into a `JobValidatorException`; explicit values supplied from system scope (no ambient tenant) are always honored, so cron fan-out is unaffected. The one path that is always closed is tenant-to-**system** escalation — `IsSystemJob` under an ambient tenant is rejected regardless of options.
 
 #### Cron Fan-Out
 
@@ -497,7 +497,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates the lease-expiry re-claim arm on `OnNodeDeath == Retry`; clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
-- **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` (in `SetupJobsTenancy`) exposes `PropagateTenant()` and `RequireTenantOnEnqueue()`. The always-registered `TenantPropagationScheduleMiddleware` and `TenantRestoreExecuteMiddleware` capture the tenant at schedule time and restore it around every execution attempt, no-opping until the seam enables `JobsTenancyOptions`. See [Tenant Propagation](#tenant-propagation).
+- **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` (in `SetupJobsTenancy`) exposes `PropagateTenant()`, `RequireTenantOnEnqueue()`, and `RejectCrossTenantEnqueue()`. The always-registered `TenantPropagationScheduleMiddleware` and `TenantRestoreExecuteMiddleware` capture the tenant at schedule time and restore it around every execution attempt, no-opping until the seam enables `JobsTenancyOptions`. See [Tenant Propagation](#tenant-propagation).
 
 ### Design Notes
 

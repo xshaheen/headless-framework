@@ -44,6 +44,9 @@ public sealed class HeadlessJobsTenancyBuilder
     /// <summary>Capability label reported by <see cref="RequireTenantOnEnqueue"/>.</summary>
     public const string RequireTenantOnEnqueueCapability = "require-tenant-on-enqueue";
 
+    /// <summary>Capability label reported by <see cref="RejectCrossTenantEnqueue"/>.</summary>
+    public const string RejectCrossTenantEnqueueCapability = "reject-cross-tenant-enqueue";
+
     private readonly HeadlessTenancyBuilder _builder;
 
     internal HeadlessJobsTenancyBuilder(HeadlessTenancyBuilder builder)
@@ -89,6 +92,25 @@ public sealed class HeadlessJobsTenancyBuilder
         return this;
     }
 
+    /// <summary>
+    /// Rejects an enqueue whose explicit tenant differs from the present ambient tenant (the lateral
+    /// tenant-to-tenant path). Without this, explicit values win and a mismatch logs a warning — an in-process
+    /// guardrail against accidental cross-tenant scheduling, not a security boundary. Explicit values supplied
+    /// from system scope (no ambient tenant) are always honored, so cron fan-out is unaffected.
+    /// </summary>
+    /// <returns>The same Jobs tenancy builder.</returns>
+    public HeadlessJobsTenancyBuilder RejectCrossTenantEnqueue()
+    {
+        _RegisterSentinelOnce<RejectCrossTenantEnqueueSentinel>(options => options.RejectCrossTenantEnqueue = true);
+
+        _builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, JobsCrossTenantRejectionStartupValidator>()
+        );
+        _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RejectCrossTenantEnqueueCapability);
+
+        return this;
+    }
+
     // Sentinel — the PostConfigure contribution must register at most once per flag, so repeated builder calls
     // (or a repeated .Jobs(...) registration) do not stack duplicate callbacks.
     private void _RegisterSentinelOnce<TSentinel>(Action<JobsTenancyOptions> postConfigure)
@@ -109,6 +131,9 @@ internal sealed class PropagateTenantSentinel;
 
 /// <summary>Sentinel for one-shot RequireTenantOnEnqueue PostConfigure registration.</summary>
 internal sealed class RequireTenantOnEnqueueSentinel;
+
+/// <summary>Sentinel for one-shot RejectCrossTenantEnqueue PostConfigure registration.</summary>
+internal sealed class RejectCrossTenantEnqueueSentinel;
 
 /// <summary>
 /// Emits a startup warning when <c>RequireTenantOnEnqueue()</c> is configured in isolation: strict enforcement
@@ -272,6 +297,44 @@ internal sealed class JobsTenantRequiredStartupValidator(IOptions<JobsTenancyOpt
                 + "resolved to false at startup. A later PostConfigure/Configure<JobsTenancyOptions>(...) call "
                 + "clobbered the PostConfigure contribution applied by RequireTenantOnEnqueue(). Move the override "
                 + "before AddHeadlessTenancy(...) or remove it."
+        );
+    }
+}
+
+/// <summary>
+/// Emits a startup error when the jobs seam recorded <c>reject-cross-tenant-enqueue</c> posture but
+/// <see cref="JobsTenancyOptions.RejectCrossTenantEnqueue"/> resolves to <see langword="false"/> (a later
+/// <c>Configure&lt;JobsTenancyOptions&gt;</c> call clobbered the <c>PostConfigure</c> contribution). Surfaces the
+/// mismatch at startup so operators are not surprised by the silent loss of the lateral guard.
+/// </summary>
+internal sealed class JobsCrossTenantRejectionStartupValidator(IOptions<JobsTenancyOptions> options)
+    : IHeadlessTenancyValidator
+{
+    public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+    {
+        Argument.IsNotNull(context);
+
+        var jobsSeam = context.Manifest.GetSeam(HeadlessJobsTenancyBuilder.Seam);
+
+        var recordedRejectCrossTenant =
+            jobsSeam?.Capabilities.Contains(
+                HeadlessJobsTenancyBuilder.RejectCrossTenantEnqueueCapability,
+                StringComparer.Ordinal
+            ) == true;
+
+        if (!recordedRejectCrossTenant || options.Value.RejectCrossTenantEnqueue)
+        {
+            yield break;
+        }
+
+        yield return HeadlessTenancyDiagnostic.Error(
+            HeadlessJobsTenancyBuilder.Seam,
+            "HEADLESS_TENANCY_JOBS_REJECT_CROSS_TENANT_DISABLED",
+            "Headless jobs seam recorded reject-cross-tenant-enqueue but "
+                + "JobsTenancyOptions.RejectCrossTenantEnqueue resolved to false at startup. A later "
+                + "PostConfigure/Configure<JobsTenancyOptions>(...) call clobbered the PostConfigure contribution "
+                + "applied by RejectCrossTenantEnqueue(). Move the override before AddHeadlessTenancy(...) or "
+                + "remove it."
         );
     }
 }

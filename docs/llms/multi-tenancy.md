@@ -419,7 +419,7 @@ Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbCo
 - **Schedule-side capture** — when an enqueue supplies no explicit `EnqueueOptions.TenantId` (or entity `TenantId`), the schedule middleware captures the ambient `ICurrentTenant.Id` onto the job row in the same atomic write that persists it. Nothing recaptures after commit.
 - **Execute-side restoration** — the execute middleware wraps every handler attempt in `ICurrentTenant.Change(job.TenantId)` and disposes the scope on success, fault, or cancellation. Because Polly re-dispatches the execute pipeline per attempt, each retry is freshly scoped and no scope leaks between attempts.
 
-An explicit `EnqueueOptions.TenantId` always wins over ambient capture — even when it differs from the ambient tenant. In-process code already holds `ICurrentTenant.Change`, so an explicit value adds no new escalation vector; this matches the Messaging publish middleware.
+An explicit `EnqueueOptions.TenantId` always wins over ambient capture — even when it differs from the ambient tenant (the mismatch logs a warning). In-process code already holds `ICurrentTenant.Change`, so an explicit value adds no new escalation vector; this matches the Messaging publish middleware. Hosts that want hard lateral isolation opt in with `RejectCrossTenantEnqueue()`, which rejects an explicit tenant differing from a present ambient tenant while still honoring explicit values from system scope (cron fan-out keeps working).
 
 #### Strict Enqueue (`RequireTenantOnEnqueue`)
 
@@ -498,6 +498,7 @@ The Jobs seam contributes three startup diagnostics through `HeadlessTenancyStar
 | `HEADLESS_TENANCY_JOBS_REQUIRE_TENANT_ISOLATED` | Warning | `RequireTenantOnEnqueue()` is configured but Jobs propagation is off and no other tenancy seam or consumer-supplied `ICurrentTenant` contributes the ambient tenant — every non-system enqueue that omits an explicit tenant would fail. A warning, not an error, so a host that always passes an explicit `TenantId` is not blocked. |
 | `HEADLESS_TENANCY_JOBS_PROPAGATION_NULL_CURRENT_TENANT` | Error | `PropagateTenant()` is configured but no tenant source is registered, so the resolved `ICurrentTenant` is only the accessor fallback whose `Id` stays null — propagation would silently no-op. |
 | `HEADLESS_TENANCY_JOBS_REQUIRE_TENANT_DISABLED` | Error | The seam recorded `require-tenant-on-enqueue` but `JobsTenancyOptions.TenantContextRequired` resolved to `false` at startup, typically because a later `Configure<JobsTenancyOptions>` clobbered the seam's `PostConfigure`. |
+| `HEADLESS_TENANCY_JOBS_REJECT_CROSS_TENANT_DISABLED` | Error | The seam recorded `reject-cross-tenant-enqueue` but `JobsTenancyOptions.RejectCrossTenantEnqueue` resolved to `false` at startup — same clobber shape as above. |
 
 ### Message Consumers
 

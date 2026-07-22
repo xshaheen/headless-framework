@@ -237,6 +237,46 @@ public sealed class SetupJobsTenancyTests : TestBase, IDisposable
     }
 
     [Fact]
+    public void reject_cross_tenant_enqueue_records_enforcing_posture_and_enables_the_option()
+    {
+        // given — repeated calls exercise the sentinel idempotency too.
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Jobs(jobs => jobs.RejectCrossTenantEnqueue().RejectCrossTenantEnqueue())
+        );
+
+        using var provider = builder.Services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IOptions<JobsTenancyOptions>>().Value.RejectCrossTenantEnqueue.Should().BeTrue();
+        builder.Services.Count(d => d.ServiceType == typeof(RejectCrossTenantEnqueueSentinel)).Should().Be(1);
+        var seam = provider.GetRequiredService<TenantPostureManifest>().GetSeam(HeadlessJobsTenancyBuilder.Seam);
+        seam!.Status.Should().Be(TenantPostureStatus.Enforcing);
+        seam.Capabilities.Should().Contain(HeadlessJobsTenancyBuilder.RejectCrossTenantEnqueueCapability);
+    }
+
+    [Fact]
+    public void emits_clobber_error_when_a_later_post_configure_disables_cross_tenant_rejection()
+    {
+        // given — a later PostConfigure clobbers the seam's contribution.
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Jobs(jobs => jobs.RejectCrossTenantEnqueue()));
+        builder.Services.PostConfigure<JobsTenancyOptions>(options => options.RejectCrossTenantEnqueue = false);
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var (validator, context) = _Resolve<JobsCrossTenantRejectionStartupValidator>(provider);
+
+        // when
+        var diagnostics = validator.Validate(context).ToArray();
+
+        // then
+        diagnostics.Should().ContainSingle();
+        diagnostics[0].Severity.Should().Be(HeadlessTenancyDiagnosticSeverity.Error);
+        diagnostics[0].Code.Should().Be("HEADLESS_TENANCY_JOBS_REJECT_CROSS_TENANT_DISABLED");
+        diagnostics[0].Seam.Should().Be(HeadlessJobsTenancyBuilder.Seam);
+    }
+
+    [Fact]
     public void the_validators_inject_no_io_dependencies()
     {
         // Tier-1 guarantee: the validators depend only on in-memory options, never an I/O client. Constructor
@@ -246,6 +286,7 @@ public sealed class SetupJobsTenancyTests : TestBase, IDisposable
             typeof(JobsTenantRequiredCrossSeamValidator),
             typeof(JobsTenantPropagationStartupValidator),
             typeof(JobsTenantRequiredStartupValidator),
+            typeof(JobsCrossTenantRejectionStartupValidator),
         ];
 
         foreach (var type in validatorTypes)
