@@ -447,7 +447,7 @@ internal static class CacheEventDispatch
         where TArgs : EventArgs
     {
         // Only test the log level once, ahead of the loop.
-        if (logger is not null && !logger.IsEnabled(errorLevel))
+        if (logger?.IsEnabled(errorLevel) == false)
         {
             logger = null;
         }

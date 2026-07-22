@@ -79,7 +79,7 @@ public sealed class CacheEventsHubTests : TestBase
         hub.Set += (_, _) =>
         {
             handlerEntered.Set();
-            releaseHandler.Wait(TimeSpan.FromSeconds(5));
+            releaseHandler.Wait(TimeSpan.FromSeconds(5), AbortToken);
             completed.TrySetResult();
         };
 
@@ -87,7 +87,7 @@ public sealed class CacheEventsHubTests : TestBase
         hub.OnSet("k");
 
         // then — the fire did not block on the handler
-        handlerEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue();
+        handlerEntered.Wait(TimeSpan.FromSeconds(5), AbortToken).Should().BeTrue();
         completed.Task.IsCompleted.Should().BeFalse();
 
         // release and let the background handler finish

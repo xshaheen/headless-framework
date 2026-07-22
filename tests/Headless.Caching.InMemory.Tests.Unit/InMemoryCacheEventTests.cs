@@ -10,9 +10,23 @@ namespace Tests;
 public sealed class InMemoryCacheEventTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly List<InMemoryCache> _caches = [];
 
-    private InMemoryCache _CreateCache(InMemoryCacheOptions? options = null) =>
-        new(
+    protected override ValueTask DisposeAsyncCore()
+    {
+        foreach (var cache in _caches)
+        {
+            cache.Dispose();
+        }
+
+        _caches.Clear();
+
+        return base.DisposeAsyncCore();
+    }
+
+    private InMemoryCache _CreateCache(InMemoryCacheOptions? options = null)
+    {
+        var cache = new InMemoryCache(
             _timeProvider,
             options ?? new InMemoryCacheOptions(),
             logger: null,
@@ -20,6 +34,10 @@ public sealed class InMemoryCacheEventTests : TestBase
             instrumentation: null,
             eventsConfig: new CacheEventsConfig { SyncHandlers = true }
         );
+        _caches.Add(cache);
+
+        return cache;
+    }
 
     [Fact]
     public async Task should_raise_hit_and_miss_on_direct_get()

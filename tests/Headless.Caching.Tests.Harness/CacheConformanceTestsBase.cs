@@ -42,7 +42,10 @@ public abstract class CacheConformanceTestsBase : TestBase
         var read = await cache.GetAsync<string>(key, AbortToken);
 
         // Handlers on a CreateCache instance dispatch on a background task (no SyncHandlers), so poll for both events.
-        await _WaitForCacheEventAsync(() => sets.Any(e => e.Key == key) && hits.Any(e => e.Key == key));
+        await _WaitForCacheEventAsync(() =>
+            sets.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
+            && hits.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
+        );
 
         read.HasValue.Should().BeTrue();
         sets.Should().Contain(e => e.Key == key, "the contract UpsertAsync must raise a keyed Set event");
@@ -60,7 +63,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var removed = await cache.RemoveAsync(key, AbortToken);
 
-        await _WaitForCacheEventAsync(() => removes.Any(e => e.Key == key));
+        await _WaitForCacheEventAsync(() => removes.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal)));
 
         removed.Should().BeTrue();
         removes.Should().Contain(e => e.Key == key, "the contract RemoveAsync must raise a keyed Remove event");
