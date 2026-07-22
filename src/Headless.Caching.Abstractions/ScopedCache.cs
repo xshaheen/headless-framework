@@ -39,6 +39,14 @@ public sealed class ScopedCache<T> : ICache<T>
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions => _cache.DefaultEntryOptions;
 
+    /// <summary>
+    /// A scoped cache does not expose the underlying cache's event hub: it prefixes keys and the inner cache is a
+    /// shared singleton, so forwarding it would deliver other scopes' (and unscoped callers') events — with prefixed
+    /// keys — to a scoped subscriber. Subscribe on the underlying (unscoped) cache for events. Scope-filtered
+    /// projection is a possible future addition.
+    /// </summary>
+    public ICacheEvents Events => CacheEvents.NoOp;
+
     private string _Prefix()
     {
         return $"{_scopeProvider()}:";

@@ -20,6 +20,12 @@ public interface ICache<T>
     CacheEntryOptions? DefaultEntryOptions { get; }
 
     /// <summary>
+    /// Gets the typed, in-process event surface for the underlying cache instance. The default implementation
+    /// returns the shared <see cref="CacheEvents.NoOp"/> hub.
+    /// </summary>
+    ICacheEvents Events => CacheEvents.NoOp;
+
+    /// <summary>
     /// Gets a value from cache, or creates it using the factory if not found.
     /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
     /// </summary>
@@ -285,6 +291,8 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 {
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
+
+    public ICacheEvents Events => cache.Events;
 
     public ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
