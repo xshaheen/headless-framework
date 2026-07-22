@@ -191,7 +191,9 @@ public static class JobsHelper
             if (expandedStream.Length > maxDecompressedBytes - read)
             {
                 throw new InvalidDataException(
-                    $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
+                    FormattableString.Invariant(
+                        $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
+                    )
                 );
             }
 
