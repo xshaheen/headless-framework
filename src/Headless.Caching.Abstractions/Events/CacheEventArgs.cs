@@ -8,7 +8,7 @@ namespace Headless.Caching;
 /// (clear, flush, tag/prefix removal, hybrid invalidation) can share the same base as keyed events.
 /// </summary>
 /// <remarks>
-/// The <see cref="Key"/>-bearing events derive from <see cref="CacheKeyEventArgs"/>. All keys are the caller-facing
+/// The key-bearing events derive from <see cref="CacheKeyEventArgs"/>. All keys are the caller-facing
 /// keys the <c>ICache</c> API accepts and returns — the provider's internal <c>KeyPrefix</c> is stripped before the
 /// args are constructed.
 /// </remarks>
