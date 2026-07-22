@@ -211,6 +211,7 @@ public sealed class InMemoryCache
         Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var callerKey = key;
         key = _GetKey(key);
 
         if (expiration is { Ticks: <= 0 })
@@ -243,7 +244,12 @@ public sealed class InMemoryCache
         );
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
-        return _SetInternalAsync(key, entry, nowTicks: nowTicks);
+
+        // Invoke the write first (its synchronous portion commits the entry), then fire Set. The zero/negative
+        // expiration path returns above without reaching this metric, so a delete never fires Set (Codex P2).
+        var writeTask = _SetInternalAsync(key, entry, nowTicks: nowTicks);
+        _events.OnSet(callerKey);
+        return writeTask;
     }
 
     /// <inheritdoc />
@@ -261,6 +267,7 @@ public sealed class InMemoryCache
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
+        _events.OnSet(key);
         return true;
     }
 
@@ -348,6 +355,7 @@ public sealed class InMemoryCache
             totalSizeDelta += sizeDelta;
             _TrackUpdate(entry.TrackedExpiresAt);
             count++;
+            _events.OnSet(k);
         }
 
         if (totalSizeDelta != 0)
@@ -976,6 +984,15 @@ public sealed class InMemoryCache
             CachingMetrics.TierL1
         );
 
+        if (result.HasValue)
+        {
+            _events.OnHit(key, isStale: false);
+        }
+        else
+        {
+            _events.OnMiss(key);
+        }
+
         return new ValueTask<CacheValue<T>>(result);
     }
 
@@ -1002,10 +1019,12 @@ public sealed class InMemoryCache
             if (value.HasValue)
             {
                 hits++;
+                _events.OnHit(key, isStale: false);
             }
             else
             {
                 misses++;
+                _events.OnMiss(key);
             }
         }
 
@@ -1107,6 +1126,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var callerKey = key;
         key = _GetKey(key);
         bool exists;
 
@@ -1130,6 +1150,15 @@ public sealed class InMemoryCache
             exists ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
             CachingMetrics.TierL1
         );
+
+        if (exists)
+        {
+            _events.OnHit(callerKey, isStale: false);
+        }
+        else
+        {
+            _events.OnMiss(callerKey);
+        }
 
         return new ValueTask<bool>(exists);
     }
@@ -1422,6 +1451,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var callerKey = key;
         key = _GetKey(key);
 
         if (!_memory.TryRemove(key, out var entry))
@@ -1432,6 +1462,8 @@ public sealed class InMemoryCache
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
         CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictRemoved, CachingMetrics.TierL1);
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1);
+        _events.OnEviction(callerKey, CacheEvictionReason.Removed);
+        _events.OnRemove(callerKey);
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
@@ -1499,6 +1531,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var callerKey = key;
         key = _GetKey(key);
         var wasRemoved = false;
 
@@ -1518,6 +1551,11 @@ public sealed class InMemoryCache
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
+
+        if (wasRemoved)
+        {
+            _events.OnRemove(callerKey);
+        }
 
         return wasRemoved;
     }
@@ -1544,6 +1582,7 @@ public sealed class InMemoryCache
         }
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1, removed);
+        _events.OnRemoveAll(removed);
 
         return new ValueTask<int>(removed);
     }
@@ -1554,6 +1593,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var callerPrefix = prefix;
         prefix = _GetKey(prefix);
         var removed = 0;
 
@@ -1570,6 +1610,7 @@ public sealed class InMemoryCache
         }
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL1, removed);
+        _events.OnRemoveByPrefix(callerPrefix, removed);
 
         return new ValueTask<int>(removed);
     }
@@ -1589,6 +1630,7 @@ public sealed class InMemoryCache
         // Member count is not cheaply known (no enumeration by design), so record a single logical remove-by-tag
         // write rather than trying to count affected entries.
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByTag, CachingMetrics.TierL1);
+        _events.OnRemoveByTag(tag);
 
         return ValueTask.CompletedTask;
     }
@@ -1613,6 +1655,8 @@ public sealed class InMemoryCache
                 break;
             }
         } while (Interlocked.CompareExchange(ref _clearGenerationTicks, nowTicks, current) != current);
+
+        _events.OnClear();
 
         return ValueTask.CompletedTask;
     }
@@ -1820,6 +1864,16 @@ public sealed class InMemoryCache
             );
         }
 
+        // Per-key eviction events are opt-in: enumerate the keyspace only when Eviction has a subscriber, so the
+        // common flush stays O(1) (gate on the specific event, not the hub). OnFlush always fires below.
+        if (_events.HasEvictionSubscribers)
+        {
+            foreach (var kvp in _memory)
+            {
+                _events.OnEviction(_CallerKey(kvp.Key), CacheEvictionReason.Flushed);
+            }
+        }
+
         _memory.Clear();
         // Physical wipe also resets the logical invalidation markers: no entry survives to be invalidated, so the
         // markers and clear generation can drop with the keyspace.
@@ -1830,6 +1884,9 @@ public sealed class InMemoryCache
         // No entry survives to be invalidated and no marker remains to bound, so the lifetime bound resets to
         // "nothing observed" and is rebuilt from the next generation of tagged writes.
         Interlocked.Exchange(ref _maxObservedEntryLifetimeTicks, 0);
+
+        _events.OnFlush();
+
         return ValueTask.CompletedTask;
     }
 
@@ -2180,11 +2237,26 @@ public sealed class InMemoryCache
         return result;
     }
 
+    // Strips the instance key prefix so an eviction event carries the caller-facing key (KTD10). Only call this
+    // inside a HasEvictionSubscribers guard: it allocates a substring when _keyPrefix is non-empty (and is a no-op
+    // identity when the prefix is empty).
+    private string _CallerKey(string storedKey)
+    {
+        return _keyPrefix.Length == 0 ? storedKey : storedKey[_keyPrefix.Length..];
+    }
+
     private void _RemoveExpiredKey(string key)
     {
         if (_memory.TryRemove(key, out var removedEntry))
         {
             Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+
+            // Lazy read-path reap: the eviction metric intentionally omits this, but the per-key event is more
+            // complete (KTD7). Gate on the specific event so the strip substring is built only when observed.
+            if (_events.HasEvictionSubscribers)
+            {
+                _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
+            }
         }
     }
 
@@ -2193,6 +2265,11 @@ public sealed class InMemoryCache
         if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
         {
             Interlocked.Add(ref _currentMemorySize, -entry.Size);
+
+            if (_events.HasEvictionSubscribers)
+            {
+                _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
+            }
         }
     }
 
@@ -2437,6 +2514,11 @@ public sealed class InMemoryCache
                     {
                         Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
                         removalCount++;
+
+                        if (_events.HasEvictionSubscribers)
+                        {
+                            _events.OnEviction(_CallerKey(keyToRemove), CacheEvictionReason.Capacity);
+                        }
                     }
                     else
                     {
@@ -2562,6 +2644,11 @@ public sealed class InMemoryCache
                 {
                     Interlocked.Add(ref _currentMemorySize, -entry.Size);
                     removalCount++;
+
+                    if (_events.HasEvictionSubscribers)
+                    {
+                        _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
+                    }
                 }
 
                 continue;
