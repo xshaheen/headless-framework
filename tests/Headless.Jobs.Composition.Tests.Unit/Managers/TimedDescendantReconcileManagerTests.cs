@@ -12,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Managers;
 
@@ -23,9 +24,9 @@ namespace Tests.Managers;
 /// </summary>
 public sealed class TimedDescendantReconcileManagerTests : TestBase
 {
-    private sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;
+    public sealed class FakeTimeJob : TimeJobEntity<FakeTimeJob>;
 
-    private sealed class FakeCronJob : CronJobEntity;
+    public sealed class FakeCronJob : CronJobEntity;
 
     private const string _NodeA = "node-a";
     private static readonly DateTime _Now = new(2026, 06, 17, 12, 00, 00, DateTimeKind.Utc);
@@ -156,6 +157,43 @@ public sealed class TimedDescendantReconcileManagerTests : TestBase
         stored.ExecutionTime.Should().Be(_Now, "the past-due released child is re-stamped to now");
         // Finding 3: the cancellation-release earliest time reaches the same post-commit RestartIfNeeded wake.
         scheduler.Received(1).RestartIfNeeded(_Now);
+    }
+
+    [Fact]
+    public async Task request_time_job_cancellation_returns_true_even_when_the_post_commit_reconcile_throws()
+    {
+        // The provider accepts (commits) the cancellation, then the post-commit timed-descendant reconcile throws. The
+        // cancellation is already durable, so the recoverable reconcile failure must NOT fail the accepted call.
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
+        var sp = services.BuildServiceProvider();
+
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var jobId = Guid.NewGuid();
+        provider.RequestTimeJobCancellationAsync(jobId, Arg.Any<CancellationToken>()).Returns(true);
+        provider
+            .ApplyParentTerminalRunConditionsAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("post-commit reconcile boom"));
+
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            time,
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            sp.GetRequiredService<IGuidGenerator>(),
+            sp
+        );
+
+        var accepted = await manager.RequestTimeJobCancellationAsync(jobId, AbortToken);
+
+        accepted.Should().BeTrue("a failing post-commit reconcile must not fail the already-committed cancellation");
+        // The committed cancellation's follow-up runs under CancellationToken.None, not the caller's token.
+        await provider.Received(1).ApplyParentTerminalRunConditionsAsync(jobId, CancellationToken.None);
     }
 
     [Fact]

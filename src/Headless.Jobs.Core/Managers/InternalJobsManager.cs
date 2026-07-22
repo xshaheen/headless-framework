@@ -5,7 +5,9 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
@@ -593,7 +595,21 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         // RestartIfNeeded instead of waiting for the fallback tick, and non-matching timed children are skipped with
         // their subtree. A running (not-yet-terminal) parent makes this a no-op — the executor reconciles it when it
         // later reaches Cancelled.
-        await ApplyParentTerminalRunConditionsAsync(jobId, cancellationToken).ConfigureAwait(false);
+        //
+        // The cancellation is already committed, so this post-commit reconcile is a recoverable side-effect (the
+        // poll-time safety net / set-based sweep reconcile any miss): a failure here must NOT fail the accepted
+        // cancellation. CancellationToken.None mirrors the executor's post-commit reconcile — the committed
+        // cancellation's follow-up must not be torn down by the caller's token.
+        try
+        {
+            await ApplyParentTerminalRunConditionsAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Non-fatal post-commit side effect: logged, not rethrown (backstops reconcile any miss).
+        catch (Exception exception)
+        {
+            logger.LogTimedChildReconcileAfterCancellationFailed(exception, jobId);
+        }
+#pragma warning restore ERP022
 
         return true;
     }
@@ -664,7 +680,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
             .SetProperty(x => x.ExecutedAt, now)
-            .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
+            .SetProperty(x => x.ExceptionDetails, ChainRunConditionRules.RunConditionMismatchReason);
 
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
         var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
@@ -723,7 +739,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         {
             resource.ExecutedAt = now;
             resource.Status = JobStatus.Skipped;
-            resource.ExceptionDetails = "Rule RunCondition did not match!";
+            resource.ExceptionDetails = ChainRunConditionRules.RunConditionMismatchReason;
             if (resource.Type == JobType.TimeJob)
             {
                 await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(resource).ConfigureAwait(false);
@@ -852,17 +868,20 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     )
     {
         // U5/KTD3 per-parent reconcile, invoked after a parent's terminal write committed (executor / cancellation).
-        var earliest = await persistenceProvider
-            .ApplyParentTerminalRunConditionsAsync(parentId, cancellationToken)
-            .ConfigureAwait(false);
-
-        _WakeSchedulerForReleasedChild(earliest);
+        await _ApplyTerminalRunConditionsAndWakeAsync(parentId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _ReconcileAllTerminalTimedChildrenAsync(CancellationToken cancellationToken)
     {
+        await _ApplyTerminalRunConditionsAndWakeAsync(parentId: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Runs the provider reconcile (per-parent when parentId is set, every terminal parent when null) and wakes the
+    // scheduler for the earliest released child, if any.
+    private async Task _ApplyTerminalRunConditionsAndWakeAsync(Guid? parentId, CancellationToken cancellationToken)
+    {
         var earliest = await persistenceProvider
-            .ApplyParentTerminalRunConditionsAsync(parentId: null, cancellationToken)
+            .ApplyParentTerminalRunConditionsAsync(parentId, cancellationToken)
             .ConfigureAwait(false);
 
         _WakeSchedulerForReleasedChild(earliest);
@@ -878,9 +897,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         // Resolve the host scheduler lazily to break the JobsSchedulerBackgroundService (IJobsHostScheduler) ⇄
         // IInternalJobManager constructor cycle. RestartIfNeeded runs only AFTER the releasing transaction committed
         // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again — KTD3).
-        (serviceProvider.GetService(typeof(IJobsHostScheduler)) as IJobsHostScheduler)?.RestartIfNeeded(
-            earliestReleasedTime
-        );
+        serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestReleasedTime);
     }
 }
 
@@ -916,4 +933,17 @@ internal static partial class InternalJobsManagerLog
             + "fallback sweep's set-based reconcile instead. Scheduling continues."
     )]
     public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3215,
+        Level = LogLevel.Warning,
+        Message = "Durable cancellation for time job {JobId} was committed, but the post-commit timed-descendant "
+            + "reconcile failed; its timed children will be reconciled by the poll-time safety net / set-based sweep "
+            + "instead."
+    )]
+    public static partial void LogTimedChildReconcileAfterCancellationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId
+    );
 }

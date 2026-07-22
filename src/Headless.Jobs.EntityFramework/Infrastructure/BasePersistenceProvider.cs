@@ -258,10 +258,27 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var maxExecutionTime = minSecond.AddSeconds(1);
 
         // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
-        // recursive .Select projection is not EF-translatable) instead of the fixed two-level ForQueueTimeJobs.
-        var roots = await baseQuery
-            .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
-            .OrderBy(x => x.ExecutionTime)
+        // recursive .Select projection is not EF-translatable) instead of a fixed-depth nested projection.
+        return await _LoadWithDescendantsAsync(
+                baseQuery
+                    .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
+                    .OrderBy(x => x.ExecutionTime),
+                dbContext,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    // R12/KTD2: projects a prepared time-job query to flat roots and rebuilds their non-timed in-tree subtree to
+    // MaxChainDepth in memory (a recursive .Select projection is not EF-translatable). Shared by the peek and
+    // immediate-acquire paths; the descendant reload always runs no-tracking against the same dbContext.
+    private async Task<TimeJobEntity[]> _LoadWithDescendantsAsync(
+        IQueryable<TTimeJob> source,
+        TDbContext dbContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var roots = await source
             .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -422,7 +439,28 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .ConfigureAwait(false);
 
-        var frontier = rejectedIds;
+        await _CascadeSkipSubtreeAsync(
+                jobs,
+                rejectedIds,
+                "Ancestor job was skipped after parent cancellation.",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    // Cascades the Idle-only skip from a set of already-skipped root ids down through their whole subtree, frontier by
+    // frontier, tagging each descendant with <paramref name="reason"/>. The root ids themselves are skipped by the
+    // caller before invoking this. Returns the number of rows skipped in the cascade.
+    private static async Task<int> _CascadeSkipSubtreeAsync(
+        DbSet<TTimeJob> jobs,
+        Guid[] rootIds,
+        string reason,
+        CancellationToken cancellationToken
+    )
+    {
+        var skipped = 0;
+        var frontier = rootIds;
+
         while (frontier.Length != 0)
         {
             var parentIds = frontier;
@@ -434,15 +472,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
             if (frontier.Length != 0)
             {
-                await _SkipCancellationBranchAsync(
-                        jobs,
-                        frontier,
-                        "Ancestor job was skipped after parent cancellation.",
-                        cancellationToken
-                    )
+                skipped += await _SkipCancellationBranchAsync(jobs, frontier, reason, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
+
+        return skipped;
     }
 
     private static Task<int> _SkipCancellationBranchAsync(
@@ -464,10 +499,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 cancellationToken
             );
 
-    // U5/KTD3: skip-reason convention shared with the in-memory provider; "Rule RunCondition did not match!" mirrors
-    // the executor's UpdateSkipTimeJobsWithUnifiedContextAsync detail so a non-matching timed child reads identically
-    // however it was skipped.
-    private const string _RunConditionMismatchReason = "Rule RunCondition did not match!";
+    // U5/KTD3: cascade skip-reason for descendants of a timed child whose parent's run condition did not match; the
+    // direct-child mismatch reason is the shared ChainRunConditionRules.RunConditionMismatchReason.
     private const string _AncestorSkippedReason =
         "Ancestor job was skipped after its parent's run condition did not match.";
 
@@ -501,6 +534,23 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        var jobs = dbContext.Set<TTimeJob>();
+
+        // Probe for a stranded candidate BEFORE opening a transaction: this is the poll-time safety net, run on every
+        // scheduler tick, and it almost always finds nothing — so the common empty case must not open (and hold) a
+        // transaction. Only a non-empty terminal-candidate set warrants the transactional reconcile below.
+        var hasStrandedCandidate = await _TimedChildReconcileCandidates(jobs)
+            .AsNoTracking()
+            .WhereParentIsTerminal(jobs)
+            .AnyAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!hasStrandedCandidate)
+        {
+            return 0;
+        }
+
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -516,6 +566,25 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return skipped;
+    }
+
+    // Base predicate for the KTD3 timed-child reconcile: an IDLE, scheduled (ExecutionTime != null), parented timed
+    // child whose run condition is parent-terminal-gated. Shared by the reconcile and its pre-transaction probe so the
+    // two agree on candidate membership.
+    private static IQueryable<TTimeJob> _TimedChildReconcileCandidates(DbSet<TTimeJob> jobs)
+    {
+        return jobs.Where(x =>
+            x.Status == JobStatus.Idle
+            && x.ExecutionTime != null
+            && x.ParentId != null
+            && (
+                x.RunCondition == RunCondition.OnSuccess
+                || x.RunCondition == RunCondition.OnFailure
+                || x.RunCondition == RunCondition.OnCancelled
+                || x.RunCondition == RunCondition.OnFailureOrCancelled
+                || x.RunCondition == RunCondition.OnAnyCompletedStatus
+            )
+        );
     }
 
     // The set-based release/skip reconcile (KTD3). For every IDLE timed child (ExecutionTime != null) with a
@@ -535,18 +604,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         var jobs = dbContext.Set<TTimeJob>();
 
-        var candidates = jobs.Where(x =>
-            x.Status == JobStatus.Idle
-            && x.ExecutionTime != null
-            && x.ParentId != null
-            && (
-                x.RunCondition == RunCondition.OnSuccess
-                || x.RunCondition == RunCondition.OnFailure
-                || x.RunCondition == RunCondition.OnCancelled
-                || x.RunCondition == RunCondition.OnFailureOrCancelled
-                || x.RunCondition == RunCondition.OnAnyCompletedStatus
-            )
-        );
+        var candidates = _TimedChildReconcileCandidates(jobs);
 
         if (parentId is { } target)
         {
@@ -583,30 +641,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var skipped = 0;
         if (skipIds.Length != 0)
         {
-            skipped += await _SkipCancellationBranchAsync(jobs, skipIds, _RunConditionMismatchReason, cancellationToken)
+            skipped += await _SkipCancellationBranchAsync(
+                    jobs,
+                    skipIds,
+                    ChainRunConditionRules.RunConditionMismatchReason,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
-            var frontier = skipIds;
-            while (frontier.Length != 0)
-            {
-                var frontierParentIds = frontier;
-                frontier = await jobs.AsNoTracking()
-                    .Where(x => x.ParentId != null && ((IEnumerable<Guid>)frontierParentIds).Contains(x.ParentId.Value))
-                    .Where(x => x.Status == JobStatus.Idle)
-                    .Select(x => x.Id)
-                    .ToArrayAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                if (frontier.Length != 0)
-                {
-                    skipped += await _SkipCancellationBranchAsync(
-                            jobs,
-                            frontier,
-                            _AncestorSkippedReason,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-                }
-            }
+            skipped += await _CascadeSkipSubtreeAsync(jobs, skipIds, _AncestorSkippedReason, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (skipOnly || matchingChildIds.Length == 0)
@@ -797,27 +841,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         // Return the acquired jobs for immediate execution, with the non-timed in-tree subtree to MaxChainDepth
-        // (R12/KTD2: flat root load + in-memory rebuild replaces the fixed two-level projection).
-        var roots = await dbContext
-            .Set<TTimeJob>()
-            .AsNoTracking()
-            .Where(x =>
-                ((IEnumerable<Guid>)ids).Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress
-            )
-            .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        await MappingExtensions
-            .AttachNonTimedDescendantsAsync(
-                dbContext.Set<TTimeJob>().AsNoTracking(),
-                roots,
-                MaxChainDepth,
+        // (R12/KTD2: flat root load + in-memory rebuild replaces a fixed-depth nested projection).
+        return await _LoadWithDescendantsAsync(
+                dbContext
+                    .Set<TTimeJob>()
+                    .AsNoTracking()
+                    .Where(x =>
+                        ((IEnumerable<Guid>)ids).Contains(x.Id)
+                        && x.OwnerId == owner
+                        && x.Status == JobStatus.InProgress
+                    ),
+                dbContext,
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        return roots;
     }
 
     public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)

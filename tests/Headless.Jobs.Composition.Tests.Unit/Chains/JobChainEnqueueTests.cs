@@ -87,7 +87,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*maximum chain depth of 10*");
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*maximum chain depth of 3*");
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
 
         (await act.Should().ThrowAsync<JobFunctionNotFoundException>()).Which.RequestType.Should().Be<UnknownRequest>();
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
 
         (await act.Should().ThrowAsync<ArgumentException>()).WithMessage("*typed request overload*");
-        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
+        await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
     }
 
     [Fact]

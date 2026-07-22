@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
@@ -267,5 +269,116 @@ public sealed class DeepChainProviderTests : TestBase
         (await provider.GetTimeJobByIdAsync(existing.Id, AbortToken))!
             .Function.Should()
             .Be("existing");
+    }
+
+    [Fact]
+    public async Task add_time_jobs_rejects_the_whole_call_when_a_later_root_collides_with_an_earlier_root_subtree()
+    {
+        // KTD6 cross-root all-or-nothing: two roots in ONE call, where the second root's id collides with a DESCENDANT
+        // of the first. The whole call must be rejected — the first root and its child must NOT become visible. The old
+        // per-root loop committed the first root's subtree before the second root failed, stranding it.
+        var (provider, _) = _Create();
+        var firstRoot = new FakeTimeJob { Id = Guid.NewGuid(), Function = "first-root" };
+        var firstChild = new FakeTimeJob
+        {
+            Id = Guid.NewGuid(),
+            Function = "first-child",
+            RunCondition = RunCondition.OnSuccess,
+        };
+        firstRoot.Children = [firstChild];
+        var secondRoot = new FakeTimeJob { Id = firstChild.Id, Function = "second-root" };
+
+        var added = await provider.AddTimeJobsAsync([firstRoot, secondRoot], AbortToken);
+
+        added.Should().Be(0);
+        (await provider.GetTimeJobByIdAsync(firstRoot.Id, AbortToken)).Should().BeNull();
+        (await provider.GetTimeJobByIdAsync(firstChild.Id, AbortToken)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task add_time_jobs_with_a_valid_root_and_a_root_colliding_with_existing_state_adds_nothing()
+    {
+        // KTD6 cross-root all-or-nothing: a call carrying a valid root AND a root that collides with an already-stored
+        // row must reject the WHOLE call — the valid root must NOT become visible (the old per-root loop committed it
+        // before the colliding root failed). The pre-existing row is untouched.
+        var (provider, _) = _Create();
+        var existing = new FakeTimeJob { Id = Guid.NewGuid(), Function = "existing" };
+        await provider.AddTimeJobsAsync([existing], AbortToken);
+
+        var validRoot = new FakeTimeJob { Id = Guid.NewGuid(), Function = "valid-root" };
+        var collidingRoot = new FakeTimeJob { Id = existing.Id, Function = "colliding-root" };
+
+        var added = await provider.AddTimeJobsAsync([validRoot, collidingRoot], AbortToken);
+
+        added.Should().Be(0);
+        (await provider.GetTimeJobByIdAsync(validRoot.Id, AbortToken)).Should().BeNull();
+        (await provider.GetTimeJobByIdAsync(existing.Id, AbortToken))!.Function.Should().Be("existing");
+    }
+
+    [Fact]
+    public async Task add_time_jobs_leaves_no_publication_barrier_state_on_committed_rows()
+    {
+        // KTD6 publication barrier: rows are parked (Status=InProgress + far-future synthetic lease) only WHILE the
+        // batch installs; once AddTimeJobsAsync returns, every row must carry its authored state — no leftover barrier
+        // InProgress and no synthetic lease — so the batch is claimable exactly as written.
+        var (provider, _) = _Create();
+        var chain = _LinearChain(depth: 4);
+
+        await provider.AddTimeJobsAsync(chain, AbortToken);
+
+        foreach (var node in chain)
+        {
+            var stored = await provider.GetTimeJobByIdAsync(node.Id, AbortToken);
+            stored!.Status.Should().Be(JobStatus.Idle, "the barrier InProgress state is cleared on reveal");
+            stored.LockedUntil.Should().BeNull("the synthetic barrier lease is cleared on reveal");
+            stored.OwnerId.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public void sync_reconcile_candidate_converges_on_the_live_row_not_the_passed_value()
+    {
+        // Version-aware index sync: _SyncReconcileCandidate must reconcile the candidate index against the CURRENT live
+        // row, not the (possibly stale) value the caller wrote. Two interleaved writers to one id otherwise let an
+        // older writer's stale add/remove diverge the index from live state; the dangerous direction — a live candidate
+        // left OUT of the index — is never re-added by the reconcile loop, so it strands the candidate. Reflection
+        // drives the private seam directly because the interleaving is not reproducible through the public API.
+        var (provider, _) = _Create();
+        var providerType = typeof(JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>);
+        var timeJobs =
+            (ConcurrentDictionary<Guid, FakeTimeJob>)
+                providerType.GetField("_timeJobs", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(provider)!;
+        var candidates =
+            (ConcurrentDictionary<Guid, byte>)
+                providerType
+                    .GetField("_reconcileCandidates", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(provider)!;
+        var sync = providerType.GetMethod("_SyncReconcileCandidate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var id = Guid.NewGuid();
+        var parentId = Guid.NewGuid();
+
+        FakeTimeJob Candidate(JobStatus status) =>
+            new()
+            {
+                Id = id,
+                Function = "child",
+                Status = status,
+                ParentId = parentId,
+                RunCondition = RunCondition.OnSuccess,
+                ExecutionTime = _Now,
+            };
+
+        // Live row is a candidate (Idle); a stale writer syncs a non-candidate (Succeeded) value. Convergence on live
+        // means the id is ADDED, not dropped — the false-negative the fix prevents.
+        timeJobs[id] = Candidate(JobStatus.Idle);
+        sync.Invoke(provider, [Candidate(JobStatus.Succeeded)]);
+        candidates.ContainsKey(id).Should().BeTrue("the live row is a candidate, so the index must include it");
+
+        // Live row is now a non-candidate (Succeeded); a stale writer syncs a candidate value. Convergence on live
+        // means the id is REMOVED, not re-added on a stale value.
+        timeJobs[id] = Candidate(JobStatus.Succeeded);
+        sync.Invoke(provider, [Candidate(JobStatus.Idle)]);
+        candidates.ContainsKey(id).Should().BeFalse("the live row is not a candidate, so the index must exclude it");
     }
 }
