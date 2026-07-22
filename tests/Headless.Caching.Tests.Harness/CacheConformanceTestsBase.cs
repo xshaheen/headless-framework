@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Collections.Concurrent;
 using Headless.Caching;
 using Headless.Testing.Tests;
 
@@ -24,6 +25,74 @@ public abstract class CacheConformanceTestsBase : TestBase
     {
         return AdvancePastExpirationAsync(duration);
     }
+
+    #region Events (cross-provider contract)
+
+    public virtual async Task should_raise_set_and_hit_events_on_contract_operations()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sets = new ConcurrentBag<CacheKeyEventArgs>();
+        var hits = new ConcurrentBag<CacheHitEventArgs>();
+        cache.Events.Set += (_, e) => sets.Add(e);
+        cache.Events.Hit += (_, e) => hits.Add(e);
+
+        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
+        var read = await cache.GetAsync<string>(key, AbortToken);
+
+        // Handlers on a CreateCache instance dispatch on a background task (no SyncHandlers), so poll for both events.
+        await _WaitForCacheEventAsync(() => sets.Any(e => e.Key == key) && hits.Any(e => e.Key == key));
+
+        read.HasValue.Should().BeTrue();
+        sets.Should().Contain(e => e.Key == key, "the contract UpsertAsync must raise a keyed Set event");
+        hits.Should().Contain(e => e.Key == key, "the contract GetAsync hit must raise a keyed Hit event");
+    }
+
+    public virtual async Task should_raise_remove_event_on_contract_remove()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var removes = new ConcurrentBag<CacheKeyEventArgs>();
+        cache.Events.Remove += (_, e) => removes.Add(e);
+
+        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
+        var removed = await cache.RemoveAsync(key, AbortToken);
+
+        await _WaitForCacheEventAsync(() => removes.Any(e => e.Key == key));
+
+        removed.Should().BeTrue();
+        removes.Should().Contain(e => e.Key == key, "the contract RemoveAsync must raise a keyed Remove event");
+    }
+
+    public virtual async Task should_expose_events_hub_through_wrappers()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+
+        var typed = new Cache<string>(cache);
+        var scoped = new ScopedCache<string>(cache, () => Faker.Random.AlphaNumeric(6));
+
+        // Cache<T> is the same keyspace, so it forwards the inner hub identity unchanged.
+        typed.Events.Should().BeSameAs(cache.Events);
+
+        // ScopedCache<T> prefixes keys over a shared inner cache, so it must NOT forward the inner hub (would leak
+        // cross-scope events with prefixed keys); it returns the shared allocation-free no-op hub instead.
+        scoped.Events.Should().BeSameAs(CacheEvents.NoOp);
+    }
+
+    // Caches produced by CreateCache are built WITHOUT SyncHandlers, so handlers dispatch on a background task and
+    // must be observed with a bounded real-time poll (the fake clock does not drive the thread pool).
+    private static async Task _WaitForCacheEventAsync(Func<bool> observed)
+    {
+        for (var attempt = 0; attempt < 250 && !observed(); attempt++)
+        {
+            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(20), AbortToken).ConfigureAwait(false);
+        }
+    }
+
+    #endregion
 
     public virtual async Task should_round_trip_object_and_string_values()
     {
