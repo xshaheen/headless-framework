@@ -178,8 +178,8 @@ await cache.ClearAsync(ct);
 Cache events (`IAsyncEvent<TArgs>` per signal; async or sync handlers run guarded on a background task by default):
 
 ```csharp
-using var hitSub = cache.Events.Hit.AddHandler((sender, e) => logger.LogDebug("cache hit {Key} (stale={Stale})", e.Key, e.IsStale));
-cache.Events.Set.AddHandler(async (sender, e, ct) => await auditor.RecordSetAsync(e.Key, ct));
+using var hitSub = cache.Events.Hit.AddHandler(e => logger.LogDebug("cache hit {Key} (stale={Stale})", e.Key, e.IsStale));
+cache.Events.Set.AddHandler(async (e, ct) => await auditor.RecordSetAsync(e.Key, ct));
 ```
 
 ## Configuration

@@ -12,8 +12,8 @@ namespace Headless.Caching;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Handlers may be asynchronous (<c>AddHandler(async (sender, args, ct) =&gt; …)</c>) or synchronous
-/// (<c>AddHandler((sender, args) =&gt; …)</c>). They run guarded — an exception from any handler is caught and logged and
+/// Handlers may be asynchronous (<c>AddHandler(async (args, ct) =&gt; …)</c>) or synchronous
+/// (<c>AddHandler(args =&gt; …)</c>). They run guarded — an exception from any handler is caught and logged and
 /// never propagates to the cache caller, nor stops the other handlers — and, by default, on a background task so a slow
 /// handler cannot stall the cache operation.
 /// </para>

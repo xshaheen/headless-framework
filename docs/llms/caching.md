@@ -334,9 +334,9 @@ Every instrument carries a `headless.cache.name` dimension — the registered in
 Beyond metrics and traces, every cache exposes a typed, in-process **event surface** via `cache.Events` for consumers that want hooks (warm a related key, invalidate a downstream resource, drive a UI counter) rather than an exporter. Each event is an `IAsyncEvent<TArgs>` (`Headless.Primitives`); subscribe with `AddHandler` and unsubscribe by disposing the returned registration. Handlers may be **asynchronous or synchronous** — async handlers are first-class (no `async void` footgun; their exceptions are caught like any other):
 
 ```csharp
-using var sub = cache.Events.Hit.AddHandler((sender, e) => logger.LogDebug("hit {Key} stale={Stale}", e.Key, e.IsStale));
+using var sub = cache.Events.Hit.AddHandler(e => logger.LogDebug("hit {Key} stale={Stale}", e.Key, e.IsStale));
 
-cache.Events.FailSafeActivation.AddHandler(async (sender, e, ct) => await notifier.FailSafeAsync(e.Trigger, ct));
+cache.Events.FailSafeActivation.AddHandler(async (e, ct) => await notifier.FailSafeAsync(e.Trigger, ct));
 ```
 
 The surface is a **second consumer channel over the same signals the metrics already carry** — one event per metric signal, reusing the same vocabulary as typed enums (`CacheEvictionReason`, `CacheFailSafeTrigger`, `CacheFactoryOutcome`, `CacheTier`, …). Every event arg carries `CacheName` and `Tier`; keyed events add the **caller-facing `Key`** (never the internally-prefixed store key — the provider's `KeyPrefix` is stripped before the arg is built, and only when the specific event has a subscriber).
