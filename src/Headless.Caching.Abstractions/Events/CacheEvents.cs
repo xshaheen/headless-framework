@@ -126,5 +126,7 @@ public static class CacheEvents
         public bool HasSubscribers => false;
 
         public bool HasEvictionSubscribers => false;
+
+        public bool HasSetSubscribers => false;
     }
 }

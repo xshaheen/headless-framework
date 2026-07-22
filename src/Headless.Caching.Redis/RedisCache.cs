@@ -323,7 +323,11 @@ public sealed class RedisCache(
 
         await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
 
-        _coordinator.EventsHub.OnSet(key);
+        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
+        if (options.Duration > TimeSpan.Zero)
+        {
+            _coordinator.EventsHub.OnSet(key);
+        }
 
         return true;
     }
@@ -388,7 +392,7 @@ public sealed class RedisCache(
         // MSET/MSETEX writes are atomic per batch, so a full count means every input key was written; emit one Set
         // per caller key on full success. Partial-failure key attribution is not recoverable from the aggregate
         // count, so nothing is emitted in that rare case. Gate the extra keyspace pass on any subscriber (R6).
-        if (writtenCount == value.Count && _coordinator.EventsHub.HasSubscribers)
+        if (writtenCount == value.Count && _coordinator.EventsHub.HasSetSubscribers)
         {
             foreach (var writtenKey in value.Keys)
             {
@@ -1706,16 +1710,17 @@ public sealed class RedisCache(
     }
 
     /// <inheritdoc />
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    public async ValueTask ClearAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // O(1) Family-2 logical clear: raise-only durable write of the single reserved clear-generation marker.
         // Entries born before it read as misses (direct reads) or demote to fail-safe reserves (coordinator);
         // physical reserves survive (unlike FlushAsync). Compared on every read, tagged or not.
-        _coordinator.EventsHub.OnClear();
+        // The event fires only after the marker write succeeds, so a failed clear never reports success to subscribers.
+        await WriteClearMarkerAsync(timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
 
-        return WriteClearMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
+        _coordinator.EventsHub.OnClear();
     }
 
     /// <inheritdoc />
@@ -1858,7 +1863,7 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
     }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1868,10 +1873,10 @@ public sealed class RedisCache(
         // remove-generation marker (raise-only durable write): every entry born before it reads as a hard miss with
         // NO fail-safe reserve (distinct from ClearAsync, which preserves reserves). One marker key — cluster-safe;
         // physical memory is reclaimed by each entry's TTL, so GetCountAsync may still count logically-removed
-        // entries until they age out.
-        _coordinator.EventsHub.OnFlush();
+        // entries until they age out. The event fires only after the marker write succeeds.
+        await WriteRemoveMarkerAsync(timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
 
-        return WriteRemoveMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
+        _coordinator.EventsHub.OnFlush();
     }
 
     #endregion

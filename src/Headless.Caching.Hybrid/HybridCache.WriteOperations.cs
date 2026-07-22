@@ -217,7 +217,11 @@ public sealed partial class HybridCache
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
-        _coordinator.EventsHub.OnSet(key);
+        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
+        if (options.Duration > TimeSpan.Zero)
+        {
+            _coordinator.EventsHub.OnSet(key);
+        }
 
         return true;
     }
@@ -262,9 +266,12 @@ public sealed partial class HybridCache
             _RunDetached(() => _BackgroundBulkUpsertAsync(snapshot, keys, expiration), keys.Length > 0 ? keys[0] : "");
 
             var backgroundHub = _coordinator.EventsHub;
-            foreach (var writtenKey in keys)
+            if (backgroundHub.HasSetSubscribers)
             {
-                backgroundHub.OnSet(writtenKey);
+                foreach (var writtenKey in keys)
+                {
+                    backgroundHub.OnSet(writtenKey);
+                }
             }
 
             return snapshot.Count;
@@ -311,9 +318,9 @@ public sealed partial class HybridCache
             .ConfigureAwait(false);
 
         // Fire a keyed Set only for a fully-successful write; on partial/failed L2 the keys were removed from L1.
-        if (setCount == value.Count)
+        var hub = _coordinator.EventsHub;
+        if (setCount == value.Count && hub.HasSetSubscribers)
         {
-            var hub = _coordinator.EventsHub;
             foreach (var writtenKey in value.Keys)
             {
                 hub.OnSet(writtenKey);

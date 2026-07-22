@@ -267,7 +267,13 @@ public sealed class InMemoryCache
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
-        _events.OnSet(key);
+
+        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
+        if (options.Duration > TimeSpan.Zero)
+        {
+            _events.OnSet(key);
+        }
+
         return true;
     }
 

@@ -141,6 +141,9 @@ public sealed class CacheEventsHub : ICacheEvents
     /// <inheritdoc />
     public bool HasEvictionSubscribers => Eviction is not null;
 
+    /// <inheritdoc />
+    public bool HasSetSubscribers => Set is not null;
+
     // --- Emitters (raw params; args built only when the specific event has a subscriber) -----------------------
 
     /// <summary>Fires <see cref="Hit"/>.</summary>

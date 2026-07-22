@@ -76,6 +76,21 @@ public sealed class InMemoryCacheEventTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_raise_set_on_immediate_expiry_upsert_entry()
+    {
+        // given — an UpsertEntryAsync with a non-positive Duration is an immediate-expiry eviction, not a write
+        var cache = _CreateCache();
+        var setFired = false;
+        cache.Events.Set += (_, _) => setFired = true;
+
+        // when
+        await cache.UpsertEntryAsync("k", "v", new CacheEntryOptions { Duration = TimeSpan.Zero }, AbortToken);
+
+        // then — no Set is reported for an entry that was never retained
+        setFired.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_raise_remove_and_removed_eviction_on_remove()
     {
         // given

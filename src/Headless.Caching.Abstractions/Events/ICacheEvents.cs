@@ -86,6 +86,9 @@ public interface ICacheEvents
 
     /// <summary>Whether <see cref="Eviction"/> currently has a subscriber. Lets bulk removal paths stay O(1) when unobserved.</summary>
     bool HasEvictionSubscribers { get; }
+
+    /// <summary>Whether <see cref="Set"/> currently has a subscriber. Lets bulk write paths skip their per-key emission loop when unobserved.</summary>
+    bool HasSetSubscribers { get; }
 }
 
 /// <summary>The low-level memory (L1) tier events of a hybrid cache.</summary>
