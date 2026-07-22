@@ -29,9 +29,11 @@ public static class CacheEvents
 
         public bool HasHandlers => false;
 
-        public IDisposable AddHandler(AsyncEventHandler<TEvent> callback) => NoOpDisposable.Instance;
+        public IDisposable AddHandler(Func<TEvent, CancellationToken, ValueTask> callback) => NoOpDisposable.Instance;
 
-        public IDisposable AddHandler(Action<object, TEvent> callback) => NoOpDisposable.Instance;
+        public IDisposable AddHandler(Action<TEvent> callback) => NoOpDisposable.Instance;
+
+        public IDisposable AddHandler(AsyncEventHandler<TEvent> callback) => NoOpDisposable.Instance;
 
         public ValueTask InvokeAsync(object sender, TEvent eventArgs, CancellationToken cancellationToken = default) =>
             default;

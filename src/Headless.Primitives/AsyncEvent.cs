@@ -35,17 +35,23 @@ public interface IAsyncEvent<TEvent> : IObservable<TEvent>
     /// <summary>Indicates whether the event currently has any handlers. Thread-safe.</summary>
     bool HasHandlers { get; }
 
-    /// <summary>Adds an asynchronous event handler.</summary>
+    /// <summary>Adds an asynchronous handler that receives the event args and a cancellation token.</summary>
+    /// <param name="callback">The handler to add.</param>
+    /// <returns>An <see cref="IDisposable"/> that removes this specific registration when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
+    IDisposable AddHandler(Func<TEvent, CancellationToken, ValueTask> callback);
+
+    /// <summary>Adds a synchronous handler that receives the event args.</summary>
+    /// <param name="callback">The handler to add.</param>
+    /// <returns>An <see cref="IDisposable"/> that removes this specific registration when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
+    IDisposable AddHandler(Action<TEvent> callback);
+
+    /// <summary>Adds an asynchronous handler that also receives the sender.</summary>
     /// <param name="callback">The handler to add.</param>
     /// <returns>An <see cref="IDisposable"/> that removes this specific registration when disposed.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
     IDisposable AddHandler(AsyncEventHandler<TEvent> callback);
-
-    /// <summary>Adds a synchronous event handler.</summary>
-    /// <param name="callback">The handler to add.</param>
-    /// <returns>An <see cref="IDisposable"/> that removes this specific registration when disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
-    IDisposable AddHandler(Action<object, TEvent> callback);
 
     /// <summary>
     /// Invokes every handler over an allocation-free snapshot of the current registrations and <b>propagates</b> handler
@@ -115,14 +121,22 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     }
 
     /// <inheritdoc />
-    public IDisposable AddHandler(Action<object, TEvent> callback)
+    public IDisposable AddHandler(Func<TEvent, CancellationToken, ValueTask> callback)
+    {
+        Argument.IsNotNull(callback);
+
+        return AddHandler((_, args, cancellationToken) => callback(args, cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public IDisposable AddHandler(Action<TEvent> callback)
     {
         Argument.IsNotNull(callback);
 
         return AddHandler(
-            (sender, args, _) =>
+            (_, args, _) =>
             {
-                callback(sender, args);
+                callback(args);
                 return default;
             }
         );
