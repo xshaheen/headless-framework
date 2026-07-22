@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Primitives;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
@@ -10,123 +12,92 @@ public static class CacheEvents
     /// <summary>
     /// A shared, allocation-free <see cref="ICacheEvents"/> whose events never fire and whose
     /// <see cref="ICacheEvents.HasSubscribers"/> is always <see langword="false"/>. Backs the default
-    /// <see cref="ICache.Events"/> implementation so caches that do not surface events cost nothing.
+    /// <see cref="ICache.Events"/> implementation so caches that do not surface events cost nothing; subscribing to it is
+    /// a silent no-op.
     /// </summary>
     public static ICacheEvents NoOp { get; } = new NoOpCacheEvents();
 
+    // A no-op IAsyncEvent: AddHandler is a silent no-op returning a shared no-op disposable, nothing is ever invoked.
+    private sealed class NoOpAsyncEvent<TEvent> : IAsyncEvent<TEvent>
+        where TEvent : EventArgs
+    {
+        public static readonly NoOpAsyncEvent<TEvent> Instance = new();
+
+        private NoOpAsyncEvent() { }
+
+        public bool ParallelInvoke => false;
+
+        public bool HasHandlers => false;
+
+        public IDisposable AddHandler(AsyncEventHandler<TEvent> callback) => NoOpDisposable.Instance;
+
+        public IDisposable AddHandler(Action<object, TEvent> callback) => NoOpDisposable.Instance;
+
+        public ValueTask InvokeAsync(object sender, TEvent eventArgs, CancellationToken cancellationToken = default) =>
+            default;
+
+        public ValueTask SafeInvokeAsync(
+            object sender,
+            TEvent eventArgs,
+            Action<Exception> onHandlerError,
+            CancellationToken cancellationToken = default
+        ) => default;
+
+        public IDisposable Subscribe(IObserver<TEvent> observer) => NoOpDisposable.Instance;
+
+        public void ClearHandlers() { }
+    }
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public static readonly NoOpDisposable Instance = new();
+
+        public void Dispose() { }
+    }
+
     private sealed class NoOpCacheEvents : ICacheEvents
     {
-        // Subscriptions are discarded: the handler is never stored, so the events never fire and never allocate.
-        public event EventHandler<CacheHitEventArgs>? Hit
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheHitEventArgs> Hit => NoOpAsyncEvent<CacheHitEventArgs>.Instance;
 
-        public event EventHandler<CacheKeyEventArgs>? Miss
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheKeyEventArgs> Miss => NoOpAsyncEvent<CacheKeyEventArgs>.Instance;
 
-        public event EventHandler<CacheKeyEventArgs>? Set
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheKeyEventArgs> Set => NoOpAsyncEvent<CacheKeyEventArgs>.Instance;
 
-        public event EventHandler<CacheKeyEventArgs>? Remove
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheKeyEventArgs> Remove => NoOpAsyncEvent<CacheKeyEventArgs>.Instance;
 
-        public event EventHandler<CacheEvictionEventArgs>? Eviction
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheEvictionEventArgs> Eviction => NoOpAsyncEvent<CacheEvictionEventArgs>.Instance;
 
-        public event EventHandler<CacheFactoryEventArgs>? FactorySuccess
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheFactoryEventArgs> FactorySuccess => NoOpAsyncEvent<CacheFactoryEventArgs>.Instance;
 
-        public event EventHandler<CacheFactoryEventArgs>? FactoryError
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheFactoryEventArgs> FactoryError => NoOpAsyncEvent<CacheFactoryEventArgs>.Instance;
 
-        public event EventHandler<CacheFactoryEventArgs>? FactoryTimeout
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheFactoryEventArgs> FactoryTimeout => NoOpAsyncEvent<CacheFactoryEventArgs>.Instance;
 
-        public event EventHandler<CacheFailSafeEventArgs>? FailSafeActivation
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheFailSafeEventArgs> FailSafeActivation =>
+            NoOpAsyncEvent<CacheFailSafeEventArgs>.Instance;
 
-        public event EventHandler<CacheRefreshEventArgs>? EagerRefresh
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheRefreshEventArgs> EagerRefresh => NoOpAsyncEvent<CacheRefreshEventArgs>.Instance;
 
-        public event EventHandler<CacheRefreshEventArgs>? BackgroundRefresh
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheRefreshEventArgs> BackgroundRefresh => NoOpAsyncEvent<CacheRefreshEventArgs>.Instance;
 
-        public event EventHandler<CacheRemoveAllEventArgs>? RemoveAll
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheRemoveAllEventArgs> RemoveAll => NoOpAsyncEvent<CacheRemoveAllEventArgs>.Instance;
 
-        public event EventHandler<CacheRemoveByPrefixEventArgs>? RemoveByPrefix
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheRemoveByPrefixEventArgs> RemoveByPrefix =>
+            NoOpAsyncEvent<CacheRemoveByPrefixEventArgs>.Instance;
 
-        public event EventHandler<CacheRemoveByTagEventArgs>? RemoveByTag
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheRemoveByTagEventArgs> RemoveByTag => NoOpAsyncEvent<CacheRemoveByTagEventArgs>.Instance;
 
-        public event EventHandler<CacheEventArgs>? Clear
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheEventArgs> Clear => NoOpAsyncEvent<CacheEventArgs>.Instance;
 
-        public event EventHandler<CacheEventArgs>? Flush
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheEventArgs> Flush => NoOpAsyncEvent<CacheEventArgs>.Instance;
 
-        public event EventHandler<CacheInvalidationEventArgs>? Invalidation
-        {
-            add { }
-            remove { }
-        }
+        public IAsyncEvent<CacheInvalidationEventArgs> Invalidation =>
+            NoOpAsyncEvent<CacheInvalidationEventArgs>.Instance;
 
         public ICacheMemoryEvents? Memory => null;
 
         public ICacheDistributedEvents? Distributed => null;
 
         public bool HasSubscribers => false;
-
-        public bool HasEvictionSubscribers => false;
-
-        public bool HasSetSubscribers => false;
     }
 }
