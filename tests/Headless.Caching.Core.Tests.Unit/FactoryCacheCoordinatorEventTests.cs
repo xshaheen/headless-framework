@@ -34,7 +34,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         _store.SetEntry(key, "fresh", now.AddMinutes(5), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         CacheHitEventArgs? hit = null;
-        using var _ = coordinator.EventsHub.Hit.AddHandler((_, e) => hit = e);
+        using var _ = coordinator.EventsHub.Hit.AddHandler(e => hit = e);
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(_store, key, _ => throw new(), _Options(), AbortToken);
@@ -57,8 +57,8 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         var coordinator = _CreateCoordinator();
         var hits = new ConcurrentBag<CacheHitEventArgs>();
         var missed = false;
-        using var _1 = coordinator.EventsHub.Hit.AddHandler((_, e) => hits.Add(e));
-        using var _2 = coordinator.EventsHub.Miss.AddHandler((_, _) => missed = true);
+        using var _1 = coordinator.EventsHub.Hit.AddHandler(e => hits.Add(e));
+        using var _2 = coordinator.EventsHub.Miss.AddHandler(_ => missed = true);
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(
@@ -83,8 +83,8 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         var coordinator = _CreateCoordinator();
         var missed = false;
         var setFired = new TaskCompletionSource();
-        using var _1 = coordinator.EventsHub.Miss.AddHandler((_, _) => missed = true);
-        using var _2 = coordinator.EventsHub.Set.AddHandler((_, _) => setFired.TrySetResult());
+        using var _1 = coordinator.EventsHub.Miss.AddHandler(_ => missed = true);
+        using var _2 = coordinator.EventsHub.Set.AddHandler(_ => setFired.TrySetResult());
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(_store, key, _ => new("value"), _Options(), AbortToken);
@@ -102,7 +102,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var coordinator = _CreateCoordinator();
         var success = new TaskCompletionSource<CacheFactoryEventArgs>();
-        using var _ = coordinator.EventsHub.FactorySuccess.AddHandler((_, e) => success.TrySetResult(e));
+        using var _ = coordinator.EventsHub.FactorySuccess.AddHandler(e => success.TrySetResult(e));
 
         // when
         await coordinator.GetOrAddAsync<string>(_store, key, _ => new("v"), _Options(), AbortToken);
@@ -122,7 +122,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var failSafe = new TaskCompletionSource<CacheFailSafeEventArgs>();
-        using var _ = coordinator.EventsHub.FailSafeActivation.AddHandler((_, e) => failSafe.TrySetResult(e));
+        using var _ = coordinator.EventsHub.FailSafeActivation.AddHandler(e => failSafe.TrySetResult(e));
 
         // when
         await coordinator.GetOrAddAsync<string>(
@@ -147,19 +147,17 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var coordinator = _CreateCoordinator(syncHandlers: true);
         var reentered = new TaskCompletionSource();
-        using var _1 = coordinator.EventsHub.FactorySuccess.AddHandler(
-            (_, _) =>
-            {
-                _ = Task.Run(
-                    async () =>
-                    {
-                        await coordinator.GetOrAddAsync<string>(_store, key, _ => new("again"), _Options(), AbortToken);
-                        reentered.TrySetResult();
-                    },
-                    AbortToken
-                );
-            }
-        );
+        using var _1 = coordinator.EventsHub.FactorySuccess.AddHandler(__ =>
+        {
+            _ = Task.Run(
+                async () =>
+                {
+                    await coordinator.GetOrAddAsync<string>(_store, key, _ => new("again"), _Options(), AbortToken);
+                    reentered.TrySetResult();
+                },
+                AbortToken
+            );
+        });
 
         // when
         await coordinator.GetOrAddAsync<string>(_store, key, _ => new("v"), _Options(), AbortToken);

@@ -22,7 +22,7 @@ public sealed class CacheEventsHubTests : TestBase
         // given
         var hub = _CreateHub();
         CacheHitEventArgs? received = null;
-        using var _ = hub.Hit.AddHandler((_, e) => received = e);
+        using var _ = hub.Hit.AddHandler(e => received = e);
 
         // when
         hub.OnHit("k1", isStale: true);
@@ -79,7 +79,7 @@ public sealed class CacheEventsHubTests : TestBase
         // given
         var hub = _CreateHub(syncHandlers: true);
         var ran = false;
-        using var _ = hub.Set.AddHandler((_, _) => ran = true);
+        using var _ = hub.Set.AddHandler(_ => ran = true);
 
         // when
         hub.OnSet("k");
@@ -96,14 +96,12 @@ public sealed class CacheEventsHubTests : TestBase
         using var handlerEntered = new ManualResetEventSlim(false);
         using var releaseHandler = new ManualResetEventSlim(false);
         var completed = new TaskCompletionSource();
-        using var _ = hub.Set.AddHandler(
-            (_, _) =>
-            {
-                handlerEntered.Set();
-                releaseHandler.Wait(TimeSpan.FromSeconds(5), AbortToken);
-                completed.TrySetResult();
-            }
-        );
+        using var _ = hub.Set.AddHandler(_ =>
+        {
+            handlerEntered.Set();
+            releaseHandler.Wait(TimeSpan.FromSeconds(5), AbortToken);
+            completed.TrySetResult();
+        });
 
         // when — OnSet returns without waiting for the (blocked) handler
         hub.OnSet("k");
@@ -121,7 +119,7 @@ public sealed class CacheEventsHubTests : TestBase
     {
         // given
         var hub = _CreateHub();
-        using var _ = hub.Remove.AddHandler((_, _) => throw new InvalidOperationException("boom"));
+        using var _ = hub.Remove.AddHandler(_ => throw new InvalidOperationException("boom"));
 
         // when
         var act = () => hub.OnRemove("k");
@@ -137,9 +135,9 @@ public sealed class CacheEventsHubTests : TestBase
         var hub = _CreateHub();
         var firstRan = false;
         var thirdRan = false;
-        using var _1 = hub.Clear.AddHandler((_, _) => firstRan = true);
-        using var _2 = hub.Clear.AddHandler((_, _) => throw new InvalidOperationException("boom"));
-        using var _3 = hub.Clear.AddHandler((_, _) => thirdRan = true);
+        using var _1 = hub.Clear.AddHandler(_ => firstRan = true);
+        using var _2 = hub.Clear.AddHandler(_ => throw new InvalidOperationException("boom"));
+        using var _3 = hub.Clear.AddHandler(_ => thirdRan = true);
 
         // when
         hub.OnClear();
@@ -158,7 +156,7 @@ public sealed class CacheEventsHubTests : TestBase
         hub.HasEvictionSubscribers.Should().BeFalse();
 
         // when
-        var registration = hub.Hit.AddHandler((_, _) => { });
+        var registration = hub.Hit.AddHandler(_ => { });
 
         // then
         hub.HasSubscribers.Should().BeTrue();
@@ -173,15 +171,15 @@ public sealed class CacheEventsHubTests : TestBase
     {
         // given
         var hub = _CreateHub();
-        using var _1 = hub.Miss.AddHandler((_, _) => { });
+        using var _1 = hub.Miss.AddHandler(_ => { });
 
         // then — a handler on an unrelated event does not report eviction/set subscribers
         hub.HasSubscribers.Should().BeTrue();
         hub.HasEvictionSubscribers.Should().BeFalse();
         hub.HasSetSubscribers.Should().BeFalse();
 
-        using var _2 = hub.Eviction.AddHandler((_, _) => { });
-        using var _3 = hub.Set.AddHandler((_, _) => { });
+        using var _2 = hub.Eviction.AddHandler(_ => { });
+        using var _3 = hub.Set.AddHandler(_ => { });
         hub.HasEvictionSubscribers.Should().BeTrue();
         hub.HasSetSubscribers.Should().BeTrue();
     }
@@ -207,8 +205,8 @@ public sealed class CacheEventsHubTests : TestBase
         var hub = _CreateHub(withTierSubHubs: true);
         var memory = new TaskCompletionSource<CacheKeyEventArgs>();
         var distributed = new TaskCompletionSource<CacheKeyEventArgs>();
-        using var _1 = hub.Memory!.Hit.AddHandler((_, e) => memory.TrySetResult(e));
-        using var _2 = hub.Distributed!.Miss.AddHandler((_, e) => distributed.TrySetResult(e));
+        using var _1 = hub.Memory!.Hit.AddHandler(e => memory.TrySetResult(e));
+        using var _2 = hub.Distributed!.Miss.AddHandler(e => distributed.TrySetResult(e));
 
         // when — tier events always dispatch on a background task
         hub.MemoryHub!.OnHit("k");

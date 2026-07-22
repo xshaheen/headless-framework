@@ -47,8 +47,8 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.UpsertAsync("present", "v", TimeSpan.FromMinutes(5), AbortToken);
         var hits = new List<CacheHitEventArgs>();
         var misses = new List<CacheKeyEventArgs>();
-        using var _1 = cache.Events.Hit.AddHandler((_, e) => hits.Add(e));
-        using var _2 = cache.Events.Miss.AddHandler((_, e) => misses.Add(e));
+        using var _1 = cache.Events.Hit.AddHandler(e => hits.Add(e));
+        using var _2 = cache.Events.Miss.AddHandler(e => misses.Add(e));
 
         // when
         await cache.GetAsync<string>("present", AbortToken);
@@ -65,7 +65,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         // given
         var cache = _CreateCache();
         CacheKeyEventArgs? set = null;
-        using var _ = cache.Events.Set.AddHandler((_, e) => set = e);
+        using var _ = cache.Events.Set.AddHandler(e => set = e);
 
         // when
         await cache.UpsertAsync("k", "v", TimeSpan.FromMinutes(5), AbortToken);
@@ -81,7 +81,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         // given — an UpsertEntryAsync with a non-positive Duration is an immediate-expiry eviction, not a write
         var cache = _CreateCache();
         var setFired = false;
-        using var _ = cache.Events.Set.AddHandler((_, _) => setFired = true);
+        using var _ = cache.Events.Set.AddHandler(_ => setFired = true);
 
         // when
         await cache.UpsertEntryAsync("k", "v", new CacheEntryOptions { Duration = TimeSpan.Zero }, AbortToken);
@@ -98,8 +98,8 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.UpsertAsync("k", "v", TimeSpan.FromMinutes(5), AbortToken);
         CacheKeyEventArgs? removed = null;
         CacheEvictionEventArgs? evicted = null;
-        using var _1 = cache.Events.Remove.AddHandler((_, e) => removed = e);
-        using var _2 = cache.Events.Eviction.AddHandler((_, e) => evicted = e);
+        using var _1 = cache.Events.Remove.AddHandler(e => removed = e);
+        using var _2 = cache.Events.Eviction.AddHandler(e => evicted = e);
 
         // when
         await cache.RemoveAsync("k", AbortToken);
@@ -119,8 +119,8 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.UpsertAsync("b", "2", TimeSpan.FromMinutes(5), AbortToken);
         var flushed = false;
         var evictions = new ConcurrentBag<CacheEvictionEventArgs>();
-        using var _1 = cache.Events.Flush.AddHandler((_, _) => flushed = true);
-        using var _2 = cache.Events.Eviction.AddHandler((_, e) => evictions.Add(e));
+        using var _1 = cache.Events.Flush.AddHandler(_ => flushed = true);
+        using var _2 = cache.Events.Eviction.AddHandler(e => evictions.Add(e));
 
         // when
         await cache.FlushAsync(AbortToken);
@@ -139,8 +139,8 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.UpsertAsync("a", "1", TimeSpan.FromMinutes(5), AbortToken);
         var flushed = false;
         var evictionFired = false;
-        using var _1 = cache.Events.Set.AddHandler((_, _) => { });
-        using var _2 = cache.Events.Flush.AddHandler((_, _) => flushed = true);
+        using var _1 = cache.Events.Set.AddHandler(_ => { });
+        using var _2 = cache.Events.Flush.AddHandler(_ => flushed = true);
         // no cache.Events.Eviction subscription
 
         // when
@@ -158,7 +158,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         var cache = _CreateCache();
         await cache.UpsertAsync("k", "v", TimeSpan.FromSeconds(1), AbortToken);
         var evictions = new ConcurrentBag<CacheEvictionEventArgs>();
-        using var _ = cache.Events.Eviction.AddHandler((_, e) => evictions.Add(e));
+        using var _ = cache.Events.Eviction.AddHandler(e => evictions.Add(e));
 
         // when — advance past expiry, then read (lazy reap)
         _timeProvider.Advance(TimeSpan.FromSeconds(5));
@@ -177,8 +177,8 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.UpsertAsync("k", "v", TimeSpan.FromMinutes(5), AbortToken);
         CacheEvictionEventArgs? evicted = null;
         CacheKeyEventArgs? removed = null;
-        using var _1 = cache.Events.Eviction.AddHandler((_, e) => evicted = e);
-        using var _2 = cache.Events.Remove.AddHandler((_, e) => removed = e);
+        using var _1 = cache.Events.Eviction.AddHandler(e => evicted = e);
+        using var _2 = cache.Events.Remove.AddHandler(e => removed = e);
 
         // when
         await cache.RemoveAsync("k", AbortToken);
@@ -199,9 +199,9 @@ public sealed class InMemoryCacheEventTests : TestBase
         CacheRemoveByPrefixEventArgs? byPrefix = null;
         CacheRemoveAllEventArgs? removeAll = null;
         var cleared = false;
-        using var _1 = cache.Events.RemoveByPrefix.AddHandler((_, e) => byPrefix = e);
-        using var _2 = cache.Events.RemoveAll.AddHandler((_, e) => removeAll = e);
-        using var _3 = cache.Events.Clear.AddHandler((_, _) => cleared = true);
+        using var _1 = cache.Events.RemoveByPrefix.AddHandler(e => byPrefix = e);
+        using var _2 = cache.Events.RemoveAll.AddHandler(e => removeAll = e);
+        using var _3 = cache.Events.Clear.AddHandler(_ => cleared = true);
 
         // when
         await cache.RemoveByPrefixAsync("p:", AbortToken);

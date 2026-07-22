@@ -74,9 +74,9 @@ public sealed class HybridCacheEventTests : TestBase
         var memoryMiss = new TaskCompletionSource();
         var distributedHit = new TaskCompletionSource();
         var rootHits = new ConcurrentBag<CacheHitEventArgs>();
-        using var _1 = cache.Events.Memory!.Miss.AddHandler((_, _) => memoryMiss.TrySetResult());
-        using var _2 = cache.Events.Distributed!.Hit.AddHandler((_, _) => distributedHit.TrySetResult());
-        using var _3 = cache.Events.Hit.AddHandler((_, e) => rootHits.Add(e));
+        using var _1 = cache.Events.Memory!.Miss.AddHandler(_ => memoryMiss.TrySetResult());
+        using var _2 = cache.Events.Distributed!.Hit.AddHandler(_ => distributedHit.TrySetResult());
+        using var _3 = cache.Events.Hit.AddHandler(e => rootHits.Add(e));
 
         // when — L1 miss, L2 hit
         var result = await cache.GetOrAddAsync<string>(key, _ => throw new(), _Options(), AbortToken);
@@ -97,8 +97,8 @@ public sealed class HybridCacheEventTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         CacheKeyEventArgs? set = null;
         CacheKeyEventArgs? removed = null;
-        using var _1 = cache.Events.Set.AddHandler((_, e) => set = e);
-        using var _2 = cache.Events.Remove.AddHandler((_, e) => removed = e);
+        using var _1 = cache.Events.Set.AddHandler(e => set = e);
+        using var _2 = cache.Events.Remove.AddHandler(e => removed = e);
 
         // when
         await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
@@ -116,7 +116,7 @@ public sealed class HybridCacheEventTests : TestBase
         // given
         var (cache, _, _) = _CreateCache();
         var invalidations = new ConcurrentBag<CacheInvalidationEventArgs>();
-        using var _ = cache.Events.Invalidation.AddHandler((_, e) => invalidations.Add(e));
+        using var _ = cache.Events.Invalidation.AddHandler(e => invalidations.Add(e));
 
         // when
         await cache.RemoveByTagAsync("tag-1", AbortToken);
@@ -145,7 +145,7 @@ public sealed class HybridCacheEventTests : TestBase
         // given
         var (cache, _, _) = _CreateCache();
         CacheInvalidationEventArgs? received = null;
-        using var _ = cache.Events.Invalidation.AddHandler((_, e) => received = e);
+        using var _ = cache.Events.Invalidation.AddHandler(e => received = e);
 
         // when — a peer broadcasts a flush-all invalidation
         var message = new CacheInvalidationMessage { InstanceId = "peer", FlushAll = true };

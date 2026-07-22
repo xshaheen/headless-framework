@@ -126,7 +126,7 @@ public sealed class AsyncEventTests : TestBase
         // given
         var asyncEvent = new AsyncEvent<TestEventArgs>();
         var ran = false;
-        using var _1 = asyncEvent.AddHandler((_, _) => ran = true);
+        using var _1 = asyncEvent.AddHandler(_ => ran = true);
 
         // when
         await asyncEvent.InvokeAsync(this, new TestEventArgs(), AbortToken);
@@ -165,7 +165,7 @@ public sealed class AsyncEventTests : TestBase
         var asyncEvent = new AsyncEvent<TestEventArgs>();
         asyncEvent.HasHandlers.Should().BeFalse();
 
-        var registration = asyncEvent.AddHandler((_, _) => { });
+        var registration = asyncEvent.AddHandler(_ => { });
         asyncEvent.HasHandlers.Should().BeTrue();
 
         // when
@@ -175,7 +175,7 @@ public sealed class AsyncEventTests : TestBase
         asyncEvent.HasHandlers.Should().BeFalse();
 
         // and clear on a re-populated event
-        asyncEvent.AddHandler((_, _) => { });
+        asyncEvent.AddHandler(_ => { });
         asyncEvent.ClearHandlers();
         asyncEvent.HasHandlers.Should().BeFalse();
     }
