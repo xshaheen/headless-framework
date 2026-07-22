@@ -22,7 +22,7 @@ public sealed class CacheEventsHubTests : TestBase
         // given
         var hub = _CreateHub();
         CacheHitEventArgs? received = null;
-        hub.Hit += (_, e) => received = e;
+        using var _ = hub.Hit.AddHandler((_, e) => received = e);
 
         // when
         hub.OnHit("k1", isStale: true);
@@ -36,9 +36,30 @@ public sealed class CacheEventsHubTests : TestBase
     }
 
     [Fact]
+    public async Task should_invoke_asynchronous_handler()
+    {
+        // given
+        var hub = _CreateHub();
+        var completed = new TaskCompletionSource();
+        using var _ = hub.Set.AddHandler(
+            async (_, _, ct) =>
+            {
+                await Task.Yield();
+                completed.TrySetResult();
+            }
+        );
+
+        // when
+        hub.OnSet("k");
+
+        // then
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
     public void should_not_allocate_when_event_has_no_subscriber()
     {
-        // given — no subscriber on Hit
+        // given — no handler on Hit
         var hub = _CreateHub();
 
         // when — warm up the JIT, then measure a single fire
@@ -47,41 +68,42 @@ public sealed class CacheEventsHubTests : TestBase
         hub.OnHit("measured", isStale: false);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        // then — a fire with no subscriber builds no args and does no work
+        // then — a fire with no handler builds no args and does no work
         allocated.Should().Be(0);
         hub.HasSubscribers.Should().BeFalse();
     }
 
     [Fact]
-    public void should_run_handlers_synchronously_when_sync_handlers_enabled()
+    public void should_run_synchronous_handlers_inline_when_sync_handlers_enabled()
     {
         // given
         var hub = _CreateHub(syncHandlers: true);
-        var ranOnCallingThread = false;
-        var callingThreadId = Environment.CurrentManagedThreadId;
-        hub.Set += (_, _) => ranOnCallingThread = Environment.CurrentManagedThreadId == callingThreadId;
+        var ran = false;
+        using var _ = hub.Set.AddHandler((_, _) => ran = true);
 
         // when
         hub.OnSet("k");
 
-        // then — the handler already ran, inline, on the calling thread
-        ranOnCallingThread.Should().BeTrue();
+        // then — the handler already ran, inline, before OnSet returned
+        ran.Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_run_handlers_on_background_thread_by_default()
+    public async Task should_run_handlers_on_background_task_by_default()
     {
         // given — background dispatch (default)
         var hub = _CreateHub(syncHandlers: false);
         using var handlerEntered = new ManualResetEventSlim(false);
         using var releaseHandler = new ManualResetEventSlim(false);
         var completed = new TaskCompletionSource();
-        hub.Set += (_, _) =>
-        {
-            handlerEntered.Set();
-            releaseHandler.Wait(TimeSpan.FromSeconds(5), AbortToken);
-            completed.TrySetResult();
-        };
+        using var _ = hub.Set.AddHandler(
+            (_, _) =>
+            {
+                handlerEntered.Set();
+                releaseHandler.Wait(TimeSpan.FromSeconds(5), AbortToken);
+                completed.TrySetResult();
+            }
+        );
 
         // when — OnSet returns without waiting for the (blocked) handler
         hub.OnSet("k");
@@ -90,17 +112,16 @@ public sealed class CacheEventsHubTests : TestBase
         handlerEntered.Wait(TimeSpan.FromSeconds(5), AbortToken).Should().BeTrue();
         completed.Task.IsCompleted.Should().BeFalse();
 
-        // release and let the background handler finish
         releaseHandler.Set();
         await completed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]
-    public void should_swallow_and_log_sync_handler_exception_without_propagating()
+    public void should_swallow_synchronous_handler_exception_without_propagating()
     {
         // given
         var hub = _CreateHub();
-        hub.Remove += (_, _) => throw new InvalidOperationException("boom");
+        using var _ = hub.Remove.AddHandler((_, _) => throw new InvalidOperationException("boom"));
 
         // when
         var act = () => hub.OnRemove("k");
@@ -116,14 +137,14 @@ public sealed class CacheEventsHubTests : TestBase
         var hub = _CreateHub();
         var firstRan = false;
         var thirdRan = false;
-        hub.Clear += (_, _) => firstRan = true;
-        hub.Clear += (_, _) => throw new InvalidOperationException("boom");
-        hub.Clear += (_, _) => thirdRan = true;
+        using var _1 = hub.Clear.AddHandler((_, _) => firstRan = true);
+        using var _2 = hub.Clear.AddHandler((_, _) => throw new InvalidOperationException("boom"));
+        using var _3 = hub.Clear.AddHandler((_, _) => thirdRan = true);
 
         // when
         hub.OnClear();
 
-        // then — a throwing handler does not stop the others
+        // then — a throwing handler does not stop the others (SafeInvokeAsync isolates faults)
         firstRan.Should().BeTrue();
         thirdRan.Should().BeTrue();
     }
@@ -133,32 +154,36 @@ public sealed class CacheEventsHubTests : TestBase
     {
         // given
         var hub = _CreateHub();
-        EventHandler<CacheHitEventArgs> handler = (_, _) => { };
-
-        // then
         hub.HasSubscribers.Should().BeFalse();
         hub.HasEvictionSubscribers.Should().BeFalse();
 
-        hub.Hit += handler;
+        // when
+        var registration = hub.Hit.AddHandler((_, _) => { });
+
+        // then
         hub.HasSubscribers.Should().BeTrue();
 
-        hub.Hit -= handler;
+        // and disposing the registration unsubscribes
+        registration.Dispose();
         hub.HasSubscribers.Should().BeFalse();
     }
 
     [Fact]
-    public void should_report_eviction_subscribers_independently()
+    public void should_report_specific_subscriber_flags_independently()
     {
         // given
         var hub = _CreateHub();
-        hub.Miss += (_, _) => { };
+        using var _1 = hub.Miss.AddHandler((_, _) => { });
 
-        // then — a subscriber on an unrelated event does not report eviction subscribers
+        // then — a handler on an unrelated event does not report eviction/set subscribers
         hub.HasSubscribers.Should().BeTrue();
         hub.HasEvictionSubscribers.Should().BeFalse();
+        hub.HasSetSubscribers.Should().BeFalse();
 
-        hub.Eviction += (_, _) => { };
+        using var _2 = hub.Eviction.AddHandler((_, _) => { });
+        using var _3 = hub.Set.AddHandler((_, _) => { });
         hub.HasEvictionSubscribers.Should().BeTrue();
+        hub.HasSetSubscribers.Should().BeTrue();
     }
 
     [Fact]
@@ -176,21 +201,23 @@ public sealed class CacheEventsHubTests : TestBase
     }
 
     [Fact]
-    public void should_carry_tier_on_sub_hub_events()
+    public async Task should_carry_tier_on_sub_hub_events()
     {
         // given
         var hub = _CreateHub(withTierSubHubs: true);
-        CacheKeyEventArgs? memory = null;
-        CacheKeyEventArgs? distributed = null;
-        hub.Memory!.Hit += (_, e) => memory = e;
-        hub.Distributed!.Miss += (_, e) => distributed = e;
+        var memory = new TaskCompletionSource<CacheKeyEventArgs>();
+        var distributed = new TaskCompletionSource<CacheKeyEventArgs>();
+        using var _1 = hub.Memory!.Hit.AddHandler((_, e) => memory.TrySetResult(e));
+        using var _2 = hub.Distributed!.Miss.AddHandler((_, e) => distributed.TrySetResult(e));
 
-        // when
+        // when — tier events always dispatch on a background task
         hub.MemoryHub!.OnHit("k");
         hub.DistributedHub!.OnMiss("k");
 
         // then
-        memory!.Tier.Should().Be(CacheTier.L1);
-        distributed!.Tier.Should().Be(CacheTier.L2);
+        (await memory.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken))
+            .Tier.Should()
+            .Be(CacheTier.L1);
+        (await distributed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Tier.Should().Be(CacheTier.L2);
     }
 }

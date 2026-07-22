@@ -35,8 +35,8 @@ public abstract class CacheConformanceTestsBase : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var sets = new ConcurrentBag<CacheKeyEventArgs>();
         var hits = new ConcurrentBag<CacheHitEventArgs>();
-        cache.Events.Set += (_, e) => sets.Add(e);
-        cache.Events.Hit += (_, e) => hits.Add(e);
+        using var _1 = cache.Events.Set.AddHandler((_, e) => sets.Add(e));
+        using var _2 = cache.Events.Hit.AddHandler((_, e) => hits.Add(e));
 
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var read = await cache.GetAsync<string>(key, AbortToken);
@@ -58,7 +58,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var key = Faker.Random.AlphaNumeric(10);
         var removes = new ConcurrentBag<CacheKeyEventArgs>();
-        cache.Events.Remove += (_, e) => removes.Add(e);
+        using var _ = cache.Events.Remove.AddHandler((_, e) => removes.Add(e));
 
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var removed = await cache.RemoveAsync(key, AbortToken);

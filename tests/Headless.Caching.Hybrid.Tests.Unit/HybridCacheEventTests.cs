@@ -69,20 +69,23 @@ public sealed class HybridCacheEventTests : TestBase
         await cache.GetOrAddAsync<string>(key, _ => new("v"), _Options(), AbortToken);
         await l1.FlushAsync(AbortToken);
 
-        var memoryMiss = false;
-        var distributedHit = false;
+        // Per-tier Events.Memory.*/Events.Distributed.* always dispatch on a background task (even with
+        // SyncHandlers), so observe them via a TaskCompletionSource rather than a synchronous flag.
+        var memoryMiss = new TaskCompletionSource();
+        var distributedHit = new TaskCompletionSource();
         var rootHits = new ConcurrentBag<CacheHitEventArgs>();
-        cache.Events.Memory!.Miss += (_, _) => memoryMiss = true;
-        cache.Events.Distributed!.Hit += (_, _) => distributedHit = true;
-        cache.Events.Hit += (_, e) => rootHits.Add(e);
+        using var _1 = cache.Events.Memory!.Miss.AddHandler((_, _) => memoryMiss.TrySetResult());
+        using var _2 = cache.Events.Distributed!.Hit.AddHandler((_, _) => distributedHit.TrySetResult());
+        using var _3 = cache.Events.Hit.AddHandler((_, e) => rootHits.Add(e));
 
         // when — L1 miss, L2 hit
         var result = await cache.GetOrAddAsync<string>(key, _ => throw new(), _Options(), AbortToken);
 
-        // then — per-tier signals fire, and the aggregate root hit fires once with tier=hybrid (no double count)
+        // then — per-tier signals fire (background), and the aggregate root hit fires once (honor-sync, inline) with
+        // tier=hybrid (no double count)
         result.Value.Should().Be("v");
-        memoryMiss.Should().BeTrue();
-        distributedHit.Should().BeTrue();
+        await memoryMiss.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await distributedHit.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         rootHits.Should().ContainSingle(h => h.Tier == CacheTier.Hybrid);
     }
 
@@ -94,8 +97,8 @@ public sealed class HybridCacheEventTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         CacheKeyEventArgs? set = null;
         CacheKeyEventArgs? removed = null;
-        cache.Events.Set += (_, e) => set = e;
-        cache.Events.Remove += (_, e) => removed = e;
+        using var _1 = cache.Events.Set.AddHandler((_, e) => set = e);
+        using var _2 = cache.Events.Remove.AddHandler((_, e) => removed = e);
 
         // when
         await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
@@ -113,7 +116,7 @@ public sealed class HybridCacheEventTests : TestBase
         // given
         var (cache, _, _) = _CreateCache();
         var invalidations = new ConcurrentBag<CacheInvalidationEventArgs>();
-        cache.Events.Invalidation += (_, e) => invalidations.Add(e);
+        using var _ = cache.Events.Invalidation.AddHandler((_, e) => invalidations.Add(e));
 
         // when
         await cache.RemoveByTagAsync("tag-1", AbortToken);
@@ -142,7 +145,7 @@ public sealed class HybridCacheEventTests : TestBase
         // given
         var (cache, _, _) = _CreateCache();
         CacheInvalidationEventArgs? received = null;
-        cache.Events.Invalidation += (_, e) => received = e;
+        using var _ = cache.Events.Invalidation.AddHandler((_, e) => received = e);
 
         // when — a peer broadcasts a flush-all invalidation
         var message = new CacheInvalidationMessage { InstanceId = "peer", FlushAll = true };
