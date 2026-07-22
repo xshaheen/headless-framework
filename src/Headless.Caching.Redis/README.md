@@ -21,6 +21,7 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - O(1) logical tag invalidation and `ClearAsync` through timestamp markers (Family-2), compared against each entry's birth time on read — one marker key per tag, so tagging works on Redis Cluster.
 - Redis Cluster support for all operations, including tagging and clear.
 - Implements `IBufferCache` — `TryGetToAsync` writes the decoded value slice into the caller's `IBufferWriter<byte>` and `UpsertRawAsync` splices a `ReadOnlySequence<byte>` payload into the frame buffer, both reusing the same envelope stamping so expiry/tags/sliding/`CreatedAt` match the generic path; the frame is byte-identical and the read exposes the payload as a slice of the received buffer (one copy, no intermediate `byte[]`).
+- `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l2`) and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals (Redis server-side evictions are not client-observable, so no `Eviction` event).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes
@@ -117,6 +118,12 @@ builder.Services.AddHeadlessCaching(setup =>
         }
     );
 });
+```
+
+Cache events (native .NET events; handlers run on a background task by default):
+
+```csharp
+cache.Events.Hit += (sender, e) => logger.LogDebug("cache hit {Key}", e.Key);
 ```
 
 ## Configuration

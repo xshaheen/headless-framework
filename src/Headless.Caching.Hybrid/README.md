@@ -20,6 +20,7 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - L2 read soft/hard timeouts and a simple L2 circuit breaker keep slow or failing distributed reads from holding callers.
 - Implements `IBufferCache` — an L1 hit slices straight into the caller's `IBufferWriter<byte>` (single copy on the hot path); an L1 miss falls through to the same wrapped L2 read the generic path uses and seeds L1 (two copies on the cold path, inherent to populating both tiers). Raw upsert stamps both tiers plus the backplane identically to `UpsertEntryAsync`.
+- `cache.Events` event surface (`ICacheEvents`): aggregate get-or-add and direct-op signals on the root hub (`Tier=hybrid`), low-level per-tier L1/L2 reads under `cache.Events.Memory` / `cache.Events.Distributed`, and `Invalidation` events (kind = tag/clear/flush, direction = publish/receive). L1 evictions surface on the composed L1 cache's own `Events.Eviction`, not the hybrid.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes
@@ -110,6 +111,13 @@ services.AddHeadlessCaching(setup =>
 ```
 
 A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))`. The setup builder stamps that name into invalidation messages so the backplane consumer can route peer invalidations to the matching named hybrid.
+
+Cache events — the hybrid adds per-tier `Events.Memory` / `Events.Distributed` reads and `Invalidation` (publish/receive):
+
+```csharp
+cache.Events.Hit += (sender, e) => logger.LogDebug("cache hit {Key} tier={Tier}", e.Key, e.Tier);
+cache.Events.Invalidation += (sender, e) => logger.LogDebug("invalidation {Kind} {Direction}", e.Kind, e.Direction);
+```
 
 ## Configuration
 
