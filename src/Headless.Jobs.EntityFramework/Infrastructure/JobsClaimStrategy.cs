@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -241,7 +242,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
             // execute strictly the claimed set so nothing runs unclaimed.
-            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
 
             yield return timeJob;
         }
@@ -264,8 +265,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1);
 
-        // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces the fixed
-        // two-level ForQueueTimeJobs projection).
+        // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
+        // nested projection).
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
@@ -318,7 +319,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.Status = JobStatus.Queued;
 
             // KTD2: prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
-            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
 
             yield return timeJob;
         }

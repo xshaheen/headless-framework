@@ -7,6 +7,7 @@ using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -186,13 +187,7 @@ internal sealed class JobsExecutionTaskHandler
     // raises on loss; a lease-lost row never carries a terminal status, but the flag is checked explicitly for clarity.
     private static bool _ParentReachedTerminalStatus(JobExecutionState context)
     {
-        return !context.LeaseLost
-            && context.Status
-                is JobStatus.Succeeded
-                    or JobStatus.DueDone
-                    or JobStatus.Failed
-                    or JobStatus.Cancelled
-                    or JobStatus.Skipped;
+        return !context.LeaseLost && ChainRunConditionRules.IsTerminal(context.Status);
     }
 
     private async Task _RunContextFunctionAsync(

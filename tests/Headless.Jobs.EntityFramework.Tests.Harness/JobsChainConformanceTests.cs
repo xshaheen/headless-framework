@@ -557,7 +557,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         command.CommandText =
             "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExecutionTime\", \"ParentId\", \"RunCondition\", "
             + $"\"SkippedReason\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
@@ -589,7 +589,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         command.CommandText =
             $"SELECT \"Id\", \"RunCondition\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"ParentId\" = @parentId "
             + "ORDER BY \"RunCondition\";";
-        _AddParameter(command, "@parentId", parentId);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@parentId", parentId);
 
         var children = new List<(Guid, RunCondition?)>();
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -614,29 +614,11 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         command.CommandText =
             $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
             + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @lockedUntil WHERE \"Id\" = @id;";
-        _AddParameter(command, "@status", JobStatus.InProgress.ToString());
-        _AddParameter(command, "@ownerId", ownerId);
-        _AddParameter(command, "@lockedUntil", DateTime.UtcNow.AddMinutes(-5));
-        _AddParameter(command, "@id", id);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", JobStatus.InProgress.ToString());
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@ownerId", ownerId);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@lockedUntil", DateTime.UtcNow.AddMinutes(-5));
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
 
         await command.ExecuteNonQueryAsync(ct);
-    }
-
-    // Both Npgsql and SqlClient accept the "@name" parameter form; DateTime is written as kind-unspecified DateTime2.
-    private static void _AddParameter(DbCommand command, string name, object value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        if (value is DateTime dateTime)
-        {
-            parameter.DbType = DbType.DateTime2;
-            parameter.Value = DateTime.SpecifyKind(dateTime, DateTimeKind.Unspecified);
-        }
-        else
-        {
-            parameter.Value = value;
-        }
-
-        command.Parameters.Add(parameter);
     }
 }

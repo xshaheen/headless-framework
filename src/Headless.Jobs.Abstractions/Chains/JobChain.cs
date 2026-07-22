@@ -27,13 +27,20 @@ public sealed class JobChain
     /// </summary>
     public const int MaxStructuralDepth = 64;
 
-    internal JobChain(JobChainNode root)
+    internal JobChain(JobChainNode root, int depth)
     {
         Root = root;
+        Depth = depth;
     }
 
     /// <summary>The immutable root step of the chain.</summary>
     public JobChainNode Root { get; }
+
+    /// <summary>
+    /// The number of nodes on the longest root-to-leaf path (on-success and on-failure edges both count). Computed once
+    /// when <see cref="JobChainBuilder.Build"/> freezes the tree; the scheduler reads it instead of re-walking the tree.
+    /// </summary>
+    public int Depth { get; }
 
     /// <summary>Starts a chain whose root is a payload step; its descriptor is resolved at enqueue from the payload type.</summary>
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>

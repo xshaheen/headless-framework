@@ -286,21 +286,15 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         RunCondition runCondition = RunCondition.OnSuccess
     )
     {
-        return new JobExecutionState
-        {
-            JobId = Guid.NewGuid(),
-            FunctionName = functionName,
-            Type = JobType.TimeJob,
-            ExecutionTime = DateTime.UtcNow,
-            RetryIntervals = [0],
-            Status = JobStatus.Queued,
-            RunCondition = runCondition,
-            CachedDelegate = (_, _, _) =>
+        return _Job(
+            functionName,
+            runCondition,
+            (_, _, _) =>
             {
                 onRun();
                 return Task.CompletedTask;
-            },
-        };
+            }
+        );
     }
 
     private static JobExecutionState _Job(string functionName, RunCondition runCondition, JobFunctionDelegate function)

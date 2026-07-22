@@ -6,6 +6,7 @@ using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -117,7 +118,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
             timeJob.UpdatedAt = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
-            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
             yield return timeJob;
         }
     }
@@ -204,7 +205,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             // R12/KTD2: reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
             // recursive .Select is not EF-translatable), then prune to the claim's leased set so deep leased nodes are
-            // returned and non-idle tails are dropped — replacing the fixed two-level ForQueueTimeJobs projection.
+            // returned and non-idle tails are dropped — replacing a fixed-depth nested projection.
             var roots = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
@@ -225,7 +226,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var claimedIds = leasedDescendantIds.ToHashSet();
             foreach (var root in roots)
             {
-                MappingExtensions.PruneToClaimedSet(root, claimedIds);
+                TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
             }
 
             claimed = roots;

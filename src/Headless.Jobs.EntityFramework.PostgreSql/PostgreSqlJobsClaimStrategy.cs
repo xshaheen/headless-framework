@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -111,7 +112,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
             timeJob.UpdatedAt = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
-            MappingExtensions.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
             yield return timeJob;
         }
     }
@@ -127,6 +128,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         TimeJobEntity[] claimed;
+        ClaimResult claim;
+        Guid[] leasedDescendantIds;
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -155,7 +158,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
                 FOR UPDATE SKIP LOCKED
                 """;
-            var claim = await _ClaimRootsAsync(
+            claim = await _ClaimRootsAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -170,7 +173,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 )
                 .ConfigureAwait(false);
 
-            var leasedDescendantIds = await _StampDescendantsAsync(
+            leasedDescendantIds = await _StampDescendantsAsync(
                     dbContext,
                     transaction,
                     mapping,
@@ -182,10 +185,24 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (claim.Ids.Length == 0)
+        {
+            claimed = [];
+        }
+        else
+        {
+            await using var dbContext = await dbContextFactory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
 
             // R12/KTD2: reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
             // recursive .Select is not EF-translatable), then prune to the claim's leased set so deep leased nodes are
-            // returned and non-idle tails are dropped — replacing the fixed two-level ForQueueTimeJobs projection.
+            // returned and non-idle tails are dropped. Runs AFTER the claim transaction commits (E2) so this
+            // multi-round-trip hydration no longer holds the claim's exclusive row locks; a fresh dbContext reads the
+            // now-committed rows, mirroring the SqlServer sibling.
             var roots = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
@@ -206,11 +223,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var claimedIds = leasedDescendantIds.ToHashSet();
             foreach (var root in roots)
             {
-                MappingExtensions.PruneToClaimedSet(root, claimedIds);
+                TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
             }
 
             claimed = roots;
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var timeJob in claimed)

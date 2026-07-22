@@ -60,7 +60,7 @@ public sealed class JobChainBuilder
 
         IsBuilt = true;
 
-        return new JobChain(_Freeze(Root));
+        return new JobChain(_Freeze(Root), depth);
     }
 
     internal void EnsureNotBuilt()

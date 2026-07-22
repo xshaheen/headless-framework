@@ -132,7 +132,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
         // Validate the whole tree first (depth, then per-node descriptor resolution) so nothing is persisted when any
         // node is invalid — the manager's add path validates only the root, so per-node resolution closes that gap.
-        var depth = _ChainDepth(chain.Root);
+        // Depth was computed once when the builder froze the chain (JobChainBuilder.Build); read it instead of walking.
+        var depth = chain.Depth;
         if (depth > _maxChainDepth)
         {
             throw new InvalidOperationException(
@@ -254,14 +255,6 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
         return persisted.Id;
-    }
-
-    private static int _ChainDepth(JobChainNode node)
-    {
-        var success = node.OnSuccess is null ? 0 : _ChainDepth(node.OnSuccess);
-        var failure = node.OnFailure is null ? 0 : _ChainDepth(node.OnFailure);
-
-        return 1 + Math.Max(success, failure);
     }
 
     private TTimeJob _BuildChainEntity(JobChainNode node, Enums.RunCondition? runCondition)

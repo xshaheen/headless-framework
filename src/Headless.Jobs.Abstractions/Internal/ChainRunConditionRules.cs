@@ -14,6 +14,13 @@ namespace Headless.Jobs.Internal;
 internal static class ChainRunConditionRules
 {
     /// <summary>
+    /// The skip-reason detail written when a timed descendant's parent reached a terminal state that did not satisfy
+    /// the child's <see cref="RunCondition"/>. Shared by the executor's skip write, the in-memory provider, and the EF
+    /// provider so a non-matching timed child reads identically however it was skipped.
+    /// </summary>
+    internal const string RunConditionMismatchReason = "Rule RunCondition did not match!";
+
+    /// <summary>
     /// The terminal states a running/succeeded/failed/cancelled/skipped job can settle into; a
     /// non-terminal parent is never a gate target.
     /// </summary>

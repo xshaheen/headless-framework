@@ -46,58 +46,10 @@ internal static class MappingExtensions
         };
     }
 
-    internal static Expression<Func<TTimeJob, TimeJobEntity>> ForQueueTimeJobs<TTimeJob>()
-        where TTimeJob : TimeJobEntity<TTimeJob>, new()
-    {
-        return e => new TimeJobEntity
-        {
-            Id = e.Id,
-            Function = e.Function,
-            Retries = e.Retries,
-            RetryCount = e.RetryCount,
-            RetryIntervals = e.RetryIntervals,
-            CreatedAt = e.CreatedAt,
-            UpdatedAt = e.UpdatedAt,
-            ParentId = e.ParentId,
-            ExecutionTime = e.ExecutionTime,
-            OnNodeDeath = e.OnNodeDeath,
-            Children = e
-                .Children.Select(ch => new TimeJobEntity
-                {
-                    Id = ch.Id,
-                    Function = ch.Function,
-                    Retries = ch.Retries,
-                    RetryCount = ch.RetryCount,
-                    RetryIntervals = ch.RetryIntervals,
-                    CreatedAt = ch.CreatedAt,
-                    UpdatedAt = ch.UpdatedAt,
-                    ParentId = ch.ParentId,
-                    RunCondition = ch.RunCondition,
-                    OnNodeDeath = ch.OnNodeDeath,
-                    Children = ch
-                        .Children.Select(gch => new TimeJobEntity
-                        {
-                            Function = gch.Function,
-                            Retries = gch.Retries,
-                            RetryCount = gch.RetryCount,
-                            RetryIntervals = gch.RetryIntervals,
-                            Id = gch.Id,
-                            CreatedAt = gch.CreatedAt,
-                            UpdatedAt = gch.UpdatedAt,
-                            ParentId = gch.ParentId,
-                            RunCondition = gch.RunCondition,
-                            OnNodeDeath = gch.OnNodeDeath,
-                        })
-                        .ToArray(),
-                })
-                .ToArray(),
-        };
-    }
-
     // KTD2: a single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
     // so deep hydration claims the id-set to depth, reloads these flat rows, and rebuilds the tree by ParentId in
-    // memory (AttachNonTimedDescendantsAsync). Carries the full ForQueueTimeJobs field set — dropping RetryCount (or
-    // any field) from any pickup path silently resets state after restart (docs/solutions precedent).
+    // memory (AttachNonTimedDescendantsAsync). Carries the full pickup field set — dropping RetryCount (or any field)
+    // from any pickup path silently resets state after restart (docs/solutions precedent).
     internal static Expression<Func<TTimeJob, TimeJobEntity>> ForFlatTimeJob<TTimeJob>()
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -199,30 +151,6 @@ internal static class MappingExtensions
         {
             _AttachChildren(child, childrenByParent);
         }
-    }
-
-    /// <summary>
-    /// KTD2: keeps only the descendants the claim actually leased. The claimed set is prefix-closed (a node is claimed
-    /// only after its parent chain was), so pruning the hydrated tree to it yields exactly the executable subtree — a
-    /// node below a non-idle frontier the claim stopped at (terminalized/running) is dropped rather than executed
-    /// unclaimed.
-    /// </summary>
-    internal static void PruneToClaimedSet(TimeJobEntity node, HashSet<Guid> claimedIds)
-    {
-        var kept = new List<TimeJobEntity>(node.Children.Count);
-
-        foreach (var child in node.Children)
-        {
-            if (!claimedIds.Contains(child.Id))
-            {
-                continue;
-            }
-
-            PruneToClaimedSet(child, claimedIds);
-            kept.Add(child);
-        }
-
-        node.Children = kept;
     }
 
     internal static Expression<Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>> ForQueueCronJobOccurrence<

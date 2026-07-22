@@ -492,12 +492,12 @@ public static class JobsCoordinationFixtureExtensions
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@function", function);
-        _AddParameter(command, "@status", ((JobStatus)status).ToString());
-        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        _AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@function", function);
+        AddParameter(command, "@status", ((JobStatus)status).ToString());
+        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -519,13 +519,13 @@ public static class JobsCoordinationFixtureExtensions
             $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
             + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
 
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@function", function);
-        _AddParameter(command, "@expression", expression);
-        _AddParameter(command, "@timeZoneId", DBNull.Value);
-        _AddParameter(command, "@isPaused", false);
-        _AddParameter(command, "@scheduleRevision", 0L);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@function", function);
+        AddParameter(command, "@expression", expression);
+        AddParameter(command, "@timeZoneId", DBNull.Value);
+        AddParameter(command, "@isPaused", false);
+        AddParameter(command, "@scheduleRevision", 0L);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -556,13 +556,13 @@ public static class JobsCoordinationFixtureExtensions
             + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
 
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@cronJobId", cronJobId);
-        _AddParameter(command, "@status", ((JobStatus)status).ToString());
-        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        _AddParameter(command, "@executionTime", executionTime);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        _AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@cronJobId", cronJobId);
+        AddParameter(command, "@status", ((JobStatus)status).ToString());
+        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        AddParameter(command, "@executionTime", executionTime);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -579,7 +579,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -606,7 +606,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -631,7 +631,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -673,7 +673,7 @@ public static class JobsCoordinationFixtureExtensions
         command.CommandText =
             "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
             + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -704,7 +704,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -730,8 +730,8 @@ public static class JobsCoordinationFixtureExtensions
         "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "
         + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
-    // Both Npgsql and SqlClient accept the "@name" parameter form.
-    private static void _AddParameter(DbCommand command, string name, object value)
+    // Both Npgsql and SqlClient accept the "@name" parameter form. Internal so the chain-conformance tests reuse it.
+    internal static void AddParameter(DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
