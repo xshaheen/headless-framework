@@ -70,6 +70,24 @@ public sealed partial class HybridCache
     /// <inheritdoc />
     public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
+        var result = await _GetCoreAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+        // Direct-read root outcome (Tier=hybrid), distinct from the coordinator's get-or-add aggregate and the
+        // per-tier L1/L2 store-read events. A cached null (CacheValue.Null) counts as a hit; only NoValue is a miss.
+        if (result.HasValue)
+        {
+            _coordinator.EventsHub.OnHit(key, isStale: false);
+        }
+        else
+        {
+            _coordinator.EventsHub.OnMiss(key);
+        }
+
+        return result;
+    }
+
+    private async ValueTask<CacheValue<T>> _GetCoreAsync<T>(string key, CancellationToken cancellationToken)
+    {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
@@ -155,6 +173,31 @@ public sealed partial class HybridCache
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
+    )
+    {
+        var result = await _GetAllCoreAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+
+        // One root Hit/Miss per key over the already-enumerated batch (On* null-checks its own subscriber, so no
+        // per-event gating is needed). A cached null (CacheValue.Null) counts as a hit; only NoValue is a miss.
+        var hub = _coordinator.EventsHub;
+        foreach (var kvp in result)
+        {
+            if (kvp.Value.HasValue)
+            {
+                hub.OnHit(kvp.Key, isStale: false);
+            }
+            else
+            {
+                hub.OnMiss(kvp.Key);
+            }
+        }
+
+        return result;
+    }
+
+    private async ValueTask<IDictionary<string, CacheValue<T>>> _GetAllCoreAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken
     )
     {
         _ThrowIfDisposed();
@@ -412,6 +455,23 @@ public sealed partial class HybridCache
 
     /// <inheritdoc />
     public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var exists = await _ExistsCoreAsync(key, cancellationToken).ConfigureAwait(false);
+
+        // Direct-read root outcome (Tier=hybrid): a present key is a hit, an absent one a miss.
+        if (exists)
+        {
+            _coordinator.EventsHub.OnHit(key, isStale: false);
+        }
+        else
+        {
+            _coordinator.EventsHub.OnMiss(key);
+        }
+
+        return exists;
+    }
+
+    private async ValueTask<bool> _ExistsCoreAsync(string key, CancellationToken cancellationToken)
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);

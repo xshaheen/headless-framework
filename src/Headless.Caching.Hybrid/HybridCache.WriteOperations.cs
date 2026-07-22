@@ -40,6 +40,8 @@ public sealed partial class HybridCache
 
             _RunDetached(() => _BackgroundScalarUpsertAsync(key, value, expiration), key);
 
+            _coordinator.EventsHub.OnSet(key);
+
             return true;
         }
 
@@ -103,6 +105,11 @@ public sealed partial class HybridCache
                 queueOnFailure: true
             )
             .ConfigureAwait(false);
+
+        if (updated)
+        {
+            _coordinator.EventsHub.OnSet(key);
+        }
 
         return updated;
     }
@@ -210,6 +217,8 @@ public sealed partial class HybridCache
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
+        _coordinator.EventsHub.OnSet(key);
+
         return true;
     }
 
@@ -251,6 +260,12 @@ public sealed partial class HybridCache
             await LocalCache.UpsertAllAsync(snapshot, localExpiration, cancellationToken).ConfigureAwait(false);
 
             _RunDetached(() => _BackgroundBulkUpsertAsync(snapshot, keys, expiration), keys.Length > 0 ? keys[0] : "");
+
+            var backgroundHub = _coordinator.EventsHub;
+            foreach (var writtenKey in keys)
+            {
+                backgroundHub.OnSet(writtenKey);
+            }
 
             return snapshot.Count;
         }
@@ -294,6 +309,16 @@ public sealed partial class HybridCache
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        // Fire a keyed Set only for a fully-successful write; on partial/failed L2 the keys were removed from L1.
+        if (setCount == value.Count)
+        {
+            var hub = _coordinator.EventsHub;
+            foreach (var writtenKey in value.Keys)
+            {
+                hub.OnSet(writtenKey);
+            }
+        }
 
         return setCount;
     }
@@ -848,6 +873,8 @@ public sealed partial class HybridCache
                     queueOnFailure: true
                 )
                 .ConfigureAwait(false);
+
+            _coordinator.EventsHub.OnRemove(key);
         }
 
         return removed;
@@ -998,6 +1025,8 @@ public sealed partial class HybridCache
                 .ConfigureAwait(false);
         }
 
+        _coordinator.EventsHub.OnRemoveAll(removed);
+
         return removed;
     }
 
@@ -1030,6 +1059,8 @@ public sealed partial class HybridCache
                 )
                 .ConfigureAwait(false);
         }
+
+        _coordinator.EventsHub.OnRemoveByPrefix(prefix, removed);
 
         return removed;
     }
@@ -1072,6 +1103,7 @@ public sealed partial class HybridCache
             CachingMetrics.InvalidationTag,
             CachingMetrics.DirectionPublish
         );
+        _coordinator.EventsHub.OnInvalidation(CacheInvalidationKind.Tag, CacheInvalidationDirection.Publish, tag);
 
         // L2 marker bump is best-effort under the circuit breaker. When the L2 supports timestamped marker writes
         // (ISeedableTagMarkerCache) and auto-recovery is enabled, a skipped/failed bump is queued and replayed at
@@ -1085,6 +1117,8 @@ public sealed partial class HybridCache
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        _coordinator.EventsHub.OnRemoveByTag(tag);
     }
 
     /// <inheritdoc />
@@ -1118,6 +1152,7 @@ public sealed partial class HybridCache
             CachingMetrics.InvalidationClear,
             CachingMetrics.DirectionPublish
         );
+        _coordinator.EventsHub.OnInvalidation(CacheInvalidationKind.Clear, CacheInvalidationDirection.Publish);
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteClearMarkerAsync(invalidatedAt, ct),
@@ -1128,6 +1163,8 @@ public sealed partial class HybridCache
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        _coordinator.EventsHub.OnClear();
     }
 
     // Synthetic recovery-queue keys for marker bumps. The NUL prefix keeps them in their own namespace within the
@@ -1283,6 +1320,7 @@ public sealed partial class HybridCache
             CachingMetrics.InvalidationFlush,
             CachingMetrics.DirectionPublish
         );
+        _coordinator.EventsHub.OnInvalidation(CacheInvalidationKind.Flush, CacheInvalidationDirection.Publish);
 
         await _BumpL2MarkerBestEffortAsync(
                 (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),
@@ -1293,6 +1331,8 @@ public sealed partial class HybridCache
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        _coordinator.EventsHub.OnFlush();
     }
 
     #endregion
