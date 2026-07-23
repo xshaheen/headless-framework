@@ -91,6 +91,26 @@ public sealed class InMemoryCacheEventTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_raise_set_when_oversized_entry_rejected()
+    {
+        // given — a size cap that rejects every write (throw-on-exceed off, so the write is silently skipped)
+        var cache = _CreateCache(new InMemoryCacheOptions { MaxEntrySize = 1, SizeCalculator = _ => 1000 });
+        var setFired = false;
+        using var _ = cache.Events.Set.AddHandler(_ => setFired = true);
+
+        // when
+        await cache.UpsertEntryAsync(
+            "k",
+            "v",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+
+        // then — no Set is reported for an entry that was never retained
+        setFired.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_raise_remove_and_removed_eviction_on_remove()
     {
         // given

@@ -111,6 +111,49 @@ public sealed class HybridCacheEventTests : TestBase
     }
 
     [Fact]
+    public async Task should_raise_remove_on_successful_remove_if_equal()
+    {
+        // given
+        var (cache, _, _) = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(8);
+        await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
+        CacheKeyEventArgs? removed = null;
+        using var _ = cache.Events.Remove.AddHandler(e => removed = e);
+
+        // when — a matching compare-and-delete succeeds
+        var result = await cache.RemoveIfEqualAsync(key, "v", AbortToken);
+
+        // then — the hybrid emits the root Remove event (parity with InMemory/Redis)
+        result.Should().BeTrue();
+        removed!.Key.Should().Be(key);
+    }
+
+    [Fact]
+    public async Task should_not_raise_set_when_both_tiers_skipped()
+    {
+        // given — a positive-duration write that skips both tiers writes nothing
+        var (cache, _, _) = _CreateCache();
+        var setFired = false;
+        using var _ = cache.Events.Set.AddHandler(_ => setFired = true);
+
+        // when
+        await cache.UpsertEntryAsync(
+            "k",
+            "v",
+            new CacheEntryOptions
+            {
+                Duration = TimeSpan.FromMinutes(5),
+                SkipMemoryCacheWrite = true,
+                SkipDistributedCacheWrite = true,
+            },
+            AbortToken
+        );
+
+        // then — no Set is reported when neither tier was written
+        setFired.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_raise_invalidation_publish_events()
     {
         // given
