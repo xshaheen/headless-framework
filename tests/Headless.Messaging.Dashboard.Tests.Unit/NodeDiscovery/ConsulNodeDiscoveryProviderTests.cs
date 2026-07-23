@@ -44,7 +44,7 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
         await cancellationSource.CancelAsync();
         var provider = _CreateProvider(cache);
 
-        Func<Task> act = () => provider.RegisterNodeAsync(cancellationSource.Token);
+        var act = () => provider.RegisterNodeAsync(cancellationSource.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

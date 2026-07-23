@@ -89,7 +89,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 100).Select(_CreateTestMessage).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -132,12 +132,12 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 10000).Select(_CreateTestMessage).ToArray();
         _storage
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -277,12 +277,12 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 3).Select(_CreateTestMessage).ToArray();
         _storage
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -341,12 +341,12 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 10000).Select(_CreateTestMessage).ToArray();
         _storage
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -400,12 +400,12 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 3).Select(_CreateTestMessage).ToArray();
         _storage
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -446,7 +446,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -536,7 +536,7 @@ public sealed class DispatcherTests : TestBase
             .Returns(callInfo =>
             {
                 writeStarted.TrySetResult();
-                return new ValueTask<bool>(_WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(6)));
+                return new ValueTask<bool>(waitForCancellationAsync(callInfo.ArgAt<CancellationToken>(6)));
             });
         using var operationCts = new CancellationTokenSource();
         using var hostCts = new CancellationTokenSource();
@@ -563,7 +563,7 @@ public sealed class DispatcherTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
         await dispatcher.DisposeAsync();
 
-        static async Task<bool> _WaitForCancellationAsync(CancellationToken cancellationToken)
+        static async Task<bool> waitForCancellationAsync(CancellationToken cancellationToken)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             return true;
@@ -638,7 +638,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 100).Select(_CreateTestMessage).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -675,7 +675,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable.Range(1, 500).Select(i => _CreateTestMessage(i)).ToArray();
+        var messages = Enumerable.Range(1, 500).Select(_CreateTestMessage).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -889,7 +889,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -942,7 +942,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -987,7 +987,7 @@ public sealed class DispatcherTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
@@ -1137,7 +1137,7 @@ public sealed class DispatcherTests : TestBase
                     string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
                     && call.GetArguments().Length >= 2
                     && call.GetArguments()[1] != null
-                    && call.GetArguments()[1]!.GetType() == typeof(EventId)
+                    && call.GetArguments()[1] is EventId
                     && string.Equals(
                         ((EventId)call.GetArguments()[1]!).Name,
                         "ProcessorStopFailed",

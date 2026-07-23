@@ -42,7 +42,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
-    private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
     // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
@@ -441,7 +440,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return Task.CompletedTask;
         }
 
-        if (_serviceScopeFactory is null)
+        if (serviceScopeFactory is null)
         {
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(
@@ -453,7 +452,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
         else
         {
-            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(new(descriptor, entity, scope.ServiceProvider), terminal, cancellationToken)
                 .ConfigureAwait(false);

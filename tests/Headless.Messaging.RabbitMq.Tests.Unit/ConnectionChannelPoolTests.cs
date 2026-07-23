@@ -254,7 +254,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // when - cycle Rent+Return more times than the pool size (_DefaultPoolSize = 15).
         // Pre-fix, Return released the semaphore without Rent acquiring it, so after 15 returns the
         // semaphore over-released and threw SemaphoreFullException.
-        Func<Task> act = async () =>
+        var act = async () =>
         {
             for (var i = 0; i < 30; i++)
             {

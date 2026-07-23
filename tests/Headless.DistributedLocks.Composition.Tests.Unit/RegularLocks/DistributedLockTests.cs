@@ -1189,7 +1189,7 @@ public sealed class DistributedLockTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         _outboxBus
             .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException("outbox down"));
+            .Returns(_ => throw new InvalidOperationException("outbox down"));
 
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
         acquiredLock.Should().NotBeNull();

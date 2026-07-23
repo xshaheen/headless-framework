@@ -340,7 +340,10 @@ public abstract class DistributedSemaphoreProviderTestsBase : TestBase
         {
             await race;
         }
-        catch (Exception) { }
+        catch (Exception)
+        {
+            // ignored
+        }
     }
 #pragma warning restore CA1031, ERP022, RCS1075
 }

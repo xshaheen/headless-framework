@@ -12,7 +12,7 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Tests;
+namespace Tests.Dashboard;
 
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 

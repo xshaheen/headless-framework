@@ -280,7 +280,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             )
             .Returns([update]);
         var failure = new InvalidOperationException("notification offline");
-        sut.Notification.UpdateCronJobNotifyAsync(update).Returns<Task>(_ => throw failure);
+        sut.Notification.UpdateCronJobNotifyAsync(update).Returns(_ => throw failure);
 
         var result = await sut.Cron.UpdateAsync(update, AbortToken);
 
@@ -437,7 +437,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sideEffectStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
 
-        Func<Task> drainAction = async () => await drain;
+        var drainAction = async () => await drain;
         await drainAction.Should().NotThrowAsync();
         sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
     }
@@ -472,7 +472,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sideEffectStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
 
-        Func<Task> drainAction = async () => await drain;
+        var drainAction = async () => await drain;
         await drainAction.Should().NotThrowAsync();
         neverCompletes.Task.IsCompleted.Should().BeFalse();
         sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
@@ -738,7 +738,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(dispatcherEnabled);
 
-        FakeCommitCoordinator? coordinator = mode switch
+        var coordinator = mode switch
         {
             CoordinatorMode.None => null,
             CoordinatorMode.NonRelational => new FakeCommitCoordinator(relational: null),

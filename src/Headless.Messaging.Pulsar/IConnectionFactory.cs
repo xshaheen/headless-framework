@@ -215,7 +215,10 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
             await client.CloseAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
-        catch { }
+        catch
+        {
+            // ignored
+        }
 #pragma warning restore ERP022
     }
 

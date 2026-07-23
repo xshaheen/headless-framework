@@ -25,7 +25,7 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
 
     public bool TryEnqueue(MediumMessage message, long sendTime)
     {
-        var shouldSignal = false;
+        bool shouldSignal;
 
         lock (_lock)
         {

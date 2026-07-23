@@ -80,9 +80,14 @@ internal sealed class AzureServiceBusConsumerClient(
         // Get existing rules
 
         var allRuleNames = new List<string>();
-        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken);
 
-        await foreach (var rule in allRules.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (
+#pragma warning disable MA0079 // False positive
+            var rule in _administrationClient!
+                .GetRulesAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken)
+                .ConfigureAwait(false)
+#pragma warning restore MA0079
+        )
         {
             allRuleNames.Add(rule.Name);
         }

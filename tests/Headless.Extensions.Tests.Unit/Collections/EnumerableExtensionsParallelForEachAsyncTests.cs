@@ -140,7 +140,7 @@ public sealed class EnumerableExtensionsParallelForEachAsyncTests : TestBase
         var source = new[] { 1 };
 
         // when
-        var act = () => source.ParallelForEachAsync((Func<int, Task>)null!, AbortToken);
+        var act = () => source.ParallelForEachAsync(null!, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentNullException>();

@@ -141,7 +141,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             .StoreMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call =>
@@ -167,7 +167,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<DateTimeOffset>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.CompletedTask);

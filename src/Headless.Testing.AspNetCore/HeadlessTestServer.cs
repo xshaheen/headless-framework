@@ -184,14 +184,11 @@ public sealed class HeadlessTestServer<TProgram>(
                 var options = new DatabaseResetOptions();
                 _configureDatabaseReset(options);
 
-                if (options.ConnectionProvider is null)
-                {
-                    throw new InvalidOperationException(
+                _resetConnectionProvider =
+                    options.ConnectionProvider
+                    ?? throw new InvalidOperationException(
                         $"{nameof(DatabaseResetOptions)}.{nameof(DatabaseResetOptions.ConnectionProvider)} must be set."
                     );
-                }
-
-                _resetConnectionProvider = options.ConnectionProvider;
                 _additionalTransientExceptionFilter = options.AdditionalTransientExceptionFilter;
                 _resetConnection = _resetConnectionProvider(Services);
 
@@ -233,7 +230,6 @@ public sealed class HeadlessTestServer<TProgram>(
                     if (replaceConnection)
                     {
                         await _ReplaceResetConnectionAsync(cancellationToken).ConfigureAwait(false);
-                        replaceConnection = false;
                     }
 
                     await ResetAction(_databaseReset, _resetConnection!, cancellationToken).ConfigureAwait(false);

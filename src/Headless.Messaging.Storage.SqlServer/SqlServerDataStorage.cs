@@ -922,17 +922,18 @@ internal sealed partial class SqlServerDataStorage(
         ];
 
         int affectedRows;
-        if (transaction is DbTransaction dbTransaction)
+
+        if (transaction is not null)
         {
             var connection =
-                dbTransaction.Connection
+                transaction.Connection
                 ?? throw new InvalidOperationException(
                     "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
                 );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
-                    transaction: dbTransaction,
+                    transaction: transaction,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
                     sqlParams: sqlParams,
                     cancellationToken: cancellationToken

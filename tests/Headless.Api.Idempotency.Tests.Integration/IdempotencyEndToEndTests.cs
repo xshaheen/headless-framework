@@ -728,14 +728,9 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockDouble(TimeProvider.System)
         {
             BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
-            {
-                // Winner's signature: acquireTimeout == TimeSpan.Zero.
-                if (acquireTimeout == TimeSpan.Zero)
-                {
-                    throw new InvalidOperationException("simulated lock-provider outage");
-                }
-                return Task.CompletedTask;
-            },
+                acquireTimeout == TimeSpan.Zero
+                    ? throw new InvalidOperationException("simulated lock-provider outage")
+                    : Task.CompletedTask,
         };
 
         await using var app = await IdempotencyTestApp.CreateAsync(
@@ -762,15 +757,11 @@ public sealed class IdempotencyEndToEndTests : TestBase
         var gate = new IdempotencyTestApp.TestHandlerGate();
         var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockDouble(TimeProvider.System)
         {
+            // Throw only on the loser's call (acquireTimeout > 0).
             BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
-            {
-                // Throw only on the loser's call (acquireTimeout > 0).
-                if (acquireTimeout is not null && acquireTimeout != TimeSpan.Zero)
-                {
-                    throw new InvalidOperationException("simulated lock-provider outage");
-                }
-                return Task.CompletedTask;
-            },
+                acquireTimeout is not null && acquireTimeout != TimeSpan.Zero
+                    ? throw new InvalidOperationException("simulated lock-provider outage")
+                    : Task.CompletedTask,
         };
 
         await using var app = await IdempotencyTestApp.CreateAsync(
