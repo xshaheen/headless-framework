@@ -217,8 +217,12 @@ public sealed partial class HybridCache
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
         await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
-        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
-        if (options.Duration > TimeSpan.Zero)
+        // Set is reported only when an entry was actually retained in at least one tier — not an immediate-expiry
+        // eviction (non-positive Duration) nor a write that skips both tiers (a valid tier-control combination that
+        // writes nothing). The composite store's success result does not distinguish a skip-both no-op from a real
+        // write, so gate on the semantics here rather than on the store result.
+        var wroteAtLeastOneTier = !(options.SkipMemoryCacheWrite && options.SkipDistributedCacheWrite);
+        if (options.Duration > TimeSpan.Zero && wroteAtLeastOneTier)
         {
             _coordinator.EventsHub.OnSet(key);
         }
@@ -982,6 +986,8 @@ public sealed partial class HybridCache
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            _coordinator.EventsHub.OnRemove(key);
         }
 
         return removed;

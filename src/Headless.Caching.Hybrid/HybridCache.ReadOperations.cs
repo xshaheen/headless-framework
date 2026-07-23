@@ -177,18 +177,22 @@ public sealed partial class HybridCache
     {
         var result = await _GetAllCoreAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
 
-        // One root Hit/Miss per key over the already-enumerated batch (On* null-checks its own subscriber, so no
-        // per-event gating is needed). A cached null (CacheValue.Null) counts as a hit; only NoValue is a miss.
+        // One root Hit/Miss per key. This is a second pass over the batch (the store read already built `result`), so
+        // gate it on the specific event subscribers to avoid an O(N) walk when neither is observed. A cached null
+        // (CacheValue.Null) counts as a hit; only NoValue is a miss.
         var hub = _coordinator.EventsHub;
-        foreach (var kvp in result)
+        if (hub.Hit.HasHandlers || hub.Miss.HasHandlers)
         {
-            if (kvp.Value.HasValue)
+            foreach (var kvp in result)
             {
-                hub.OnHit(kvp.Key, isStale: false);
-            }
-            else
-            {
-                hub.OnMiss(kvp.Key);
+                if (kvp.Value.HasValue)
+                {
+                    hub.OnHit(kvp.Key, isStale: false);
+                }
+                else
+                {
+                    hub.OnMiss(kvp.Key);
+                }
             }
         }
 

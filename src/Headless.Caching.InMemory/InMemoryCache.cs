@@ -264,12 +264,14 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
+        var persisted = await this.UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
+            .ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL1);
 
-        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
-        if (options.Duration > TimeSpan.Zero)
+        // Set is reported only when an entry was actually retained — not an immediate-expiry eviction
+        // (non-positive Duration) nor an oversized-entry rejection (MaxEntrySize with throw-on-exceed off).
+        if (persisted && options.Duration > TimeSpan.Zero)
         {
             _events.OnSet(key);
         }

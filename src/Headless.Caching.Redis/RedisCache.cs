@@ -321,10 +321,12 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
+        var persisted = await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
+            .ConfigureAwait(false);
 
-        // A non-positive Duration is an immediate-expiry eviction, not a write, so no Set is reported for it.
-        if (options.Duration > TimeSpan.Zero)
+        // Set is reported only when an entry was actually retained — not an immediate-expiry eviction
+        // (non-positive Duration) nor a write that skips the distributed tier (SkipDistributedCacheWrite).
+        if (persisted && options.Duration > TimeSpan.Zero)
         {
             _coordinator.EventsHub.OnSet(key);
         }
