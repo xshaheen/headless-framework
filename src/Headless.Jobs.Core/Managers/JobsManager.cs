@@ -46,7 +46,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
-    private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
 
     // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
     // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
@@ -485,7 +484,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return Task.CompletedTask;
         }
 
-        if (_serviceScopeFactory is null)
+        if (serviceScopeFactory is null)
         {
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(
@@ -497,7 +496,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
         else
         {
-            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(new(descriptor, entity, scope.ServiceProvider), terminal, cancellationToken)
                 .ConfigureAwait(false);

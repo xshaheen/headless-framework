@@ -523,12 +523,14 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await persistence.AddTimeJobsAsync(cancellableRoots, ct);
             using var cancellation = new CancellationTokenSource();
             await using (
-                var enumerator = persistence.QueueTimedOutTimeJobsAsync(cancellation.Token).GetAsyncEnumerator()
+                var enumerator = persistence
+                    .QueueTimedOutTimeJobsAsync(cancellation.Token)
+                    .GetAsyncEnumerator(cancellation.Token)
             )
             {
                 (await enumerator.MoveNextAsync()).Should().BeTrue();
                 await cancellation.CancelAsync();
-                Func<Task> moveNext = async () =>
+                var moveNext = async () =>
                 {
                     await enumerator.MoveNextAsync();
                 };

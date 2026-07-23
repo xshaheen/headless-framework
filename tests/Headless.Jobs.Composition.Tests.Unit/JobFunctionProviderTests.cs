@@ -103,18 +103,20 @@ public sealed class JobFunctionProviderTests : TestBase, IDisposable
         using var firstEntered = new ManualResetEventSlim();
         using var secondEntered = new ManualResetEventSlim();
 
-        var firstHost = Task.Run(() =>
-            new ServiceCollection().AddHeadlessJobs(options =>
-            {
-                JobFunctionProvider.RegisterFunctions(
-                    new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-                    {
-                        ["first-host"] = _Function("first-host").Value,
-                    }
-                );
-                firstEntered.Set();
-                firstCanReturn.Wait(cancellationToken);
-            })
+        var firstHost = Task.Run(
+            () =>
+                new ServiceCollection().AddHeadlessJobs(_ =>
+                {
+                    JobFunctionProvider.RegisterFunctions(
+                        new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                        {
+                            ["first-host"] = _Function("first-host").Value,
+                        }
+                    );
+                    firstEntered.Set();
+                    firstCanReturn.Wait(cancellationToken);
+                }),
+            AbortToken
         );
         firstEntered.Wait(cancellationToken);
 

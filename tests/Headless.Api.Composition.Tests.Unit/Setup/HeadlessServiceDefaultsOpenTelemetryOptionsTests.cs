@@ -187,7 +187,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
         var otel = new HeadlessServiceDefaultsOpenTelemetryOptions();
 
         // Branch 1: no custom Filter → skip func drives tracing
-        Func<HttpContext, bool> effectiveFilter = otel.Filter ?? (ctx => !otel.SkipOperationalEndpointFunc(ctx));
+        var effectiveFilter = otel.Filter ?? (ctx => !otel.SkipOperationalEndpointFunc(ctx));
         effectiveFilter(_CreateContext("/health")).Should().BeFalse("health path should be filtered OUT of traces");
         effectiveFilter(_CreateContext("/api/users")).Should().BeTrue("regular path should be traced");
 

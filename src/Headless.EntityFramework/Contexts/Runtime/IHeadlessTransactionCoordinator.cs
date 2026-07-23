@@ -31,12 +31,13 @@ internal sealed class NullHeadlessTransactionCoordinator : IHeadlessTransactionC
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return NullHeadlessTransactionScope.Instance;
+
+        return NullHeadlessTransactionScope.NullInstance;
     }
 
     private sealed class NullHeadlessTransactionScope : IHeadlessTransactionScope
     {
-        public static readonly NullHeadlessTransactionScope Instance = new();
+        public static readonly NullHeadlessTransactionScope NullInstance = new();
 
         private NullHeadlessTransactionScope() { }
 

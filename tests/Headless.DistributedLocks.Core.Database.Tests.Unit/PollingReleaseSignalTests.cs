@@ -131,15 +131,13 @@ public sealed class PollingReleaseSignalTests : TestBase
     )
     {
         var fallback = TimeSpan.FromSeconds(1);
-        string? resource = Guid.NewGuid().ToString("N");
+        var resource = Guid.NewGuid().ToString("N");
         var weakReference = new WeakReference<string>(resource);
-        Task? wait = signal.WaitAsync(resource, fallback, AbortToken).AsTask();
+        var wait = signal.WaitAsync(resource, fallback, AbortToken).AsTask();
 
         timeProvider.Advance(fallback);
         await wait;
 
-        resource = null;
-        wait = null;
         return weakReference;
     }
 

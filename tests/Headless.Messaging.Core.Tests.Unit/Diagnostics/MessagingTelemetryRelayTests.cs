@@ -10,6 +10,7 @@ using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
+// ReSharper disable ExplicitCallerInfoArgument
 namespace Tests.Diagnostics;
 
 /// <summary>
@@ -286,11 +287,9 @@ public sealed class MessagingTelemetryRelayTests : TestBase
 
     // --- Helpers --------------------------------------------------------------------------------------------
 
-    private static readonly System.Reflection.MethodInfo _Method = typeof(MessagingTelemetryRelayTests).GetMethod(
+    private static readonly MethodInfo _Method = typeof(MessagingTelemetryRelayTests).GetMethod(
         nameof(_SampleHandler),
-        System.Reflection.BindingFlags.NonPublic
-            | System.Reflection.BindingFlags.Static
-            | System.Reflection.BindingFlags.DeclaredOnly,
+        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
         binder: null,
         types: Type.EmptyTypes,
         modifiers: null

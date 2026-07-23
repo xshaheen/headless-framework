@@ -39,7 +39,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 .StoreMessageAsync(
                     Arg.Any<string>(),
                     Arg.Any<MediumMessage>(),
-                    Arg.Any<System.Data.Common.DbTransaction?>(),
+                    Arg.Any<DbTransaction?>(),
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(call =>
@@ -109,7 +109,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 .StoreMessageAsync(
                     Arg.Any<string>(),
                     Arg.Any<MediumMessage>(),
-                    Arg.Any<System.Data.Common.DbTransaction?>(),
+                    Arg.Any<DbTransaction?>(),
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(call =>
@@ -297,7 +297,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
                 Arg.Do<DateTimeOffset>(publishTime => capturedPublishTimes.Add(publishTime)),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.CompletedTask);

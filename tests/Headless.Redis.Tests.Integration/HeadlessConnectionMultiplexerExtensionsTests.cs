@@ -2,12 +2,13 @@
 
 using Headless.Redis;
 using Headless.Redis.Testing;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
-public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixture fixture)
+public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixture fixture) : TestBase
 {
     private ConnectionMultiplexer Multiplexer => fixture.ConnectionMultiplexer;
     private IDatabase Db => Multiplexer.GetDatabase();
@@ -26,7 +27,7 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
         await Multiplexer.FlushAllAsync();
 
         // then
-        var count = await Multiplexer.CountAllKeysAsync();
+        var count = await Multiplexer.CountAllKeysAsync(AbortToken);
         count.Should().Be(0);
     }
 
@@ -54,7 +55,7 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
         await Db.StringSetAsync("count-key5", "value5");
 
         // when
-        var count = await Multiplexer.CountAllKeysAsync();
+        var count = await Multiplexer.CountAllKeysAsync(AbortToken);
 
         // then
         count.Should().Be(5);
@@ -67,7 +68,7 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
         await Multiplexer.FlushAllAsync();
 
         // when
-        var count = await Multiplexer.CountAllKeysAsync();
+        var count = await Multiplexer.CountAllKeysAsync(AbortToken);
 
         // then
         count.Should().Be(0);

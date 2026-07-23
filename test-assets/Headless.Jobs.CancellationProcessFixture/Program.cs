@@ -68,17 +68,18 @@ internal static class Program
             await host.StartAsync(timeout.Token).ConfigureAwait(false);
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             await Console.Out.WriteLineAsync("HOST_READY").ConfigureAwait(false);
-            await Console.Out.FlushAsync().ConfigureAwait(false);
+            await Console.Out.FlushAsync(timeout.Token).ConfigureAwait(false);
+
             while (!timeout.IsCancellationRequested)
             {
-                if (await persistence.GetTimeJobByIdAsync(jobId, timeout.Token).ConfigureAwait(false) is { } job)
+                if (
+                    await persistence.GetTimeJobByIdAsync(jobId, timeout.Token).ConfigureAwait(false) is
+                    { Status: JobStatus.Cancelled }
+                )
                 {
-                    if (job.Status == JobStatus.Cancelled)
-                    {
-                        await Console.Out.WriteLineAsync("OBSERVED").ConfigureAwait(false);
-                        await Console.Out.FlushAsync().ConfigureAwait(false);
-                        return 0;
-                    }
+                    await Console.Out.WriteLineAsync("OBSERVED").ConfigureAwait(false);
+                    await Console.Out.FlushAsync(timeout.Token).ConfigureAwait(false);
+                    return 0;
                 }
 
                 await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token).ConfigureAwait(false);

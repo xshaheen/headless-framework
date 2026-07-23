@@ -19,9 +19,6 @@ namespace Headless.Dashboard.Authentication;
 [PublicAPI]
 public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) : IAuthService
 {
-    private readonly AuthConfig _config = config;
-    private readonly ILogger<AuthService> _logger = logger;
-
     /// <inheritdoc/>
     public async Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken cancellationToken = default)
     {
@@ -30,13 +27,13 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             cancellationToken.ThrowIfCancellationRequested();
 
             // No authentication required
-            if (!_config.IsEnabled)
+            if (!config.IsEnabled)
             {
                 return AuthResult.Success("anonymous");
             }
 
             // Authentication performed by host application
-            if (_config.Mode == AuthMode.Host)
+            if (config.Mode == AuthMode.Host)
             {
                 return await _AuthenticateHostAsync(context);
             }
@@ -49,7 +46,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             }
 
             // Authenticate based on mode
-            return _config.Mode switch
+            return config.Mode switch
             {
                 AuthMode.Basic => await _AuthenticateBasicAsync(authHeader),
                 AuthMode.ApiKey => await _AuthenticateApiKeyAsync(authHeader),
@@ -59,7 +56,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogAuthenticationError(ex);
+            logger.LogAuthenticationError(ex);
             return AuthResult.Failure("Authentication error");
         }
     }
@@ -69,9 +66,9 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
     {
         return new AuthInfo
         {
-            Mode = _config.Mode,
-            IsEnabled = _config.IsEnabled,
-            SessionTimeoutMinutes = _config.SessionTimeoutMinutes,
+            Mode = config.Mode,
+            IsEnabled = config.IsEnabled,
+            SessionTimeoutMinutes = config.SessionTimeoutMinutes,
         };
     }
 
@@ -115,7 +112,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             if (
                 CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(credentials),
-                    Encoding.UTF8.GetBytes(_config.BasicCredentials ?? string.Empty)
+                    Encoding.UTF8.GetBytes(config.BasicCredentials ?? string.Empty)
                 )
             )
             {
@@ -150,7 +147,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             if (
                 CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(token),
-                    Encoding.UTF8.GetBytes(_config.ApiKey ?? string.Empty)
+                    Encoding.UTF8.GetBytes(config.ApiKey ?? string.Empty)
                 )
             )
             {
@@ -172,7 +169,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
     {
         try
         {
-            if (_config.CustomValidator?.Invoke(authHeader, serviceProvider) == true)
+            if (config.CustomValidator?.Invoke(authHeader, serviceProvider) == true)
             {
                 return Task.FromResult(AuthResult.Success("custom-user"));
             }

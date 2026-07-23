@@ -215,7 +215,7 @@ public sealed class DistributedLock(
         using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
 
-        DistributedLockAcquireResult acquireResult = DistributedLockAcquireResult.Failed;
+        var acquireResult = DistributedLockAcquireResult.Failed;
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;

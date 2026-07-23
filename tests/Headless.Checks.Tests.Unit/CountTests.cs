@@ -38,7 +38,7 @@ public sealed class CountTests
     [Fact]
     public void should_work_on_lazy_enumerable_when_has_count()
     {
-        IEnumerable<int> lazy = _Three.Where(x => x > 0);
+        var lazy = _Three.Where(x => x > 0);
 
         Argument.HasCount(lazy, 3).Should().BeSameAs(lazy);
 

@@ -25,7 +25,7 @@ public static partial class HeadlessQueryableExtensions
         CancellationToken cancellationToken = default
     )
         where TEntity : class, IEntity<TKey>
-        where TKey : notnull, IEquatable<TKey>
+        where TKey : IEquatable<TKey> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id.Equals(id), cancellationToken).ConfigureAwait(false);
 

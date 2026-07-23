@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.Data.SqlClient;
@@ -14,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
 #pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
-namespace Headless.Jobs.Infrastructure;
+namespace Headless.Jobs;
 
 internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
@@ -72,7 +73,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     [
                         .. batch.SelectMany(
                             (job, index) =>
-                                new SqlParameter[]
+                                new[]
                                 {
                                     new(_ParameterName("id", index), job.Id),
                                     _DateTimeParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
