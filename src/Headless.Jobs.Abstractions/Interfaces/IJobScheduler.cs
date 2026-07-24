@@ -48,6 +48,23 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Enqueues a typed <see cref="JobChain"/>: resolves every node's generated descriptor, enforces the configured
+    /// maximum chain depth, and persists the root together with its whole descendant tree atomically through the
+    /// existing manager add path. Returns the persisted root job identifier.
+    /// </summary>
+    /// <param name="chain">The immutable chain produced by <c>JobChainBuilder.Build()</c>.</param>
+    /// <param name="cancellationToken">Cancels the enqueue operation.</param>
+    /// <returns>The persisted identifier of the chain's root job.</returns>
+    /// <remarks>
+    /// Every node is validated before any row is written: an unmapped payload or a descriptor/step mismatch fails
+    /// before persistence, and a chain deeper than the configured limit is rejected naming that limit. Each call
+    /// materializes fresh entities, so re-enqueueing the same built chain yields independent trees.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The chain is deeper than the configured maximum chain depth.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    Task<Guid> EnqueueAsync(JobChain chain, CancellationToken cancellationToken = default);
+
     /// <summary>Schedules a typed one-shot job and returns its persisted entity identifier.</summary>
     Task<Guid> ScheduleAsync<TArgs>(
         TArgs request,

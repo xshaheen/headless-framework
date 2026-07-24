@@ -449,12 +449,12 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public void should_expose_only_the_job_id_cancellation_method_and_six_scheduling_overloads()
+    public void should_expose_only_the_job_id_cancellation_method_and_seven_scheduling_overloads()
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(9);
-        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(6);
+        methods.Should().HaveCount(10);
+        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(7);
         var cancellation = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)
         );
@@ -478,6 +478,18 @@ public sealed class JobSchedulerTests : TestBase
         }
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(EnqueueOptions));
+        var chainEnqueue = methods.Single(method =>
+            string.Equals(method.Name, nameof(IJobScheduler.EnqueueAsync), StringComparison.Ordinal)
+            && !method.IsGenericMethodDefinition
+            && method.GetParameters().Length == 2
+        );
+        chainEnqueue.ReturnType.Should().Be<Task<Guid>>();
+        chainEnqueue
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .Should()
+            .Equal(typeof(JobChain), typeof(CancellationToken));
+        chainEnqueue.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTime), typeof(EnqueueOptions));
         _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), false, typeof(DateTime), typeof(EnqueueOptions));
         _AssertOverload(
@@ -573,6 +585,7 @@ public sealed class JobSchedulerTests : TestBase
         var method = methods.Single(candidate =>
             string.Equals(candidate.Name, name, StringComparison.Ordinal)
             && candidate.IsGenericMethodDefinition == generic
+            && candidate.GetParameters().Length == middleParameterTypes.Length + 2
         );
         var parameters = method.GetParameters();
 

@@ -55,6 +55,14 @@ internal interface IInternalJobManager
     /// fallback cadence so a job stalled on a still-live node is recovered within ≈ one lease TTL.
     /// </summary>
     Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reconciles the timed chain descendants of one parent that just reached a terminal state (U5/KTD3): releases the
+    /// children whose run condition matches (re-stamping a past-due child to the store's now) and skips the rest with
+    /// their subtrees, then wakes the scheduler for the earliest released time. Invoked per-parent after a terminal
+    /// completion — from the executor and the cancellation path — once the terminal write has committed.
+    /// </summary>
+    Task ApplyParentTerminalRunConditionsAsync(Guid parentId, CancellationToken cancellationToken = default);
     Task UpdateSkipTimeJobsWithUnifiedContextAsync(
         JobExecutionState[] context,
         CancellationToken cancellationToken = default

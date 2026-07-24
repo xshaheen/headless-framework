@@ -4,6 +4,7 @@ using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
 namespace Headless.Jobs.Infrastructure;
@@ -45,7 +46,11 @@ internal static class MappingExtensions
         };
     }
 
-    internal static Expression<Func<TTimeJob, TimeJobEntity>> ForQueueTimeJobs<TTimeJob>()
+    // KTD2: a single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
+    // so deep hydration claims the id-set to depth, reloads these flat rows, and rebuilds the tree by ParentId in
+    // memory (AttachNonTimedDescendantsAsync). Carries the full pickup field set — dropping RetryCount (or any field)
+    // from any pickup path silently resets state after restart (docs/solutions precedent).
+    internal static Expression<Func<TTimeJob, TimeJobEntity>> ForFlatTimeJob<TTimeJob>()
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         return e => new TimeJobEntity
@@ -59,38 +64,93 @@ internal static class MappingExtensions
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
+            RunCondition = e.RunCondition,
             OnNodeDeath = e.OnNodeDeath,
-            Children = e
-                .Children.Select(ch => new TimeJobEntity
-                {
-                    Id = ch.Id,
-                    Function = ch.Function,
-                    Retries = ch.Retries,
-                    RetryCount = ch.RetryCount,
-                    RetryIntervals = ch.RetryIntervals,
-                    CreatedAt = ch.CreatedAt,
-                    UpdatedAt = ch.UpdatedAt,
-                    ParentId = ch.ParentId,
-                    RunCondition = ch.RunCondition,
-                    OnNodeDeath = ch.OnNodeDeath,
-                    Children = ch
-                        .Children.Select(gch => new TimeJobEntity
-                        {
-                            Function = gch.Function,
-                            Retries = gch.Retries,
-                            RetryCount = gch.RetryCount,
-                            RetryIntervals = gch.RetryIntervals,
-                            Id = gch.Id,
-                            CreatedAt = gch.CreatedAt,
-                            UpdatedAt = gch.UpdatedAt,
-                            ParentId = gch.ParentId,
-                            RunCondition = gch.RunCondition,
-                            OnNodeDeath = gch.OnNodeDeath,
-                        })
-                        .ToArray(),
-                })
-                .ToArray(),
         };
+    }
+
+    /// <summary>
+    /// R12/KTD2: attaches the non-timed in-tree subtree to each already-loaded flat root, frontier by frontier, down
+    /// to <paramref name="maxChainDepth"/> (roots are depth 1). A timed descendant (<c>ExecutionTime != null</c>) is a
+    /// boundary — excluded from the in-tree walk and claimed independently (U5) — so the frontier descends only
+    /// through non-timed children. The tree is rebuilt by <c>ParentId</c> in memory because a recursive EF projection
+    /// is not translatable.
+    /// </summary>
+    internal static async Task AttachNonTimedDescendantsAsync<TTimeJob>(
+        IQueryable<TTimeJob> source,
+        IReadOnlyCollection<TimeJobEntity> roots,
+        int maxChainDepth,
+        CancellationToken cancellationToken
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        if (roots.Count == 0)
+        {
+            return;
+        }
+
+        var childrenByParent = new Dictionary<Guid, List<TimeJobEntity>>();
+        var frontier = roots.Select(x => x.Id).ToArray();
+        var depth = 1;
+
+        while (frontier.Length != 0 && depth < maxChainDepth)
+        {
+            var parentIds = frontier;
+
+            var children = await source
+                .Where(x =>
+                    x.ParentId != null
+                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
+                    && x.ExecutionTime == null
+                )
+                .Select(ForFlatTimeJob<TTimeJob>())
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (children.Length == 0)
+            {
+                break;
+            }
+
+            foreach (var child in children)
+            {
+                if (child.ParentId is not { } parentId)
+                {
+                    continue;
+                }
+
+                if (!childrenByParent.TryGetValue(parentId, out var bucket))
+                {
+                    bucket = [];
+                    childrenByParent[parentId] = bucket;
+                }
+
+                bucket.Add(child);
+            }
+
+            frontier = children.Select(x => x.Id).ToArray();
+            depth++;
+        }
+
+        foreach (var root in roots)
+        {
+            _AttachChildren(root, childrenByParent);
+        }
+    }
+
+    private static void _AttachChildren(TimeJobEntity node, Dictionary<Guid, List<TimeJobEntity>> childrenByParent)
+    {
+        if (!childrenByParent.TryGetValue(node.Id, out var children))
+        {
+            return;
+        }
+
+        node.Children = children;
+
+        foreach (var child in children)
+        {
+            _AttachChildren(child, childrenByParent);
+        }
     }
 
     internal static Expression<Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>> ForQueueCronJobOccurrence<

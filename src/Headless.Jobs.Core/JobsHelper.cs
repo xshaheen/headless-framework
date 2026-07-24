@@ -31,26 +31,71 @@ public static class JobsHelper
     {
         Argument.IsNotNull(options);
 
-        // If data is already a byte array, short-circuit where possible
-        if (data is byte[] existingBytes)
+        if (data is byte[] existingBytes && _TryPassThroughBytes(existingBytes, options, out var passthrough))
         {
-            // If compression is enabled and data already has the GZip signature, assume it is in the final format
-            if (options.UseGZipCompression && _HasGZipSentinel(existingBytes))
-            {
-                return existingBytes;
-            }
-
-            // If compression is disabled, treat the provided bytes as the final representation
-            if (!options.UseGZipCompression)
-            {
-                return existingBytes;
-            }
+            return passthrough;
         }
 
         var serialized = data is byte[] bytes
             ? bytes
             : JsonSerializer.SerializeToUtf8Bytes(data, options.SerializerOptions);
 
+        return _CompressIfEnabled(serialized, options);
+    }
+
+    /// <summary>
+    /// Serializes <paramref name="data"/> as its declared <paramref name="inputType"/> to the persistence byte array
+    /// format, applying GZip compression when
+    /// <see cref="JobsRequestSerializationOptions.UseGZipCompression"/> is <see langword="true"/>. The non-generic
+    /// counterpart of <see cref="CreateJobRequest{T}"/>, used by the chain enqueue path where a step captures its
+    /// payload as <see cref="object"/> plus a runtime <see cref="Type"/>; serializing as
+    /// <paramref name="inputType"/> keeps the stored JSON identical to the typed overload.
+    /// </summary>
+    /// <param name="data">The value to serialize.</param>
+    /// <param name="inputType">The declared type to serialize <paramref name="data"/> as.</param>
+    /// <param name="options">The per-host request serialization settings.</param>
+    /// <returns>
+    /// A UTF-8 JSON byte array when compression is disabled, or a GZip-compressed byte array with a four-byte GZip
+    /// signature appended as a sentinel when compression is enabled.
+    /// </returns>
+    public static byte[] CreateJobRequest(object data, Type inputType, JobsRequestSerializationOptions options)
+    {
+        Argument.IsNotNull(data);
+        Argument.IsNotNull(inputType);
+        Argument.IsNotNull(options);
+
+        if (data is byte[] existingBytes && _TryPassThroughBytes(existingBytes, options, out var passthrough))
+        {
+            return passthrough;
+        }
+
+        var serialized = data is byte[] bytes
+            ? bytes
+            : JsonSerializer.SerializeToUtf8Bytes(data, inputType, options.SerializerOptions);
+
+        return _CompressIfEnabled(serialized, options);
+    }
+
+    // Short-circuits when the caller already handed us the final byte representation: compression-off passes any
+    // byte[] through verbatim, and compression-on passes an already-signed GZip payload through untouched.
+    private static bool _TryPassThroughBytes(
+        byte[] existingBytes,
+        JobsRequestSerializationOptions options,
+        out byte[] result
+    )
+    {
+        if (!options.UseGZipCompression || _HasGZipSentinel(existingBytes))
+        {
+            result = existingBytes;
+            return true;
+        }
+
+        result = [];
+        return false;
+    }
+
+    private static byte[] _CompressIfEnabled(byte[] serialized, JobsRequestSerializationOptions options)
+    {
         if (!options.UseGZipCompression)
         {
             return serialized;
@@ -146,7 +191,9 @@ public static class JobsHelper
             if (expandedStream.Length > maxDecompressedBytes - read)
             {
                 throw new InvalidDataException(
-                    $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
+                    FormattableString.Invariant(
+                        $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
+                    )
                 );
             }
 

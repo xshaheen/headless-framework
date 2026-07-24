@@ -132,6 +132,83 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
+    /// U5/KTD3 timed-descendant claim gate: keeps a timed chain descendant (<c>ParentId != null</c> AND
+    /// <c>ExecutionTime != null</c>) with a parent-terminal-gated <c>RunCondition</c> out of the claim until its parent
+    /// reached the MATCHING terminal state. Rows with no parent, no execution time, or a non-gated run condition
+    /// (<c>InProgress</c> / <see langword="null"/>) pass untouched. The parent lookup is a correlated subquery over
+    /// <paramref name="allJobs"/> (the same <c>DbSet</c>), so EF evaluates the whole predicate inside the atomic claim
+    /// on the database — never a pre-evaluated local. Mirrors the in-memory <c>_ParentGateAllowsClaim</c> and the
+    /// native-SQL <c>EXISTS</c> gate; the three must stay in lockstep.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereClaimableUnderParentTerminalGate<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        IQueryable<TTimeJob> allJobs
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            e.ParentId == null
+            || e.ExecutionTime == null
+            || (
+                e.RunCondition != RunCondition.OnSuccess
+                && e.RunCondition != RunCondition.OnFailure
+                && e.RunCondition != RunCondition.OnCancelled
+                && e.RunCondition != RunCondition.OnFailureOrCancelled
+                && e.RunCondition != RunCondition.OnAnyCompletedStatus
+            )
+            || allJobs.Any(parent =>
+                parent.Id == e.ParentId
+                && (
+                    (
+                        e.RunCondition == RunCondition.OnSuccess
+                        && (parent.Status == JobStatus.Succeeded || parent.Status == JobStatus.DueDone)
+                    )
+                    || (e.RunCondition == RunCondition.OnFailure && parent.Status == JobStatus.Failed)
+                    || (e.RunCondition == RunCondition.OnCancelled && parent.Status == JobStatus.Cancelled)
+                    || (
+                        e.RunCondition == RunCondition.OnFailureOrCancelled
+                        && (parent.Status == JobStatus.Failed || parent.Status == JobStatus.Cancelled)
+                    )
+                    || (
+                        e.RunCondition == RunCondition.OnAnyCompletedStatus
+                        && (
+                            parent.Status == JobStatus.Succeeded
+                            || parent.Status == JobStatus.DueDone
+                            || parent.Status == JobStatus.Failed
+                            || parent.Status == JobStatus.Cancelled
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// U5/KTD3 reconcile helper: keeps only the rows whose parent has reached any terminal state (correlated subquery
+    /// over <paramref name="allJobs"/>). Combined with a base filter to idle timed gated children, this yields the
+    /// children whose parent has settled and therefore need release-or-skip reconciliation.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereParentIsTerminal<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        IQueryable<TTimeJob> allJobs
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            allJobs.Any(parent =>
+                parent.Id == e.ParentId
+                && (
+                    parent.Status == JobStatus.Succeeded
+                    || parent.Status == JobStatus.DueDone
+                    || parent.Status == JobStatus.Failed
+                    || parent.Status == JobStatus.Cancelled
+                    || parent.Status == JobStatus.Skipped
+                )
+            )
+        );
+    }
+
+    /// <summary>
     /// Selects the non-terminal rows owned by <paramref name="owner"/> for dead-node reclaim. Unlike
     /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms (KTD5/R4): a survivor reacting
     /// to a dead incarnation reclaims only that incarnation's rows — never unowned-but-idle rows nor a

@@ -64,10 +64,37 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             timeProvider: timeProvider,
             guidGenerator: guidGenerator
         );
-        TimeJobEntity job = FluentChainJobBuilder<TimeJobEntity>
-            .BeginWith(parent => parent.SetFunction(_FunctionName).SetExecutionTime(now.UtcDateTime.AddHours(1)))
-            .WithFirstChild(child => child.SetFunction(_FunctionName))
-            .WithFirstGrandChild(grandChild => grandChild.SetFunction(_FunctionName));
+        // A pre-built root -> child -> grandchild tree with no ids or parent links, but every node carries distinct
+        // stale (non-now) CreatedAt/UpdatedAt. The manager must OVERWRITE those with its injected clock — asserted
+        // below — not merely fill defaults on unstamped nodes.
+        var stale = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var job = new TimeJobEntity
+        {
+            Function = _FunctionName,
+            ExecutionTime = now.UtcDateTime.AddHours(1),
+            CreatedAt = stale,
+            UpdatedAt = stale.AddDays(1),
+            Children =
+            [
+                new TimeJobEntity
+                {
+                    Function = _FunctionName,
+                    RunCondition = RunCondition.OnSuccess,
+                    CreatedAt = stale.AddDays(2),
+                    UpdatedAt = stale.AddDays(3),
+                    Children =
+                    [
+                        new TimeJobEntity
+                        {
+                            Function = _FunctionName,
+                            RunCondition = RunCondition.OnSuccess,
+                            CreatedAt = stale.AddDays(4),
+                            UpdatedAt = stale.AddDays(5),
+                        },
+                    ],
+                },
+            ],
+        };
 
         var result = await sut.Time.AddAsync(job, AbortToken);
 

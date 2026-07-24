@@ -181,8 +181,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <see langword="false"/> when the job is unknown, already terminal, or already had a cancellation recorded.
     /// </returns>
     /// <remarks>
-    /// Cancelling an Idle job also propagates down its child chain: children whose run condition admits a
-    /// cancelled parent are released to run, and the rest of the branch is stamped <c>Skipped</c>.
+    /// Cancelling an Idle job also propagates down its NON-timed child chain: non-timed children whose run condition
+    /// admits a cancelled parent are released to run, and the rest of the non-timed branch is stamped <c>Skipped</c>.
+    /// The cancelled parent's <b>timed</b> descendants are reconciled separately via
+    /// <see cref="ApplyParentTerminalRunConditionsAsync"/> (the manager drives it right after cancellation so the
+    /// released-child scheduler wake is threaded through the same path as the executor/sweep reconcile).
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default);
@@ -201,6 +204,48 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reconciles the <b>timed</b> chain descendants (<c>ExecutionTime != null</c>) of parents that have reached a
+    /// terminal state — the release/skip half of the timed-descendant gate that the claim paths enforce (R13). For
+    /// every idle timed child whose parent is terminal: when its <c>RunCondition</c> matches the parent's terminal
+    /// state it is <i>released</i> (a child whose execution time already passed is re-stamped to the store's now so the
+    /// staleness-filtered main peek claims it promptly); when it does not match it is stamped <c>Skipped</c> together
+    /// with its whole subtree. Non-timed descendants are handled by the in-process executor, not here.
+    /// </summary>
+    /// <param name="parentId">
+    /// When non-<see langword="null"/>, only that parent's timed children are reconciled (invoked per-parent right
+    /// after a terminal completion). When <see langword="null"/>, every terminal parent's timed children are
+    /// reconciled in one set-based pass (invoked after the dead-node / stalled-lease sweeps terminalize parents in
+    /// bulk).
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the reconcile.</param>
+    /// <returns>
+    /// The earliest execution time among the released children (so the caller can wake the scheduler for it via
+    /// <c>IJobsHostScheduler.RestartIfNeeded</c> once the releasing write has committed), or <see langword="null"/>
+    /// when nothing was released.
+    /// </returns>
+    /// <remarks>
+    /// Providers that do not implement timed chain descendants may leave the default no-op: the claim gate alone still
+    /// prevents a timed child from running before its parent, but a non-matching timed child would then stay idle
+    /// until <see cref="SkipStrandedTimedChildrenAsync"/> or a fallback sweep reaches it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<DateTime?> ApplyParentTerminalRunConditionsAsync(
+        Guid? parentId,
+        CancellationToken cancellationToken = default
+    ) => Task.FromResult<DateTime?>(null);
+
+    /// <summary>
+    /// The skip-only half of <see cref="ApplyParentTerminalRunConditionsAsync"/>, run as a poll-time safety net: for
+    /// every idle timed child whose parent reached a <b>non-matching</b> terminal state, stamps it (and its subtree)
+    /// <c>Skipped</c>, so a terminalization path that never invoked the per-parent reconcile can never permanently
+    /// strand a timed child. It <b>never</b> releases a child — it cannot make one eligible early.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the sweep.</param>
+    /// <returns>The number of rows stamped <c>Skipped</c>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
 
     /// <summary>
     /// Applies <paramref name="functionContext"/> to still-owned time jobs and returns the IDs that were actually
@@ -605,6 +650,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The number of rows written, which counts inserted <b>children as well as roots</b> and is therefore usually
     /// larger than <c>jobs.Length</c> for job chains.
     /// </returns>
+    /// <remarks>
+    /// <b>All-or-nothing.</b> The whole call — every root and every nested descendant across all chains — is written
+    /// as a single atomic unit: on any failure no row from this call is persisted, so a chain is never left partially
+    /// visible. The scheduler's chain enqueue relies on this to persist a multi-node tree atomically (issue #311,
+    /// R10); custom providers <b>must</b> preserve the all-or-nothing contract.
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
 

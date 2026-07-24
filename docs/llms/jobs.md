@@ -12,6 +12,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Core Concepts](#core-concepts)
     - [Job Types](#job-types)
     - [The `[JobFunction]` Attribute and Source Generator](#the-jobfunction-attribute-and-source-generator)
+    - [Typed Job Chains](#typed-job-chains)
     - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
     - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
     - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
@@ -145,6 +146,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from `JobFunctionProvider.JobFunctionDescriptors`.
 - `EnqueueOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
+- Author multi-step workflows with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(payload | descriptor)`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. See [Typed Job Chains](#typed-job-chains).
 - `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and never performs catch-up replay.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
@@ -158,7 +160,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 
 Jobs supports two first-class job types:
 
-**Time jobs** (`TimeJobEntity`) — one-off jobs scheduled to run at a specific UTC `ExecutionTime`. Managed via `ITimeJobManager<TTimeJob>`. Supports parent–child chains (up to 3 levels, 5 children per level) using `FluentChainJobBuilder<TTimeJob>`.
+**Time jobs** (`TimeJobEntity`) — one-off jobs scheduled to run at a specific UTC `ExecutionTime`. Managed via `ITimeJobManager<TTimeJob>`, or composed into conditional sequential trees with the typed [`JobChain`](#typed-job-chains) authoring model (up to `MaxChainDepth` nodes deep, default 10).
 
 **Cron jobs** (`CronJobEntity`) — recurring jobs defined by a cron expression (`Expression` property). Each firing generates a `CronJobOccurrenceEntity` that is claimed and executed by a scheduler worker. Managed via `ICronJobManager<TCronJob>`.
 
@@ -187,6 +189,55 @@ public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, Cancell
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
 Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after all configured `AddJobsDiscovery(...)` assemblies load.
+
+### Typed Job Chains
+
+A **job chain** composes one root time job with conditional continuation steps into a single tree that the scheduler persists and executes atomically. Author it with the typed `JobChain` model (`Headless.Jobs.Abstractions`); it never names a handler contract — every step's identity is a generated `JobFunctionDescriptor`, resolved from the step's payload type (or supplied explicitly for a requestless step).
+
+```csharp
+using Headless.Jobs;
+
+// processOrder → chargeCard; on success send a receipt, on failure refund. scheduler is an injected IJobScheduler.
+var chain = JobChain.Start(new ProcessOrder(orderId));
+var chargeCard = chain.Root.Then(new ChargeCard(orderId));   // runs when ProcessOrder succeeds
+chargeCard.Then(new SendReceipt(orderId));                   // runs when ChargeCard succeeds
+chargeCard.Catch(new RefundPayment(orderId));                // runs when ChargeCard fails
+
+var rootJobId = await scheduler.EnqueueAsync(chain.Build(), ct);
+```
+
+- `JobChain.Start<TRequest>(payload, options?, executionTime?)` — or `JobChain.Start(descriptor, options?, executionTime?)` for a requestless root — returns a `JobChainBuilder`; `builder.Root` is the root node handle.
+- `Then(...)` attaches the single on-success child and `Catch(...)` the single on-failure child; each returns the new child handle so a branch can be extended further. A second `Then` (or second `Catch`) on the same node throws `InvalidOperationException`.
+- `Build()` freezes the tree into an immutable `JobChain`. `IJobScheduler.EnqueueAsync(JobChain, ct)` resolves every node's descriptor, enforces the depth limit, and persists the root plus its whole descendant tree in one atomic write, returning the root job's `Guid`.
+
+**Semantics**
+
+- `Then` persists `RunCondition.OnSuccess`; `Catch` persists `RunCondition.OnFailure`. `Catch` is pure on-failure sugar — it does **not** recover the parent. A caught parent stays `Failed`, and a failing catch step is just another failed job whose own `Then` / `Catch` continuations follow the same rules.
+- Any node (including the root) may carry both a success branch and a failure branch, and only those two — there is no parallel fan-out. A **root-only chain** (no children) is valid.
+- Each step carries `EnqueueOptions` (description, retries, retry intervals, node-death policy) plus an optional explicit execution time. Priority is **not** per-step — it is generated from `[JobFunction]` metadata and stays descriptor-canonical.
+- `Build()` returns an immutable value; each `EnqueueAsync` materializes fresh entities, so re-enqueueing the same built chain yields independent trees.
+
+**Timed descendants** — a descendant given an explicit execution time becomes eligible at the **later** of (a) its parent reaching the terminal state that matches its edge and (b) its own execution time. It never starts before its parent completes, and its execution time arriving alone never runs, fails, or skips it. When the parent instead reaches a **non-matching** terminal state (for example the parent fails while the child is an `OnSuccess` step), the timed descendant is skipped together with its subtree — mirroring the non-timed skip cascade.
+
+**Depth limit** — `SchedulerOptionsBuilder.MaxChainDepth` (default `10`) bounds the longest root-to-leaf path; on-success and on-failure edges both count. It is enforced by `EnqueueAsync` before any row is written, and the error names the configured limit. `JobChainBuilder.Build()` additionally enforces a hard structural bound of `JobChain.MaxStructuralDepth` (64), which is also the ceiling `MaxChainDepth` may be raised to — the registration guard rejects a larger value so the two limits can never contradict.
+
+**Operational caveats**
+
+- The whole chain executes in-process under the root's single pickup lease: the root claims and holds its descendants to the configured depth, and continuations recurse within that one lease. If the owning node crashes mid-chain after the root already completed, the running tail can be orphaned — reclaim returns a non-timed descendant to idle with no execution time and nothing re-picks it up. Per-node `OnNodeDeath` policies still apply; per-node independent pickup is deferred hardening. Treat this as a known limitation.
+- Lowering `MaxChainDepth` after deeper chains were already persisted truncates runtime traversal for those chains — nodes below the new limit are no longer claimed. This is an operational caveat, not a guarded error.
+
+**Migrating from the old fluent chain builder** — the removed fluent chain builder (its `BeginWith` / `WithFirstChild` / `SetRunCondition` surface) exposed persisted function-name strings and the entity tree directly, capped chains at two child levels with five slots per level, and let steps set arbitrary `RunCondition` values. The typed `JobChain` replaces it:
+
+| Removed fluent chain builder | Typed `JobChain` |
+|---|---|
+| `BeginWith(p => p.SetFunction("…").SetRequest(payload))` | `JobChain.Start(payload)` / `JobChain.Start(descriptor)` |
+| `.WithFirstChild(…)` … `.WithFifthChild(…)` (5 success slots) | `node.Then(payload)` — one on-success child |
+| `child.SetRunCondition(RunCondition.OnFailure)` | `node.Catch(payload)` — one on-failure child |
+| `.WithFirstGrandChild(…)` … (2 child levels, 5 slots each) | any depth up to `MaxChainDepth` (default 10) |
+| `child.SetFunction` / `SetRequest` / `SetDescription` / `SetRetries` / `SetOnNodeDeath` / `SetExecutionTime` | `EnqueueOptions` + the `executionTime` argument on `Start` / `Then` / `Catch` |
+| `TTimeJob job = builder.Build(); await timeJobManager.AddAsync(job, ct)` | `await scheduler.EnqueueAsync(chain.Build(), ct)` |
+
+Arbitrary `RunCondition` values are no longer authorable — only `OnSuccess` (`Then`) and `OnFailure` (`Catch`). The persisted `RunCondition` enum keeps all its members for existing data, but the typed builder never emits `InProgress`, `OnCancelled`, `OnFailureOrCancelled`, or `OnAnyCompletedStatus`.
 
 ### Lease Model and Sliding Renewal
 
@@ -282,7 +333,7 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Exception types**: `JobValidatorException` (with `Errors` list for batch failures); `TerminateExecutionException` (stop without retry, optional final `JobStatus`).
-- **Fluent chain builder**: `FluentChainJobBuilder<TTimeJob>` defines parent–child–grandchild job chains up to 3 levels / 5 siblings per level without reading ambient identity or clock state. The manager stamps the complete tree when it is added.
+- **Typed job chains**: `JobChain` / `JobChainBuilder` / `JobChainNodeBuilder` author a conditional sequential tree of descriptor-backed steps — `Then` (on-success) and `Catch` (on-failure), one of each per node — frozen by `Build()` into an immutable `JobChain` and enqueued atomically through `IJobScheduler.EnqueueAsync(JobChain, …)`. See [Typed Job Chains](#typed-job-chains).
 - **Global exception handler**: `IJobExceptionHandler` with `HandleExceptionAsync` and `HandleCanceledExceptionAsync`.
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
 
@@ -399,7 +450,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
-- **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a fluent chain.
+- **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a persisted job chain.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. `LongRunning` work receives a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4). Long-running admission is queued on a detached lane (capped at two parked admissions per slot), so a saturated budget never blocks the dispatch loop; an admission rejected at the cap or dropped by cancellation/shutdown is recovered by the fallback reclaim sweep when its pickup lease lapses.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
@@ -414,7 +465,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
-`AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. `FluentChainJobBuilder<TTimeJob>` therefore builds an unstamped object graph; `ITimeJobManager.AddAsync` / `AddBatchAsync` assign missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
+`AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
@@ -424,7 +475,7 @@ Each `IHost` receives its own immutable runtime registry projected from the cano
 
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 
-Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+Claiming a chained time job leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied by the parent's terminal state. A descendant carrying its own execution time is not claimed with the parent — it becomes claimable independently at the later of the parent's matching terminal state and its own time (see [Typed Job Chains](#typed-job-chains)). Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
 
@@ -547,6 +598,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
+        scheduler.MaxChainDepth = 10; // default: 10; range 1..JobChain.MaxStructuralDepth (64)
     });
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
@@ -837,7 +889,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
-- **Atomic chain claims**: a root time-job claim leases its direct children and grandchildren to the same owner in one database update; fallback recovery uses the same tree claim and never steals a live queued lease.
+- **Atomic chain claims**: a root time-job claim leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner — atomically via a recursive CTE on the native PostgreSQL / SQL Server providers, and via a sequenced frontier walk on the EF CAS fallback where each descendant copies the root's exact lease deadline, a partial claim is pruned to the set actually claimed, and an unexecuted claimed root is recovered by the stalled-lease sweep. Fallback recovery uses the same tree claim and never steals a live queued lease.
 - **Bounded compatibility recovery**: EF CAS fallback orders overdue roots by execution time and ID and processes at
   most 100 candidates per sweep, matching the native provider claim ceiling while retaining each row's CAS fence.
 - **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
@@ -1116,7 +1168,7 @@ When the owning node dies mid-execution, `NodeDeathPolicy` determines the row's 
 | `MarkFailed` | Terminal `Failed`; never re-run | Second run is wrong; surface the failure |
 | `Skip` | Terminal `Skipped`; never re-run | Must run at most once |
 
-Set it on the entity or via the fluent builder:
+Set it on the entity directly, per step via `EnqueueOptions` on the scheduler, or per node in a typed chain:
 
 ```csharp
 // On the entity directly
@@ -1130,11 +1182,19 @@ await timeJobManager.AddAsync(
     ct
 );
 
-// Via FluentChainJobBuilder
-var job = FluentChainJobBuilder<TimeJobEntity>.BeginWith(p =>
-    p.SetFunction("ChargeCard").SetOnNodeDeath(NodeDeathPolicy.MarkFailed).SetExecutionTime(DateTime.UtcNow)
+// Per step through IJobScheduler (EnqueueOptions carries the policy)
+await scheduler.EnqueueAsync(
+    new ChargeCard(orderId),
+    new EnqueueOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed },
+    ct
 );
-await timeJobManager.AddAsync(job, ct);
+
+// Per node in a typed JobChain
+var chain = JobChain.Start(
+    new ChargeCard(orderId),
+    new EnqueueOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed }
+);
+await scheduler.EnqueueAsync(chain.Build(), ct);
 
 // On a cron job (propagates to all occurrences)
 await cronJobManager.AddAsync(

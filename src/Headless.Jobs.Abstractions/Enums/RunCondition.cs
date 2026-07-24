@@ -4,8 +4,8 @@ namespace Headless.Jobs.Enums;
 
 /// <summary>
 /// Determines when a child time job is eligible to run relative to its parent's terminal status.
-/// Set on <c>TimeJobEntity.RunCondition</c> when building chained job trees via
-/// <c>FluentChainJobBuilder</c>.
+/// Set on <c>TimeJobEntity.RunCondition</c> when a <see cref="JobChain"/> is persisted —
+/// <c>Then</c> maps to <see cref="OnSuccess"/> and <c>Catch</c> to <see cref="OnFailure"/>.
 /// </summary>
 /// <remarks>
 /// New members may be added in future versions; consumers assign this enum rather than
