@@ -40,7 +40,7 @@ public sealed class DefaultCorsPipelineTests : TestBase
         // (e.g. the gateway proxy's IHttpClientFactory) must resolve even though this test never calls them.
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
-        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<MessagingDashboardCache>();
         builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         builder.Services.AddSingleton<GatewayProxyAgent>();
