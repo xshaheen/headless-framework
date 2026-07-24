@@ -30,8 +30,10 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Expression")
@@ -69,12 +71,13 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasColumnType("bigint")
                         .HasDefaultValue(0L);
 
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("TimeZoneId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -92,20 +95,23 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("CronJobId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("CronJobId")
-                        .HasColumnType("uuid");
+                    b.Property<DateTime?>("DateExecuted")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");
 
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("DateExecuted")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
@@ -132,9 +138,6 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CronJobId")
@@ -148,8 +151,14 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasDatabaseName("UQ_CronJobId_ExecutionTime")
                         .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
 
+                    b.HasIndex("OwnerId", "Status")
+                        .HasDatabaseName("IX_CronJobOccurrence_OwnerId_Status");
+
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
+
+                    b.HasIndex("Status", "LockedUntil")
+                        .HasDatabaseName("IX_CronJobOccurrence_Status_LockedUntil");
 
                     b.ToTable("CronJobOccurrences", "jobs");
                 });
@@ -168,8 +177,13 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DateExecuted")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<long>("ElapsedTime")
@@ -177,9 +191,6 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("DateExecuted")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
@@ -229,8 +240,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 
@@ -239,8 +251,17 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.HasIndex("ParentId");
 
+                    b.HasIndex("OwnerId", "Status")
+                        .HasDatabaseName("IX_TimeJob_OwnerId_Status");
+
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
+
+                    b.HasIndex("Status", "LockedUntil")
+                        .HasDatabaseName("IX_TimeJob_Status_LockedUntil");
+
+                    b.HasIndex("TenantId", "Status", "ExecutionTime")
+                        .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
 
                     b.ToTable("TimeJobs", "jobs");
                 });

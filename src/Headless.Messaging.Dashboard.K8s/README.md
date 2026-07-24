@@ -86,3 +86,4 @@ The dashboard stores the selected Service name, not a client-composed endpoint. 
 - Queries Kubernetes API for Services
 - Requires appropriate RBAC permissions to read Services in the configured namespace
 - Periodically polls for cluster topology changes
+- Node counts are memoized in `MessagingDashboardCache` (registered by `Headless.Messaging.Dashboard`) for 60s, or 20s after a discovery failure

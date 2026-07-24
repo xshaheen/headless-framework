@@ -9,10 +9,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Headless.Jobs.Api.Demo.Migrations
+namespace Headless.Jobs.Console.Demo.Migrations
 {
     [DbContext(typeof(JobsDbContext))]
-    [Migration("20260608013229_InitialJobsOperationalStore")]
+    [Migration("20260724084445_InitialJobsOperationalStore")]
     partial class InitialJobsOperationalStore
     {
         /// <inheritdoc />
@@ -20,7 +20,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -33,8 +33,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Expression")
@@ -48,6 +50,16 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsPaused")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<byte[]>("Request")
                         .HasColumnType("bytea");
 
@@ -57,8 +69,18 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.PrimitiveCollection<int[]>("RetryIntervals")
                         .HasColumnType("integer[]");
 
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("ScheduleRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.HasKey("Id");
 
@@ -76,11 +98,17 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("CronJobId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("CronJobId")
-                        .HasColumnType("uuid");
+                    b.Property<DateTime?>("DateExecuted")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");
@@ -88,17 +116,19 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("DateExecuted")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("LockHolder")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LockedAt")
+                    b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
 
                     b.Property<int>("RetryCount")
                         .HasColumnType("integer");
@@ -106,11 +136,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("SkippedReason")
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.HasKey("Id");
 
@@ -122,10 +151,17 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.HasIndex("CronJobId", "ExecutionTime")
                         .IsUnique()
-                        .HasDatabaseName("UQ_CronJobId_ExecutionTime");
+                        .HasDatabaseName("UQ_CronJobId_ExecutionTime")
+                        .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
+
+                    b.HasIndex("OwnerId", "Status")
+                        .HasDatabaseName("IX_CronJobOccurrence_OwnerId_Status");
 
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
+
+                    b.HasIndex("Status", "LockedUntil")
+                        .HasDatabaseName("IX_CronJobOccurrence_Status_LockedUntil");
 
                     b.ToTable("CronJobOccurrences", "jobs");
                 });
@@ -136,11 +172,21 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("CancelRequested")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DateExecuted")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DateUpdated")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<long>("ElapsedTime")
@@ -148,9 +194,6 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("DateExecuted")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
@@ -162,11 +205,16 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
 
-                    b.Property<string>("LockHolder")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LockedAt")
+                    b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uuid");
@@ -183,17 +231,21 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.PrimitiveCollection<int[]>("RetryIntervals")
                         .HasColumnType("integer[]");
 
-                    b.Property<int?>("RunCondition")
-                        .HasColumnType("integer");
+                    b.Property<string>("RunCondition")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("SkippedReason")
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime>("DateUpdated")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 
@@ -202,8 +254,17 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.HasIndex("ParentId");
 
+                    b.HasIndex("OwnerId", "Status")
+                        .HasDatabaseName("IX_TimeJob_OwnerId_Status");
+
                     b.HasIndex("Status", "ExecutionTime")
                         .HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
+
+                    b.HasIndex("Status", "LockedUntil")
+                        .HasDatabaseName("IX_TimeJob_Status_LockedUntil");
+
+                    b.HasIndex("TenantId", "Status", "ExecutionTime")
+                        .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
 
                     b.ToTable("TimeJobs", "jobs");
                 });

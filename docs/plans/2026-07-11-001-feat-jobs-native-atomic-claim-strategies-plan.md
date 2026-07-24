@@ -40,7 +40,7 @@ The optimization cannot weaken current Jobs correctness. A claim includes lease 
 - R3. The existing EF optimistic-CAS algorithm remains the default for consumers that do not install a native strategy and for unsupported EF providers.
 - R4. Provider selection composes through the existing Jobs EF builder; standalone `IServiceCollection.Add*ClaimPath` APIs are not introduced.
 - R5. All strategies preserve `Idle`/`Queued` eligibility, same-owner reacquisition, unleased-row pickup, and expired-lease pickup only for `OnNodeDeath == Retry`.
-- R6. Successful claims atomically stamp `OwnerId`, `LockedUntil`, `UpdatedAt`, and the expected queued state, and return only rows won by the current owner.
+- R6. Successful claims atomically stamp `OwnerId`, `LockedUntil`, `DateUpdated`, and the expected queued state, and return only rows won by the current owner.
 - R7. Time-job claims preserve root plus direct-child and grandchild owner/lease stamping while transitioning only the root to `Queued`.
 - R8. Cron-occurrence claims preserve cron-definition projection, eligibility, ordering, and lease behavior.
 - R9. Main-window and fallback-window timing semantics remain unchanged, including their distinct optimistic predicates.
@@ -169,7 +169,7 @@ U1 establishes the internal seam and default behavior. U2 and U3 can then implem
   - Existing `UseEntityFramework` registration resolves the CAS strategy and produces the same eligibility/projection behavior as before.
   - PostgreSQL or SQL Server strategy selection replaces CAS regardless of whether surrounding Coordination and Jobs registrations occur before or after it.
   - Selecting both native strategies produces an actionable registration-time error.
-  - Direct time-job claiming retains exact `UpdatedAt` fencing; fallback claiming retains its owner-agnostic fallback predicate.
+  - Direct time-job claiming retains exact `DateUpdated` fencing; fallback claiming retains its owner-agnostic fallback predicate.
   - Same-owner, unleased, expired-Retry, expired-MarkFailed, and expired-Skip rows match the current predicate matrix.
 - **Verification:** Focused unit tests pass, public API review shows no capability flag or scheduler database branch, and existing EF consumers compile unchanged.
 

@@ -137,3 +137,4 @@ options.UseDashboard(dashboard =>
 - Exposes a web endpoint at the configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
 - Authentication must be configured explicitly (an auth mode, or an explicit `WithNoAuth()` opt-out) or the host fails to start; no CORS policy is applied by default (same-origin only)
+- Registers `MessagingDashboardCache`, the dashboard's own in-process cache. The dashboard does **not** call `AddMemoryCache()`, so it never registers the shared `IMemoryCache` into your container and its entries never compete for your cache's size limit or get dropped by your compaction. It is not a `Headless.Caching` `ICache` because `AddHeadlessCaching` accepts only one call per service collection — registering one here would throw for any consumer that configures caching themselves, or force the caching package on consumers who only wanted a dashboard
