@@ -33,6 +33,21 @@ public sealed class HeadlessCachingSetupBuilder
     /// </summary>
     public bool IncludeKeyInTraces { get; set; }
 
+    /// <summary>
+    /// Whether <c>cache.Events</c> handlers run synchronously on the firing thread instead of on a background task.
+    /// Default <see langword="false"/> (background): a slow or blocking handler cannot stall a cache operation. Enable
+    /// only when deterministic ordering relative to the operation is required and handlers are known to be fast.
+    /// Applies to every cache instance registered by this <c>AddHeadlessCaching</c> call.
+    /// </summary>
+    public bool SyncHandlers { get; set; }
+
+    /// <summary>
+    /// The log level used to record an exception thrown by a synchronous <c>cache.Events</c> handler. Default
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>.
+    /// </summary>
+    public Microsoft.Extensions.Logging.LogLevel EventHandlerErrorLogLevel { get; set; } =
+        Microsoft.Extensions.Logging.LogLevel.Warning;
+
     internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
     internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];

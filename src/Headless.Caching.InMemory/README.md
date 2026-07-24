@@ -16,6 +16,7 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 - O(1) logical tag invalidation and `ClearAsync` through per-tag and clear-generation timestamp markers (Family-2), compared against each entry's birth time on read.
 - Optional value cloning for isolation.
 - Implements `IBufferCache` — stores framed bytes, slices to the caller's `IBufferWriter<byte>` on read, copies the `ReadOnlySequence<byte>` on write, with the same stamping as the generic path (no intermediate `byte[]` on the fast path).
+- `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l1`), `Eviction` (with reason `expired`/`capacity`/`removed`/`flushed`, including lazy read-path expiry reaps), and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes
@@ -79,6 +80,13 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 ```
 
 Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
+
+Cache events — in-memory adds `Eviction` (handlers run on a background task by default; opt into synchronous execution with `setup.SyncHandlers = true`):
+
+```csharp
+cache.Events.Hit.AddHandler(e => logger.LogDebug("cache hit {Key}", e.Key));
+cache.Events.Eviction.AddHandler(e => logger.LogDebug("evicted {Key}: {Reason}", e.Key, e.Reason));
+```
 
 ## Configuration
 

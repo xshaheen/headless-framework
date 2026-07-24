@@ -355,4 +355,22 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     {
         return base.should_expire_raw_written_payload_after_duration();
     }
+
+    [Fact]
+    public override Task should_raise_set_and_hit_events_on_contract_operations()
+    {
+        return base.should_raise_set_and_hit_events_on_contract_operations();
+    }
+
+    [Fact]
+    public override Task should_raise_remove_event_on_contract_remove()
+    {
+        return base.should_raise_remove_event_on_contract_remove();
+    }
+
+    [Fact]
+    public override Task should_expose_events_hub_through_wrappers()
+    {
+        return base.should_expose_events_hub_through_wrappers();
+    }
 }

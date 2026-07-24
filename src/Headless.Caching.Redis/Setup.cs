@@ -211,7 +211,8 @@ public static class SetupRedisCache
                     sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),
                     sp.GetService<ILogger<RedisCache>>(),
                     sp.GetService<ICacheFactoryLockProvider>(),
-                    sp.GetService<CacheInstrumentationConfig>()
+                    sp.GetService<CacheInstrumentationConfig>(),
+                    sp.GetService<CacheEventsConfig>()
                 )
         );
 

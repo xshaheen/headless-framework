@@ -45,8 +45,10 @@ public sealed partial class FactoryCacheCoordinator
     }
 
     // Records the factory execution count + latency (monotonic, from the injected TimeProvider) and stamps the
-    // cache.factory child span's outcome, marking it errored on the error outcome.
-    private void _RecordFactoryOutcome(Activity? factoryActivity, long startTimestamp, string outcome)
+    // cache.factory child span's outcome, marking it errored on the error outcome. Also co-emits the matching
+    // FactorySuccess/Error/Timeout event. This is the foreground factory choke point (eager/background refreshes use
+    // RecordRefresh + the refresh events instead).
+    private void _RecordFactoryOutcome(Activity? factoryActivity, long startTimestamp, string key, string outcome)
     {
         CachingMetrics.RecordFactoryExecution(_cacheName, outcome);
         CachingMetrics.RecordFactoryDuration(
@@ -54,6 +56,8 @@ public sealed partial class FactoryCacheCoordinator
             outcome,
             _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds
         );
+
+        EventsHub.OnFactoryOutcome(key, CacheEventMappings.ToFactoryOutcome(outcome));
 
         if (factoryActivity is null)
         {
@@ -69,10 +73,13 @@ public sealed partial class FactoryCacheCoordinator
     }
 
     // Records a fail-safe stale-serving activation. Fail-safe is a normal degradation, not an error: it increments
-    // the metric and is surfaced on the get-or-add span as an event + attribute, never as span error status.
-    private void _RecordFailSafe(Activity? activity, string trigger)
+    // the metric, co-emits the FailSafeActivation event, and is surfaced on the get-or-add span as an event +
+    // attribute, never as span error status.
+    private void _RecordFailSafe(Activity? activity, string key, string trigger)
     {
         CachingMetrics.RecordFailSafeActivation(_cacheName, trigger);
+
+        EventsHub.OnFailSafeActivation(key, CacheEventMappings.ToFailSafeTrigger(trigger));
 
         if (activity is null)
         {
@@ -86,5 +93,23 @@ public sealed partial class FactoryCacheCoordinator
                 tags: new ActivityTagsCollection { { CachingMetrics.TagTrigger, trigger } }
             )
         );
+    }
+
+    // Emits the single aggregate get-or-add outcome event (Hit fresh / Hit stale / Miss) from the resolved outcome
+    // string. Called once from the GetOrAddAsync wrapper after the per-key lock has been released.
+    private void _EmitGetOrAddOutcome(string key, string outcome)
+    {
+        if (string.Equals(outcome, CachingMetrics.OutcomeHit, StringComparison.Ordinal))
+        {
+            EventsHub.OnHit(key, isStale: false);
+        }
+        else if (string.Equals(outcome, CachingMetrics.OutcomeStale, StringComparison.Ordinal))
+        {
+            EventsHub.OnHit(key, isStale: true);
+        }
+        else
+        {
+            EventsHub.OnMiss(key);
+        }
     }
 }

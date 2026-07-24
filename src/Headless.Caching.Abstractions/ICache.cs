@@ -24,6 +24,13 @@ public interface ICache
     CacheEntryOptions? DefaultEntryOptions { get; }
 
     /// <summary>
+    /// Gets the typed, in-process event surface for this cache instance (<c>cache.Events.Hit += handler</c>). The
+    /// default implementation returns the shared <see cref="CacheEvents.NoOp"/> hub, so a cache that does not surface
+    /// events costs nothing; the in-memory, distributed, and hybrid providers override it with a live hub.
+    /// </summary>
+    ICacheEvents Events => CacheEvents.NoOp;
+
+    /// <summary>
     /// Gets a value from cache, or creates it using the factory if not found.
     /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
     /// </summary>

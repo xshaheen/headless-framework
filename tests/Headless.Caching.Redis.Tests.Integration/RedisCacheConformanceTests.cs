@@ -436,4 +436,22 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     {
         return base.should_preserve_ttl_when_set_if_higher_is_a_no_op();
     }
+
+    [Fact]
+    public override Task should_raise_set_and_hit_events_on_contract_operations()
+    {
+        return base.should_raise_set_and_hit_events_on_contract_operations();
+    }
+
+    [Fact]
+    public override Task should_raise_remove_event_on_contract_remove()
+    {
+        return base.should_raise_remove_event_on_contract_remove();
+    }
+
+    [Fact]
+    public override Task should_expose_events_hub_through_wrappers()
+    {
+        return base.should_expose_events_hub_through_wrappers();
+    }
 }
