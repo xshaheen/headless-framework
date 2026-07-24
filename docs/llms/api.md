@@ -196,6 +196,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
+- `IUserAgentParser` — `GetDeviceInfo(userAgent)`, the User-Agent → `"Windows Chrome"` parse behind `IWebClientInfoProvider.DeviceInfo` (implemented in `Headless.Api.Core` over DeviceDetector.NET). Substitute it to stub device detection in tests, or to swap the parser entirely. The default implementation memoizes in a package-private bounded `MemoryCache` (`UserAgentParserOptions`: `MaxEntries` 1000, `SlidingExpiration` 6h, `MaxUserAgentLength` 512 — longer values are truncated before parsing). It deliberately does not use `ICache`: `DeviceInfo` is a synchronous property and the cached value is local regex work, so a remote lookup would cost more than the parse it avoids. It never registers the shared `IMemoryCache`.
 - `IRequestedApiVersion` — API versioning abstraction
 - `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
