@@ -90,4 +90,10 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     {
         return base.two_owner_root_race_leaves_no_split_ownership();
     }
+
+    [Fact]
+    public override Task native_claim_contention_gives_one_owner_the_whole_subtree()
+    {
+        return base.native_claim_contention_gives_one_owner_the_whole_subtree();
+    }
 }

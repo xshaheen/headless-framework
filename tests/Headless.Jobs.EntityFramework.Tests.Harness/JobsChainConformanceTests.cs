@@ -748,6 +748,68 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// R4 (native-CTE contention). Two nodes race the same ≥2-node chain root through the fixtures' NORMAL strategy
+    /// selection — i.e. the provider's recursive-CTE claim (<c>PostgreSqlJobsClaimStrategy</c> /
+    /// <c>SqlServerJobsClaimStrategy</c>), not the generic-EF frontier. The CTE claim is one atomic statement, so
+    /// exactly one node wins the root AND its whole descendant subtree in a single instant; the loser claims nothing,
+    /// no node is split across owners, and every claimed descendant carries the winner's EXACT persisted lease
+    /// deadline (KTD2 invariant 2). Two hosts (distinct nodes, shared database) drive it over the public surface.
+    /// </summary>
+    public virtual async Task native_claim_contention_gives_one_owner_the_whole_subtree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var hostA = fixture.BuildHost("native-a");
+        using var hostB = fixture.BuildHost("native-b");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
+        await hostA.StartAsync(ct);
+        await hostB.StartAsync(ct);
+
+        try
+        {
+            var persistenceA = hostA.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+            var persistenceB = hostB.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+
+            var root = _NewJob("native-root", DateTime.UtcNow.AddSeconds(1));
+            var child = _NewChild(root.Id, RunCondition.OnSuccess, executionTime: null);
+            var grandchild = _NewChild(child.Id, RunCondition.OnSuccess, executionTime: null);
+            await persistenceA.AddTimeJobsAsync([root, child, grandchild], ct);
+
+            // Each node peeks its own snapshot (same persisted UpdatedAt, distinct objects) before either claims.
+            var candA = await _PollEarliestUntilPresentAsync(persistenceA, root.Id, ct);
+            var candB = await _PollEarliestUntilPresentAsync(persistenceB, root.Id, ct);
+
+            var claimedA = await persistenceA.QueueTimeJobsAsync(candA, ct).ToArrayAsync(ct);
+            var claimedB = await persistenceB.QueueTimeJobsAsync(candB, ct).ToArrayAsync(ct);
+
+            (claimedA.Length + claimedB.Length)
+                .Should()
+                .Be(1, "the recursive-CTE claim's root CAS lets exactly one node win");
+
+            var rootRow = await _ReadNodeAsync(root.Id, ct);
+            rootRow.OwnerId.Should().NotBeNullOrWhiteSpace();
+
+            // The winner took the WHOLE subtree in one CTE statement — no descendant split across owners.
+            var childRow = await _ReadNodeAsync(child.Id, ct);
+            childRow.OwnerId.Should().Be(rootRow.OwnerId, "the child belongs to the node that won the root");
+            childRow.LockedUntil.Should().Be(rootRow.LockedUntil, "descendants carry the root's exact lease deadline");
+
+            var grandchildRow = await _ReadNodeAsync(grandchild.Id, ct);
+            grandchildRow.OwnerId.Should().Be(rootRow.OwnerId);
+            grandchildRow.LockedUntil.Should().Be(rootRow.LockedUntil);
+        }
+        finally
+        {
+            await hostB.StopAsync(ct);
+            await hostA.StopAsync(ct);
+        }
+    }
+
     private EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity> _BuildCas(
         Microsoft.Extensions.Hosting.IHost host,
         string owner,
