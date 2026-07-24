@@ -516,12 +516,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var (earliest, _) = await _ReconcileParentTerminalTimedChildrenAsync(
-                dbContext,
-                parentId,
-                skipOnly: false,
-                cancellationToken
-            )
+        var (earliest, _) = await _ReconcileParentTerminalTimedChildrenAsync(dbContext, parentId, cancellationToken)
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -537,16 +532,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var jobs = dbContext.Set<TTimeJob>();
 
-        // Probe for a stranded candidate BEFORE opening a transaction: this is the poll-time safety net, run on every
-        // scheduler tick, and it almost always finds nothing — so the common empty case must not open (and hold) a
-        // transaction. Only a non-empty terminal-candidate set warrants the transactional reconcile below.
-        var hasStrandedCandidate = await _TimedChildReconcileCandidates(jobs)
+        // Probe for a MISMATCHED stranded candidate BEFORE opening a transaction. This is the poll-time safety net
+        // (R1: now gated to the fallback cadence), and it almost always finds nothing — so the common empty case must
+        // not open (and hold) a transaction. Probing the MISMATCHED set (not merely "parent is terminal") is what
+        // makes the sweep bounded and starvation-free: this path only ever skips, never releases, so a page full of
+        // matching (release-side) children — which it never mutates — must not keep re-triggering the reconcile.
+        var hasMismatchedCandidate = await _TimedChildReconcileCandidates(jobs)
             .AsNoTracking()
-            .WhereParentIsTerminal(jobs)
+            .WhereParentTerminalRunConditionMismatched(jobs)
             .AnyAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (!hasStrandedCandidate)
+        if (!hasMismatchedCandidate)
         {
             return 0;
         }
@@ -555,15 +552,54 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var (_, skipped) = await _ReconcileParentTerminalTimedChildrenAsync(
-                dbContext,
-                parentId: null,
-                skipOnly: true,
+        var skipped = await _SkipStrandedTimedChildrenBoundedAsync(dbContext, cancellationToken).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return skipped;
+    }
+
+    // R2/KTD3/KTD6: the poll-time safety net's BOUNDED skip pass. Selects only the rows it mutates — IDLE gated timed
+    // children whose parent reached a NON-matching terminal state — ordered and capped at the same batch size as the
+    // sibling poll queries. Because every selected row leaves the candidate set once skipped, a large stranded backlog
+    // drains monotonically across sweeps, and matching future children (which this path never touches) can never fill
+    // the page and starve it. Only the SELECTION is bounded: the subtree cascade below is deliberately UNCAPPED — it
+    // skips ANY idle descendant, while the candidate predicate requires ExecutionTime != null, so a half-finished
+    // cascade would strand non-timed descendants under a Skipped ancestor with no path that ever re-selects them
+    // (KTD6). The per-parent reconcile (ApplyParentTerminalRunConditionsAsync) stays exhaustive and unbounded; this
+    // bound is the all-parents sweep's alone.
+    private static async Task<int> _SkipStrandedTimedChildrenBoundedAsync(
+        TDbContext dbContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var jobs = dbContext.Set<TTimeJob>();
+
+        var mismatchedIds = await _TimedChildReconcileCandidates(jobs)
+            .AsNoTracking()
+            .WhereParentTerminalRunConditionMismatched(jobs)
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (mismatchedIds.Length == 0)
+        {
+            return 0;
+        }
+
+        var skipped = await _SkipCancellationBranchAsync(
+                jobs,
+                mismatchedIds,
+                ChainRunConditionRules.RunConditionMismatchReason,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        skipped += await _CascadeSkipSubtreeAsync(jobs, mismatchedIds, _AncestorSkippedReason, cancellationToken)
+            .ConfigureAwait(false);
 
         return skipped;
     }
@@ -591,14 +627,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // parent-terminal-gated run condition whose parent has reached a terminal state: a MATCHING run condition releases
     // (a past-due child is re-stamped to the database clock now so the staleness-filtered main peek claims it
     // promptly); a NON-matching one is skipped with its whole subtree. parentId constrains to one parent (per-parent,
-    // from the executor/cancellation); null reconciles all terminal parents (the dead-node/stalled-lease sweep
-    // follow-up). skipOnly is the poll-time safety net that never releases. Returns the earliest execution time among
-    // matching children (for RestartIfNeeded) and the number of rows skipped. DB-clock discipline: DateTime.UtcNow is
-    // inside the ExecuteUpdate expression tree (translated to the server clock), never a pre-evaluated local.
+    // from the executor/cancellation); null reconciles all terminal parents. This is the RELEASE-and-skip path and is
+    // intentionally UNBOUNDED — a terminalizing parent's children must all be reconciled, or the parent's subtree is
+    // left half-settled. The all-parents SKIP-ONLY safety net is bounded separately (SkipStrandedTimedChildrenBounded,
+    // R2/KTD6). Returns the earliest execution time among matching children (for RestartIfNeeded) and the number of
+    // rows skipped. DB-clock discipline: DateTime.UtcNow is inside the ExecuteUpdate expression tree (translated to the
+    // server clock), never a pre-evaluated local.
     private static async Task<(DateTime? Earliest, int Skipped)> _ReconcileParentTerminalTimedChildrenAsync(
         TDbContext dbContext,
         Guid? parentId,
-        bool skipOnly,
         CancellationToken cancellationToken
     )
     {
@@ -653,7 +690,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        if (skipOnly || matchingChildIds.Length == 0)
+        if (matchingChildIds.Length == 0)
         {
             return (null, skipped);
         }

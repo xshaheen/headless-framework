@@ -60,4 +60,16 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     {
         return base.immediate_acquire_leases_the_whole_non_timed_subtree();
     }
+
+    [Fact]
+    public override Task bounded_sweep_drains_a_large_mismatched_backlog_without_starving_on_matching_children()
+    {
+        return base.bounded_sweep_drains_a_large_mismatched_backlog_without_starving_on_matching_children();
+    }
+
+    [Fact]
+    public override Task bounded_sweep_skips_a_mismatched_child_whole_subtree_in_one_pass()
+    {
+        return base.bounded_sweep_skips_a_mismatched_child_whole_subtree_in_one_pass();
+    }
 }

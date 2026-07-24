@@ -5,6 +5,7 @@ using System.Data.Common;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
@@ -498,9 +499,148 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// R2/KTD3/KTD6: the poll-time safety-net sweep bounds its SELECTION at one batch, so a large stranded backlog
+    /// drains monotonically across sweeps — and a full page of MATCHING (release-side) children, which this skip-only
+    /// path never mutates, can never fill the page and starve the mismatched rows it must skip. Seeds a backlog wider
+    /// than the batch cap (impossible through <see cref="JobChain"/>, which allows only two children per node) and
+    /// does not start the host, so the dead-node recovery bridge's own unbounded reconcile cannot confound the count.
+    /// </summary>
+    public virtual async Task bounded_sweep_drains_a_large_mismatched_backlog_without_starving_on_matching_children()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-sweep-bound");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        const int cap = JobsClaimStrategyDefaults.MaxClaimBatchSize;
+        var pastDue = DateTime.UtcNow.AddMinutes(-5);
+
+        // Parent terminalizes as Failed: OnSuccess children mismatch (the skip side), OnFailure children match (the
+        // release side the skip-only sweep must never touch).
+        var parent = _NewJob("sweep-parent", executionTime: pastDue);
+        var mismatched = Enumerable
+            .Range(0, cap + 5)
+            .Select(_ => _NewChild(parent.Id, RunCondition.OnSuccess, pastDue))
+            .ToArray();
+        var matching = Enumerable
+            .Range(0, 10)
+            .Select(_ => _NewChild(parent.Id, RunCondition.OnFailure, pastDue))
+            .ToArray();
+
+        await persistence.AddTimeJobsAsync([parent, .. mismatched, .. matching], ct);
+        await _SetStatusAsync(parent.Id, JobStatus.Failed, ct);
+
+        // First sweep is bounded to exactly one batch of mismatched leaves (no subtree, so no cascade).
+        var firstSkip = await persistence.SkipStrandedTimedChildrenAsync(ct);
+        firstSkip.Should().Be(cap, "the sweep bounds its selection at one batch, not the whole backlog");
+
+        var total = firstSkip;
+        for (var i = 0; i < 5 && total < mismatched.Length; i++)
+        {
+            total += await persistence.SkipStrandedTimedChildrenAsync(ct);
+        }
+
+        total.Should().Be(mismatched.Length, "every mismatched child drains across successive sweeps");
+
+        foreach (var m in mismatched)
+        {
+            (await _ReadNodeAsync(m.Id, ct)).Status.Should().Be(JobStatus.Skipped);
+        }
+
+        foreach (var m in matching)
+        {
+            (await _ReadNodeAsync(m.Id, ct))
+                .Status.Should()
+                .Be(JobStatus.Idle, "matching children are the release side; the skip-only sweep never touches them");
+        }
+    }
+
+    /// <summary>
+    /// KTD6: the sweep bounds only its SELECTION; the subtree cascade under a skipped mismatched child is UNCAPPED.
+    /// Capping the cascade would strand the non-timed descendants — they are not sweep candidates themselves
+    /// (ExecutionTime is null), so no later sweep would ever re-select them — so a single sweep must skip a mismatched
+    /// child's whole subtree in one pass.
+    /// </summary>
+    public virtual async Task bounded_sweep_skips_a_mismatched_child_whole_subtree_in_one_pass()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-sweep-cascade");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var pastDue = DateTime.UtcNow.AddMinutes(-5);
+
+        var parent = _NewJob("cascade-parent", executionTime: pastDue);
+        // One mismatched timed child (OnSuccess under a Failed parent) rooting a WIDE non-timed subtree.
+        var mismatchedChild = _NewChild(parent.Id, RunCondition.OnSuccess, pastDue);
+        var subtree = Enumerable
+            .Range(0, 25)
+            .Select(_ => _NewChild(mismatchedChild.Id, RunCondition.OnSuccess, executionTime: null))
+            .ToArray();
+
+        await persistence.AddTimeJobsAsync([parent, mismatchedChild, .. subtree], ct);
+        await _SetStatusAsync(parent.Id, JobStatus.Failed, ct);
+
+        var skipped = await persistence.SkipStrandedTimedChildrenAsync(ct);
+        skipped
+            .Should()
+            .Be(1 + subtree.Length, "the direct mismatch plus its whole uncapped subtree skip in one sweep");
+
+        (await _ReadNodeAsync(mismatchedChild.Id, ct)).Status.Should().Be(JobStatus.Skipped);
+        foreach (var d in subtree)
+        {
+            (await _ReadNodeAsync(d.Id, ct)).Status.Should().Be(JobStatus.Skipped, "the cascade is uncapped");
+        }
+    }
+
     // ----- helpers -------------------------------------------------------------------------------------------------
 
     private static CoordinatedFacadeRequest _Payload(string tag) => new(Guid.NewGuid(), tag);
+
+    // Directly-seeded root row (ParentId == null). Bypasses JobChain so a test can seed a subtree wider than two
+    // children per node — the shape the bounded sweep needs but the builder cannot express.
+    private static TimeJobEntity _NewJob(string function, DateTime? executionTime)
+    {
+        var now = DateTime.UtcNow;
+        return new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = function,
+            Status = JobStatus.Idle,
+            ExecutionTime = executionTime,
+            OnNodeDeath = NodeDeathPolicy.Retry,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
+    private static TimeJobEntity _NewChild(Guid parentId, RunCondition condition, DateTime? executionTime)
+    {
+        var child = _NewJob("child", executionTime);
+        child.ParentId = parentId;
+        child.RunCondition = condition;
+        return child;
+    }
+
+    // Flips a seeded row's status directly, standing in for a fenced executor completion without needing a running
+    // host (whose recovery bridge would race the sweep under test).
+    private async Task _SetStatusAsync(Guid id, JobStatus status, CancellationToken ct)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;";
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", status.ToString());
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@updatedAt", DateTime.UtcNow);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
 
     private static IEnumerable<Guid> _FlattenIds(TimeJobEntity node)
     {
