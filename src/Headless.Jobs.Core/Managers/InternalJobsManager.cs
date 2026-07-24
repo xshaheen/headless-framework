@@ -20,23 +20,54 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     ILogger<InternalJobsManager<TTimeJob, TCronJob>> logger,
     JobsRequestSerializationOptions serializationOptions,
     IGuidGenerator guidGenerator,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    SchedulerOptionsBuilder schedulerOptions
 ) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    // R1/KTD1: start-tick of the last stranded-child sweep. long.MinValue means "never run", so the first poll after
+    // startup always sweeps and a host that starts with an already-stranded child does not wait out an interval.
+    private long _lastStrandedSweepTicks = long.MinValue;
+
+    private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
+
+    // R1/KTD1: claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
+    // — JobsSchedulerBackgroundService sleeps 1ms whenever work is due — and on the relational providers this backstop
+    // runs a candidate scan, so sweeping per poll cost an unbounded scan at up to ~1kHz per node in EVERY deployment,
+    // including ones that never enqueue a chain. The stamp is taken BEFORE the sweep (start-to-start spacing), so a
+    // sweep that throws also waits out an interval instead of retrying against a struggling database every tick.
+    private bool _TryEnterStrandedSweep()
+    {
+        var nowTicks = timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var last = Volatile.Read(ref _lastStrandedSweepTicks);
+
+        // The long.MinValue arm must be tested first: nowTicks - long.MinValue overflows.
+        if (last != long.MinValue && nowTicks - last < _strandedSweepInterval.Ticks)
+        {
+            return false;
+        }
+
+        // Only one caller wins the slot; a concurrent poller skips rather than double-scanning.
+        return Interlocked.CompareExchange(ref _lastStrandedSweepTicks, nowTicks, last) == last;
+    }
+
     public async Task<(TimeSpan TimeRemaining, JobExecutionState[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     )
     {
-        // U5/KTD3 poll-time safety net: skip (never release) idle timed children whose parent terminalized through a
-        // path that missed the per-parent / set-based reconcile, so a missed terminalization can never permanently
-        // strand a timed child. The skip side never makes a child eligible early, so running it before the peek is
-        // safe — it can only remove candidates that must never run. Best-effort: a failure here must NOT block normal
-        // scheduling; the fallback loop's set-based reconcile guarantees liveness regardless.
+        // U5/KTD3 safety net: skip (never release) idle timed children whose parent terminalized through a path that
+        // missed the per-parent / set-based reconcile, so a missed terminalization can never permanently strand a
+        // timed child. The skip side never makes a child eligible early, so running it before the peek is safe — it
+        // can only remove candidates that must never run. Best-effort: a failure here must NOT block normal
+        // scheduling; the fallback loop's set-based reconcile guarantees liveness regardless. Rate-limited to the
+        // fallback cadence (R1/KTD1) — this is a missed-terminalization backstop, so eventual is sufficient.
         try
         {
-            await persistenceProvider.SkipStrandedTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+            if (_TryEnterStrandedSweep())
+            {
+                await persistenceProvider.SkipStrandedTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

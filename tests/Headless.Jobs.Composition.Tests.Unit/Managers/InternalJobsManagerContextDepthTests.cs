@@ -36,7 +36,8 @@ public sealed class InternalJobsManagerContextDepthTests : TestBase
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
             Substitute.For<IGuidGenerator>(),
-            Substitute.For<IServiceProvider>()
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
     }
 

@@ -55,7 +55,8 @@ public sealed class TimedDescendantReconcileManagerTests : TestBase
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
             sp.GetRequiredService<IGuidGenerator>(),
-            sp
+            sp,
+            sp.GetRequiredService<SchedulerOptionsBuilder>()
         );
 
         return (manager, provider, scheduler);
@@ -186,7 +187,8 @@ public sealed class TimedDescendantReconcileManagerTests : TestBase
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
             sp.GetRequiredService<IGuidGenerator>(),
-            sp
+            sp,
+            sp.GetRequiredService<SchedulerOptionsBuilder>()
         );
 
         var accepted = await manager.RequestTimeJobCancellationAsync(jobId, AbortToken);
