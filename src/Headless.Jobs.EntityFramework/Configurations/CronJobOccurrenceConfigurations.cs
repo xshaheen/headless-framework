@@ -24,9 +24,9 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
 
         builder.Property(x => x.ExecutionTime).HasConversion(utcDateTimeConverter);
         builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
-        builder.Property(x => x.ExecutedAt).HasConversion(nullableUtcDateTimeConverter);
-        builder.Property(x => x.CreatedAt).HasConversion(utcDateTimeConverter);
-        builder.Property(x => x.UpdatedAt).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.DateExecuted).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.DateCreated).HasConversion(utcDateTimeConverter);
+        builder.Property(x => x.DateUpdated).HasConversion(utcDateTimeConverter);
 
         // Persist enums by name (not ordinal) — see TimeJobConfigurations.
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);

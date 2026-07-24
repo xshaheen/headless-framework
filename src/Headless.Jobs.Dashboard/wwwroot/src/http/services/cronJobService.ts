@@ -23,8 +23,8 @@ const getCronJobsPaginated = () => {
             if (response && response.items && Array.isArray(response.items)) {
                 response.items = response.items.map((item: GetCronJobResponse) => {
                     item.requestType = functionNamesStore.getNamespaceOrNull(item.function) ?? 'N/A';
-                    item.createdAt = formatDate(item.createdAt, true, timeZoneStore.effectiveTimeZone);
-                    item.updatedAt = formatDate(item.updatedAt, true, timeZoneStore.effectiveTimeZone);
+                    item.dateCreated = formatDate(item.dateCreated, true, timeZoneStore.effectiveTimeZone);
+                    item.dateUpdated = formatDate(item.dateUpdated, true, timeZoneStore.effectiveTimeZone);
                     item.initIdentifier = item.initIdentifier?.split("_").slice(0, 2).join("_");
                     if ((item.retryIntervals == null || item.retryIntervals.length == 0) && (item.retries == null || (item.retries as number) == 0))
                         item.retryIntervals = [];

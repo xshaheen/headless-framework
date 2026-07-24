@@ -76,7 +76,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                                 new[]
                                 {
                                     new(_ParameterName("id", index), job.Id),
-                                    _DateTimeParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
+                                    _DateTimeParameter(_ParameterName("updatedAt", index), job.DateUpdated),
                                 }
                         ),
                     ]
@@ -107,7 +107,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             timeJob.OwnerId = owner;
             timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
-            timeJob.UpdatedAt = claim.ClaimedAt;
+            timeJob.DateUpdated = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -290,7 +290,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
                 foreach (var occurrence in claimed)
                 {
-                    occurrence.UpdatedAt = refreshedAt;
+                    occurrence.DateUpdated = refreshedAt;
                     occurrence.LockedUntil = refreshedAt.Add(_leaseDuration);
                 }
             }
@@ -416,7 +416,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             UPDATE occurrence
             SET {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
-                {mapping.UpdatedAt} = @claimNow
+                {mapping.DateUpdated} = @claimNow
             OUTPUT @claimNow
             FROM {mapping.Table} AS occurrence
             INNER JOIN OPENJSON(@occurrenceIds) AS claimed
@@ -451,7 +451,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.DateCreated}, {mapping.DateUpdated})
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
@@ -493,8 +493,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 CronJobId = item.Id,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                CreatedAt = now,
-                UpdatedAt = now,
+                DateCreated = now,
+                DateUpdated = now,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -533,7 +533,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
-                {mapping.UpdatedAt} = @claimNow,
+                {mapping.DateUpdated} = @claimNow,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
             OUTPUT inserted.{mapping.Id}
@@ -560,8 +560,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 OwnerId = owner,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                UpdatedAt = now,
-                CreatedAt = occurrence.CreatedAt,
+                DateUpdated = now,
+                DateCreated = occurrence.DateCreated,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -597,7 +597,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             UPDATE occurrence
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
-                {mapping.UpdatedAt} = @claimNow,
+                {mapping.DateUpdated} = @claimNow,
                 {mapping.Status} = @queued
             OUTPUT inserted.{mapping.Id}
             FROM {mapping.Table} AS occurrence
@@ -635,7 +635,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
             FROM {mapping.Table} AS root WITH ({readPastHints})
             INNER JOIN (VALUES {values}) AS requested(id, updated_at)
-                ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.UpdatedAt}
+                ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.DateUpdated}
             ORDER BY CASE WHEN root.{mapping.ExecutionTime} IS NULL THEN 0 ELSE 1 END,
                      root.{mapping.ExecutionTime}, root.{mapping.Id}
             """;
@@ -665,7 +665,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             UPDATE job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimNow")},
-                {mapping.UpdatedAt} = @claimNow,
+                {mapping.DateUpdated} = @claimNow,
                 {mapping.Status} = @queuedStatus
             OUTPUT inserted.{mapping.Id}, @claimNow
             FROM {mapping.Table} AS job
@@ -725,7 +725,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             UPDATE job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {_LeaseDeadlineSql("@claimedAt")},
-                {mapping.UpdatedAt} = @claimedAt
+                {mapping.DateUpdated} = @claimedAt
             FROM {mapping.Table} AS job
             INNER JOIN descendants ON job.{mapping.Id} = descendants.{mapping.Id}
             WHERE job.{mapping.Status} = @idle;

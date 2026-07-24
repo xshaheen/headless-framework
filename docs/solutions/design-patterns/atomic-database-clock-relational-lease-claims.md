@@ -46,7 +46,7 @@ For relational leases shared across nodes, the database is the temporal authorit
 
 1. Evaluate lease expiry using database time.
 2. Stamp the new lease deadline using database time. Other audit timestamps need the same authority only
-   when they participate in ownership or expiry predicates; Jobs intentionally stamps `UpdatedAt` with
+   when they participate in ownership or expiry predicates; Jobs intentionally stamps `DateUpdated` with
    the claim because it is also an optimistic-concurrency fence.
 3. In native SQL, evaluate server time once per claim command and reuse that snapshot for eligibility
    and the deadline stamp.
@@ -121,7 +121,7 @@ await jobs
             .SetProperty(
                 x => x.LockedUntil,
                 _ => DateTime.UtcNow.AddSeconds(leaseDuration.TotalSeconds))
-            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+            .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
         cancellationToken)
     .ConfigureAwait(false);
 ```

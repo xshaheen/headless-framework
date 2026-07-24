@@ -643,7 +643,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTime DateUpdated)> ReadCronOccurrenceClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -653,7 +653,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+            $"SELECT \"LockedUntil\", \"DateUpdated\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
         _AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -716,7 +716,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTime DateUpdated)> ReadTimeJobClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -726,7 +726,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+            $"SELECT \"LockedUntil\", \"DateUpdated\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
         _AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -761,15 +761,15 @@ public static class JobsCoordinationFixtureExtensions
     // (QUOTED_IDENTIFIER is ON by default for SqlClient), and Postgres requires them for the PascalCase columns.
     private const string _InsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
+        + "\"DateCreated\", \"DateUpdated\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
     private const string _CronInsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Expression\", \"TimeZoneId\", \"IsPaused\", \"ScheduleRevision\", "
-        + "\"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
+        + "\"Retries\", \"DateCreated\", \"DateUpdated\", \"OnNodeDeath\"";
 
     private const string _CronOccurrenceInsertColumns =
         "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
+        + "\"DateCreated\", \"DateUpdated\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
     // Both Npgsql and SqlClient accept the "@name" parameter form.
     private static void _AddParameter(DbCommand command, string name, object value)

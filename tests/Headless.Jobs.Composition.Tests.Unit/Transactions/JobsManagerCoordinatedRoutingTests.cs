@@ -118,8 +118,8 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         grandChild.ParentId.Should().Be(childId);
         foreach (var item in new[] { result, child, grandChild })
         {
-            item.CreatedAt.Should().Be(now.UtcDateTime);
-            item.UpdatedAt.Should().Be(now.UtcDateTime);
+            item.DateCreated.Should().Be(now.UtcDateTime);
+            item.DateUpdated.Should().Be(now.UtcDateTime);
         }
     }
 

@@ -977,8 +977,8 @@ const headersWithoutReadable = computed(() => {
     { title: 'Description', key: 'description', sortable: true, visibility: true },
     { title: 'Retry Configuration', key: 'retryIntervals', sortable: false, visibility: true },
     { title: 'Init Identifier', key: 'initIdentifier', sortable: false, visibility: true },
-    { title: 'Created At', key: 'createdAt', sortable: true, visibility: true },
-    { title: 'Updated At', key: 'updatedAt', sortable: true, visibility: true },
+    { title: 'Created At', key: 'dateCreated', sortable: true, visibility: true },
+    { title: 'Updated At', key: 'dateUpdated', sortable: true, visibility: true },
     { title: 'Actions', key: 'actions', sortable: false, visibility: true },
   ]
 })

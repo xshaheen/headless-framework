@@ -31,10 +31,10 @@ const getByCronJobIdPaginated = () => {
                         item.status = 'Unknown';
                     }
                     
-                    if (item.executedAt != null || item.executedAt != undefined) {
+                    if (item.dateExecuted != null || item.dateExecuted != undefined) {
                         // Ensure the datetime is treated as UTC by adding 'Z' if missing
-                        const utcExecutedAt = item.executedAt.endsWith('Z') ? item.executedAt : item.executedAt + 'Z';
-                        item.executedAt = `${format(utcExecutedAt)} (took ${formatTime(item.elapsedTime as number, true)})`;
+                        const utcDateExecuted = item.dateExecuted.endsWith('Z') ? item.dateExecuted : item.dateExecuted + 'Z';
+                        item.dateExecuted = `${format(utcDateExecuted)} (took ${formatTime(item.elapsedTime as number, true)})`;
                     }
                     
                     const utcExecutionTime = item.executionTime.endsWith('Z') ? item.executionTime : item.executionTime + 'Z';

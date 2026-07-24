@@ -50,7 +50,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // lease duration independent of host skew. `DateTime.UtcNow` inside an ExecuteUpdate expression tree is NOT
     // evaluated in-process — EF translates it to the provider's server-time expression, so the comparison and the
     // stamp share one clock inside one statement, with no scalar clock round trip and no read-then-write gap.
-    // Scheduling/observational time (ExecutedAt, candidate selection) stays on the injected TimeProvider so it
+    // Scheduling/observational time (DateExecuted, candidate selection) stays on the injected TimeProvider so it
     // remains deterministic under FakeTimeProvider. See docs/solutions/design-patterns/temporal-authority-standard.md.
     //
     // WHY THE EF-TRANSLATED CLOCK IS SAFE HERE — AND THE INVARIANT THAT MAKES IT SO.
@@ -114,7 +114,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, _ => JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => now),
+                        .SetProperty(x => x.DateUpdated, _ => now),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -295,12 +295,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.CancelRequested, true)
                         .SetProperty(x => x.Status, x => x.Status == JobStatus.Idle ? JobStatus.Cancelled : x.Status)
                         .SetProperty(
-                            x => x.ExecutedAt,
-                            x => x.Status == JobStatus.Idle ? DateTime.UtcNow : x.ExecutedAt
+                            x => x.DateExecuted,
+                            x => x.Status == JobStatus.Idle ? DateTime.UtcNow : x.DateExecuted
                         )
                         .SetProperty(x => x.OwnerId, x => x.Status == JobStatus.Idle ? null : x.OwnerId)
                         .SetProperty(x => x.LockedUntil, x => x.Status == JobStatus.Idle ? null : x.LockedUntil)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -367,7 +367,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -432,11 +432,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setters =>
                     setters
                         .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, reason)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             );
 
@@ -491,7 +491,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -511,8 +511,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -532,8 +532,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -578,7 +578,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -636,7 +636,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -674,7 +674,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -690,8 +690,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -707,8 +707,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -817,7 +817,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     {
                         cron.Expression = expression;
                         cron.ScheduleRevision++;
-                        cron.UpdatedAt = now;
+                        cron.DateUpdated = now;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
@@ -833,8 +833,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     Function = function,
                     Expression = expression,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
-                    CreatedAt = now,
-                    UpdatedAt = now,
+                    DateCreated = now,
+                    DateUpdated = now,
                     Request = [],
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -857,8 +857,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         setter =>
                             setter
                                 .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, now)
-                                .SetProperty(x => x.UpdatedAt, now)
+                                .SetProperty(x => x.DateExecuted, now)
+                                .SetProperty(x => x.DateUpdated, now)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
@@ -1061,7 +1061,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1080,8 +1080,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1100,8 +1100,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1142,7 +1142,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1175,7 +1175,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1191,8 +1191,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Failed)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1208,8 +1208,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateExecuted, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -1249,7 +1249,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .SetProperty(x => x.DateUpdated, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);

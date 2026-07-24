@@ -237,7 +237,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 }
             );
 
-            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
+            if (occurrence.DateCreated == occurrence.DateUpdated && notificationHubSender != null)
             {
                 await notificationHubSender
                     .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
@@ -354,7 +354,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
                 OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
-                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
+                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.DateCreated),
             };
 
             // If no in-memory occurrences or stored is earlier, return stored only
@@ -639,7 +639,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.ExecutedAt, now)
+            .SetProperty(x => x.DateExecuted, now)
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
@@ -697,7 +697,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         foreach (var resource in skippedResources)
         {
-            resource.ExecutedAt = now;
+            resource.DateExecuted = now;
             resource.Status = JobStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == JobType.TimeJob)

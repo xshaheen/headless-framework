@@ -70,7 +70,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                 new NpgsqlParameter[]
                                 {
                                     new(_ParameterName("id", index), job.Id),
-                                    new(_ParameterName("updatedAt", index), job.UpdatedAt),
+                                    new(_ParameterName("updatedAt", index), job.DateUpdated),
                                 }
                         ),
                     ]
@@ -101,7 +101,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
             timeJob.OwnerId = owner;
             timeJob.LockedUntil = claim.ClaimedAt.Add(_leaseDuration);
-            timeJob.UpdatedAt = claim.ClaimedAt;
+            timeJob.DateUpdated = claim.ClaimedAt;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -272,7 +272,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
                 foreach (var occurrence in claimed)
                 {
-                    occurrence.UpdatedAt = refreshedAt;
+                    occurrence.DateUpdated = refreshedAt;
                     occurrence.LockedUntil = refreshedAt.Add(_leaseDuration);
                 }
             }
@@ -386,7 +386,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table}
             SET {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = claim_clock.now
+                {mapping.DateUpdated} = claim_clock.now
             FROM claim_clock
             WHERE {mapping.Id} = ANY(@occurrenceIds)
               AND {mapping.OwnerId} = @owner
@@ -422,7 +422,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.DateCreated}, {mapping.DateUpdated})
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
@@ -454,8 +454,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 CronJobId = item.Id,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                CreatedAt = now,
-                UpdatedAt = now,
+                DateCreated = now,
+                DateUpdated = now,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -494,7 +494,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             UPDATE {mapping.Table} AS occurrence
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = claim_clock.now,
+                {mapping.DateUpdated} = claim_clock.now,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
             FROM candidate, claim_clock
@@ -521,8 +521,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 OwnerId = owner,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                UpdatedAt = now,
-                CreatedAt = occurrence.CreatedAt,
+                DateUpdated = now,
+                DateCreated = occurrence.DateCreated,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -560,7 +560,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             UPDATE {mapping.Table} AS occurrence
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = claim_clock.now,
+                {mapping.DateUpdated} = claim_clock.now,
                 {mapping.Status} = @queued
             FROM candidates, claim_clock
             WHERE occurrence.{mapping.Id} = candidates.{mapping.Id}
@@ -595,7 +595,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             SELECT root.{mapping.Id}
             FROM {mapping.Table} AS root
             INNER JOIN (VALUES {values}) AS requested(id, updated_at)
-                ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.UpdatedAt}
+                ON requested.id = root.{mapping.Id} AND requested.updated_at = root.{mapping.DateUpdated}
             ORDER BY root.{mapping.ExecutionTime} NULLS FIRST, root.{mapping.Id}
             LIMIT {JobsClaimStrategyDefaults.MaxClaimBatchSize}
             FOR UPDATE OF root SKIP LOCKED
@@ -626,7 +626,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = claim_clock.now + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = claim_clock.now,
+                {mapping.DateUpdated} = claim_clock.now,
                 {mapping.Status} = @queuedStatus
             FROM candidates, claim_clock
             WHERE job.{mapping.Id} = candidates.{mapping.Id}
@@ -685,7 +685,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = @claimedAt + (@leaseSeconds * INTERVAL '1 second'),
-                {mapping.UpdatedAt} = @claimedAt
+                {mapping.DateUpdated} = @claimedAt
             FROM descendants
             WHERE job.{mapping.Id} = descendants.{mapping.Id} AND job.{mapping.Status} = @idle;
             """;

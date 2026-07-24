@@ -323,7 +323,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        timeJob.DateUpdated = timeProvider.GetUtcNow().UtcDateTime;
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -847,8 +847,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             entity.Id = guidGenerator.Create();
         }
-        entity.CreatedAt = now;
-        entity.UpdatedAt = now;
+        entity.DateCreated = now;
+        entity.DateUpdated = now;
     }
 
     // Propagate the middleware-resolved root tenant onto chain descendants before persistence (KTD6). The schedule
@@ -997,7 +997,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            timeJob.DateUpdated = timeProvider.GetUtcNow().UtcDateTime;
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so

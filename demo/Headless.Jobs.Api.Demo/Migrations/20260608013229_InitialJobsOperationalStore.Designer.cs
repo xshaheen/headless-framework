@@ -30,7 +30,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -57,7 +57,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.PrimitiveCollection<int[]>("RetryIntervals")
                         .HasColumnType("integer[]");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
@@ -76,7 +76,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CronJobId")
@@ -88,7 +88,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("ExecutedAt")
+                    b.Property<DateTime?>("DateExecuted")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExecutionTime")
@@ -109,7 +109,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
@@ -136,7 +136,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -149,7 +149,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("ExecutedAt")
+                    b.Property<DateTime?>("DateExecuted")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
@@ -192,7 +192,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");

@@ -155,7 +155,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             id = executionState.JobId,
             status = executionState.Status,
             cronJobId = executionState.ParentId,
-            executedAt = executionState.ExecutedAt,
+            dateExecuted = executionState.DateExecuted,
             elapsedTime = executionState.ElapsedTime,
             retryCount = executionState.RetryCount,
             exceptionMessage = executionState.ExceptionDetails,

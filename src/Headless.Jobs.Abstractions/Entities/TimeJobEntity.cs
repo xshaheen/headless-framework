@@ -53,7 +53,7 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual DateTime? LockedUntil { get; internal set; }
 
     /// <summary>UTC timestamp when execution completed, or <see langword="null"/> if not yet completed.</summary>
-    public virtual DateTime? ExecutedAt { get; internal set; }
+    public virtual DateTime? DateExecuted { get; internal set; }
 
     /// <summary>
     /// Whether cooperative cancellation was durably requested for this job. The flag is retained as audit data even

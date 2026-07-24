@@ -676,7 +676,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claimed.Should().ContainSingle();
             claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
-            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
+            claimed[0].LockedUntil.Should().Be(claimed[0].DateUpdated.Add(leaseDuration));
 
             var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
             lockedUntil.Should().Be(claimed[0].LockedUntil);

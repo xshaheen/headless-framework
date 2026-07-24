@@ -27,7 +27,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -73,7 +73,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
@@ -92,7 +92,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CronJobId")
@@ -104,7 +104,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("ExecutedAt")
+                    b.Property<DateTime?>("DateExecuted")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExecutionTime")
@@ -132,7 +132,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
@@ -165,7 +165,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("DateCreated")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -178,7 +178,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("ExecutedAt")
+                    b.Property<DateTime?>("DateExecuted")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
@@ -229,7 +229,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("DateUpdated")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
