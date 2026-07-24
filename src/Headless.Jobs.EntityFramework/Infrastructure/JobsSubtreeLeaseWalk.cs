@@ -33,8 +33,8 @@ internal static class JobsSubtreeLeaseWalk
         Guid rootId,
         string owner,
         int maxChainDepth,
-        CancellationToken cancellationToken = default,
-        Func<Task>? onBeforeFirstLease = null
+        Func<Task>? onBeforeFirstLease = null,
+        CancellationToken cancellationToken = default
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {

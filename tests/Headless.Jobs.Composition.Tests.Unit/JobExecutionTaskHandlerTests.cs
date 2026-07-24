@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
@@ -195,6 +196,87 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         await manager
             .DidNotReceive()
             .UpdateSkipTimeJobsWithUnifiedContextAsync(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task does_not_process_children_when_a_terminate_exception_completion_write_is_fenced()
+    {
+        // R7/KTD7: the parent throws TerminateExecutionException (a Skipped terminal), but its fenced terminal write in
+        // the catch block matches 0 rows — the row was reclaimed/terminalized by a sweep. LeaseLost must be set and
+        // the children left for reclaim (never driven from the unpersisted Skipped status).
+        var manager = _HealthyManager();
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+
+        var childRan = false;
+        var root = _Job(
+            "root",
+            RunCondition.OnSuccess,
+            (_, _, _) => throw new TerminateExecutionException("terminate mid-run")
+        );
+        root.TimeJobChildren.Add(_Node("child", () => childRan = true));
+
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        childRan.Should().BeFalse("a fenced terminate-completion write leaves children for reclaim, not execution");
+        root.LeaseLost.Should().BeTrue("a 0-row terminal write in the catch block flags lease loss");
+        // The catch-block terminal write is attempted under CancellationToken.None (survives graceful stop).
+        await manager
+            .Received()
+            .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Skipped), CancellationToken.None);
+        await manager
+            .DidNotReceive()
+            .UpdateSkipTimeJobsWithUnifiedContextAsync(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task does_not_process_children_when_a_durable_cancellation_completion_write_is_fenced()
+    {
+        // R7/KTD7: durable cancellation is observed mid-run and the job settles Cancelled, but its fenced terminal
+        // write matches 0 rows (the row was reclaimed). LeaseLost must be set and the children left for reclaim.
+        var manager = _HealthyManager();
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(true));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        // A fast observation interval so the durable-cancellation poll fires promptly against the blocking delegate.
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder { CancellationObservationInterval = TimeSpan.FromMilliseconds(10) },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var childRan = false;
+        var root = _Job(
+            "root",
+            RunCondition.OnSuccess,
+            async (_, _, token) => await Task.Delay(Timeout.Infinite, token)
+        );
+        root.TimeJobChildren.Add(_Node("child", () => childRan = true));
+
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        childRan.Should().BeFalse("a fenced durable-cancellation write leaves children for reclaim, not execution");
+        root.LeaseLost.Should()
+            .BeTrue("a 0-row Cancelled write in the durable-cancellation catch block flags lease loss");
+        root.Status.Should().Be(JobStatus.Cancelled);
     }
 
     [Fact]

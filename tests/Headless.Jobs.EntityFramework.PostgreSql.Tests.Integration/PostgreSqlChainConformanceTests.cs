@@ -102,4 +102,16 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     {
         return base.native_sql_gate_matches_the_shared_rules_across_the_grid();
     }
+
+    [Fact]
+    public override Task timed_child_of_a_skipped_parent_is_swept_to_skipped()
+    {
+        return base.timed_child_of_a_skipped_parent_is_swept_to_skipped();
+    }
+
+    [Fact]
+    public override Task deep_chain_claim_truncates_at_configured_depth_without_erroring()
+    {
+        return base.deep_chain_claim_truncates_at_configured_depth_without_erroring();
+    }
 }

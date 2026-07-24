@@ -894,6 +894,96 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// R9. A timed descendant whose parent reached <see cref="JobStatus.Skipped" /> must itself be skipped by the
+    /// safety net — <c>Skipped</c> is a terminal state that satisfies no run condition, so a gated timed child under a
+    /// skipped parent is mismatched and swept, never stranded Idle. This is the storage-visible tail of a non-timed
+    /// sibling being skipped: its timed descendant follows it to Skipped.
+    /// </summary>
+    public virtual async Task timed_child_of_a_skipped_parent_is_swept_to_skipped()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("skipped-parent");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var pastDue = DateTime.UtcNow.AddMinutes(-5);
+
+        // A non-timed sibling already skipped (as the executor's cascade would leave it), carrying a timed OnSuccess
+        // descendant that is still Idle and past-due.
+        var skippedParent = _NewJob("skipped-parent", executionTime: null);
+        skippedParent.Status = JobStatus.Skipped;
+        var timedChild = _NewChild(skippedParent.Id, RunCondition.OnSuccess, pastDue);
+        var grandchild = _NewChild(timedChild.Id, RunCondition.OnSuccess, executionTime: null);
+        await persistence.AddTimeJobsAsync([skippedParent, timedChild, grandchild], ct);
+
+        await persistence.SkipStrandedTimedChildrenAsync(ct);
+
+        (await _ReadNodeAsync(timedChild.Id, ct))
+            .Status.Should()
+            .Be(JobStatus.Skipped, "a timed child under a Skipped parent matches no run condition and is swept");
+        (await _ReadNodeAsync(grandchild.Id, ct))
+            .Status.Should()
+            .Be(JobStatus.Skipped, "and its subtree cascades to Skipped with it");
+    }
+
+    /// <summary>
+    /// R10/R8. A chain persisted while the depth limit was higher, then claimed under a LOWER
+    /// <c>MaxChainDepth</c> (the default 10 here), truncates: the claim leases root..depth-10 and leaves deeper nodes
+    /// Idle rather than erroring. Seeded directly because <c>EnqueueAsync</c> rejects an over-depth chain — this is the
+    /// "limit lowered after enqueue" case. Also pins the SqlServer recursive-CTE <c>MAXRECURSION</c> boundary: the
+    /// claim of an over-depth persisted chain completes (the CTE self-limits at MaxChainDepth) instead of raising 530.
+    /// </summary>
+    public virtual async Task deep_chain_claim_truncates_at_configured_depth_without_erroring()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("depth-truncate");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            const int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth; // 10
+
+            // A 13-node linear chain (root = depth 1) — deeper than the configured limit. Root is timed so the peek
+            // surfaces it; every descendant is a non-timed continuation.
+            var nodes = new List<TimeJobEntity> { _NewJob("d1", DateTime.UtcNow.AddSeconds(1)) };
+            for (var depth = 2; depth <= 13; depth++)
+            {
+                nodes.Add(_NewChild(nodes[^1].Id, RunCondition.OnSuccess, executionTime: null));
+            }
+            await persistence.AddTimeJobsAsync([.. nodes], ct);
+
+            var candidates = await _PollEarliestUntilPresentAsync(persistence, nodes[0].Id, ct);
+            var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
+            claimed.Should().Contain(x => x.Id == nodes[0].Id, "the claim completes without a MAXRECURSION error");
+
+            var rootRow = await _ReadNodeAsync(nodes[0].Id, ct);
+            rootRow.OwnerId.Should().NotBeNullOrWhiteSpace();
+
+            for (var depth = 1; depth <= 13; depth++)
+            {
+                var row = await _ReadNodeAsync(nodes[depth - 1].Id, ct);
+                if (depth <= maxChainDepth)
+                {
+                    row.OwnerId.Should().Be(rootRow.OwnerId, "node at depth {0} is within the limit and leased", depth);
+                }
+                else
+                {
+                    row.OwnerId.Should().BeNull("node at depth {0} is beyond the limit and left Idle", depth);
+                    row.Status.Should().Be(JobStatus.Idle);
+                }
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity> _BuildCas(
         Microsoft.Extensions.Hosting.IHost host,
         string owner,

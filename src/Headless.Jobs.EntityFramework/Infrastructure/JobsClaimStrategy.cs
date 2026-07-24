@@ -609,8 +609,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 rootId,
                 owner,
                 _maxChainDepth,
-                cancellationToken,
-                OnFrontierBeforeLease
+                OnFrontierBeforeLease,
+                cancellationToken
             )
             .ConfigureAwait(false);
     }

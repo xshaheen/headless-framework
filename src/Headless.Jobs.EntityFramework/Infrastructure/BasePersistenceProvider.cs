@@ -898,7 +898,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         foreach (var acquiredRootId in acquiredRootIds)
         {
             claimedIdsByRoot[acquiredRootId] = await JobsSubtreeLeaseWalk
-                .LeaseNonTimedDescendantsAsync(jobs, acquiredRootId, owner, MaxChainDepth, cancellationToken)
+                .LeaseNonTimedDescendantsAsync(
+                    jobs,
+                    acquiredRootId,
+                    owner,
+                    MaxChainDepth,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
