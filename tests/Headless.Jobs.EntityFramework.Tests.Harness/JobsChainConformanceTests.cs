@@ -441,6 +441,63 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// The immediate-dispatch path — a chain root with NO execution time, which is the default for
+    /// <see cref="IJobScheduler.EnqueueAsync(JobChain,System.Threading.CancellationToken)" /> — must lease the whole
+    /// non-timed subtree, not just the root. The executor runs a claimed chain by in-process recursion and fences
+    /// every node on lease renewal before invoking it, so a hydrated-but-unleased descendant fails that fence and is
+    /// stranded Idle forever. Every other scenario here uses a timed root, which takes the scheduled tree claim, so
+    /// this is the only coverage of the acquire path's own lease walk.
+    /// </summary>
+    public virtual async Task immediate_acquire_leases_the_whole_non_timed_subtree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-immediate");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // No executionTime anywhere: the root is immediately due and every descendant is a non-timed continuation.
+            var builder = JobChain.Start(_Payload("root"));
+            var child = builder.Root.Then(_Payload("child"));
+            child.Then(_Payload("grandchild"));
+
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            var childId = (await _ChildrenAsync(rootId, ct)).Single().Id;
+            var grandchildId = (await _ChildrenAsync(childId, ct)).Single().Id;
+
+            var acquired = await persistence.AcquireImmediateTimeJobsAsync([rootId], ct);
+            acquired.Should().ContainSingle(x => x.Id == rootId);
+
+            var rootRow = await _ReadNodeAsync(rootId, ct);
+            rootRow.Status.Should().Be(JobStatus.InProgress);
+            rootRow.OwnerId.Should().NotBeNull();
+
+            // Both descendants must carry the SAME owner and the root's EXACT deadline (KTD2 invariant 2: descendants
+            // copy the root's persisted LockedUntil rather than re-reading a per-statement clock).
+            var childRow = await _ReadNodeAsync(childId, ct);
+            childRow.OwnerId.Should().Be(rootRow.OwnerId, "an unleased child fails the executor's renewal fence");
+            childRow.LockedUntil.Should().Be(rootRow.LockedUntil, "descendants share the root's exact lease deadline");
+
+            var grandchildRow = await _ReadNodeAsync(grandchildId, ct);
+            grandchildRow.OwnerId.Should().Be(rootRow.OwnerId, "the lease walk must reach the whole subtree");
+            grandchildRow.LockedUntil.Should().Be(rootRow.LockedUntil);
+
+            // Leased descendants stay Idle — the executor transitions each one as it recurses into it.
+            childRow.Status.Should().Be(JobStatus.Idle);
+            grandchildRow.Status.Should().Be(JobStatus.Idle);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     // ----- helpers -------------------------------------------------------------------------------------------------
 
     private static CoordinatedFacadeRequest _Payload(string tag) => new(Guid.NewGuid(), tag);

@@ -597,97 +597,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             return [];
         }
 
-        // KTD2: accumulate the exact set of claimed ids (root + leased descendants) so the caller rebuilds the tree
-        // strictly from it — a node below a non-idle frontier is never leased and must never execute unclaimed.
-        var claimedIds = new HashSet<Guid> { rootId };
-        var frontier = new[] { rootId };
-        var depth = 1;
-
-        while (frontier.Length != 0 && depth < _maxChainDepth)
-        {
-            var parentIds = frontier;
-
-            // Discover the idle non-timed children of the current frontier FIRST. The descendant lease UPDATE stamps
-            // LockedUntil by copying the root's deadline (a subquery, NOT a clock expression) — so it must never go on
-            // the wire for a childless/leaf frontier as a 0-row statement, or the DB-clock conformance assertion (which
-            // requires every LockedUntil deadline write to contain the server clock) would trip on that spurious copy.
-            var childIds = await context
-                .AsNoTracking()
-                .Where(x =>
-                    x.ParentId != null
-                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
-                    && x.Status == JobStatus.Idle
-                    && x.ExecutionTime == null
-                )
-                .Select(x => x.Id)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            if (childIds.Length == 0)
-            {
-                break;
-            }
-
-            // Lease them, COPYING the root's persisted LockedUntil via a database-evaluated subquery (invariant 2
-            // above) — no clock function — so every level shares the root's exact deadline on both providers. The
-            // predicate is fully reasserted inside the UPDATE, never trusting the discovery snapshot:
-            //   * Status == Idle && ExecutionTime == null && parent-linkage — a child rescheduled (given an
-            //     ExecutionTime) or re-parented between the discovery SELECT and this UPDATE must NOT be claimed as an
-            //     immediate in-tree continuation, bypassing the timed gate (U5).
-            //   * EXISTS(root still owned by THIS claimant with an UNEXPIRED lease, DB clock) — if the frontier walk
-            //     outlived LeaseDuration (short lease / DB stall) another node may have reclaimed the root and stamped
-            //     these descendants first; without this fence our stale UPDATE would overwrite their owner and split
-            //     ownership (winner runs the root, we own an orphaned tail).
-            var leased = await context
-                .Where(x =>
-                    ((IEnumerable<Guid>)childIds).Contains(x.Id)
-                    && x.Status == JobStatus.Idle
-                    && x.ExecutionTime == null
-                    && x.ParentId != null
-                    && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value)
-                    && context.Any(r => r.Id == rootId && r.OwnerId == owner && r.LockedUntil > DateTime.UtcNow)
-                )
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(
-                                x => x.LockedUntil,
-                                _ => context.Where(r => r.Id == rootId).Max(r => r.LockedUntil)
-                            )
-                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            // Children existed but none were leased: either the root lease was lost (fence failed) or every child
-            // became ineligible. Stop the walk and treat the claim as bounded to what was already stamped — the caller
-            // prunes the hydrated tree to that claimed set, and the unexecuted claimed root is recovered by the
-            // stalled-lease sweep, which re-claims descendants fresh.
-            if (leased == 0)
-            {
-                break;
-            }
-
-            // Descend into exactly the children we actually leased (still Idle, now owned by us). A child that raced to
-            // a non-idle state is not owned by us here, so the frontier — and finding-2's claimed set — stops there.
-            frontier = await context
-                .AsNoTracking()
-                .Where(x =>
-                    ((IEnumerable<Guid>)childIds).Contains(x.Id) && x.Status == JobStatus.Idle && x.OwnerId == owner
-                )
-                .Select(x => x.Id)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            foreach (var id in frontier)
-            {
-                claimedIds.Add(id);
-            }
-
-            depth++;
-        }
-
-        return claimedIds;
+        // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the KTD2
+        // lease-deadline-copy discipline has exactly one relational implementation.
+        return await JobsSubtreeLeaseWalk
+            .LeaseNonTimedDescendantsAsync(context, rootId, owner, _maxChainDepth, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

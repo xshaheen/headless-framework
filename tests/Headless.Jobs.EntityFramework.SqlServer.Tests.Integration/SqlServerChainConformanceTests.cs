@@ -54,4 +54,10 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     {
         return base.dead_node_reclaim_resumes_chain_without_skipping_children();
     }
+
+    [Fact]
+    public override Task immediate_acquire_leases_the_whole_non_timed_subtree()
+    {
+        return base.immediate_acquire_leases_the_whole_non_timed_subtree();
+    }
 }

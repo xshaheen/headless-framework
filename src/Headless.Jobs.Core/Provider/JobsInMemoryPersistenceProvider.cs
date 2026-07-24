@@ -773,7 +773,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (_timeJobs.TryUpdate(id, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
-                acquired.Add(_ForQueueTimeJobs(updatedTicker));
+
+                // Lease the non-timed subtree before returning the root for execution. The executor runs a chain by
+                // in-process recursion and fences every node on lease renewal before invoking it, so a
+                // hydrated-but-unleased descendant fails that fence and is stranded Idle forever — the immediate
+                // path owes the same pre-lease as the scheduled tree claim.
+                var claimedIds = _ClaimIdleDescendants(id, now);
+                var hydrated = _ForQueueTimeJobs(updatedTicker);
+
+                // KTD2: the hydrated tree may include nodes the walk stopped at; execute strictly the claimed set.
+                TimeJobSubtreeOperations.PruneToClaimedSet(hydrated, claimedIds);
+                acquired.Add(hydrated);
             }
         }
 

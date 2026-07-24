@@ -270,4 +270,40 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         stored!.Status.Should().Be(JobStatus.Idle, "the safety net is skip-only — it never makes a child eligible");
         stored.ExecutionTime.Should().Be(_Now.AddMinutes(-2), "and never re-stamps a matching child");
     }
+
+    /// <summary>
+    /// The immediate-dispatch path (a chain root with no <c>ExecutionTime</c> — the default for
+    /// <c>IJobScheduler.EnqueueAsync(JobChain)</c>) must lease the non-timed subtree, not just the root. The executor
+    /// assumes it ("descendants are pre-leased with the root claim") and fences every child on lease renewal before
+    /// running it, so a hydrated-but-unleased child fails that fence and is stranded Idle forever.
+    /// </summary>
+    [Fact]
+    public async Task immediate_acquire_leases_the_non_timed_subtree_not_only_the_root()
+    {
+        var (provider, _) = _Create();
+        var root = new FakeTimeJob
+        {
+            Id = Guid.NewGuid(),
+            Function = "root",
+            Status = JobStatus.Idle,
+            ExecutionTime = null,
+        };
+        var child = _NonTimedChild(root.Id, RunCondition.OnSuccess);
+        var grandChild = _NonTimedChild(child.Id, RunCondition.OnSuccess);
+        await provider.AddTimeJobsAsync([root, child, grandChild], AbortToken);
+
+        var acquired = await provider.AcquireImmediateTimeJobsAsync([root.Id], AbortToken);
+
+        acquired.Should().ContainSingle(x => x.Id == root.Id);
+
+        var storedChild = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
+        storedChild!.OwnerId.Should().Be(_NodeA, "the child must be leased by the same claim that took the root");
+
+        var storedGrandChild = await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken);
+        storedGrandChild!.OwnerId.Should().Be(_NodeA, "and so must the rest of the non-timed subtree");
+
+        // The executor's pre-execution fence: an unleased child renews 0 rows, is marked LeaseLost, and never runs.
+        var renewed = await provider.RenewTimeJobLeaseAsync(child.Id, AbortToken);
+        renewed.Should().Be(0, "renewal only slides a RUNNING lease; this asserts the child is not silently running");
+    }
 }

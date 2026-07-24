@@ -840,21 +840,50 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
+        var jobs = dbContext.Set<TTimeJob>();
+
+        // Which roots this call actually acquired — the batch UPDATE reports a count, not identities, and a racing
+        // node may have taken some of them.
+        var acquiredRootIds = await jobs.AsNoTracking()
+            .Where(x =>
+                ((IEnumerable<Guid>)ids).Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress
+            )
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Lease each acquired root's non-timed subtree BEFORE returning it for execution. The executor runs a chain by
+        // in-process recursion and fences every node on lease renewal before invoking it, so a hydrated-but-unleased
+        // descendant fails that fence and is stranded Idle forever — this is the immediate-dispatch counterpart of the
+        // scheduled tree claim, and it must not be dropped.
+        var claimedIdsByRoot = new Dictionary<Guid, HashSet<Guid>>(acquiredRootIds.Length);
+
+        foreach (var acquiredRootId in acquiredRootIds)
+        {
+            claimedIdsByRoot[acquiredRootId] = await JobsSubtreeLeaseWalk
+                .LeaseNonTimedDescendantsAsync(jobs, acquiredRootId, owner, MaxChainDepth, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // Return the acquired jobs for immediate execution, with the non-timed in-tree subtree to MaxChainDepth
         // (R12/KTD2: flat root load + in-memory rebuild replaces a fixed-depth nested projection).
-        return await _LoadWithDescendantsAsync(
-                dbContext
-                    .Set<TTimeJob>()
-                    .AsNoTracking()
-                    .Where(x =>
-                        ((IEnumerable<Guid>)ids).Contains(x.Id)
-                        && x.OwnerId == owner
-                        && x.Status == JobStatus.InProgress
-                    ),
+        var acquired = await _LoadWithDescendantsAsync(
+                jobs.AsNoTracking().Where(x => ((IEnumerable<Guid>)acquiredRootIds).Contains(x.Id)),
                 dbContext,
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        // KTD2: the hydrated tree may include nodes the lease walk stopped at; execute strictly the claimed set.
+        foreach (var root in acquired)
+        {
+            if (claimedIdsByRoot.TryGetValue(root.Id, out var claimedIds))
+            {
+                TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
+            }
+        }
+
+        return acquired;
     }
 
     public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
