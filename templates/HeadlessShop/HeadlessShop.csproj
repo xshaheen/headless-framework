@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Headless.Templates.HeadlessShop</PackageId>
+    <Authors>Mahmoud Shaheen</Authors>
+    <Description>Agent-ready Headless Framework modular shop capability tour template.</Description>
+    <Copyright>Copyright (c) Mahmoud Shaheen. All rights reserved.</Copyright>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <NuspecFile>HeadlessShop.nuspec</NuspecFile>
+    <NuspecBasePath>$(MSBuildProjectDirectory)</NuspecBasePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
+  <Target Name="SetHeadlessShopNuspecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="MinVer">
+    <PropertyGroup>
+      <NuspecProperties>version=$(PackageVersion);authors=$(Authors);description=$(Description);copyright=$(Copyright)</NuspecProperties>
+    </PropertyGroup>
+  </Target>
+</Project>

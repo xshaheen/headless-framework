@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Api\HeadlessShop.Api.csproj" />
+    <ProjectReference Include="..\HeadlessShop.Contracts\HeadlessShop.Contracts.csproj" />
+  </ItemGroup>
+</Project>

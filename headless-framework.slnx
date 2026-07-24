@@ -440,6 +440,10 @@
         <Project Path="tests\Headless.Sms.Twilio.Tests.Unit\Headless.Sms.Twilio.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sms.Vodafone.Tests.Unit\Headless.Sms.Vodafone.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Templates/">
+        <Project Path="templates/HeadlessShop/HeadlessShop.csproj" />
+        <Project Path="tests/Headless.Templates.Tests.Integration/Headless.Templates.Tests.Integration.csproj" />
+    </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />
         <File Path=".gitattributes" />
@@ -450,6 +454,7 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
+        <File Path="tools/validate-headless-shop-template.sh" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />

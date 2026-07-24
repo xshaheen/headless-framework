@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Mediator.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Catalog.Application\HeadlessShop.Catalog.Application.csproj" />
+  </ItemGroup>
+</Project>

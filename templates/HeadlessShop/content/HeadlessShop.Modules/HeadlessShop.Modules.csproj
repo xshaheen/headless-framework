@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Catalog.Module\HeadlessShop.Catalog.Module.csproj" />
+    <ProjectReference Include="..\HeadlessShop.Ordering.Module\HeadlessShop.Ordering.Module.csproj" />
+  </ItemGroup>
+</Project>
