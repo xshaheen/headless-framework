@@ -9,6 +9,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -807,6 +808,89 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         {
             await hostB.StopAsync(ct);
             await hostA.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// U5/KTD3 native-SQL gate parity. Replays the shared gate grid (every <see cref="RunCondition"/> including the
+    /// non-gated ones and <see langword="null"/> × every terminal status plus a non-terminal control) against the
+    /// provider's <c>TimedChildGateSql</c>, which is embedded in the native timed-out fallback claim. A past-due timed
+    /// child is claimed by that path iff the native SQL gate admits it, so the claimed set must equal the
+    /// <see cref="ChainRunConditionRules"/> expectation the LINQ and in-memory implementations also match (the unit
+    /// matrix asserts those). Any drift between the hand-written SQL and the shared rules fails here.
+    /// </summary>
+    public virtual async Task native_sql_gate_matches_the_shared_rules_across_the_grid()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("gate-grid");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var pastDue = DateTime.UtcNow.AddMinutes(-5);
+
+            RunCondition?[] conditions =
+            [
+                null,
+                RunCondition.InProgress,
+                RunCondition.OnSuccess,
+                RunCondition.OnFailure,
+                RunCondition.OnCancelled,
+                RunCondition.OnFailureOrCancelled,
+                RunCondition.OnAnyCompletedStatus,
+            ];
+            JobStatus[] statuses =
+            [
+                JobStatus.Succeeded,
+                JobStatus.DueDone,
+                JobStatus.Failed,
+                JobStatus.Cancelled,
+                JobStatus.Skipped,
+                JobStatus.Queued,
+            ];
+
+            var seed = new List<TimeJobEntity>();
+            var expectedClaimed = new Dictionary<Guid, bool>();
+
+            foreach (var status in statuses)
+            {
+                foreach (var condition in conditions)
+                {
+                    // Parent is non-timed (never a fallback candidate itself) and carries the grid status.
+                    var parent = _NewJob("grid-parent", executionTime: null);
+                    parent.Status = status;
+
+                    // Child is an idle, past-due timed descendant carrying the grid run condition.
+                    var child = _NewJob("grid-child", pastDue);
+                    child.ParentId = parent.Id;
+                    child.RunCondition = condition;
+
+                    seed.Add(parent);
+                    seed.Add(child);
+
+                    var gated = ChainRunConditionRules.IsParentTerminalGated(condition);
+                    expectedClaimed[child.Id] =
+                        !gated || ChainRunConditionRules.ParentTerminalMatches(condition, status);
+                }
+            }
+
+            await persistence.AddTimeJobsAsync([.. seed], ct);
+
+            // The native timed-out fallback claim embeds TimedChildGateSql; a child is claimed iff the gate admits it.
+            var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+            var claimedIds = claimed.Select(x => x.Id).ToHashSet();
+
+            foreach (var (childId, expected) in expectedClaimed)
+            {
+                claimedIds.Contains(childId).Should().Be(expected, "native-SQL gate parity for child {0}", childId);
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
         }
     }
 

@@ -96,4 +96,10 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     {
         return base.native_claim_contention_gives_one_owner_the_whole_subtree();
     }
+
+    [Fact]
+    public override Task native_sql_gate_matches_the_shared_rules_across_the_grid()
+    {
+        return base.native_sql_gate_matches_the_shared_rules_across_the_grid();
+    }
 }
