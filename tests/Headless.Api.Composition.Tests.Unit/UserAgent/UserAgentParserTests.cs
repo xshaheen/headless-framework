@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.UserAgent;
+using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 
@@ -11,23 +12,25 @@ public sealed class UserAgentParserTests : TestBase
     private const string _ChromeOnWindows =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+    // --- parse correctness, exercised through the no-cache path (cache is optional and absent) ---
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void should_return_null_for_blank_user_agent(string? userAgent)
+    public async Task should_return_null_for_blank_user_agent(string? userAgent)
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
-        sut.GetDeviceInfo(userAgent).Should().BeNull();
+        (await sut.GetDeviceInfoAsync(userAgent, AbortToken)).Should().BeNull();
     }
 
     [Fact]
-    public void should_parse_os_and_client_from_a_known_user_agent()
+    public async Task should_parse_os_and_client_from_a_known_user_agent()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
-        var result = sut.GetDeviceInfo(_ChromeOnWindows);
+        var result = await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken);
 
         result.Should().NotBeNullOrWhiteSpace();
         result.Should().Contain("Windows");
@@ -35,90 +38,115 @@ public sealed class UserAgentParserTests : TestBase
     }
 
     [Fact]
-    public void should_return_the_same_result_on_a_repeated_parse()
+    public async Task should_return_null_for_an_unidentifiable_user_agent()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
-        var first = sut.GetDeviceInfo(_ChromeOnWindows);
-        var second = sut.GetDeviceInfo(_ChromeOnWindows);
-
-        // The second call is served from the memo; it must be indistinguishable from the first.
-        second.Should().Be(first);
+        (await sut.GetDeviceInfoAsync("!!!not-a-user-agent!!!", AbortToken)).Should().BeNull();
     }
 
     [Fact]
-    public void should_treat_user_agents_sharing_a_truncated_prefix_as_one_entry()
+    public async Task should_parse_directly_when_no_cache_is_registered()
     {
-        // Both exceed MaxUserAgentLength and are identical up to it, so they collapse to the same
-        // memo key and must resolve to the same device info.
-        using var sut = _CreateSut(maxUserAgentLength: 64);
+        // cache is null -> every call parses; correctness must not depend on a cache being present.
+        var sut = _CreateSut(cache: null);
+
+        (await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken)).Should().Contain("Chrome");
+        (await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken)).Should().Contain("Chrome");
+    }
+
+    // --- caching behavior against a real Headless cache ---
+
+    [Fact]
+    public async Task should_memoize_a_parse_under_the_feature_namespaced_key()
+    {
+        using var cache = _CreateCache();
+        var sut = _CreateSut(cache: cache);
+
+        var result = await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken);
+
+        // The value the parser returned must be the value now sitting in the host cache, under api:user-agent:.
+        var cached = await cache.GetAsync<string?>("api:user-agent:" + _ChromeOnWindows, AbortToken);
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().Be(result);
+    }
+
+    [Fact]
+    public async Task should_cache_a_negative_result_so_garbage_is_parsed_at_most_once()
+    {
+        using var cache = _CreateCache();
+        var sut = _CreateSut(cache: cache);
+
+        (await sut.GetDeviceInfoAsync("!!!not-a-user-agent!!!", AbortToken)).Should().BeNull();
+
+        // The null is memoized (HasValue true, Value null), not treated as a miss on the next read.
+        var cached = await cache.GetAsync<string?>("api:user-agent:!!!not-a-user-agent!!!", AbortToken);
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_collapse_user_agents_that_share_a_truncated_prefix()
+    {
+        using var cache = _CreateCache();
+        var sut = _CreateSut(cache: cache, maxUserAgentLength: 64);
 
         var a = _ChromeOnWindows + new string('a', 200);
         var b = _ChromeOnWindows + new string('b', 200);
 
-        sut.GetDeviceInfo(a).Should().Be(sut.GetDeviceInfo(b));
+        // Both exceed the cap and are identical up to it, so they key the same memo entry.
+        (await sut.GetDeviceInfoAsync(a, AbortToken))
+            .Should()
+            .Be(await sut.GetDeviceInfoAsync(b, AbortToken));
+        (await cache.GetAsync<string?>("api:user-agent:" + _ChromeOnWindows[..64], AbortToken))
+            .HasValue.Should()
+            .BeTrue();
     }
 
-    [Fact]
-    public void should_still_parse_when_the_memo_cannot_retain_entries()
-    {
-        // A one-entry memo forces eviction between calls; parsing must stay correct regardless of
-        // whether a given call hits or misses.
-        using var sut = _CreateSut(maxEntries: 1);
-
-        sut.GetDeviceInfo(_ChromeOnWindows).Should().Contain("Chrome");
-        sut.GetDeviceInfo("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)").Should().NotBeNull();
-        sut.GetDeviceInfo(_ChromeOnWindows).Should().Contain("Chrome");
-    }
-
-    [Fact]
-    public void should_return_null_for_an_unidentifiable_user_agent()
-    {
-        using var sut = _CreateSut();
-
-        sut.GetDeviceInfo("!!!not-a-user-agent!!!").Should().BeNull();
-    }
-
-    [Fact]
-    public void should_be_safe_for_concurrent_use()
-    {
-        using var sut = _CreateSut();
-
-        var results = new string?[64];
-        Parallel.For(0, results.Length, i => results[i] = sut.GetDeviceInfo(_ChromeOnWindows));
-
-        results.Should().OnlyContain(x => x != null).And.AllBe(results[0]);
-    }
-
-    private static UserAgentParser _CreateSut(int maxEntries = 1000, int maxUserAgentLength = 512)
+    private static UserAgentParser _CreateSut(ICache? cache = null, int maxUserAgentLength = 512)
     {
         return new UserAgentParser(
-            Options.Create(
-                new UserAgentParserOptions { MaxEntries = maxEntries, MaxUserAgentLength = maxUserAgentLength }
-            )
+            Options.Create(new UserAgentParserOptions { MaxUserAgentLength = maxUserAgentLength }),
+            cache
         );
     }
+
+    private static InMemoryCache _CreateCache() => new(TimeProvider.System, new InMemoryCacheOptions());
 }
 
 public sealed class UserAgentParserOptionsValidatorTests : TestBase
 {
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void should_reject_a_non_positive_max_entries(int maxEntries)
+    [Fact]
+    public void should_reject_a_non_positive_sliding_expiration()
     {
         var result = new UserAgentParserOptionsValidator().Validate(
-            new UserAgentParserOptions { MaxEntries = maxEntries }
+            new UserAgentParserOptions { SlidingExpiration = TimeSpan.Zero }
         );
 
         result.IsValid.Should().BeFalse();
     }
 
     [Fact]
-    public void should_reject_a_non_positive_sliding_expiration()
+    public void should_reject_a_sliding_expiration_greater_than_the_absolute_duration()
     {
         var result = new UserAgentParserOptionsValidator().Validate(
-            new UserAgentParserOptions { SlidingExpiration = TimeSpan.Zero }
+            new UserAgentParserOptions
+            {
+                Duration = TimeSpan.FromMinutes(10),
+                SlidingExpiration = TimeSpan.FromMinutes(20),
+            }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_non_positive_max_user_agent_length(int maxUserAgentLength)
+    {
+        var result = new UserAgentParserOptionsValidator().Validate(
+            new UserAgentParserOptions { MaxUserAgentLength = maxUserAgentLength }
         );
 
         result.IsValid.Should().BeFalse();

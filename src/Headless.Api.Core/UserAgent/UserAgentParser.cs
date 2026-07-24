@@ -2,70 +2,79 @@
 
 using DeviceDetectorNET;
 using Headless.Abstractions;
-using Microsoft.Extensions.Caching.Memory;
+using Headless.Caching;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api.UserAgent;
 
 /// <summary>
-/// <see cref="IUserAgentParser"/> backed by DeviceDetector.NET, memoizing results in a bounded
-/// sliding-expiry in-process cache to amortise the regex work each parse performs.
+/// <see cref="IUserAgentParser"/> backed by DeviceDetector.NET. Memoizes results in the host's registered
+/// <see cref="ICache"/> — under the feature-namespaced <c>api:user-agent:</c> key prefix — to amortise the regex
+/// work each parse performs.
 /// </summary>
 /// <remarks>
-/// The memo is a private <see cref="MemoryCache"/> owned by this instance, not the host's shared
-/// <c>IMemoryCache</c>: entries here are derived from a header value and must not compete for the
-/// application's cache budget. It is deliberately not a <c>Headless.Caching</c> <c>ICache</c> either —
-/// <see cref="GetDeviceInfo"/> is called from a synchronous property on <c>IWebClientInfoProvider</c>,
-/// and what it caches is local CPU work, so a remote lookup to avoid a regex would cost more than it saves.
+/// The cache is resolved <b>optionally</b>: when the host has registered a <c>Headless.Caching</c> provider, parses
+/// are memoized (and negatives — unidentifiable agents — are cached too, so garbage is parsed at most once per TTL);
+/// when it has not, every call parses directly. This is the framework's standard optional-cache contract
+/// (<c>Headless.Jobs.EntityFramework</c>'s cron-expression cache is the reference implementation), so the dashboard
+/// UI or any consumer that wants User-Agent parses cached simply registers a cache. It never registers the shared
+/// <c>IMemoryCache</c> and never owns a private cache.
 /// </remarks>
-internal sealed class UserAgentParser : IUserAgentParser, IDisposable
+internal sealed class UserAgentParser : IUserAgentParser
 {
-    private readonly MemoryCache _memo;
-    private readonly MemoryCacheEntryOptions _entryOptions;
+    private const string _KeyPrefix = "api:user-agent:";
+
+    private readonly ICache? _cache;
+    private readonly CacheEntryOptions _entryOptions;
     private readonly int _maxUserAgentLength;
 
-    public UserAgentParser(IOptions<UserAgentParserOptions> options)
+    public UserAgentParser(IOptions<UserAgentParserOptions> options, ICache? cache = null)
     {
         var value = options.Value;
 
-        // SizeLimit counts "size units"; every entry below is registered with a size of 1, so the
-        // limit is a straight entry count.
-        _memo = new MemoryCache(new MemoryCacheOptions { SizeLimit = value.MaxEntries });
-        _entryOptions = new MemoryCacheEntryOptions().SetSize(1).SetSlidingExpiration(value.SlidingExpiration);
+        _cache = cache;
+        _entryOptions = new CacheEntryOptions
+        {
+            Duration = value.Duration,
+            SlidingExpiration = value.SlidingExpiration,
+        };
         _maxUserAgentLength = value.MaxUserAgentLength;
     }
 
-    public string? GetDeviceInfo(string? userAgent)
+    public async ValueTask<string?> GetDeviceInfoAsync(string? userAgent, CancellationToken cancellationToken = default)
     {
         if (userAgent.IsNullOrWhiteSpace())
         {
             return null;
         }
 
-        // Cap before lookup so the memo key is bounded too.
-        if (userAgent.Length > _maxUserAgentLength)
+        // Cap before parsing and before forming the key so both are bounded.
+        var normalized = userAgent.Length > _maxUserAgentLength ? userAgent[.._maxUserAgentLength] : userAgent;
+
+        if (_cache is null)
         {
-            userAgent = userAgent[.._maxUserAgentLength];
+            return _Parse(normalized);
         }
 
-        if (_memo.TryGetValue(userAgent, out string? cached))
-        {
-            return cached;
-        }
+        var result = await _cache
+            .GetOrAddAsync<string?>(
+                _KeyPrefix + normalized,
+                _ => new ValueTask<string?>(_Parse(normalized)),
+                _entryOptions,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        var result = _Parse(userAgent);
-        _memo.Set(userAgent, result, _entryOptions);
-
-        return result;
+        // GetOrAddAsync writes on a miss, so a hit is expected; the direct-parse fallback only guards the
+        // theoretical NoValue read (mirrors the Jobs cron-cache defensive read).
+        return result.HasValue ? result.Value : _Parse(normalized);
     }
-
-    public void Dispose() => _memo.Dispose();
 
     private static string? _Parse(string userAgent)
     {
-        // A new DeviceDetector per parse rather than a [ThreadStatic] instance: [ThreadStatic] is unsafe
-        // across async continuations, where a method can resume on a different pool thread and read stale
-        // state. The allocation is amortised by the memo above.
+        // A new DeviceDetector per parse rather than a [ThreadStatic] instance: [ThreadStatic] is unsafe across
+        // async continuations, where a method can resume on a different pool thread and read stale state. The
+        // allocation is amortised by the memo above.
         var detector = new DeviceDetector(userAgent);
         detector.Parse();
 
