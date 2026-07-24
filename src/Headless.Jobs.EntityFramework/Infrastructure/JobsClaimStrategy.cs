@@ -197,6 +197,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     // descendant is a boundary — not descended into, claimed independently (U5).
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
 
+    // KTD4 test seam: when set, invoked once between the root claim and the first descendant lease so a test can
+    // deterministically invalidate the root lease and drive the frontier fence. Always null in production.
+    internal Func<Task>? OnFrontierBeforeLease { get; set; }
+
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
@@ -600,7 +604,14 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the KTD2
         // lease-deadline-copy discipline has exactly one relational implementation.
         return await JobsSubtreeLeaseWalk
-            .LeaseNonTimedDescendantsAsync(context, rootId, owner, _maxChainDepth, cancellationToken)
+            .LeaseNonTimedDescendantsAsync(
+                context,
+                rootId,
+                owner,
+                _maxChainDepth,
+                cancellationToken,
+                OnFrontierBeforeLease
+            )
             .ConfigureAwait(false);
     }
 }

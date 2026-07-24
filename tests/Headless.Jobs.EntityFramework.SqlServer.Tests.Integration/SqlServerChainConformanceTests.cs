@@ -72,4 +72,22 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     {
         return base.bounded_sweep_skips_a_mismatched_child_whole_subtree_in_one_pass();
     }
+
+    [Fact]
+    public override Task cas_frontier_fence_rejects_descendants_when_root_lease_expires_mid_walk()
+    {
+        return base.cas_frontier_fence_rejects_descendants_when_root_lease_expires_mid_walk();
+    }
+
+    [Fact]
+    public override Task cas_frontier_fence_rejects_descendants_when_root_is_stolen_mid_walk()
+    {
+        return base.cas_frontier_fence_rejects_descendants_when_root_is_stolen_mid_walk();
+    }
+
+    [Fact]
+    public override Task two_owner_root_race_leaves_no_split_ownership()
+    {
+        return base.two_owner_root_race_leaves_no_split_ownership();
+    }
 }

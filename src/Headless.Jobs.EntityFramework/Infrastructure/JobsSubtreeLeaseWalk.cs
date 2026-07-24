@@ -22,12 +22,19 @@ internal static class JobsSubtreeLeaseWalk
     /// (root + leased descendants) so the caller can prune the hydrated tree to it — a node below a frontier the
     /// walk stopped at is never leased and must never execute.
     /// </summary>
+    /// <param name="onBeforeFirstLease">
+    /// TEST SEAM (KTD4). Invoked exactly once — after the first frontier's children are discovered but before their
+    /// lease UPDATE — so a test can deterministically invalidate the root's lease (expire it, or reassign its owner)
+    /// and drive the <c>EXISTS(root still owned by me, lease unexpired)</c> fence without racing statement latency
+    /// against a wall-clock deadline. Always <see langword="null"/> in production; production callers omit it.
+    /// </param>
     public static async Task<HashSet<Guid>> LeaseNonTimedDescendantsAsync<TTimeJob>(
         DbSet<TTimeJob> jobs,
         Guid rootId,
         string owner,
         int maxChainDepth,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        Func<Task>? onBeforeFirstLease = null
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -59,6 +66,13 @@ internal static class JobsSubtreeLeaseWalk
             if (childIds.Length == 0)
             {
                 break;
+            }
+
+            // KTD4 test seam: fire once, between discovery and the first lease UPDATE, so a test can invalidate the
+            // root lease and exercise the EXISTS fence below deterministically. Null (and thus a no-op) in production.
+            if (depth == 1 && onBeforeFirstLease is not null)
+            {
+                await onBeforeFirstLease().ConfigureAwait(false);
             }
 
             // Lease them, COPYING the root's persisted LockedUntil via a database-evaluated subquery (KTD2 invariant 2)

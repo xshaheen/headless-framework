@@ -2,13 +2,16 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Abstractions;
 using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -595,6 +598,208 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         {
             (await _ReadNodeAsync(d.Id, ct)).Status.Should().Be(JobStatus.Skipped, "the cascade is uncapped");
         }
+    }
+
+    /// <summary>
+    /// R4/KTD4 (CAS frontier fence). The generic-EF tree claim replaced the plan's single claim transaction with
+    /// fenced autocommit statements: after the root is stamped, each descendant lease UPDATE re-asserts
+    /// <c>EXISTS(root still owned by me AND lease unexpired)</c>. If that root ownership is lost mid-walk — the lease
+    /// lapses, or another node steals the root — the fence must reject the descendants so no orphaned tail is leased
+    /// (split ownership). Driven by the KTD4 seam so lease loss is a deterministic state change, never a race against
+    /// statement latency. Two cases: (i) the root lease expires; (ii) the root is reassigned to another owner.
+    /// </summary>
+    public virtual async Task cas_frontier_fence_rejects_descendants_when_root_lease_expires_mid_walk()
+    {
+        await _RunCasFenceCaseAsync(
+            async (fixtureConn, rootId) =>
+            {
+                // Case (i): expire the claimed root's lease so EXISTS(... LockedUntil > now) fails.
+                await _SqlAsync(
+                    fixtureConn,
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;",
+                    ("@past", DateTime.UtcNow.AddMinutes(-5)),
+                    ("@id", rootId)
+                );
+            }
+        );
+    }
+
+    /// <inheritdoc cref="cas_frontier_fence_rejects_descendants_when_root_lease_expires_mid_walk"/>
+    public virtual async Task cas_frontier_fence_rejects_descendants_when_root_is_stolen_mid_walk()
+    {
+        await _RunCasFenceCaseAsync(
+            async (fixtureConn, rootId) =>
+            {
+                // Case (ii): reassign the claimed root to a different owner so EXISTS(... OwnerId = me) fails.
+                await _SqlAsync(
+                    fixtureConn,
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"OwnerId\" = @thief WHERE \"Id\" = @id;",
+                    ("@thief", "thief@9"),
+                    ("@id", rootId)
+                );
+            }
+        );
+    }
+
+    private async Task _RunCasFenceCaseAsync(Func<DbConnection, Guid, Task> invalidateRoot)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("cas-fence");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        // Started so the peek's owner gate is satisfied; background services are disabled and the recovery bridge only
+        // reclaims coordination-reported dead nodes, never our fixed cas@1 owner, so nothing races the claim.
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // Root due imminently so the staleness-filtered main peek surfaces it (mirrors the other chain tests, which
+            // use AddSeconds(1)); a far-past ExecutionTime would route to the fallback claim instead of the peek.
+            var root = _NewJob("cas-root", DateTime.UtcNow.AddSeconds(1));
+            var child = _NewChild(root.Id, RunCondition.OnSuccess, executionTime: null);
+            var grandchild = _NewChild(child.Id, RunCondition.OnSuccess, executionTime: null);
+            await persistence.AddTimeJobsAsync([root, child, grandchild], ct);
+
+            var candidates = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
+
+            // The seam fires between the root claim and the first descendant lease and invalidates root ownership.
+            var cas = _BuildCas(
+                host,
+                "cas@1",
+                async () =>
+                {
+                    await using var seamConnection = fixture.CreateConnection();
+                    await seamConnection.OpenAsync(ct);
+                    await invalidateRoot(seamConnection, root.Id);
+                }
+            );
+
+            var claimed = await cas.ClaimTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
+
+            // The root was stamped before the seam, so it is still returned — but pruned to itself, with NO leased tail.
+            var claimedRoot = claimed.Should().ContainSingle(x => x.Id == root.Id).Subject;
+            claimedRoot.Children.Should().BeEmpty("the fence rejected every descendant once root ownership was lost");
+
+            // The decisive contract: no descendant was leased. No split ownership.
+            var childRow = await _ReadNodeAsync(child.Id, ct);
+            childRow.Status.Should().Be(JobStatus.Idle);
+            childRow.OwnerId.Should().BeNull("a descendant must never be leased when the root fence fails");
+
+            var grandchildRow = await _ReadNodeAsync(grandchild.Id, ct);
+            grandchildRow.Status.Should().Be(JobStatus.Idle);
+            grandchildRow.OwnerId.Should().BeNull();
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// R4 (root CAS + PruneToClaimedSet). Two owners race the same root through the CAS tree claim. The root's
+    /// optimistic <c>UpdatedAt</c> gate lets exactly one win; the loser's root UPDATE affects zero rows and it claims
+    /// nothing — no node is split across owners. Scoped to the root CAS and the claimed-set pruning; the descendant
+    /// fence is exercised separately above.
+    /// </summary>
+    public virtual async Task two_owner_root_race_leaves_no_split_ownership()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("cas-race");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var root = _NewJob("race-root", DateTime.UtcNow.AddSeconds(1));
+            var child = _NewChild(root.Id, RunCondition.OnSuccess, executionTime: null);
+            await persistence.AddTimeJobsAsync([root, child], ct);
+
+            // Each owner peeks its OWN candidate snapshot — same persisted UpdatedAt, but distinct objects. This
+            // mirrors production (each poller reads its own array) and matters because ClaimTimeJobsAsync mutates the
+            // candidate's UpdatedAt in place on a win; sharing one array would leak the winner's new value into the
+            // loser's optimistic gate and let both "win".
+            var candidatesA = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
+            var candidatesB = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
+
+            var ownerA = _BuildCas(host, "owner-a@1");
+            var ownerB = _BuildCas(host, "owner-b@1");
+
+            var claimedByA = await ownerA.ClaimTimeJobsAsync(candidatesA, ct).ToArrayAsync(ct);
+            var claimedByB = await ownerB.ClaimTimeJobsAsync(candidatesB, ct).ToArrayAsync(ct);
+
+            (claimedByA.Length + claimedByB.Length)
+                .Should()
+                .Be(1, "the root's optimistic UpdatedAt gate lets exactly one owner claim it");
+
+            var rootRow = await _ReadNodeAsync(root.Id, ct);
+            rootRow.OwnerId.Should().BeOneOf("owner-a@1", "owner-b@1");
+
+            var childRow = await _ReadNodeAsync(child.Id, ct);
+            childRow.OwnerId.Should().Be(rootRow.OwnerId, "the child must belong to the same owner that won the root");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity> _BuildCas(
+        Microsoft.Extensions.Hosting.IHost host,
+        string owner,
+        Func<Task>? onFrontierBeforeLease = null
+    )
+    {
+        var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
+        var timeProvider = host.Services.GetRequiredService<TimeProvider>();
+        var guidGenerator = host.Services.GetRequiredService<IGuidGenerator>();
+        var options = host.Services.GetRequiredService<SchedulerOptionsBuilder>();
+
+        return new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+            factory,
+            timeProvider,
+            guidGenerator,
+            new _FixedOwnerIdentity(owner),
+            options
+        )
+        {
+            OnFrontierBeforeLease = onFrontierBeforeLease,
+        };
+    }
+
+    private static async Task _SqlAsync(
+        DbConnection connection,
+        string sql,
+        params (string Name, object Value)[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters)
+        {
+            JobsCoordinationFixtureExtensions.AddParameter(command, name, value);
+        }
+        await command.ExecuteNonQueryAsync();
+    }
+
+    // Fixed owner for the CAS-strategy tests: the coordination-backed IJobsOwnerIdentity only yields an owner once
+    // membership is established (host started), which we deliberately avoid so the recovery bridge cannot race the
+    // claim under test. This stands in with a stable owner and never-lost membership.
+    private sealed class _FixedOwnerIdentity(string owner) : IJobsOwnerIdentity
+    {
+        public string DisplayOwner => owner;
+
+        public bool TryGetStampOwner([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? stampOwner)
+        {
+            stampOwner = owner;
+            return true;
+        }
+
+        public CancellationToken MembershipLostToken => CancellationToken.None;
     }
 
     // ----- helpers -------------------------------------------------------------------------------------------------
