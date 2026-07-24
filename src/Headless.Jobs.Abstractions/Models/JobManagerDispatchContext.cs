@@ -47,11 +47,11 @@ public class JobManagerDispatchContext(Guid id)
 
 /// <summary>Minimal projection of the most recent upcoming occurrence for a cron job definition.</summary>
 [PublicAPI]
-public class NextCronOccurrence(Guid id, DateTime createdAt)
+public class NextCronOccurrence(Guid id, DateTime dateCreated)
 {
     /// <summary>Identifier of the upcoming occurrence row.</summary>
     public Guid Id { get; set; } = id;
 
     /// <summary>UTC timestamp when the occurrence row was created.</summary>
-    public DateTime CreatedAt { get; set; } = createdAt;
+    public DateTime DateCreated { get; set; } = dateCreated;
 }

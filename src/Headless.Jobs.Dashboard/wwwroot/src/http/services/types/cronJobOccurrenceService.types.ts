@@ -12,7 +12,7 @@ export class GetCronJobOccurrenceResponse {
     lockedAt!:string;
     executionTime!:string;
     executionTimeFormatted!:string;
-    executedAt!:string;
+    dateExecuted!:string;
     elapsedTime!:string|number;
     retryCount!:number;
     actions:string|undefined = undefined;

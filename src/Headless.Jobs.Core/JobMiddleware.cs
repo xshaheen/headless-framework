@@ -230,7 +230,7 @@ public static class JobMiddlewareRegistry
     )
     {
         var registrations = _frozen ? _schedule : _Order(_ScheduleRegistrations);
-        JobScheduleNext current = next;
+        var current = next;
         for (var index = registrations.Length - 1; index >= 0; index--)
         {
             var registration = registrations[index];
@@ -252,7 +252,7 @@ public static class JobMiddlewareRegistry
     )
     {
         var registrations = _frozen ? _execute : _Order(_ExecuteRegistrations);
-        JobExecuteNext current = next;
+        var current = next;
         for (var index = registrations.Length - 1; index >= 0; index--)
         {
             var registration = registrations[index];

@@ -54,7 +54,7 @@ exactly one correct authority:
 | **"Who owns this, and until when?"** (leases, locks, liveness, visibility) | **The store** | DB/Redis server clock, inlined into the atomic statement |
 | **"How long has this taken?"** (timeouts, backoff, deadlines, rate limits) | **A monotonic counter** | `TimeProvider.GetTimestamp()` / `GetElapsedTime()` |
 | **"When should this fire in human terms?"** (cron, business calendars) | **The tz database** | `TimeZoneInfo` + explicit `TimeZoneInfo`, never `TimeZoneInfo.Local` |
-| **"When did this happen?"** (audit, `CreatedAt`, logs, metrics) | **The app clock** | Injected `TimeProvider` |
+| **"When did this happen?"** (audit, `DateCreated`, logs, metrics) | **The app clock** | Injected `TimeProvider` |
 
 The failure mode in every historical bug found in this repo was **using the wrong row of that table**.
 
@@ -195,7 +195,7 @@ enforce it at the type level (`DateTimeOffset`) rather than silently applying a 
 
 ## 4. Observational time — the app clock is the authority
 
-Applies to: `CreatedAt`, `UpdatedAt`, `DeletedAt`, audit entries, log timestamps, metric timestamps.
+Applies to: `DateCreated`, `DateUpdated`, `DateDeleted`, audit entries, log timestamps, metric timestamps.
 
 **Rule:** injected `TimeProvider` (or the `TimeProvider`-backed clock). Never `DateTime.UtcNow` directly —
 it is untestable. Never `DateTime.Now` — ever.
@@ -203,7 +203,7 @@ it is untestable. Never `DateTime.Now` — ever.
 These timestamps record *what happened*, not *who owns what*. Cross-node skew makes them slightly
 imprecise; it does not make them incorrect. They do not need the store clock — **unless they also
 participate in an ownership or expiry predicate**, in which case they are ownership time (§1) and the
-store owns them. Jobs deliberately stamps `UpdatedAt` from the claim's DB snapshot precisely because it
+store owns them. Jobs deliberately stamps `DateUpdated` from the claim's DB snapshot precisely because it
 doubles as an optimistic-concurrency fence.
 
 **Logs must be UTC.** Serilog captures `LogEvent.Timestamp` from `DateTimeOffset.Now` (local) by default —

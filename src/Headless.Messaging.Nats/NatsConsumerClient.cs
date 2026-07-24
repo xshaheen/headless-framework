@@ -304,7 +304,10 @@ internal sealed class NatsConsumerClient(
                     await Task.WhenAll(tasks).ConfigureAwait(false);
                 }
 #pragma warning disable ERP022 // The outer startup exception is the actionable failure and is rethrown below.
-                catch { }
+                catch
+                {
+                    // ignored
+                }
 #pragma warning restore ERP022
 
                 throw;

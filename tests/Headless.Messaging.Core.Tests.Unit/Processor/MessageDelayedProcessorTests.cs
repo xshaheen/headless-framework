@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
@@ -9,7 +10,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.Core.Tests.Unit.Processor;
+namespace Tests.Processor;
 
 public sealed class MessageDelayedProcessorTests : TestBase
 {

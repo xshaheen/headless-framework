@@ -38,8 +38,8 @@ internal static class MappingExtensions
             TimeZoneId = e.TimeZoneId,
             IsPaused = e.IsPaused,
             ScheduleRevision = e.ScheduleRevision,
-            CreatedAt = e.CreatedAt,
-            UpdatedAt = e.UpdatedAt,
+            DateCreated = e.DateCreated,
+            DateUpdated = e.DateUpdated,
             RetryIntervals = e.RetryIntervals,
             Retries = e.Retries,
         };
@@ -56,8 +56,8 @@ internal static class MappingExtensions
             RetryCount = e.RetryCount,
             TenantId = e.TenantId,
             RetryIntervals = e.RetryIntervals,
-            CreatedAt = e.CreatedAt,
-            UpdatedAt = e.UpdatedAt,
+            DateCreated = e.DateCreated,
+            DateUpdated = e.DateUpdated,
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
             OnNodeDeath = e.OnNodeDeath,
@@ -70,8 +70,8 @@ internal static class MappingExtensions
                     RetryCount = ch.RetryCount,
                     TenantId = ch.TenantId,
                     RetryIntervals = ch.RetryIntervals,
-                    CreatedAt = ch.CreatedAt,
-                    UpdatedAt = ch.UpdatedAt,
+                    DateCreated = ch.DateCreated,
+                    DateUpdated = ch.DateUpdated,
                     ParentId = ch.ParentId,
                     RunCondition = ch.RunCondition,
                     OnNodeDeath = ch.OnNodeDeath,
@@ -84,8 +84,8 @@ internal static class MappingExtensions
                             TenantId = gch.TenantId,
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
-                            CreatedAt = gch.CreatedAt,
-                            UpdatedAt = gch.UpdatedAt,
+                            DateCreated = gch.DateCreated,
+                            DateUpdated = gch.DateUpdated,
                             ParentId = gch.ParentId,
                             RunCondition = gch.RunCondition,
                             OnNodeDeath = gch.OnNodeDeath,
@@ -106,8 +106,8 @@ internal static class MappingExtensions
         return e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
-            CreatedAt = e.CreatedAt,
-            UpdatedAt = e.UpdatedAt,
+            DateCreated = e.DateCreated,
+            DateUpdated = e.DateUpdated,
             CronJobId = e.CronJobId,
             RetryCount = e.RetryCount,
             ExecutionTime = e.ExecutionTime,
@@ -116,8 +116,8 @@ internal static class MappingExtensions
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
-                CreatedAt = e.CronJob.CreatedAt,
-                UpdatedAt = e.CronJob.UpdatedAt,
+                DateCreated = e.CronJob.DateCreated,
+                DateUpdated = e.CronJob.DateUpdated,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
                 OnNodeDeath = e.CronJob.OnNodeDeath,
@@ -134,8 +134,8 @@ internal static class MappingExtensions
         return e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
-            CreatedAt = e.CreatedAt,
-            UpdatedAt = e.UpdatedAt,
+            DateCreated = e.DateCreated,
+            DateUpdated = e.DateUpdated,
             CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
             // Carry the stored death policy through the executor-pick projection (mirrors ForQueueCronJobOccurrence,
@@ -149,8 +149,8 @@ internal static class MappingExtensions
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
-                CreatedAt = e.CronJob.CreatedAt,
-                UpdatedAt = e.CronJob.UpdatedAt,
+                DateCreated = e.CronJob.DateCreated,
+                DateUpdated = e.CronJob.DateUpdated,
                 Expression = e.CronJob.Expression,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
@@ -183,9 +183,9 @@ internal static class MappingExtensions
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.DateExecuted)))
         {
-            setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
+            setters.SetProperty(x => x.DateExecuted, functionContext.DateExecuted);
         }
 
         // EXCEPTION DETAILS
@@ -225,7 +225,7 @@ internal static class MappingExtensions
     internal static void UpdateTimeJob<TTimeJob>(
         this UpdateSettersBuilder<TTimeJob> setters,
         JobExecutionState functionContext,
-        DateTime updatedAt
+        DateTime dateUpdated
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -247,9 +247,9 @@ internal static class MappingExtensions
         }
 
         // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
+        if (propsToUpdate.Contains(nameof(JobExecutionState.DateExecuted)))
         {
-            setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
+            setters.SetProperty(x => x.DateExecuted, functionContext.DateExecuted);
         }
 
         // EXCEPTION DETAILS
@@ -280,6 +280,6 @@ internal static class MappingExtensions
         }
 
         // UPDATED_AT ALWAYS
-        setters.SetProperty(x => x.UpdatedAt, updatedAt);
+        setters.SetProperty(x => x.DateUpdated, dateUpdated);
     }
 }

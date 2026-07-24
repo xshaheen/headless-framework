@@ -29,8 +29,8 @@ public sealed class DurableCancellationProviderTests : TestBase
         var queued = _Job(JobStatus.Queued, _Owner, lockedUntil);
         var inProgress = _Job(JobStatus.InProgress, _Owner, lockedUntil);
         var terminal = _Job(JobStatus.Succeeded, _Owner, lockedUntil);
-        terminal.ExecutedAt = _Now.AddMinutes(-1);
-        var terminalUpdatedAt = terminal.UpdatedAt;
+        terminal.DateExecuted = _Now.AddMinutes(-1);
+        var terminalDateUpdated = terminal.DateUpdated;
         await provider.AddTimeJobsAsync([idle, queued, inProgress, terminal], AbortToken);
 
         (await provider.IsTimeJobCancellationRequestedAsync(inProgress.Id, AbortToken)).Should().BeFalse();
@@ -51,30 +51,30 @@ public sealed class DurableCancellationProviderTests : TestBase
         var cancelledIdle = await provider.GetTimeJobByIdAsync(idle.Id, AbortToken);
         cancelledIdle!.Status.Should().Be(JobStatus.Cancelled);
         cancelledIdle.CancelRequested.Should().BeTrue();
-        cancelledIdle.ExecutedAt.Should().Be(_Now);
-        cancelledIdle.UpdatedAt.Should().Be(_Now);
+        cancelledIdle.DateExecuted.Should().Be(_Now);
+        cancelledIdle.DateUpdated.Should().Be(_Now);
         cancelledIdle.OwnerId.Should().BeNull();
         cancelledIdle.LockedUntil.Should().BeNull();
 
         var requestedQueued = await provider.GetTimeJobByIdAsync(queued.Id, AbortToken);
         requestedQueued!.Status.Should().Be(JobStatus.Queued);
         requestedQueued.CancelRequested.Should().BeTrue();
-        requestedQueued.ExecutedAt.Should().BeNull();
+        requestedQueued.DateExecuted.Should().BeNull();
         requestedQueued.OwnerId.Should().Be(_Owner);
         requestedQueued.LockedUntil.Should().Be(lockedUntil);
 
         var requestedInProgress = await provider.GetTimeJobByIdAsync(inProgress.Id, AbortToken);
         requestedInProgress!.Status.Should().Be(JobStatus.InProgress);
         requestedInProgress.CancelRequested.Should().BeTrue();
-        requestedInProgress.ExecutedAt.Should().BeNull();
+        requestedInProgress.DateExecuted.Should().BeNull();
         requestedInProgress.OwnerId.Should().Be(_Owner);
         requestedInProgress.LockedUntil.Should().Be(lockedUntil);
 
         var rejectedTerminal = await provider.GetTimeJobByIdAsync(terminal.Id, AbortToken);
         rejectedTerminal!.Status.Should().Be(JobStatus.Succeeded);
         rejectedTerminal.CancelRequested.Should().BeFalse();
-        rejectedTerminal.ExecutedAt.Should().Be(_Now.AddMinutes(-1));
-        rejectedTerminal.UpdatedAt.Should().Be(terminalUpdatedAt);
+        rejectedTerminal.DateExecuted.Should().Be(_Now.AddMinutes(-1));
+        rejectedTerminal.DateUpdated.Should().Be(terminalDateUpdated);
         rejectedTerminal.OwnerId.Should().Be(_Owner);
         rejectedTerminal.LockedUntil.Should().Be(lockedUntil);
     }
@@ -110,17 +110,17 @@ public sealed class DurableCancellationProviderTests : TestBase
             var released = await provider.GetTimeJobByIdAsync(id, AbortToken);
             released!.Status.Should().Be(JobStatus.Idle);
             released.ExecutionTime.Should().Be(_Now);
-            released.ExecutedAt.Should().BeNull();
+            released.DateExecuted.Should().BeNull();
         }
 
         var skipped = await provider.GetTimeJobByIdAsync(rejected.Id, AbortToken);
         skipped!.Status.Should().Be(JobStatus.Skipped);
-        skipped.ExecutedAt.Should().Be(_Now);
+        skipped.DateExecuted.Should().Be(_Now);
         skipped.SkippedReason.Should().Be("Parent cancellation did not satisfy the job run condition.");
 
         var skippedDescendant = await provider.GetTimeJobByIdAsync(rejectedGrandchild.Id, AbortToken);
         skippedDescendant!.Status.Should().Be(JobStatus.Skipped);
-        skippedDescendant.ExecutedAt.Should().Be(_Now);
+        skippedDescendant.DateExecuted.Should().Be(_Now);
         skippedDescendant.SkippedReason.Should().Be("Ancestor job was skipped after parent cancellation.");
     }
 
@@ -129,12 +129,12 @@ public sealed class DurableCancellationProviderTests : TestBase
     {
         var (provider, _) = _Create();
         var staleCandidate = _Job(JobStatus.Idle, owner: null, lockedUntil: null);
-        staleCandidate.UpdatedAt = _Now;
+        staleCandidate.DateUpdated = _Now;
         await provider.AddTimeJobsAsync([staleCandidate], AbortToken);
 
         (await provider.RequestTimeJobCancellationAsync(staleCandidate.Id, AbortToken)).Should().BeTrue();
         var queued = await provider
-            .QueueTimeJobsAsync([new TimeJobEntity { Id = staleCandidate.Id, UpdatedAt = _Now }], AbortToken)
+            .QueueTimeJobsAsync([new TimeJobEntity { Id = staleCandidate.Id, DateUpdated = _Now }], AbortToken)
             .ToArrayAsync(AbortToken);
 
         queued.Should().BeEmpty();
@@ -168,7 +168,7 @@ public sealed class DurableCancellationProviderTests : TestBase
             OwnerId = owner,
             LockedUntil = lockedUntil,
             ExecutionTime = executionTime ?? _Now.AddMinutes(1),
-            CreatedAt = _Now.AddMinutes(-5),
-            UpdatedAt = _Now.AddMinutes(-2),
+            DateCreated = _Now.AddMinutes(-5),
+            DateUpdated = _Now.AddMinutes(-2),
         };
 }

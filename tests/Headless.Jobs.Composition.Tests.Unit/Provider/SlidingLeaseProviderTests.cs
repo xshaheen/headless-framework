@@ -172,7 +172,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var stored = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
         await foreach (
             var _ in provider.QueueTimeJobsAsync(
-                [new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt }],
+                [new TimeJobEntity { Id = job.Id, DateUpdated = stored!.DateUpdated }],
                 AbortToken
             )
         ) { }

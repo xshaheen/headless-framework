@@ -12,6 +12,8 @@ using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
+using Headless.Api.UserAgent;
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Security;
@@ -29,6 +31,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -280,6 +283,13 @@ public static class SetupApi
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+            builder.Services.AddOptions<UserAgentParserOptions, UserAgentParserOptionsValidator>();
+            // ICache is resolved with GetService (optional): User-Agent parses are memoized only when the host
+            // registers a default Headless.Caching provider; otherwise the parser runs on every call.
+            builder.Services.TryAddSingleton<IUserAgentParser>(sp => new UserAgentParser(
+                sp.GetRequiredService<IOptions<UserAgentParserOptions>>(),
+                sp.GetService<ICache>()
+            ));
             builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
             builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();

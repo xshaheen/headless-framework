@@ -66,10 +66,10 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        int publishedSucceeded = 0;
-        int publishedFailed = 0;
-        int publishedDelayed = 0;
-        int publishedPendingRetry = 0;
+        var publishedSucceeded = 0;
+        var publishedFailed = 0;
+        var publishedDelayed = 0;
+        var publishedPendingRetry = 0;
 
         // Single pass over each value collection — the original implementation enumerated the
         // dictionary up to 4× per side; this collapses it to 1×.
@@ -94,9 +94,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             }
         }
 
-        int receivedSucceeded = 0;
-        int receivedFailed = 0;
-        int receivedPendingRetry = 0;
+        var receivedSucceeded = 0;
+        var receivedFailed = 0;
+        var receivedPendingRetry = 0;
 
         foreach (var msg in storage.ReceivedMessages.Values)
         {

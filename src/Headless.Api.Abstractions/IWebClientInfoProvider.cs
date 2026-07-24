@@ -24,6 +24,11 @@ public interface IWebClientInfoProvider
     string? UserAgent { get; }
 
     /// <summary>Gets device-identifying information parsed or derived from the current request.</summary>
-    /// <remarks>Returns <see langword="null"/> outside an HTTP scope or when no device info is available.</remarks>
-    string? DeviceInfo { get; }
+    /// <param name="cancellationToken">Cancels an out-of-process memo read/write, when device info is cached remotely.</param>
+    /// <remarks>
+    /// Returns <see langword="null"/> outside an HTTP scope or when no device info is available. This member is
+    /// asynchronous — unlike <see cref="IpAddress"/> and <see cref="UserAgent"/>, which are direct reads — because
+    /// it derives from a User-Agent parse that is memoized in the host's <c>ICache</c>, which may be out of process.
+    /// </remarks>
+    ValueTask<string?> GetDeviceInfoAsync(CancellationToken cancellationToken = default);
 }

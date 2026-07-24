@@ -7,7 +7,7 @@ namespace Headless.Domain;
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 [PublicAPI]
 public interface IEntity<out TId> : IEntity
-    where TId : notnull, IEquatable<TId>
+    where TId : IEquatable<TId> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
 {
     /// <summary>Unique identifier for this entity.</summary>
     TId Id { get; }
@@ -16,7 +16,7 @@ public interface IEntity<out TId> : IEntity
 /// <summary>Base class for entities with a single primary key.</summary>
 [PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
-    where TId : notnull, IEquatable<TId>
+    where TId : IEquatable<TId> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

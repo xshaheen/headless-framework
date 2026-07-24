@@ -239,7 +239,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddIntegrationEventOutbox*");
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>();
+        assertion.WithMessage("*AddIntegrationEventOutbox*");
     }
 
     [Fact]
@@ -272,7 +273,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     public async Task should_use_registered_message_dispatcher_when_save_changes_messages_are_emitted()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
+        var (provider, connection) = await _CreateProviderAsync(_AddRuntimeRecorder);
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -295,7 +296,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     public async Task should_publish_messages_queued_on_unchanged_tracked_emitters_when_save_changes()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
+        var (provider, connection) = await _CreateProviderAsync(_AddRuntimeRecorder);
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -325,7 +326,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(
-            services => _AddRuntimeRecorder(services),
+            _AddRuntimeRecorder,
             options => options.AddSaveEntryProcessor<RuntimeQueuedMessageSaveEntryProcessor>(ServiceLifetime.Singleton)
         );
         await using var _ = connection;
@@ -498,13 +499,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         }
     }
 
-    private static IServiceCollection _AddRuntimeRecorder(IServiceCollection services)
+    private static void _AddRuntimeRecorder(IServiceCollection services)
     {
         services.AddScoped<RuntimeRecordingMessageDispatcher>();
         services.AddScoped<ILocalEventBus>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
         services.AddScoped<IHeadlessOutboxDispatcher>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
-
-        return services;
     }
 
     // Counts every domain-event publish so the test can prove handlers fire exactly once across the retry.

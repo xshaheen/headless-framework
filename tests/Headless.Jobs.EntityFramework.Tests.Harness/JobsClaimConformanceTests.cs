@@ -523,12 +523,14 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await persistence.AddTimeJobsAsync(cancellableRoots, ct);
             using var cancellation = new CancellationTokenSource();
             await using (
-                var enumerator = persistence.QueueTimedOutTimeJobsAsync(cancellation.Token).GetAsyncEnumerator()
+                var enumerator = persistence
+                    .QueueTimedOutTimeJobsAsync(cancellation.Token)
+                    .GetAsyncEnumerator(cancellation.Token)
             )
             {
                 (await enumerator.MoveNextAsync()).Should().BeTrue();
                 await cancellation.CancelAsync();
-                Func<Task> moveNext = async () =>
+                var moveNext = async () =>
                 {
                     await enumerator.MoveNextAsync();
                 };
@@ -674,7 +676,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claimed.Should().ContainSingle();
             claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
-            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
+            claimed[0].LockedUntil.Should().Be(claimed[0].DateUpdated.Add(leaseDuration));
 
             var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
             lockedUntil.Should().Be(claimed[0].LockedUntil);

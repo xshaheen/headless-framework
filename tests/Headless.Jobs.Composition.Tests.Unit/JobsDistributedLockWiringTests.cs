@@ -13,8 +13,14 @@ namespace Tests;
 /// care only about which instance lands under the keyed slot, not lock behavior.
 /// </summary>
 [Collection<JobsHelperCollection>]
-public sealed class JobsDistributedLockWiringTests
+public sealed class JobsDistributedLockWiringTests : IDisposable
 {
+    // AddHeadlessJobs reads the process-wide JobFunctionProvider registry, so these tests need it
+    // empty; sibling classes in this collection register functions that would otherwise leak in.
+    public JobsDistributedLockWiringTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
+
+    public void Dispose() => JobFunctionProvider.ResetForTests();
+
     private static int _CountJobsLockDescriptors(IServiceCollection services)
     {
         return services.Count(d =>

@@ -26,9 +26,9 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 
         builder.Property(e => e.TimeZoneId).HasMaxLength(128);
 
-        builder.Property(e => e.CreatedAt).HasConversion(utcDateTimeConverter);
+        builder.Property(e => e.DateCreated).HasConversion(utcDateTimeConverter);
 
-        builder.Property(e => e.UpdatedAt).HasConversion(utcDateTimeConverter);
+        builder.Property(e => e.DateUpdated).HasConversion(utcDateTimeConverter);
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 

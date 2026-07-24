@@ -226,7 +226,7 @@ public static class FileNames
 
         try
         {
-            Span<char> normalizedName = rentedBuffer is not null
+            var normalizedName = rentedBuffer is not null
                 ? rentedBuffer.AsSpan(0, estimatedLength)
                 : stackalloc char[estimatedLength];
 

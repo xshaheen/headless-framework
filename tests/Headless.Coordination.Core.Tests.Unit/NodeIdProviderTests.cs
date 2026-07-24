@@ -50,7 +50,6 @@ public sealed class NodeIdProviderTests : TestBase
             name switch
             {
                 "POD_NAME" => "orders-7d",
-                "POD_NAMESPACE" => null,
                 _ => null,
             }
         );

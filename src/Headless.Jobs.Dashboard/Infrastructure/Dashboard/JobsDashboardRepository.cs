@@ -456,8 +456,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             ExecutionTime = now,
             LockedUntil = null,
             CronJobId = id,
-            CreatedAt = now,
-            UpdatedAt = now,
+            DateCreated = now,
+            DateUpdated = now,
         };
 
         await _persistenceProvider

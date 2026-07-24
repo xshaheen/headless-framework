@@ -31,7 +31,7 @@ const totalCount = ref(0)
 // Define headers manually for paginated response
 const headers = ref([
   { title: 'Status', key: 'status', sortable: true, visibility: true },
-  { title: 'Executed At (Elapsed Time)', key: 'executedAt', sortable: false, visibility: true },
+  { title: 'Executed At (Elapsed Time)', key: 'dateExecuted', sortable: false, visibility: true },
   { title: 'Execution Time', key: 'executionTimeFormatted', sortable: true, visibility: true },
   { title: 'Locked At', key: 'lockedAt', sortable: false, visibility: true },
   { title: 'Lock Holder', key: 'lockHolder', sortable: false, visibility: true },
@@ -98,7 +98,7 @@ const addHubListeners = async () => {
           ...currentItem,
           ...val,
           status: Status[val.status as number],
-          executedAt: `${format(val.executedAt)} (took ${formatTime(val.elapsedTime as number, true)})`,
+          dateExecuted: `${format(val.dateExecuted)} (took ${formatTime(val.elapsedTime as number, true)})`,
           retryIntervals: currentItem.retryIntervals,
           lockedAt: currentItem.lockedAt, // Preserve existing lockedAt
           lockHolder: currentItem.lockHolder,
@@ -333,7 +333,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
             </template>
 
             <!-- Executed At Column -->
-            <template #[`item.ExecutedAt`]="{ item }">
+            <template #[`item.dateExecuted`]="{ item }">
               <div class="executed-at-cell">
                 <div v-if="hasStatus(item.status, Status.InProgress)" class="executing-indicator">
                   <v-icon size="16" class="spinning">mdi-loading</v-icon>
@@ -343,7 +343,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
                   N/A
                 </div>
                 <div v-else class="execution-time">
-                  {{ item.executedAt }}
+                  {{ item.dateExecuted }}
                 </div>
               </div>
             </template>

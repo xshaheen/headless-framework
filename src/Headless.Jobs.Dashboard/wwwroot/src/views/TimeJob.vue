@@ -622,7 +622,7 @@ const headersWithSelection = computed(() => {
     { title: 'Request Type', key: 'RequestType', sortable: false, visibility: true },
     { title: 'Description', key: 'description', sortable: true, visibility: true },
     { title: 'Execution Time', key: 'executionTimeFormatted', sortable: true, visibility: true },
-    { title: 'Executed At (Elapsed Time)', key: 'executedAt', sortable: false, visibility: true },
+    { title: 'Executed At (Elapsed Time)', key: 'dateExecuted', sortable: false, visibility: true },
     { title: 'Lock Holder', key: 'lockHolder', sortable: false, visibility: true },
     { title: 'Retry Status', key: 'retryIntervals', sortable: false, visibility: true },
     { title: 'Actions', key: 'actions', sortable: false, visibility: true },
@@ -1268,7 +1268,7 @@ const canBeForceDeleted = ref<string[]>([])
               </v-badge>
             </template>
 
-            <template #[`item.ExecutedAt`]="{ item }">
+            <template #[`item.dateExecuted`]="{ item }">
               <div
                 v-if="hasStatus(item.status, Status.InProgress)"
                 class="snippet"
@@ -1282,7 +1282,7 @@ const canBeForceDeleted = ref<string[]>([])
                 {{
                   hasStatus(item.status, Status.Cancelled) || hasStatus(item.status, Status.Queued)
                     ? ''
-                    : item.executedAt
+                    : item.dateExecuted
                 }}
               </div>
             </template>

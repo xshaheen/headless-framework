@@ -46,8 +46,8 @@ public class BaseJobEntity
     public virtual bool IsSystemJob { get; set; }
 
     /// <summary>UTC timestamp when this row was first persisted.</summary>
-    public virtual DateTime CreatedAt { get; internal set; }
+    public virtual DateTime DateCreated { get; internal set; }
 
     /// <summary>UTC timestamp of the most recent update to this row.</summary>
-    public virtual DateTime UpdatedAt { get; internal set; }
+    public virtual DateTime DateUpdated { get; internal set; }
 }

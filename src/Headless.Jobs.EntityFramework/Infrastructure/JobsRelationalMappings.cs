@@ -60,8 +60,8 @@ internal sealed record CronOccurrenceRelationalMapping(
     string OnNodeDeath,
     string ElapsedTime,
     string RetryCount,
-    string CreatedAt,
-    string UpdatedAt
+    string DateCreated,
+    string DateUpdated
 )
 {
     public static CronOccurrenceRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
@@ -100,8 +100,8 @@ internal sealed record CronOccurrenceRelationalMapping(
             Column(nameof(CronJobOccurrenceEntity<>.OnNodeDeath)),
             Column(nameof(CronJobOccurrenceEntity<>.ElapsedTime)),
             Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
-            Column(nameof(CronJobOccurrenceEntity<>.CreatedAt)),
-            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt))
+            Column(nameof(CronJobOccurrenceEntity<>.DateCreated)),
+            Column(nameof(CronJobOccurrenceEntity<>.DateUpdated))
         );
     }
 }
@@ -113,7 +113,7 @@ internal sealed record TimeJobRelationalMapping(
     string OwnerId,
     string LockedUntil,
     string OnNodeDeath,
-    string UpdatedAt,
+    string DateUpdated,
     string ExecutionTime,
     string ParentId
 )
@@ -150,7 +150,7 @@ internal sealed record TimeJobRelationalMapping(
             Column(nameof(TimeJobEntity.OwnerId)),
             Column(nameof(TimeJobEntity.LockedUntil)),
             Column(nameof(TimeJobEntity.OnNodeDeath)),
-            Column(nameof(TimeJobEntity.UpdatedAt)),
+            Column(nameof(TimeJobEntity.DateUpdated)),
             Column(nameof(TimeJobEntity.ExecutionTime)),
             Column(nameof(TimeJobEntity.ParentId))
         );

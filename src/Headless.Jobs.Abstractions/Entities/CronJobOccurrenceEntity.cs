@@ -41,7 +41,7 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual DateTime? LockedUntil { get; internal set; }
 
     /// <summary>UTC timestamp when execution completed, or <see langword="null"/> if not yet completed.</summary>
-    public virtual DateTime? ExecutedAt { get; internal set; }
+    public virtual DateTime? DateExecuted { get; internal set; }
 
     /// <summary>
     /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
@@ -66,8 +66,8 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual int RetryCount { get; internal set; }
 
     /// <summary>UTC timestamp when this occurrence row was first created.</summary>
-    public virtual DateTime CreatedAt { get; internal set; }
+    public virtual DateTime DateCreated { get; internal set; }
 
     /// <summary>UTC timestamp of the most recent update to this occurrence row.</summary>
-    public virtual DateTime UpdatedAt { get; internal set; }
+    public virtual DateTime DateUpdated { get; internal set; }
 }

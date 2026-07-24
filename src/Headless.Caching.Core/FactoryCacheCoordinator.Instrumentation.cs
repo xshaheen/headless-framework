@@ -23,7 +23,7 @@ public sealed partial class FactoryCacheCoordinator
         activity.SetTag(CachingMetrics.TagName, _cacheName);
         activity.SetTag(CachingMetrics.TagTier, _cacheTier);
 
-        if (_includeKeyInTraces)
+        if (includeKeyInTraces)
         {
             activity.SetTag(CachingMetrics.TagKey, key);
         }

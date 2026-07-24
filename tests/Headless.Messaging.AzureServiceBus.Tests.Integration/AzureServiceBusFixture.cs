@@ -121,7 +121,6 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             )
             .ToArray();
 
-        GC.SuppressFinalize(this);
         await AzureServiceBusResourceCleanup.DeleteAllAsync(operations);
     }
 

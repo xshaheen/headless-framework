@@ -20,7 +20,7 @@ public sealed class AuditLogEntityValidationStartupGateTests : TestBase
         );
 
         // when
-        Func<Task> act = () => gate.StartingAsync(AbortToken);
+        var act = () => gate.StartingAsync(AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddHeadlessAuditLog*");
@@ -37,7 +37,7 @@ public sealed class AuditLogEntityValidationStartupGateTests : TestBase
         );
 
         // when
-        Func<Task> act = () => gate.StartingAsync(AbortToken);
+        var act = () => gate.StartingAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();

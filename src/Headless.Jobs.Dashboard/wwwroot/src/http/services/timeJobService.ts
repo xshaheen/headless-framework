@@ -36,8 +36,8 @@ const getTimeJobsPaginated = () => {
                             item.status = Status[item.status as number];
                         }
                         
-                        if (item.executedAt != null || item.executedAt != undefined)
-                            item.executedAt = `${format(item.executedAt)} (took ${formatTime(item.elapsedTime as number, true)})`;
+                        if (item.dateExecuted != null || item.dateExecuted != undefined)
+                            item.dateExecuted = `${format(item.dateExecuted)} (took ${formatTime(item.elapsedTime as number, true)})`;
                         
                         item.executionTimeFormatted = formatDate(item.executionTime, true, timeZoneStore.effectiveTimeZone);
                         item.requestType = functionNamesStore.getNamespaceOrNull(item.function) ?? '';

@@ -10,6 +10,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 
 - `IRequestContext` - Unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` - Client detection (IP address, user agent, device info)
+- `IUserAgentParser` - `GetDeviceInfoAsync(userAgent, ct)`, the User-Agent parse behind `IWebClientInfoProvider.GetDeviceInfoAsync` (implemented in `Headless.Api.Core`); memoizes in the host's optional `ICache` under the `api:user-agent:` prefix. Substitute it to stub device detection in tests or replace the parser
 - `IRequestedApiVersion` - API versioning abstraction
 - `IProblemDetailsCreator` - Contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` - Contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)

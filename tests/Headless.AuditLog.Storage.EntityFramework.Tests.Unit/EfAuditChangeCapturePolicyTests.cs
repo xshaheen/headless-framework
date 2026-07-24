@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.AuditLog;
 using Headless.EntityFramework;
-using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -138,8 +138,12 @@ public sealed partial class EfAuditChangeCaptureTests
 
             var method = typeof(EfAuditChangeCapture).GetMethod(
                 "_GetPolicyEntityType",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+                BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+                null,
+                [typeof(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry)],
+                null
             )!;
+
             var policyEntityType = (IEntityType)method.Invoke(null, [internalEntries[0].ToEntityEntry()])!;
 
             policyEntityType.ClrType.Should().Be<ExcludedDerivedAuditEntity>();

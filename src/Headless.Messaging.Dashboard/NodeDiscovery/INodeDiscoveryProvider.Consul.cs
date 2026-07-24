@@ -2,7 +2,6 @@
 
 using System.Net;
 using Consul;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.NodeDiscovery;
@@ -12,8 +11,11 @@ namespace Headless.Messaging.Dashboard.NodeDiscovery;
 /// Queries the Consul catalog for services tagged <c>messaging</c> to discover peer dashboard nodes,
 /// and registers the current node so peers can discover it.
 /// </summary>
-public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, ConsulDiscoveryOptions options)
-    : INodeDiscoveryProvider
+public class ConsulNodeDiscoveryProvider(
+    ILoggerFactory logger,
+    MessagingDashboardCache cache,
+    ConsulDiscoveryOptions options
+) : INodeDiscoveryProvider
 {
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
 

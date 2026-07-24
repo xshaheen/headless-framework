@@ -46,7 +46,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
-    private readonly IServiceScopeFactory? _serviceScopeFactory = serviceScopeFactory;
 
     // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
     // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
@@ -324,7 +323,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        timeJob.DateUpdated = timeProvider.GetUtcNow().UtcDateTime;
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -485,7 +484,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return Task.CompletedTask;
         }
 
-        if (_serviceScopeFactory is null)
+        if (serviceScopeFactory is null)
         {
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(
@@ -497,7 +496,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
         else
         {
-            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
             await JobMiddlewareRegistry
                 .DispatchScheduleAsync(new(descriptor, entity, scope.ServiceProvider), terminal, cancellationToken)
                 .ConfigureAwait(false);
@@ -848,8 +847,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             entity.Id = guidGenerator.Create();
         }
-        entity.CreatedAt = now;
-        entity.UpdatedAt = now;
+        entity.DateCreated = now;
+        entity.DateUpdated = now;
     }
 
     // Propagate the middleware-resolved root tenant onto chain descendants before persistence (KTD6). The schedule
@@ -998,7 +997,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            timeJob.DateUpdated = timeProvider.GetUtcNow().UtcDateTime;
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so

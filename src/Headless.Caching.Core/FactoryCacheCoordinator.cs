@@ -34,7 +34,6 @@ public sealed partial class FactoryCacheCoordinator(
         ? CachingDiagnostics.DefaultCacheName
         : cacheName;
     private readonly string _cacheTier = cacheTier ?? CachingMetrics.TierHybrid;
-    private readonly bool _includeKeyInTraces = includeKeyInTraces;
     private const int _MaxInertWarningKeys = 1024;
 
     // Re-emit the "cap reached" notice once every this many post-cap suppressed occurrences so the misconfiguration

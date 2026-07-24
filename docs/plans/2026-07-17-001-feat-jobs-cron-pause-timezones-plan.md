@@ -55,7 +55,7 @@ Misfire recovery is intentionally separate. The current model has no durable sch
 
 #### Atomic state transitions and edits
 
-- R11. Pause atomically sets `IsPaused = true` and changes every `Idle` or `Queued` occurrence for the definition to `Skipped`, stamps `ExecutedAt`, clears stale ownership/lease fields, and records exactly `Cron definition paused`.
+- R11. Pause atomically sets `IsPaused = true` and changes every `Idle` or `Queued` occurrence for the definition to `Skipped`, stamps `DateExecuted`, clears stale ownership/lease fields, and records exactly `Cron definition paused`.
 - R12. Pause never cancels or rewrites an `InProgress` occurrence; it may finish through the existing owner and completion fences.
 - R13. Resume atomically clears pause and inserts exactly one next occurrence; concurrent resumes leave at most one future occurrence.
 - R14. Updating expression or timezone while paused validates and persists the definition without materializing an occurrence.

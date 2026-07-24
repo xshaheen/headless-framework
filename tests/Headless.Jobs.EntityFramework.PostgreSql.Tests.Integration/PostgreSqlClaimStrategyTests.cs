@@ -259,7 +259,7 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.Property(x => x.OwnerId).HasColumnName("owner_key");
             entity.Property(x => x.LockedUntil).HasColumnName("lease_until");
             entity.Property(x => x.OnNodeDeath).HasColumnName("death_policy");
-            entity.Property(x => x.UpdatedAt).HasColumnName("updated_on");
+            entity.Property(x => x.DateUpdated).HasColumnName("updated_on");
             entity.Property(x => x.ExecutionTime).HasColumnName("run_on");
             entity.Property(x => x.ParentId).HasColumnName("parent_key");
         });
@@ -275,8 +275,8 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.Property(x => x.OnNodeDeath).HasColumnName("occurrence_policy");
             entity.Property(x => x.ElapsedTime).HasColumnName("elapsed_ms");
             entity.Property(x => x.RetryCount).HasColumnName("retry_count");
-            entity.Property(x => x.CreatedAt).HasColumnName("created_on");
-            entity.Property(x => x.UpdatedAt).HasColumnName("updated_on");
+            entity.Property(x => x.DateCreated).HasColumnName("created_on");
+            entity.Property(x => x.DateUpdated).HasColumnName("updated_on");
             entity
                 .HasIndex(x => new { x.CronJobId, x.ExecutionTime })
                 .HasFilter("\"occurrence_status\" IN ('Idle', 'Queued', 'InProgress')");

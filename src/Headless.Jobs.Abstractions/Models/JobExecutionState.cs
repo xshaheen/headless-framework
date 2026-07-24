@@ -67,7 +67,7 @@ public class JobExecutionState
     public string? ExceptionDetails { get; set; }
 
     /// <summary>UTC timestamp at which the execution ran.</summary>
-    public DateTime ExecutedAt { get; set; }
+    public DateTime DateExecuted { get; set; }
 
     /// <summary>
     /// Per-attempt retry backoff intervals in seconds; <see langword="null"/> falls back to the scheduler default
