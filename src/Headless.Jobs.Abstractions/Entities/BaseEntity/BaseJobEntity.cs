@@ -32,6 +32,19 @@ public class BaseJobEntity
     /// </summary>
     public virtual string? InitIdentifier { get; internal set; }
 
+    /// <summary>
+    /// Tenant that owns this job, resolved at schedule time (explicit value wins, otherwise ambient capture when
+    /// propagation is enabled). <see langword="null"/> means system scope. Cron definitions and occurrences are
+    /// always system scope and reject a non-null value.
+    /// </summary>
+    public virtual string? TenantId { get; set; }
+
+    /// <summary>
+    /// Transient schedule-time flag marking a deliberate system-scope (tenantless) job. Rejected when an ambient
+    /// tenant is present so tenant code cannot escalate into system scope. Never persisted.
+    /// </summary>
+    public virtual bool IsSystemJob { get; set; }
+
     /// <summary>UTC timestamp when this row was first persisted.</summary>
     public virtual DateTime CreatedAt { get; internal set; }
 

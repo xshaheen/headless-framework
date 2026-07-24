@@ -15,6 +15,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
+using Headless.Jobs.MultiTenancy;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
 using Headless.Jobs.Transactions;
@@ -87,6 +88,7 @@ public static class SetupJobs
         try
         {
             optionsBuilder?.Invoke(optionInstance);
+            _RegisterTenancyMiddleware(discoveryParticipant);
         }
         catch (Exception exception)
         {
@@ -161,6 +163,10 @@ public static class SetupJobs
         services.TryAddSingleton<ICurrentCommitCoordinator, JobsNullCommitCoordinator>();
         services.TryAddSingleton(TimeProvider.System);
 
+        // Per-host tenancy DI (see _AddTenancyServices): runs on EVERY call so a second host built after the process-
+        // global middleware registry froze still resolves and dispatches the tenancy middleware.
+        _AddTenancyServices(services);
+
         // Jobs-scoped distributed lock. The Core-layer UseDistributedLock extension stashed a single deferred keyed
         // registration on the builder (last-wins), replayed here; the NullDistributedLock fallback is always present
         // so the guard sites can resolve a keyed IDistributedLock even when UseStorageLock is off. The lock is
@@ -232,6 +238,88 @@ public static class SetupJobs
         services.AddSingleton(_ => schedulerOptionsBuilder);
         services.AddSingleton(_ => retryOptions);
         return services;
+    }
+
+    // Middleware identity strings mirror the source generator's `{assembly}:{fully-qualified-type}` shape so the frozen
+    // registry orders the hand-registered tenancy middleware deterministically alongside generated declarations.
+    private const string _TenancyScheduleMiddlewareIdentity =
+        "Headless.Jobs.Core:Headless.Jobs.MultiTenancy.TenantPropagationScheduleMiddleware";
+    private const string _TenancyExecuteMiddlewareIdentity =
+        "Headless.Jobs.Core:Headless.Jobs.MultiTenancy.TenantRestoreExecuteMiddleware";
+
+    // Hand-written dispatch: resolve the middleware from the bounded scope and no-op (call next) when it is absent, so
+    // JobsManager's EmptyServiceProvider unit path and any host that never registered the middleware type stay a no-op.
+    private static readonly JobScheduleMiddlewareDispatch _TenancyScheduleDispatch = static async (
+        context,
+        next,
+        cancellationToken
+    ) =>
+    {
+        var middleware = context.Services.GetService<TenantPropagationScheduleMiddleware>();
+        if (middleware is null)
+        {
+            await next(cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        await middleware.InvokeAsync(context, next, cancellationToken).ConfigureAwait(false);
+    };
+
+    private static readonly JobExecuteMiddlewareDispatch _TenancyExecuteDispatch = static async (
+        context,
+        next,
+        cancellationToken
+    ) =>
+    {
+        var middleware = context.Services.GetService<TenantRestoreExecuteMiddleware>();
+        if (middleware is null)
+        {
+            await next(cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        await middleware.InvokeAsync(context, next, cancellationToken).ConfigureAwait(false);
+    };
+
+    // KTD1 process-global one-shot: only the fresh-discovery participant that wins the reservation inserts the tenancy
+    // middleware pair into the frozen-once registry, so overlapping host configuration and post-freeze ExistingCatalog
+    // hosts never double-insert (which would dispatch tenancy twice). A post-freeze call skips silently — never throws.
+    private static void _RegisterTenancyMiddleware(JobFunctionProvider.DiscoveryParticipation participation)
+    {
+        if (
+            participation != JobFunctionProvider.DiscoveryParticipation.Participant
+            || !JobMiddlewareRegistry.TryReserveTenancyRegistration()
+        )
+        {
+            return;
+        }
+
+        JobMiddlewareRegistry.RegisterSchedule(
+            _TenancyScheduleMiddlewareIdentity,
+            function: null,
+            JobMiddlewarePriority.Tenancy,
+            _TenancyScheduleDispatch
+        );
+        JobMiddlewareRegistry.RegisterExecute(
+            _TenancyExecuteMiddlewareIdentity,
+            function: null,
+            JobMiddlewarePriority.Tenancy,
+            _TenancyExecuteDispatch
+        );
+    }
+
+    // Per-host DI (KTD1): the middleware types plus the tenant-context primitives, mirroring Headless.Messaging.Core's
+    // Setup. NullCurrentTenant remains the fallback that a real Headless.Api / EF / consumer registration strips;
+    // CurrentTenant.Id stays null until a caller or seam populates the AsyncLocal, so a strict-mode enqueue with no
+    // tenant still fails fast. Runs on every AddHeadlessJobs so a second host still resolves and dispatches the middleware.
+    private static void _AddTenancyServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<TenantPropagationScheduleMiddleware>();
+        services.TryAddSingleton<TenantRestoreExecuteMiddleware>();
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
     }
 
     private static void _AddCoordinatedDurablePath(IServiceCollection services)

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Abstractions;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -10,6 +11,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs;
 
@@ -33,6 +35,13 @@ internal sealed class JobsExecutionTaskHandler
     private readonly JobsRetryOptions _retryOptions;
     private readonly JobsRetryPipeline _retryPipeline;
 
+    // #278: used to re-establish the job's tenant scope around consumer failure callbacks (exception observer,
+    // exhausted callback, cancellation handler), which run after the handler's own tenant scope has unwound. Null in
+    // the unit path and in standalone hosts without tenancy; AddHeadlessJobs registers the NullCurrentTenant fallback,
+    // so DI injection is safe. A null tenant on the job (system scope) or a null accessor here is a no-op.
+    private readonly ICurrentTenant? _currentTenant;
+    private readonly bool _propagateTenant;
+
     public JobsExecutionTaskHandler(
         IServiceProvider serviceProvider,
         TimeProvider timeProvider,
@@ -42,9 +51,12 @@ internal sealed class JobsExecutionTaskHandler
         JobsExecutionCancellationRegistry cancellationRegistry,
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
-        JobsRetryOptions? retryOptions = null
+        JobsRetryOptions? retryOptions = null,
+        ICurrentTenant? currentTenant = null,
+        IOptions<JobsTenancyOptions>? tenancyOptions = null
     )
     {
+        _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
         _serviceProvider = serviceProvider;
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
@@ -52,6 +64,7 @@ internal sealed class JobsExecutionTaskHandler
         _functionRegistry = functionRegistry;
         _cancellationRegistry = cancellationRegistry;
         _logger = logger;
+        _currentTenant = currentTenant;
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
         _leaseDuration = schedulerOptions.LeaseDuration;
         _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
@@ -435,7 +448,11 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
-                            await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
+                            // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
+                            using (_EnterTenantScope(context))
+                            {
+                                await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
+                            }
                         },
                         retryable => lastFailureRetryable = retryable,
                         cancellationTokenSource.Token
@@ -485,9 +502,13 @@ internal sealed class JobsExecutionTaskHandler
 
                     if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                     {
-                        await handler
-                            .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
-                            .ConfigureAwait(false);
+                        // #278: run the consumer cancellation handler under the job's tenant scope.
+                        using (_EnterTenantScope(context))
+                        {
+                            await handler
+                                .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
                     }
 
                     await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
@@ -613,7 +634,12 @@ internal sealed class JobsExecutionTaskHandler
                     success: false
                 );
 
-                await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
+                // #278: observe under the job's tenant so tenant-aware alerting/compensation is not system-scoped;
+                // keep the scope tight around the consumer callback, not the terminal persistence write below.
+                using (_EnterTenantScope(context))
+                {
+                    await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
+                }
 
                 // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
                 var affected = await _internalJobsManager
@@ -629,7 +655,11 @@ internal sealed class JobsExecutionTaskHandler
                 var retryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
                 if (affected > 0 && lastFailureRetryable && context.RetryCount >= retryBudget)
                 {
-                    await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                    // #278: run the exhausted callback under the job's tenant scope.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -657,6 +687,25 @@ internal sealed class JobsExecutionTaskHandler
             JobType.TimeJob => nameof(JobType.TimeJob),
             _ => type.ToString(),
         };
+    }
+
+    // #278: re-establish the job's tenant around a consumer failure callback. These callbacks run after the execute
+    // middleware's tenant scope has unwound (the handler threw, so `next` disposed it before Polly's retry/final
+    // callbacks fire), so a tenant-aware alert or compensating transaction would otherwise run system-scope. Returns
+    // null — a no-op scope — for a tenant-free job or a host without a tenant source.
+    [MustDisposeResource]
+    private IDisposable? _EnterTenantScope(JobExecutionState context)
+    {
+        // Scope symmetry with TenantRestoreExecuteMiddleware: a persisted tenant is always restored, and a
+        // system-scope job (null TenantId) gets an explicit null scope when propagation is enabled so a leaked
+        // ambient tenant never reaches its failure callbacks either. Only a tenant-free job on a propagation-off
+        // host is a pure pass-through.
+        if (_currentTenant is null || (context.TenantId is null && !_propagateTenant))
+        {
+            return null;
+        }
+
+        return _currentTenant.Change(context.TenantId);
     }
 
     private async ValueTask _ObserveJobExceptionAsync(

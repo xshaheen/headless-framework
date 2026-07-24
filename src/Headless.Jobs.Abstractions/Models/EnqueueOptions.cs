@@ -22,4 +22,16 @@ public sealed record EnqueueOptions
 
     /// <summary>Policy applied when the node executing the job dies.</summary>
     public NodeDeathPolicy OnNodeDeath { get; init; } = NodeDeathPolicy.Retry;
+
+    /// <summary>
+    /// Explicit tenant to stamp on the scheduled job; wins over ambient capture. <see langword="null"/> defers to
+    /// ambient capture when tenant propagation is enabled.
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
+    /// Marks a deliberate system-scope (tenantless) job that bypasses the tenant-required check. Rejected when an
+    /// ambient tenant is present or an explicit <see cref="TenantId"/> is supplied.
+    /// </summary>
+    public bool IsSystemJob { get; init; }
 }

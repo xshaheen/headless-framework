@@ -197,6 +197,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = options?.Retries ?? 0,
             RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            TenantId = options?.TenantId,
+            IsSystemJob = options?.IsSystemJob ?? false,
         };
 
         var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
