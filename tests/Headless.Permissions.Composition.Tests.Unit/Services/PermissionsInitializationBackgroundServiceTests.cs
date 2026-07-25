@@ -406,7 +406,8 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
         await sut.StartAsync(cts.Token);
 
-        var act = () => sut.WaitForInitializationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        var act = () =>
+            sut.WaitForInitializationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await act.Should().ThrowAsync<OperationCanceledException>();
         await _store.DidNotReceive().SaveAsync(Arg.Any<CancellationToken>());
     }

@@ -1141,6 +1141,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Update the job itself
         if (_timeJobs.TryGetValue(job.Id, out var existing))
         {
+            // TenantId is resolved once at schedule time and is not updatable through the generic update API —
+            // update payloads omit it, and writing it would silently clear the tenant.
+            job.TenantId = existing.TenantId;
+
             if (_timeJobs.TryUpdate(job.Id, job, existing))
             {
                 _SyncReconcileCandidate(job);
@@ -2368,6 +2372,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Status = job.Status,
             Retries = job.Retries,
             RetryCount = job.RetryCount,
+            TenantId = job.TenantId,
             RetryIntervals = job.RetryIntervals,
             CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
@@ -2413,6 +2418,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 Function = ch.Function,
                 Retries = ch.Retries,
                 RetryCount = ch.RetryCount,
+                TenantId = ch.TenantId,
                 RetryIntervals = ch.RetryIntervals,
                 CreatedAt = ch.CreatedAt,
                 UpdatedAt = ch.UpdatedAt,
@@ -2522,6 +2528,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Status = job.Status,
             Retries = job.Retries,
             RetryCount = job.RetryCount,
+            TenantId = job.TenantId,
             ExecutionTime = job.ExecutionTime,
             InitIdentifier = job.InitIdentifier,
             OwnerId = job.OwnerId,

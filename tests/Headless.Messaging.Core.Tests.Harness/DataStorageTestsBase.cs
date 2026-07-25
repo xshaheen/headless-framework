@@ -955,7 +955,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then — the failed message should appear in retry results once its scheduled retry time is due.
         var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -986,7 +985,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -1024,7 +1022,6 @@ public abstract class DataStorageTestsBase : TestBase
         lateChange.Should().BeFalse("a Succeeded row with no scheduled retry is terminal");
 
         var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -1050,7 +1047,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -1076,7 +1072,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
@@ -1103,7 +1098,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
-        retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 

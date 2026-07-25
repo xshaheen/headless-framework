@@ -59,6 +59,7 @@ internal static class MappingExtensions
             Function = e.Function,
             Retries = e.Retries,
             RetryCount = e.RetryCount,
+            TenantId = e.TenantId,
             RetryIntervals = e.RetryIntervals,
             CreatedAt = e.CreatedAt,
             UpdatedAt = e.UpdatedAt,

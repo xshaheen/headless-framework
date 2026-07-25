@@ -91,7 +91,10 @@ internal sealed class PulsarConsumerClient(
             await consumer.DisposeAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
-        catch { }
+        catch
+        {
+            // ignored
+        }
 #pragma warning restore ERP022
         finally
         {

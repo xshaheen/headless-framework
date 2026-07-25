@@ -19,8 +19,6 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogger<MessagingTelemetry>? logger = null)
 {
-    private readonly IActivityTagEnricher[] _enrichers = enrichers;
-    private readonly ILogger<MessagingTelemetry>? _logger = logger;
     private readonly bool _hasEnrichers = enrichers.Length > 0;
 
     /// <summary>
@@ -533,9 +531,9 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)
     {
-        for (var i = 0; i < _enrichers.Length; i++)
+        for (var i = 0; i < enrichers.Length; i++)
         {
-            var enricher = _enrichers[i];
+            var enricher = enrichers[i];
 
             try
             {
@@ -543,10 +541,10 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             }
             catch (Exception ex)
             {
-                if (_logger is not null)
+                if (logger is not null)
                 {
                     MessagingTelemetryLog.EnricherFailed(
-                        _logger,
+                        logger,
                         ex,
                         enricher.GetType().FullName ?? enricher.GetType().Name
                     );

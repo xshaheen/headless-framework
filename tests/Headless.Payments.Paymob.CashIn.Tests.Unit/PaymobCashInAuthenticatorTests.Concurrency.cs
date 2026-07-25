@@ -10,7 +10,7 @@ using WireMock.ResponseBuilders;
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
-public sealed partial class PaymobCashInAuthenticatorTests : TestBase
+public sealed partial class PaymobCashInAuthenticatorTests
 {
     [Fact]
     public async Task should_make_single_api_call_when_concurrent_requests_with_expired_token()

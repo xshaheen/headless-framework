@@ -514,7 +514,9 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(EnqueueOptions.Description),
                 nameof(EnqueueOptions.Retries),
                 nameof(EnqueueOptions.RetryIntervals),
-                nameof(EnqueueOptions.OnNodeDeath)
+                nameof(EnqueueOptions.OnNodeDeath),
+                nameof(EnqueueOptions.TenantId),
+                nameof(EnqueueOptions.IsSystemJob)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)

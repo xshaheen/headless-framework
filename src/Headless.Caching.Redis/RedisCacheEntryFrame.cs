@@ -96,7 +96,7 @@ internal static class RedisCacheEntryFrame
         // implicit OverflowException a checked cast would throw (Redis itself caps a value at 512 MB regardless).
         if (!isNull)
         {
-            Argument.IsLessThanOrEqualTo(payload.Length, (long)Array.MaxLength, paramName: nameof(payload));
+            Argument.IsLessThanOrEqualTo(payload.Length, Array.MaxLength, paramName: nameof(payload));
         }
 
         var length = isNull ? 0 : (int)payload.Length;
@@ -213,7 +213,7 @@ internal static class RedisCacheEntryFrame
         // when the socket write fires, so the buffer escapes this method and returning it to the pool would
         // corrupt in-flight data.
         byte[]? tagPooled = null;
-        int tagLength = 0;
+        var tagLength = 0;
 
         if (tags is { Count: > 0 })
         {

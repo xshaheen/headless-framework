@@ -54,10 +54,10 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
     {
         const string owner = "shared-node";
         var storeServices = new ServiceCollection();
-        storeServices.AddSingleton<TimeProvider>(TimeProvider.System);
+        storeServices.AddSingleton(TimeProvider.System);
         storeServices.AddHeadlessGuidGenerator();
         storeServices.AddSingleton(new SchedulerOptionsBuilder { NodeId = owner });
-        using var storeServiceProvider = storeServices.BuildServiceProvider();
+        await using var storeServiceProvider = storeServices.BuildServiceProvider();
         var durableStore = new JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>(storeServiceProvider);
 
         using var executingHost = _CreateHost(durableStore);
@@ -169,10 +169,12 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
             Enumerable
                 .Range(0, 32)
                 .Select(index =>
-                    Task.Run(() =>
-                        index % 2 == 0
-                            ? registry.TrySignalDurableCancellation(registration)
-                            : registry.TryRemove(registration)
+                    Task.Run(
+                        () =>
+                            index % 2 == 0
+                                ? registry.TrySignalDurableCancellation(registration)
+                                : registry.TryRemove(registration),
+                        AbortToken
                     )
                 )
         );
@@ -195,13 +197,13 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
         await using var callback = source.Token.Register(() =>
         {
             callbackEntered.Set();
-            releaseCallback.Wait();
+            releaseCallback.Wait(AbortToken);
         });
         var registration = registry.Register(source, _Context(Guid.NewGuid()));
 
-        var signalTask = Task.Run(() => registry.TrySignalDurableCancellation(registration));
+        var signalTask = Task.Run(() => registry.TrySignalDurableCancellation(registration), AbortToken);
         callbackEntered.Wait(AbortToken);
-        var removeTask = Task.Run(() => registry.TryRemove(registration));
+        var removeTask = Task.Run(() => registry.TryRemove(registration), AbortToken);
         await Task.Delay(TimeSpan.FromMilliseconds(25), AbortToken);
         removeTask.IsCompleted.Should().BeFalse();
 

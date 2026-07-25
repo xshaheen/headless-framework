@@ -223,6 +223,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             Retries = timeJob.Retries,
             RetryCount = timeJob.RetryCount,
             RetryIntervals = timeJob.RetryIntervals,
+            TenantId = timeJob.TenantId,
             ParentId = timeJob.ParentId,
             ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
         };
@@ -247,6 +248,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             Type = JobType.TimeJob,
             Retries = child.Retries,
             RetryCount = child.RetryCount,
+            TenantId = child.TenantId,
             RetryIntervals = child.RetryIntervals,
             ParentId = child.ParentId,
             RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,

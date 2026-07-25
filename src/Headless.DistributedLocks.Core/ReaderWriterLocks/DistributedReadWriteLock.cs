@@ -390,7 +390,7 @@ internal sealed class DistributedReadWriteLock(
         // and the storage's per-record TTL is the eventual consistency mechanism. This guarantees
         // application shutdown is never blocked beyond DisposeTimeout (default 10s) even under
         // sustained storage unavailability.
-        ValueTask releaseTask = mode switch
+        var releaseTask = mode switch
         {
             ReaderWriterLockMode.Read => _releasePipeline.ExecuteAsync(
                 static async (state, ct) =>

@@ -32,12 +32,7 @@ public sealed class TransportConsumerConformanceSession(
             new UnboundedChannelOptions { SingleWriter = false, SingleReader = false }
         );
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
-    private readonly ITransport _producer = producer;
-    private readonly Func<ValueTask>? _disposeProviderResources = disposeProviderResources;
-    private readonly Func<
-        CancellationToken,
-        ValueTask<TransportConsumerConformanceSession>
-    >? _createReplacementSession = createReplacementSession;
+
     private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _listeningCts;
     private Task? _listeningTask;
@@ -86,15 +81,15 @@ public sealed class TransportConsumerConformanceSession(
 
     public Task<OperateResult> PublishAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        return _producer.SendAsync(message, cancellationToken);
+        return producer.SendAsync(message, cancellationToken);
     }
 
     public ValueTask<TransportConsumerConformanceSession> CreateReplacementAsync(
         CancellationToken cancellationToken = default
     )
     {
-        return _createReplacementSession is not null
-            ? _createReplacementSession(cancellationToken)
+        return createReplacementSession is not null
+            ? createReplacementSession(cancellationToken)
             : throw new InvalidOperationException("The conformance session does not provide a replacement consumer.");
     }
 
@@ -186,15 +181,15 @@ public sealed class TransportConsumerConformanceSession(
             {
                 try
                 {
-                    await _producer.DisposeAsync().ConfigureAwait(false);
+                    await producer.DisposeAsync().ConfigureAwait(false);
                 }
                 finally
                 {
                     try
                     {
-                        if (_disposeProviderResources is not null)
+                        if (disposeProviderResources is not null)
                         {
-                            await _disposeProviderResources().ConfigureAwait(false);
+                            await disposeProviderResources().ConfigureAwait(false);
                         }
                     }
                     finally

@@ -521,8 +521,10 @@ public sealed class EnumerableExtensionsTests
         var once = source.AsEnumerableOnce();
 
         // when
+        // ReSharper disable once PossibleMultipleEnumeration
         _ = once.ToList(); // first enumeration
-        var act = () => once.ToList(); // second enumeration
+        // ReSharper disable once PossibleMultipleEnumeration
+        var act = once.ToList; // second enumeration
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*already enumerated*");
