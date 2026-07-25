@@ -32,7 +32,7 @@ public sealed class InMemoryCacheEventTests : TestBase
             logger: null,
             factoryLockProvider: null,
             instrumentation: null,
-            eventsConfig: new CacheEventsConfig { SyncHandlers = true }
+            eventsConfig: new CacheEventsConfig()
         );
         _caches.Add(cache);
 
@@ -53,6 +53,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         // when
         await cache.GetAsync<string>("present", AbortToken);
         await cache.GetAsync<string>("absent", AbortToken);
+        await _DrainAsync(cache);
 
         // then
         hits.Should().ContainSingle(h => h.Key == "present" && h.Tier == CacheTier.L1);
@@ -69,6 +70,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.UpsertAsync("k", "v", TimeSpan.FromMinutes(5), AbortToken);
+        await _DrainAsync(cache);
 
         // then
         set.Should().NotBeNull();
@@ -85,6 +87,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.UpsertEntryAsync("k", "v", new CacheEntryOptions { Duration = TimeSpan.Zero }, AbortToken);
+        await _DrainAsync(cache);
 
         // then — no Set is reported for an entry that was never retained
         setFired.Should().BeFalse();
@@ -105,6 +108,7 @@ public sealed class InMemoryCacheEventTests : TestBase
             new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
             AbortToken
         );
+        await _DrainAsync(cache);
 
         // then — no Set is reported for an entry that was never retained
         setFired.Should().BeFalse();
@@ -123,6 +127,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.RemoveAsync("k", AbortToken);
+        await _DrainAsync(cache);
 
         // then
         removed!.Key.Should().Be("k");
@@ -144,6 +149,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.FlushAsync(AbortToken);
+        await _DrainAsync(cache);
 
         // then
         flushed.Should().BeTrue();
@@ -165,6 +171,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.FlushAsync(AbortToken);
+        await _DrainAsync(cache);
 
         // then — Flush fires; the per-key eviction loop is skipped (HasEvictionSubscribers is false)
         flushed.Should().BeTrue();
@@ -183,6 +190,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         // when — advance past expiry, then read (lazy reap)
         _timeProvider.Advance(TimeSpan.FromSeconds(5));
         var result = await cache.GetAsync<string>("k", AbortToken);
+        await _DrainAsync(cache);
 
         // then
         result.HasValue.Should().BeFalse();
@@ -202,6 +210,7 @@ public sealed class InMemoryCacheEventTests : TestBase
 
         // when
         await cache.RemoveAsync("k", AbortToken);
+        await _DrainAsync(cache);
 
         // then — events carry the caller-facing key, not the "app:k" store key
         removed!.Key.Should().Be("k");
@@ -227,6 +236,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         await cache.RemoveByPrefixAsync("p:", AbortToken);
         await cache.RemoveAllAsync(["x"], AbortToken);
         await cache.ClearAsync(AbortToken);
+        await _DrainAsync(cache);
 
         // then
         byPrefix!.Prefix.Should().Be("p:");
@@ -234,4 +244,6 @@ public sealed class InMemoryCacheEventTests : TestBase
         removeAll!.RemovedCount.Should().Be(1);
         cleared.Should().BeTrue();
     }
+
+    private ValueTask _DrainAsync(InMemoryCache cache) => ((CacheEventsHub)cache.Events).DrainAsync(AbortToken);
 }

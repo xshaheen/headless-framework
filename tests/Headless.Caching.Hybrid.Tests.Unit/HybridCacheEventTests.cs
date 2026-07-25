@@ -30,9 +30,10 @@ public sealed class HybridCacheEventTests : TestBase
             publisher,
             new HybridCacheOptions(),
             timeProvider: _timeProvider,
-            eventsConfig: new CacheEventsConfig { SyncHandlers = true }
+            eventsConfig: new CacheEventsConfig()
         );
 
+        _disposables.Add(cache);
         _disposables.Add(l1);
         _disposables.Add(l2Inner);
 
@@ -69,8 +70,6 @@ public sealed class HybridCacheEventTests : TestBase
         await cache.GetOrAddAsync<string>(key, _ => new("v"), _Options(), AbortToken);
         await l1.FlushAsync(AbortToken);
 
-        // Per-tier Events.Memory.*/Events.Distributed.* always dispatch on a background task (even with
-        // SyncHandlers), so observe them via a TaskCompletionSource rather than a synchronous flag.
         var memoryMiss = new TaskCompletionSource();
         var distributedHit = new TaskCompletionSource();
         var rootHits = new ConcurrentBag<CacheHitEventArgs>();
@@ -80,9 +79,9 @@ public sealed class HybridCacheEventTests : TestBase
 
         // when — L1 miss, L2 hit
         var result = await cache.GetOrAddAsync<string>(key, _ => throw new(), _Options(), AbortToken);
+        await _DrainAsync(cache);
 
-        // then — per-tier signals fire (background), and the aggregate root hit fires once (honor-sync, inline) with
-        // tier=hybrid (no double count)
+        // then — per-tier signals fire, and the aggregate root hit fires once with tier=hybrid (no double count)
         result.Value.Should().Be("v");
         await memoryMiss.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await distributedHit.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -103,6 +102,7 @@ public sealed class HybridCacheEventTests : TestBase
         // when
         await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
         await cache.RemoveAsync(key, AbortToken);
+        await _DrainAsync(cache);
 
         // then
         set!.Key.Should().Be(key);
@@ -122,6 +122,7 @@ public sealed class HybridCacheEventTests : TestBase
 
         // when — a matching compare-and-delete succeeds
         var result = await cache.RemoveIfEqualAsync(key, "v", AbortToken);
+        await _DrainAsync(cache);
 
         // then — the hybrid emits the root Remove event (parity with InMemory/Redis)
         result.Should().BeTrue();
@@ -148,6 +149,7 @@ public sealed class HybridCacheEventTests : TestBase
             },
             AbortToken
         );
+        await _DrainAsync(cache);
 
         // then — no Set is reported when neither tier was written
         setFired.Should().BeFalse();
@@ -165,6 +167,7 @@ public sealed class HybridCacheEventTests : TestBase
         await cache.RemoveByTagAsync("tag-1", AbortToken);
         await cache.ClearAsync(AbortToken);
         await cache.FlushAsync(AbortToken);
+        await _DrainAsync(cache);
 
         // then
         invalidations
@@ -193,10 +196,13 @@ public sealed class HybridCacheEventTests : TestBase
         // when — a peer broadcasts a flush-all invalidation
         var message = new CacheInvalidationMessage { InstanceId = "peer", FlushAll = true };
         await cache.HandleInvalidationAsync(message, AbortToken);
+        await _DrainAsync(cache);
 
         // then
         received.Should().NotBeNull();
         received!.Kind.Should().Be(CacheInvalidationKind.Flush);
         received.Direction.Should().Be(CacheInvalidationDirection.Receive);
     }
+
+    private ValueTask _DrainAsync(HybridCache cache) => ((CacheEventsHub)cache.Events).DrainAsync(AbortToken);
 }

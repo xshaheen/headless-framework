@@ -112,7 +112,8 @@ services.AddHeadlessCaching(setup =>
 
 A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))`. The setup builder stamps that name into invalidation messages so the backplane consumer can route peer invalidations to the matching named hybrid.
 
-Cache events — the hybrid adds per-tier `Events.Memory` / `Events.Distributed` reads and `Invalidation` (publish/receive):
+Cache events — the hybrid adds per-tier `Events.Memory` / `Events.Distributed` reads and `Invalidation`
+(publish/receive); all share the hybrid cache's bounded FIFO:
 
 ```csharp
 cache.Events.Hit.AddHandler(e => logger.LogDebug("cache hit {Key} tier={Tier}", e.Key, e.Tier));

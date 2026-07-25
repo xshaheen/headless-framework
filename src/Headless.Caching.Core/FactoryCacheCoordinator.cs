@@ -32,8 +32,8 @@ public sealed partial class FactoryCacheCoordinator(
     // constructor can share the single hub without a field-initializer cross-reference. Providers read it via
     // EventsHub to surface cache.Events and to fire their own direct-op events. When it has no subscribers the hot
     // path short-circuits (HasSubscribers). Coordinator-owned events (factory outcome, fail-safe, refresh,
-    // factory-write set) always dispatch on a background task (see CacheEventsHub) because they are emitted while the
-    // per-key factory lock is held. Hybrid (tier == hybrid) also gets the L1/L2 Memory/Distributed sub-hubs.
+    // factory-write set) always dispatch through the bounded background FIFO (see CacheEventsHub) because they can be
+    // emitted while the per-key factory lock is held. Hybrid (tier == hybrid) also gets L1/L2 sub-hubs.
     /// <summary>The event hub owned by this coordinator and shared with the provider (its <c>cache.Events</c> and direct-op emissions).</summary>
     public CacheEventsHub EventsHub { get; } =
         new(
@@ -529,6 +529,7 @@ public sealed partial class FactoryCacheCoordinator(
     /// <inheritdoc />
     public void Dispose()
     {
+        EventsHub.Dispose();
         _keyedLock.Dispose();
     }
 
@@ -650,8 +651,8 @@ public sealed partial class FactoryCacheCoordinator(
         if (persisted)
         {
             // A genuinely new signal (there is no `set` write metric on the factory path). Emitted on a background
-            // task (forceBackground) because this write runs while the per-key factory lock is held.
-            EventsHub.OnSet(key, forceBackground: true);
+            // FIFO because this write runs while the per-key factory lock is held.
+            EventsHub.OnSet(key);
         }
         else
         {

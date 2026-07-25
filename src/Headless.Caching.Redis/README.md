@@ -120,7 +120,7 @@ builder.Services.AddHeadlessCaching(setup =>
 });
 ```
 
-Cache events (`IAsyncEvent<TArgs>` per signal; async or sync handlers run on a background task by default):
+Cache events (`IAsyncEvent<TArgs>` per signal; async or sync handlers run through a bounded, non-blocking FIFO):
 
 ```csharp
 cache.Events.Hit.AddHandler(e => logger.LogDebug("cache hit {Key}", e.Key));

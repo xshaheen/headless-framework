@@ -92,7 +92,8 @@ public static class SetupCachingCore
         services.TryAddSingleton(
             new CacheEventsConfig
             {
-                SyncHandlers = setup.SyncHandlers,
+                BufferCapacity = setup.EventBufferCapacity,
+                ShutdownDrainTimeout = setup.EventShutdownDrainTimeout,
                 HandlerErrorLogLevel = setup.EventHandlerErrorLogLevel,
             }
         );

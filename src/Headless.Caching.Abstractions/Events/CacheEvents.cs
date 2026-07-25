@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Primitives;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -29,11 +30,23 @@ public static class CacheEvents
 
         public bool HasHandlers => false;
 
-        public IDisposable AddHandler(Func<TEvent, CancellationToken, ValueTask> callback) => NoOpDisposable.Instance;
+        public IDisposable AddHandler(Func<TEvent, CancellationToken, ValueTask> callback)
+        {
+            Argument.IsNotNull(callback);
+            return NoOpDisposable.Instance;
+        }
 
-        public IDisposable AddHandler(Action<TEvent> callback) => NoOpDisposable.Instance;
+        public IDisposable AddHandler(Action<TEvent> callback)
+        {
+            Argument.IsNotNull(callback);
+            return NoOpDisposable.Instance;
+        }
 
-        public IDisposable AddHandler(AsyncEventHandler<TEvent> callback) => NoOpDisposable.Instance;
+        public IDisposable AddHandler(AsyncEventHandler<TEvent> callback)
+        {
+            Argument.IsNotNull(callback);
+            return NoOpDisposable.Instance;
+        }
 
         public ValueTask InvokeAsync(object sender, TEvent eventArgs, CancellationToken cancellationToken = default) =>
             default;
@@ -43,9 +56,17 @@ public static class CacheEvents
             TEvent eventArgs,
             Action<Exception> onHandlerError,
             CancellationToken cancellationToken = default
-        ) => default;
+        )
+        {
+            Argument.IsNotNull(onHandlerError);
+            return default;
+        }
 
-        public IDisposable Subscribe(IObserver<TEvent> observer) => NoOpDisposable.Instance;
+        public IDisposable Subscribe(IObserver<TEvent> observer)
+        {
+            Argument.IsNotNull(observer);
+            return NoOpDisposable.Instance;
+        }
 
         public void ClearHandlers() { }
     }
@@ -101,5 +122,7 @@ public static class CacheEvents
         public ICacheDistributedEvents? Distributed => null;
 
         public bool HasSubscribers => false;
+
+        public CacheEventDispatchStatistics DispatchStatistics => default;
     }
 }

@@ -14,8 +14,9 @@ namespace Headless.Caching;
 /// <para>
 /// Handlers may be asynchronous (<c>AddHandler(async (args, ct) =&gt; …)</c>) or synchronous
 /// (<c>AddHandler(args =&gt; …)</c>). They run guarded — an exception from any handler is caught and logged and
-/// never propagates to the cache caller, nor stops the other handlers — and, by default, on a background task so a slow
-/// handler cannot stall the cache operation.
+/// never propagates to the cache caller, nor stops the other handlers. Signals accepted by the bounded background
+/// dispatcher preserve FIFO order for the cache instance; producers never wait, and a signal is dropped when the
+/// buffer is full.
 /// </para>
 /// <para>
 /// There is no allocation when an event has no handler. The high-level events fire once per logical operation and carry
@@ -86,6 +87,9 @@ public interface ICacheEvents
 
     /// <summary>Whether any event on this hub (or its sub-hubs) currently has a handler. Used to short-circuit hot paths.</summary>
     bool HasSubscribers { get; }
+
+    /// <summary>Current accepted, processed, dropped, and pending signal counts for the bounded dispatcher.</summary>
+    CacheEventDispatchStatistics DispatchStatistics => default;
 }
 
 /// <summary>The low-level memory (L1) tier events of a hybrid cache.</summary>

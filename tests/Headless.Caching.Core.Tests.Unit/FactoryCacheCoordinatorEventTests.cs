@@ -28,7 +28,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
     [Fact]
     public async Task should_raise_fresh_hit_event_on_fresh_store_hit()
     {
-        // given — a fresh entry in the store, events subscribed synchronously
+        // given — a fresh entry in the store
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "fresh", now.AddMinutes(5), now.AddMinutes(5));
@@ -38,6 +38,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(_store, key, _ => throw new(), _Options(), AbortToken);
+        await coordinator.EventsHub.DrainAsync(AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -68,6 +69,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
             _Options(isFailSafeEnabled: true),
             AbortToken
         );
+        await coordinator.EventsHub.DrainAsync(AbortToken);
 
         // then — exactly one aggregate outcome: a stale hit, never a miss (Codex single-outcome fix)
         result.IsStale.Should().BeTrue();
@@ -88,8 +90,9 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
 
         // when
         var result = await coordinator.GetOrAddAsync<string>(_store, key, _ => new("value"), _Options(), AbortToken);
+        await coordinator.EventsHub.DrainAsync(AbortToken);
 
-        // then — Miss (aggregate, synchronous) and Set (background write signal) both fire
+        // then — Miss (aggregate) and Set (write signal) both fire
         result.Value.Should().Be("value");
         missed.Should().BeTrue();
         await setFired.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -139,25 +142,20 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_deadlock_when_sync_handler_reenters_same_key()
+    public async Task should_not_deadlock_when_async_handler_reenters_same_key()
     {
-        // given — a synchronous factory-success handler that re-enters GetOrAddAsync for the SAME key. The
-        // coordinator dispatches its factory events on a background task (never while the per-key lock is held), so
-        // the re-entrant call acquires the lock after release rather than deadlocking.
+        // given — a factory-success handler that re-enters GetOrAddAsync for the SAME key. The FIFO invokes it away
+        // from the producer's per-key lock, so the re-entrant call can acquire the lock after release.
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator(syncHandlers: true);
+        var coordinator = _CreateCoordinator();
         var reentered = new TaskCompletionSource();
-        using var _1 = coordinator.EventsHub.FactorySuccess.AddHandler(__ =>
-        {
-            _ = Task.Run(
-                async () =>
-                {
-                    await coordinator.GetOrAddAsync<string>(_store, key, _ => new("again"), _Options(), AbortToken);
-                    reentered.TrySetResult();
-                },
-                AbortToken
-            );
-        });
+        using var _1 = coordinator.EventsHub.FactorySuccess.AddHandler(
+            async (_, ct) =>
+            {
+                await coordinator.GetOrAddAsync<string>(_store, key, _ => new("again"), _Options(), ct);
+                reentered.TrySetResult();
+            }
+        );
 
         // when
         await coordinator.GetOrAddAsync<string>(_store, key, _ => new("v"), _Options(), AbortToken);
@@ -179,7 +177,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
         coordinator.EventsHub.HasSubscribers.Should().BeFalse();
     }
 
-    private FactoryCacheCoordinator _CreateCoordinator(bool syncHandlers = true)
+    private FactoryCacheCoordinator _CreateCoordinator()
     {
         var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
@@ -188,7 +186,7 @@ public sealed class FactoryCacheCoordinatorEventTests : TestBase
             cacheName: "test",
             cacheTier: CachingMetrics.TierL1,
             includeKeyInTraces: false,
-            eventsConfig: new CacheEventsConfig { SyncHandlers = syncHandlers }
+            eventsConfig: new CacheEventsConfig()
         );
         _coordinators.Add(coordinator);
 

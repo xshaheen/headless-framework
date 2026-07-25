@@ -324,6 +324,7 @@ Every instrument carries a `headless.cache.name` dimension — the registered in
 | `headless.cache.failsafe.activations` | Counter (`long`) | count | Fail-safe stale serving. | `headless.cache.trigger` (`factory_error`/`factory_timeout`/`lock_acquire_failed`) |
 | `headless.cache.refreshes` | Counter (`long`) | count | Eager + background refresh. | `headless.cache.refresh_kind` (`eager`/`background`), `headless.cache.outcome` (`success`/`error`) |
 | `headless.cache.invalidations` | Counter (`long`) | count | Hybrid tag/clear/flush propagation. | `headless.cache.invalidation_kind` (`tag`/`clear`/`flush`), `headless.cache.direction` (`publish`/`receive`) |
+| `headless.cache.events.dropped` | Counter (`long`) | count | Best-effort event signals rejected because the bounded FIFO was full or shutting down. | none |
 
 `GetOrAddAsync` starts a `cache.get_or_add` span carrying `headless.cache.name`, `headless.cache.tier`, and the resolved `headless.cache.outcome`; factory execution runs as a child `cache.factory` span and a distributed-lock acquire as a child `cache.factory_lock` span. A caller-visible failure (hard timeout with no fail-safe fallback, or a propagated exception) sets the span status to `Error`; a fail-safe activation is recorded as a span event (`cache.failsafe` with the trigger) plus a `headless.cache.failsafe=true` attribute, **not** as an error.
 
@@ -343,9 +344,11 @@ The surface is a **second consumer channel over the same signals the metrics alr
 
 Events (all on `cache.Events`): coordinator get-or-add signals `Hit` (with `IsStale`), `Miss`, `Set`, `FactorySuccess`/`FactoryError`/`FactoryTimeout`, `FailSafeActivation` (with trigger), `EagerRefresh`, `BackgroundRefresh`; direct-operation signals `Set`, `Remove`, `RemoveAll`, `RemoveByPrefix`, `RemoveByTag`, `Clear`, `Flush`; in-memory `Eviction` (with reason — in-memory tier only); and hybrid `Invalidation` (kind = tag/clear/flush, direction = publish/receive). The hybrid also exposes low-level per-tier reads under `cache.Events.Memory` (L1) and `cache.Events.Distributed` (L2) so the aggregate get-or-add outcome (`tier=hybrid`) is never conflated with the per-tier store reads (they are `null` on single-tier caches). L1 evictions under a hybrid are observed on the composed L1 cache's own `Events.Eviction`, not re-attributed to the hybrid. `Eviction` additionally fires on lazy read-path expiry reaps (which the `evictions` *metric* does not count — the per-key event has no cardinality constraint).
 
-**Execution.** Handlers are dispatched via `IAsyncEvent.SafeInvokeAsync`, so every handler (async or sync) runs **guarded** — an exception from any handler is caught, logged (at `EventHandlerErrorLogLevel`, default `Warning`), and never propagates to the cache caller nor stops the other handlers. By default they run on a **background task** so a slow handler cannot stall the cache operation. Set `AddHeadlessCaching(s => s.SyncHandlers = true)` to run synchronous handlers inline on the firing thread (deterministic ordering; only for fast handlers). Coordinator-owned events (factory outcome, fail-safe, refresh, the factory-write `Set`) and the hybrid per-tier `Memory`/`Distributed` reads always dispatch on a background task regardless of `SyncHandlers`, because they are emitted while the per-key factory lock is held — this keeps a same-key re-entrant handler from deadlocking and never runs a handler under the lock.
+**Execution.** One lazy, bounded background FIFO is shared by a cache's root hub and its hybrid tier sub-hubs. Producers never wait. Accepted signals run one at a time in emission order across event types, and each signal invokes the exact copy-on-write handler snapshot captured when it was emitted; subscribing or unsubscribing affects only later emissions. Handlers still dispatch through `IAsyncEvent.SafeInvokeAsync`, so every handler (async or sync) runs **guarded** — an exception is caught, logged (at `EventHandlerErrorLogLevel`, default `Warning`), and never propagates to the cache caller nor stops the other handlers.
 
-**No allocation when unobserved.** An event with no subscriber builds no args and does no work; the coordinator's hot path also short-circuits when no event is subscribed (and no metric/trace listener is attached), so an unobserved cache pays nothing. `ScopedCache<T>` (the key-prefixing wrapper) returns a no-op hub — its shared inner cache would leak other scopes' events and prefixed keys — so subscribe on the underlying (unscoped) cache.
+The FIFO buffers 2,048 signals by default (`EventBufferCapacity`). When full, the incoming signal is dropped instead of displacing an older accepted signal or blocking the cache operation. `cache.Events.DispatchStatistics` exposes accepted/processed/dropped/pending counts, drops increment `headless.cache.events.dropped`, and warnings are rate-limited at power-of-two drop counts. Cache disposal drains accepted work for up to `EventShutdownDrainTimeout` (two seconds by default), then cancels and abandons the remainder. This is intentionally **best-effort observability**, not a durable delivery channel.
+
+**No allocation when unobserved.** An event with no subscriber builds no args and does no work; the coordinator's hot path also short-circuits when no event is subscribed (and no metric/trace listener is attached), so an unobserved cache pays nothing. An accepted signal adds no queue-item or `Task` allocation: the FIFO stores a value-type entry containing the event-args reference and the existing handler-array reference. `ScopedCache<T>` (the key-prefixing wrapper) returns a no-op hub — its shared inner cache would leak other scopes' events and prefixed keys — so subscribe on the underlying (unscoped) cache.
 
 ## Choosing a Provider
 
@@ -572,7 +575,7 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
 - `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
 - `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically. `RegisteredNames` enumerates the `AddNamed` instances (default and tier role keys excluded) for validating a name before resolving.
-- `CacheEventsHub` / `CacheEventsConfig` - the concrete dispatcher behind `ICache.Events` and its execution config. `CacheEventsHub` implements `ICacheEvents`, builds args only when the specific event has a subscriber (no allocation when unobserved), and runs each guarded handler on a background task by default. `CacheEventsConfig` (`SyncHandlers`, `HandlerErrorLogLevel`) carries the execution options, populated from the setup builder's `SyncHandlers` / `EventHandlerErrorLogLevel` (default `Warning`). See [Events](#events).
+- `CacheEventsHub` / `CacheEventsConfig` - the concrete dispatcher behind `ICache.Events` and its execution config. `CacheEventsHub` implements `ICacheEvents`, builds args only when the specific event has a subscriber (no allocation when unobserved), captures handlers at emission, and feeds one bounded non-blocking FIFO per cache. `CacheEventsConfig` (`BufferCapacity`, `ShutdownDrainTimeout`, `HandlerErrorLogLevel`) is populated from `EventBufferCapacity` (2,048), `EventShutdownDrainTimeout` (two seconds), and `EventHandlerErrorLogLevel` (`Warning`) on the setup builder. See [Events](#events).
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
 ### Design Notes
@@ -622,7 +625,12 @@ Beyond the entry point, consumers do not use this package directly. Provider pac
 
 ### Configuration
 
-None.
+| Setup option | Default | Description |
+| --- | --- | --- |
+| `IncludeKeyInTraces` | `false` | Allows raw cache keys on tracing spans; keys are never metric dimensions. |
+| `EventBufferCapacity` | `2048` | Signals buffered behind each cache's active event handler; an incoming signal is dropped when full. |
+| `EventShutdownDrainTimeout` | `2 seconds` | Maximum cache-disposal wait for accepted event signals before cancellation. |
+| `EventHandlerErrorLogLevel` | `Warning` | Log level for guarded cache-event handler failures. |
 
 ### Dependencies
 
@@ -630,6 +638,7 @@ None.
 - `Headless.Extensions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
+- `OpenTelemetry.Api` (typed registration helpers only)
 
 ### Side Effects
 

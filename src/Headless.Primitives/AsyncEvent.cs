@@ -101,6 +101,22 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     /// <inheritdoc />
     public bool HasHandlers => _handlers.Length > 0;
 
+    // CacheEventsHub uses this internal seam to bind a signal to the exact copy-on-write registration array visible at
+    // emission time. Returning the array as an opaque object avoids both copying and boxing while letting its bounded
+    // dispatcher store heterogeneous event types in one FIFO.
+    internal object CaptureHandlerSnapshot() => _handlers;
+
+    internal static bool IsEmptyHandlerSnapshot(object handlerSnapshot) =>
+        ((Subscription[])handlerSnapshot).Length == 0;
+
+    internal static ValueTask SafeInvokeHandlerSnapshotAsync(
+        object handlerSnapshot,
+        object sender,
+        TEvent eventArgs,
+        Action<Exception> onHandlerError,
+        CancellationToken cancellationToken = default
+    ) => _SafeInvokeAsync((Subscription[])handlerSnapshot, sender, eventArgs, onHandlerError, cancellationToken);
+
     /// <inheritdoc />
     public IDisposable AddHandler(AsyncEventHandler<TEvent> callback)
     {

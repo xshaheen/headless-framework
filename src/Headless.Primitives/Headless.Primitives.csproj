@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Primitives</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Caching.Core" />
     <PackageReference Include="libphonenumber-csharp" />
   </ItemGroup>
   <ItemGroup>

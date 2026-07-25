@@ -13,19 +13,17 @@ namespace Headless.Caching;
 /// shared <see cref="FactoryCacheCoordinator"/>).
 /// </summary>
 /// <remarks>
-/// Each <c>On…</c> method checks its event's <see cref="IAsyncEvent{TEvent}.HasHandlers"/> first and constructs the
-/// <see cref="EventArgs"/> only when a handler exists, so an unsubscribed event allocates nothing. Handlers are
-/// dispatched via <see cref="IAsyncEvent{TEvent}.SafeInvokeAsync"/> — guarded (each handler's exception is caught,
-/// logged, and never propagates or stops the others) and, by default, on a background task.
+/// Each <c>On…</c> method captures the event's current handler snapshot first and constructs the
+/// <see cref="EventArgs"/> only when that snapshot is non-empty, so an unsubscribed event allocates nothing. Handler
+/// snapshots are accepted into one bounded, non-blocking FIFO shared by the root and tier sub-hubs.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class CacheEventsHub : ICacheEvents
+public sealed class CacheEventsHub : ICacheEvents, IDisposable, IAsyncDisposable
 {
     private readonly string _cacheName;
     private readonly CacheTier _tier;
-    private readonly bool _sync;
-    private readonly Action<Exception> _onHandlerError;
+    private readonly CacheEventDispatcher _dispatcher;
 
     private readonly AsyncEvent<CacheHitEventArgs> _hit = new();
     private readonly AsyncEvent<CacheKeyEventArgs> _miss = new();
@@ -61,14 +59,12 @@ public sealed class CacheEventsHub : ICacheEvents
     {
         _cacheName = cacheName;
         _tier = tier;
-        _sync = config?.SyncHandlers ?? false;
-        var errorLevel = config?.HandlerErrorLogLevel ?? LogLevel.Warning;
-        _onHandlerError = CacheEventDispatch.CreateErrorLogger(logger, errorLevel);
+        _dispatcher = new CacheEventDispatcher(cacheName, config ?? new CacheEventsConfig(), logger);
 
         if (withTierSubHubs)
         {
-            MemoryHub = new CacheTierEventsHub(cacheName, CacheTier.L1, _onHandlerError);
-            DistributedHub = new CacheTierEventsHub(cacheName, CacheTier.L2, _onHandlerError);
+            MemoryHub = new CacheTierEventsHub(cacheName, CacheTier.L1, _dispatcher);
+            DistributedHub = new CacheTierEventsHub(cacheName, CacheTier.L2, _dispatcher);
         }
     }
 
@@ -157,6 +153,9 @@ public sealed class CacheEventsHub : ICacheEvents
         || (MemoryHub?.HasHandlers ?? false)
         || (DistributedHub?.HasHandlers ?? false);
 
+    /// <inheritdoc />
+    public CacheEventDispatchStatistics DispatchStatistics => _dispatcher.Statistics;
+
     /// <summary>Whether <see cref="Eviction"/> currently has a handler. Lets bulk removal paths stay O(1) when unobserved.</summary>
     public bool HasEvictionSubscribers => _eviction.HasHandlers;
 
@@ -168,59 +167,62 @@ public sealed class CacheEventsHub : ICacheEvents
     /// <summary>Fires <see cref="Hit"/>.</summary>
     public void OnHit(string key, bool isStale)
     {
-        if (_hit.HasHandlers)
+        var handlerSnapshot = _Capture(_hit);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_hit, new CacheHitEventArgs(_cacheName, _tier, key, isStale));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheHitEventArgs(_cacheName, _tier, key, isStale));
         }
     }
 
     /// <summary>Fires <see cref="Miss"/>.</summary>
     public void OnMiss(string key)
     {
-        if (_miss.HasHandlers)
+        var handlerSnapshot = _Capture(_miss);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_miss, new CacheKeyEventArgs(_cacheName, _tier, key));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheKeyEventArgs(_cacheName, _tier, key));
         }
     }
 
     /// <summary>Fires <see cref="Set"/>.</summary>
-    /// <param name="key">The caller-facing key.</param>
-    /// <param name="forceBackground">
-    /// When <see langword="true"/>, always dispatch on a background task regardless of the sync-handler setting. Used by
-    /// the factory-write path, which runs while the per-key factory lock is held.
-    /// </param>
-    public void OnSet(string key, bool forceBackground = false)
+    public void OnSet(string key)
     {
-        if (_set.HasHandlers)
+        var handlerSnapshot = _Capture(_set);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_set, new CacheKeyEventArgs(_cacheName, _tier, key), forceBackground);
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheKeyEventArgs(_cacheName, _tier, key));
         }
     }
 
     /// <summary>Fires <see cref="Remove"/>.</summary>
     public void OnRemove(string key)
     {
-        if (_remove.HasHandlers)
+        var handlerSnapshot = _Capture(_remove);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_remove, new CacheKeyEventArgs(_cacheName, _tier, key));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheKeyEventArgs(_cacheName, _tier, key));
         }
     }
 
     /// <summary>Fires <see cref="Eviction"/>.</summary>
     public void OnEviction(string key, CacheEvictionReason reason)
     {
-        if (_eviction.HasHandlers)
+        var handlerSnapshot = _Capture(_eviction);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_eviction, new CacheEvictionEventArgs(_cacheName, _tier, key, reason));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheEvictionEventArgs(_cacheName, _tier, key, reason));
         }
     }
 
-    // The factory-outcome, fail-safe, and refresh emitters below are called by the FactoryCacheCoordinator while the
-    // per-key factory lock is held (or from detached background/eager operations holding their own lock). They always
-    // dispatch on a background task, independent of the sync-handler setting, so a handler never runs while the lock is
-    // held and a same-key re-entrant handler cannot deadlock.
+    // The factory-outcome, fail-safe, and refresh emitters below can run under the per-key factory lock. The shared
+    // dispatcher ensures no handler ever runs on that producer thread.
 
-    /// <summary>Fires the factory-outcome event matching <paramref name="outcome"/> (always on a background task).</summary>
+    /// <summary>Fires the factory-outcome event matching <paramref name="outcome"/>.</summary>
     public void OnFactoryOutcome(string key, CacheFactoryOutcome outcome)
     {
         var @event = outcome switch
@@ -231,43 +233,56 @@ public sealed class CacheEventsHub : ICacheEvents
             _ => null,
         };
 
-        if (@event?.HasHandlers == true)
+        if (@event is null)
         {
-            _Dispatch(@event, new CacheFactoryEventArgs(_cacheName, _tier, key, outcome), forceBackground: true);
+            return;
+        }
+
+        var handlerSnapshot = _Capture(@event);
+
+        if (handlerSnapshot is not null)
+        {
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheFactoryEventArgs(_cacheName, _tier, key, outcome));
         }
     }
 
-    /// <summary>Fires <see cref="FailSafeActivation"/> (always on a background task).</summary>
+    /// <summary>Fires <see cref="FailSafeActivation"/>.</summary>
     public void OnFailSafeActivation(string key, CacheFailSafeTrigger trigger)
     {
-        if (_failSafe.HasHandlers)
+        var handlerSnapshot = _Capture(_failSafe);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_failSafe, new CacheFailSafeEventArgs(_cacheName, _tier, key, trigger), forceBackground: true);
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheFailSafeEventArgs(_cacheName, _tier, key, trigger));
         }
     }
 
-    /// <summary>Fires <see cref="EagerRefresh"/> (always on a background task).</summary>
+    /// <summary>Fires <see cref="EagerRefresh"/>.</summary>
     public void OnEagerRefresh(string key, CacheFactoryOutcome outcome)
     {
-        if (_eagerRefresh.HasHandlers)
+        var handlerSnapshot = _Capture(_eagerRefresh);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(
-                _eagerRefresh,
-                new CacheRefreshEventArgs(_cacheName, _tier, key, CacheRefreshKind.Eager, outcome),
-                forceBackground: true
+            _dispatcher.Dispatch(
+                handlerSnapshot,
+                this,
+                new CacheRefreshEventArgs(_cacheName, _tier, key, CacheRefreshKind.Eager, outcome)
             );
         }
     }
 
-    /// <summary>Fires <see cref="BackgroundRefresh"/> (always on a background task).</summary>
+    /// <summary>Fires <see cref="BackgroundRefresh"/>.</summary>
     public void OnBackgroundRefresh(string key, CacheFactoryOutcome outcome)
     {
-        if (_backgroundRefresh.HasHandlers)
+        var handlerSnapshot = _Capture(_backgroundRefresh);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(
-                _backgroundRefresh,
-                new CacheRefreshEventArgs(_cacheName, _tier, key, CacheRefreshKind.Background, outcome),
-                forceBackground: true
+            _dispatcher.Dispatch(
+                handlerSnapshot,
+                this,
+                new CacheRefreshEventArgs(_cacheName, _tier, key, CacheRefreshKind.Background, outcome)
             );
         }
     }
@@ -275,61 +290,96 @@ public sealed class CacheEventsHub : ICacheEvents
     /// <summary>Fires <see cref="RemoveAll"/>.</summary>
     public void OnRemoveAll(int removedCount)
     {
-        if (_removeAll.HasHandlers)
+        var handlerSnapshot = _Capture(_removeAll);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_removeAll, new CacheRemoveAllEventArgs(_cacheName, _tier, removedCount));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheRemoveAllEventArgs(_cacheName, _tier, removedCount));
         }
     }
 
     /// <summary>Fires <see cref="RemoveByPrefix"/>.</summary>
     public void OnRemoveByPrefix(string prefix, int removedCount)
     {
-        if (_removeByPrefix.HasHandlers)
+        var handlerSnapshot = _Capture(_removeByPrefix);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_removeByPrefix, new CacheRemoveByPrefixEventArgs(_cacheName, _tier, prefix, removedCount));
+            _dispatcher.Dispatch(
+                handlerSnapshot,
+                this,
+                new CacheRemoveByPrefixEventArgs(_cacheName, _tier, prefix, removedCount)
+            );
         }
     }
 
     /// <summary>Fires <see cref="RemoveByTag"/>.</summary>
     public void OnRemoveByTag(string tag)
     {
-        if (_removeByTag.HasHandlers)
+        var handlerSnapshot = _Capture(_removeByTag);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_removeByTag, new CacheRemoveByTagEventArgs(_cacheName, _tier, tag));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheRemoveByTagEventArgs(_cacheName, _tier, tag));
         }
     }
 
     /// <summary>Fires <see cref="Clear"/>.</summary>
     public void OnClear()
     {
-        if (_clear.HasHandlers)
+        var handlerSnapshot = _Capture(_clear);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_clear, new CacheEventArgs(_cacheName, _tier));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheEventArgs(_cacheName, _tier));
         }
     }
 
     /// <summary>Fires <see cref="Flush"/>.</summary>
     public void OnFlush()
     {
-        if (_flush.HasHandlers)
+        var handlerSnapshot = _Capture(_flush);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_flush, new CacheEventArgs(_cacheName, _tier));
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheEventArgs(_cacheName, _tier));
         }
     }
 
     /// <summary>Fires <see cref="Invalidation"/>.</summary>
     public void OnInvalidation(CacheInvalidationKind kind, CacheInvalidationDirection direction, string? tag = null)
     {
-        if (_invalidation.HasHandlers)
+        var handlerSnapshot = _Capture(_invalidation);
+
+        if (handlerSnapshot is not null)
         {
-            _Dispatch(_invalidation, new CacheInvalidationEventArgs(_cacheName, _tier, kind, direction, tag));
+            _dispatcher.Dispatch(
+                handlerSnapshot,
+                this,
+                new CacheInvalidationEventArgs(_cacheName, _tier, kind, direction, tag)
+            );
         }
     }
 
-    private void _Dispatch<TArgs>(AsyncEvent<TArgs> @event, TArgs args, bool forceBackground = false)
+    /// <summary>Waits until every currently accepted signal finishes.</summary>
+    public ValueTask DrainAsync(CancellationToken cancellationToken = default) =>
+        _dispatcher.WaitForIdleAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _dispatcher.Dispose();
+    }
+
+    /// <inheritdoc />
+    public ValueTask DisposeAsync() => _dispatcher.DisposeAsync();
+
+    private static object? _Capture<TArgs>(AsyncEvent<TArgs> @event)
         where TArgs : EventArgs
     {
-        CacheEventDispatch.Dispatch(@event, this, args, sync: _sync && !forceBackground, _onHandlerError);
+        var handlerSnapshot = @event.CaptureHandlerSnapshot();
+
+        return AsyncEvent<TArgs>.IsEmptyHandlerSnapshot(handlerSnapshot) ? null : handlerSnapshot;
     }
 }
 
@@ -340,15 +390,15 @@ public sealed class CacheTierEventsHub : ICacheMemoryEvents, ICacheDistributedEv
 {
     private readonly string _cacheName;
     private readonly CacheTier _tier;
-    private readonly Action<Exception> _onHandlerError;
+    private readonly CacheEventDispatcher _dispatcher;
     private readonly AsyncEvent<CacheKeyEventArgs> _hit = new();
     private readonly AsyncEvent<CacheKeyEventArgs> _miss = new();
 
-    internal CacheTierEventsHub(string cacheName, CacheTier tier, Action<Exception> onHandlerError)
+    internal CacheTierEventsHub(string cacheName, CacheTier tier, CacheEventDispatcher dispatcher)
     {
         _cacheName = cacheName;
         _tier = tier;
-        _onHandlerError = onHandlerError;
+        _dispatcher = dispatcher;
     }
 
     /// <inheritdoc cref="ICacheMemoryEvents.Hit" />
@@ -360,82 +410,35 @@ public sealed class CacheTierEventsHub : ICacheMemoryEvents, ICacheDistributedEv
     /// <summary>Whether either tier event currently has a handler.</summary>
     public bool HasHandlers => _hit.HasHandlers || _miss.HasHandlers;
 
-    // Per-tier reads are emitted during the coordinator's store reads, which may run under the per-key factory lock, so
-    // they always dispatch on a background task (deadlock-safe), matching the coordinator's own events.
+    // Per-tier reads can be emitted while holding the per-key factory lock; the shared FIFO keeps handlers off-thread.
 
     /// <summary>Fires <see cref="Hit"/>.</summary>
     public void OnHit(string key)
     {
-        if (_hit.HasHandlers)
+        var handlerSnapshot = _Capture(_hit);
+
+        if (handlerSnapshot is not null)
         {
-            CacheEventDispatch.Dispatch(
-                _hit,
-                this,
-                new CacheKeyEventArgs(_cacheName, _tier, key),
-                sync: false,
-                _onHandlerError
-            );
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheKeyEventArgs(_cacheName, _tier, key));
         }
     }
 
     /// <summary>Fires <see cref="Miss"/>.</summary>
     public void OnMiss(string key)
     {
-        if (_miss.HasHandlers)
+        var handlerSnapshot = _Capture(_miss);
+
+        if (handlerSnapshot is not null)
         {
-            CacheEventDispatch.Dispatch(
-                _miss,
-                this,
-                new CacheKeyEventArgs(_cacheName, _tier, key),
-                sync: false,
-                _onHandlerError
-            );
+            _dispatcher.Dispatch(handlerSnapshot, this, new CacheKeyEventArgs(_cacheName, _tier, key));
         }
     }
-}
 
-/// <summary>Guarded, background-by-default dispatch of cache-event handlers onto an <see cref="AsyncEvent{TEvent}"/>.</summary>
-internal static class CacheEventDispatch
-{
-    public static void Dispatch<TArgs>(
-        AsyncEvent<TArgs> @event,
-        object sender,
-        TArgs args,
-        bool sync,
-        Action<Exception> onHandlerError
-    )
+    private static object? _Capture<TArgs>(AsyncEvent<TArgs> @event)
         where TArgs : EventArgs
     {
-        // SafeInvokeAsync runs every handler guarded (faults isolated via onHandlerError, never propagated), so the
-        // fire-and-forget task can never fault. Sync mode runs sync handlers inline; async handlers and the background
-        // mode continue on a task. AsTask() gives a discardable Task (a completed one allocates nothing).
-        if (sync)
-        {
-            _ = @event.SafeInvokeAsync(sender, args, onHandlerError).AsTask();
-        }
-        else
-        {
-            _ = Task.Run(() => @event.SafeInvokeAsync(sender, args, onHandlerError).AsTask());
-        }
-    }
+        var handlerSnapshot = @event.CaptureHandlerSnapshot();
 
-    public static Action<Exception> CreateErrorLogger(ILogger? logger, LogLevel errorLevel)
-    {
-        if (logger is null)
-        {
-            return static _ => { };
-        }
-
-        return exception =>
-        {
-            if (logger.IsEnabled(errorLevel))
-            {
-                logger.Log(
-                    errorLevel,
-                    exception,
-                    "An exception was thrown by a cache event handler and was suppressed."
-                );
-            }
-        };
+        return AsyncEvent<TArgs>.IsEmptyHandlerSnapshot(handlerSnapshot) ? null : handlerSnapshot;
     }
 }

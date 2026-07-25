@@ -41,7 +41,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var read = await cache.GetAsync<string>(key, AbortToken);
 
-        // Handlers on a CreateCache instance dispatch on a background task (no SyncHandlers), so poll for both events.
+        // Handlers dispatch through the bounded background FIFO, so poll for both events.
         await _WaitForCacheEventAsync(() =>
             sets.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
             && hits.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
@@ -85,8 +85,8 @@ public abstract class CacheConformanceTestsBase : TestBase
         scoped.Events.Should().BeSameAs(CacheEvents.NoOp);
     }
 
-    // Caches produced by CreateCache are built WITHOUT SyncHandlers, so handlers dispatch on a background task and
-    // must be observed with a bounded real-time poll (the fake clock does not drive the thread pool).
+    // Handlers dispatch through the bounded FIFO and must be observed with a bounded real-time poll (the fake clock
+    // does not drive the thread pool).
     private static async Task _WaitForCacheEventAsync(Func<bool> observed)
     {
         for (var attempt = 0; attempt < 250 && !observed(); attempt++)

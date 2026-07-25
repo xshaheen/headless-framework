@@ -81,7 +81,7 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 
 Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
-Cache events — in-memory adds `Eviction` (handlers run on a background task by default; opt into synchronous execution with `setup.SyncHandlers = true`):
+Cache events — in-memory adds `Eviction`; handlers run through the cache's bounded, non-blocking FIFO:
 
 ```csharp
 cache.Events.Hit.AddHandler(e => logger.LogDebug("cache hit {Key}", e.Key));

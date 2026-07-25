@@ -16,13 +16,17 @@ namespace Headless.Caching;
 public sealed class CacheEventsConfig
 {
     /// <summary>
-    /// Whether cache-event handlers run synchronously on the firing thread. Default <see langword="false"/>: handlers
-    /// run on a background <see cref="System.Threading.Tasks.Task"/> so a slow or blocking handler cannot stall the
-    /// cache operation. Enable only when deterministic ordering relative to the operation is required and handlers are
-    /// known to be fast.
+    /// Maximum signals buffered behind the active handler. Default 2,048. Producers never wait; a signal is dropped
+    /// when this bounded FIFO is full.
     /// </summary>
-    public bool SyncHandlers { get; init; }
+    public int BufferCapacity { get; init; } = 2_048;
 
-    /// <summary>The log level used to record an exception thrown by a synchronous cache-event handler. Default <see cref="LogLevel.Warning"/>.</summary>
+    /// <summary>
+    /// How long cache disposal waits for accepted signals to drain before canceling the dispatcher. Default two
+    /// seconds. Handlers should observe their cancellation token.
+    /// </summary>
+    public TimeSpan ShutdownDrainTimeout { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>The log level used to record an exception thrown by a cache-event handler. Default <see cref="LogLevel.Warning"/>.</summary>
     public LogLevel HandlerErrorLogLevel { get; init; } = LogLevel.Warning;
 }
