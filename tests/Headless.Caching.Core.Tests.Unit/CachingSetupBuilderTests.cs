@@ -4,6 +4,7 @@ using System.Buffers;
 using Headless.Caching;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -288,6 +289,29 @@ public sealed class CachingSetupBuilderTests
 
         // then
         cacheProvider.GetCache("orders").Should().BeSameAs(namedCache);
+    }
+
+    [Fact]
+    public async Task should_register_cache_event_dispatch_configuration()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+            setup.EventBufferCapacity = 17;
+            setup.EventShutdownDrainTimeout = TimeSpan.FromMilliseconds(250);
+            setup.EventHandlerErrorLogLevel = LogLevel.Error;
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var config = provider.GetRequiredService<CacheEventsConfig>();
+
+        // then
+        config.BufferCapacity.Should().Be(17);
+        config.ShutdownDrainTimeout.Should().Be(TimeSpan.FromMilliseconds(250));
+        config.HandlerErrorLogLevel.Should().Be(LogLevel.Error);
     }
 
     // The public WithSerializer overloads live in the Redis provider package (serialization is a Redis-tier

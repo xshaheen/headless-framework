@@ -36,7 +36,8 @@ public sealed class RedisCache(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null,
-    CacheInstrumentationConfig? instrumentation = null
+    CacheInstrumentationConfig? instrumentation = null,
+    CacheEventsConfig? eventsConfig = null
 ) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
@@ -124,8 +125,12 @@ public sealed class RedisCache(
         factoryLockProvider,
         string.IsNullOrEmpty(cacheOptions.CacheName) ? CachingDiagnostics.DefaultCacheName : cacheOptions.CacheName,
         CachingMetrics.TierL2,
-        instrumentation?.IncludeKeyInTraces ?? false
+        instrumentation?.IncludeKeyInTraces ?? false,
+        eventsConfig
     );
+
+    /// <inheritdoc />
+    public ICacheEvents Events => _coordinator.EventsHub;
 
     // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
     // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
@@ -292,7 +297,17 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationUpsert, CachingMetrics.TierL2);
-        return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
+
+        // Fire Set only after the write reports success: a zero/negative expiration deletes the key and returns
+        // false, and must NOT be reported as a Set (Codex P2).
+        var written = await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
+
+        if (written)
+        {
+            _coordinator.EventsHub.OnSet(key);
+        }
+
+        return written;
     }
 
     /// <inheritdoc />
@@ -306,7 +321,15 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
+        var persisted = await this.UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Set is reported only when an entry was actually retained — not an immediate-expiry eviction
+        // (non-positive Duration) nor a write that skips the distributed tier (SkipDistributedCacheWrite).
+        if (persisted && options.Duration > TimeSpan.Zero)
+        {
+            _coordinator.EventsHub.OnSet(key);
+        }
 
         return true;
     }
@@ -348,6 +371,8 @@ public sealed class RedisCache(
             );
         }
 
+        int writtenCount;
+
         if (IsCluster)
         {
             var successCount = 0;
@@ -359,10 +384,25 @@ public sealed class RedisCache(
                 successCount += count;
             }
 
-            return successCount;
+            writtenCount = successCount;
+        }
+        else
+        {
+            writtenCount = await _SetAllInternalAsync(pairs, expiration).ConfigureAwait(false);
         }
 
-        return await _SetAllInternalAsync(pairs, expiration).ConfigureAwait(false);
+        // MSET/MSETEX writes are atomic per batch, so a full count means every input key was written; emit one Set
+        // per caller key on full success. Partial-failure key attribution is not recoverable from the aggregate
+        // count, so nothing is emitted in that rare case. Gate the extra keyspace pass on any subscriber (R6).
+        if (writtenCount == value.Count && _coordinator.EventsHub.HasSetSubscribers)
+        {
+            foreach (var writtenKey in value.Keys)
+            {
+                _coordinator.EventsHub.OnSet(writtenKey);
+            }
+        }
+
+        return writtenCount;
     }
 
     public async ValueTask<bool> TryInsertAsync<T>(
@@ -704,6 +744,15 @@ public sealed class RedisCache(
             CachingMetrics.TierL2
         );
 
+        if (result.HasValue)
+        {
+            _coordinator.EventsHub.OnHit(key, isStale: false);
+        }
+        else
+        {
+            _coordinator.EventsHub.OnMiss(key);
+        }
+
         return result;
     }
 
@@ -780,10 +829,12 @@ public sealed class RedisCache(
             if (cacheValue.HasValue)
             {
                 hits++;
+                _coordinator.EventsHub.OnHit(originalKeys[i], isStale: false);
             }
             else
             {
                 misses++;
+                _coordinator.EventsHub.OnMiss(originalKeys[i]);
             }
         }
 
@@ -1115,6 +1166,15 @@ public sealed class RedisCache(
             CachingMetrics.TierL2
         );
 
+        if (exists)
+        {
+            _coordinator.EventsHub.OnHit(key, isStale: false);
+        }
+        else
+        {
+            _coordinator.EventsHub.OnMiss(key);
+        }
+
         return exists;
     }
 
@@ -1394,6 +1454,7 @@ public sealed class RedisCache(
         if (removed)
         {
             CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL2);
+            _coordinator.EventsHub.OnRemove(key);
         }
 
         return removed;
@@ -1493,7 +1554,14 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return (int)redisResult > 0;
+        var removed = (int)redisResult > 0;
+
+        if (removed)
+        {
+            _coordinator.EventsHub.OnRemove(key);
+        }
+
+        return removed;
     }
 
     public async ValueTask<int> RemoveAllAsync(
@@ -1560,6 +1628,7 @@ public sealed class RedisCache(
         }
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL2, deleted);
+        _coordinator.EventsHub.OnRemoveAll((int)deleted);
 
         return (int)deleted;
     }
@@ -1572,6 +1641,7 @@ public sealed class RedisCache(
         var removed = await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL2, removed);
+        _coordinator.EventsHub.OnRemoveByPrefix(prefix, (int)removed);
 
         return (int)removed;
     }
@@ -1638,17 +1708,21 @@ public sealed class RedisCache(
         // Member count is not cheaply known (no enumeration by design), so record a single logical remove-by-tag
         // write rather than trying to count affected entries.
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByTag, CachingMetrics.TierL2);
+        _coordinator.EventsHub.OnRemoveByTag(tag);
     }
 
     /// <inheritdoc />
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    public async ValueTask ClearAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // O(1) Family-2 logical clear: raise-only durable write of the single reserved clear-generation marker.
         // Entries born before it read as misses (direct reads) or demote to fail-safe reserves (coordinator);
         // physical reserves survive (unlike FlushAsync). Compared on every read, tagged or not.
-        return WriteClearMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
+        // The event fires only after the marker write succeeds, so a failed clear never reports success to subscribers.
+        await WriteClearMarkerAsync(timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+
+        _coordinator.EventsHub.OnClear();
     }
 
     /// <inheritdoc />
@@ -1791,7 +1865,7 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
     }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1801,8 +1875,10 @@ public sealed class RedisCache(
         // remove-generation marker (raise-only durable write): every entry born before it reads as a hard miss with
         // NO fail-safe reserve (distinct from ClearAsync, which preserves reserves). One marker key — cluster-safe;
         // physical memory is reclaimed by each entry's TTL, so GetCountAsync may still count logically-removed
-        // entries until they age out.
-        return WriteRemoveMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
+        // entries until they age out. The event fires only after the marker write succeeds.
+        await WriteRemoveMarkerAsync(timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+
+        _coordinator.EventsHub.OnFlush();
     }
 
     #endregion

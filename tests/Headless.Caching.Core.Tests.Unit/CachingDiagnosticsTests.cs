@@ -303,6 +303,40 @@ public sealed class CachingDiagnosticsTests : TestBase
         span.GetTagItem("headless.cache.key").Should().Be(key);
     }
 
+    [Fact]
+    public async Task should_record_event_signal_drops()
+    {
+        // given
+        var cacheName = _UniqueName();
+        using var metrics = new MetricCollector();
+        await using var hub = new CacheEventsHub(cacheName, CacheTier.L1, new CacheEventsConfig { BufferCapacity = 1 });
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var _ = hub.Set.AddHandler(
+            async (args, ct) =>
+            {
+                if (string.Equals(args.Key, "active", StringComparison.Ordinal))
+                {
+                    entered.TrySetResult();
+                    await release.Task.WaitAsync(ct);
+                }
+            }
+        );
+
+        hub.OnSet("active");
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        hub.OnSet("buffered");
+        hub.OnSet("dropped");
+
+        // then
+        metrics.Count("headless.cache.events.dropped", ("headless.cache.name", cacheName)).Should().Be(1);
+
+        release.TrySetResult();
+        await hub.DrainAsync(AbortToken);
+    }
+
     private FactoryCacheCoordinator _CreateCoordinator(
         string cacheName = "test-cache",
         bool includeKeyInTraces = false,

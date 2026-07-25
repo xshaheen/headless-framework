@@ -45,6 +45,7 @@ public sealed partial class HybridCache
                         CachingMetrics.OutcomeHit,
                         CachingMetrics.TierL1
                     );
+                    _coordinator.EventsHub.MemoryHub?.OnHit(key);
 
                     if (!l1Entry.SlidingExpiration.HasValue)
                     {
@@ -75,6 +76,7 @@ public sealed partial class HybridCache
                         CachingMetrics.OutcomeHit,
                         CachingMetrics.TierL1
                     );
+                    _coordinator.EventsHub.MemoryHub?.OnHit(key);
                     return new CacheStoreEntry<T>(
                         Found: true,
                         IsNull: l1Value.IsNull,
@@ -95,6 +97,7 @@ public sealed partial class HybridCache
                     CachingMetrics.OutcomeMiss,
                     CachingMetrics.TierL1
                 );
+                _coordinator.EventsHub.MemoryHub?.OnMiss(key);
             }
         }
 
@@ -134,6 +137,7 @@ public sealed partial class HybridCache
                 CachingMetrics.OutcomeMiss,
                 CachingMetrics.TierL2
             );
+            _coordinator.EventsHub.DistributedHub?.OnMiss(key);
 
             if (
                 l1StaleCandidate is { } fallback
@@ -154,6 +158,14 @@ public sealed partial class HybridCache
             l2Entry.Found ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
             CachingMetrics.TierL2
         );
+        if (l2Entry.Found)
+        {
+            _coordinator.EventsHub.DistributedHub?.OnHit(key);
+        }
+        else
+        {
+            _coordinator.EventsHub.DistributedHub?.OnMiss(key);
+        }
 
         // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
         // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.
