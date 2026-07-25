@@ -33,6 +33,25 @@ public sealed class HeadlessCachingSetupBuilder
     /// </summary>
     public bool IncludeKeyInTraces { get; set; }
 
+    /// <summary>
+    /// Maximum cache-event signals buffered behind each cache instance's active handler. Default 2,048. Producers
+    /// never wait; a signal is dropped when this bounded FIFO is full.
+    /// </summary>
+    public int EventBufferCapacity { get; set; } = 2_048;
+
+    /// <summary>
+    /// How long cache disposal waits for accepted event signals to drain before canceling the dispatcher. Default two
+    /// seconds. Handlers should observe their cancellation token.
+    /// </summary>
+    public TimeSpan EventShutdownDrainTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// The log level used to record an exception thrown by a <c>cache.Events</c> handler. Default
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>.
+    /// </summary>
+    public Microsoft.Extensions.Logging.LogLevel EventHandlerErrorLogLevel { get; set; } =
+        Microsoft.Extensions.Logging.LogLevel.Warning;
+
     internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
     internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];

@@ -21,6 +21,7 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
 - `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
 - `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically. `RegisteredNames` enumerates the `AddNamed` instances (default and tier role keys excluded) for validating a name before resolving.
+- `CacheEventsHub` / `CacheEventsConfig` - the concrete hub behind `ICache.Events` and its execution config. `CacheEventsHub` implements `ICacheEvents` over an `AsyncEvent<TArgs>` per event, builds args only when the specific event has a handler (no allocation when unobserved), snapshots handlers at emission, and feeds one bounded non-blocking FIFO shared with tier sub-hubs. Accepted signals preserve FIFO and dispatch through guarded `IAsyncEvent.SafeInvokeAsync`; full buffers drop the incoming signal. `CacheEventsConfig` (`BufferCapacity`, `ShutdownDrainTimeout`, `HandlerErrorLogLevel`) is populated from the setup builder's `EventBufferCapacity`, `EventShutdownDrainTimeout`, and `EventHandlerErrorLogLevel`.
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
 ## Design Notes
@@ -70,13 +71,20 @@ Beyond the entry point, consumers do not use this package directly. Provider pac
 
 ## Configuration
 
-None.
+| Setup option | Default | Description |
+| --- | --- | --- |
+| `IncludeKeyInTraces` | `false` | Allows raw cache keys on tracing spans; keys are never metric dimensions. |
+| `EventBufferCapacity` | `2048` | Signals buffered behind each cache's active event handler; an incoming signal is dropped when full. |
+| `EventShutdownDrainTimeout` | `2 seconds` | Maximum cache-disposal wait for accepted event signals before cancellation. |
+| `EventHandlerErrorLogLevel` | `Warning` | Log level for guarded cache-event handler failures. |
 
 ## Observability
 
 Emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.Caching` (both `Meter` and `ActivitySource`), exposed as `CachingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddCachingInstrumentation()` / `MeterProviderBuilder.AddCachingInstrumentation()` (typed helpers in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. When no listener is attached the emit sites short-circuit via `CachingDiagnostics.IsEnabled`, so an unobserved cache pays no per-operation cost.
 
 The `FactoryCacheCoordinator` owns the `cache.get_or_add` span plus the `headless.cache.requests` / `factory.executions` / `factory.duration` / `failsafe.activations` / `refreshes` instruments; providers add thin `writes` / `evictions` counters and the hybrid tier attribution. Every instrument carries `headless.cache.name` (the registered instance name, or `default`). The raw cache key is never a metric dimension and appears on spans only when the caching setup builder's `IncludeKeyInTraces` opt-in (default off) is enabled. See [docs/llms/caching.md](../../docs/llms/caching.md) for the full instrument table, span shape, and counting model.
+
+Beyond metrics and traces, `cache.Events` (`ICacheEvents`) is a second, in-process consumer channel over the same signals — an `IAsyncEvent<TArgs>` per signal (`Hit`/`Miss`/`Set`/`Remove`, factory/fail-safe/refresh, in-memory `Eviction`, hybrid `Invalidation`) dispatched by `CacheEventsHub`. Async and sync handlers run guarded through one bounded FIFO per cache. Producers never block; accepted signals preserve emission order and a full buffer drops the incoming signal. Configure `EventBufferCapacity` (default 2,048), `EventShutdownDrainTimeout` (default two seconds), and `EventHandlerErrorLogLevel` (default `Warning`) on `AddHeadlessCaching`; inspect `cache.Events.DispatchStatistics` for accepted/processed/dropped/pending counts. An event with no handler builds no args and does no work. See [docs/llms/caching.md](../../docs/llms/caching.md) for the full event list and execution semantics.
 
 ## Dependencies
 

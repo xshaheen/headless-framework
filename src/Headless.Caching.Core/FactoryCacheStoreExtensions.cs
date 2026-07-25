@@ -22,7 +22,8 @@ public static class FactoryCacheStoreExtensions
     /// <param name="options">The cache entry options applied to the written entry.</param>
     /// <param name="timeProvider">The time provider used to stamp the entry.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    public static async ValueTask UpsertEntryAsync<T>(
+    /// <returns><see langword="true"/> when the entry was persisted; <see langword="false"/> when the write was rejected (for example an oversized in-memory entry, or a hybrid write that skips both tiers).</returns>
+    public static async ValueTask<bool> UpsertEntryAsync<T>(
         this IFactoryCacheStore store,
         string key,
         T? value,
@@ -59,7 +60,7 @@ public static class FactoryCacheStoreExtensions
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        // Result discarded: unconditional upsert, no CAS guard.
-        _ = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        // Unconditional upsert (no CAS guard); the result reflects whether an entry was actually retained.
+        return await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
     }
 }
