@@ -128,7 +128,7 @@ internal sealed class RedisStreamManager(
     )
     {
         var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.Beginning)).ToArray();
-        var nextStartIds = streams.ToDictionary(stream => (RedisKey)stream, _ => (RedisValue)StreamPosition.Beginning);
+        var nextStartIds = streams.ToDictionary(stream => (RedisKey)stream, _ => StreamPosition.Beginning);
         var errorDelay = pollDelay;
 
         while (true)

@@ -69,31 +69,31 @@ public sealed class MessagePackBinarySerializer(MessagePackSerializerOptions? op
 
     public void Serialize<T>(T value, IBufferWriter<byte> output)
     {
-        MessagePack.MessagePackSerializer.Serialize(output, value, _options);
+        MessagePackSerializer.Serialize(output, value, _options);
     }
 
     public void Serialize(object? value, IBufferWriter<byte> output)
     {
-        MessagePack.MessagePackSerializer.Serialize(value?.GetType() ?? typeof(object), output, value, _options);
+        MessagePackSerializer.Serialize(value?.GetType() ?? typeof(object), output, value, _options);
     }
 
     public T? Deserialize<T>(ReadOnlyMemory<byte> data)
     {
-        return MessagePack.MessagePackSerializer.Deserialize<T?>(data, _options);
+        return MessagePackSerializer.Deserialize<T?>(data, _options);
     }
 
     public T? Deserialize<T>(in ReadOnlySequence<byte> data)
     {
-        return MessagePack.MessagePackSerializer.Deserialize<T?>(data, _options);
+        return MessagePackSerializer.Deserialize<T?>(data, _options);
     }
 
     public object? Deserialize(ReadOnlyMemory<byte> data, Type type)
     {
-        return MessagePack.MessagePackSerializer.Deserialize(type, data, _options);
+        return MessagePackSerializer.Deserialize(type, data, _options);
     }
 
     public object? Deserialize(in ReadOnlySequence<byte> data, Type type)
     {
-        return MessagePack.MessagePackSerializer.Deserialize(type, data, _options);
+        return MessagePackSerializer.Deserialize(type, data, _options);
     }
 }

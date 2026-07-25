@@ -380,6 +380,7 @@ public sealed class MessageSenderTests : TestBase
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
             .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            // ReSharper disable once NotResolvedInText
             .Returns(OperateResult.Failed(new ArgumentNullException("param")));
 
         var callbackInvoked = false;

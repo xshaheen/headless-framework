@@ -164,7 +164,7 @@ public sealed class InternalJobsManagerTests : TestBase
         );
         var jobId = Guid.NewGuid();
         provider.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
-        sender.CanceledJobNotifyAsync(jobId).Returns<Task>(_ => throw new InvalidOperationException("offline"));
+        sender.CanceledJobNotifyAsync(jobId).Returns(_ => throw new InvalidOperationException("offline"));
 
         (await manager.RequestTimeJobCancellationAsync(jobId, AbortToken)).Should().BeTrue();
     }

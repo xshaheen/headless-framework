@@ -186,8 +186,7 @@ public sealed class InMemoryCache
         // miss, diverging from the Redis provider (which gates the same way) and from the read path here.
         if (
             _memory.TryGetValue(key, out var existingEntry)
-            && !existingEntry.IsExpired
-            && !existingEntry.IsLogicallyExpired
+            && existingEntry is { IsExpired: false, IsLogicallyExpired: false }
             && !_IsTagInvalidated(existingEntry)
         )
         {
@@ -652,7 +651,7 @@ public sealed class InMemoryCache
             static (current, input) =>
                 current < input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: input - current.Value)
-                    : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
+                    : new NumericOpResult<double>(Replace: false, NewValue: 0, Result: 0),
             cancellationToken
         );
     }
@@ -671,7 +670,7 @@ public sealed class InMemoryCache
             static (current, input) =>
                 current < input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: input - current.Value)
-                    : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
+                    : new NumericOpResult<long>(Replace: false, NewValue: 0, Result: 0),
             cancellationToken
         );
     }
@@ -690,7 +689,7 @@ public sealed class InMemoryCache
             static (current, input) =>
                 current > input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: current.Value - input)
-                    : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
+                    : new NumericOpResult<double>(Replace: false, NewValue: 0, Result: 0),
             cancellationToken
         );
     }
@@ -709,7 +708,7 @@ public sealed class InMemoryCache
             static (current, input) =>
                 current > input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: current.Value - input)
-                    : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
+                    : new NumericOpResult<long>(Replace: false, NewValue: 0, Result: 0),
             cancellationToken
         );
     }
@@ -871,7 +870,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddItems<object>(key, newItems, expiresAt, comparer: null);
+            result = _SetAddItems(key, newItems, expiresAt, comparer: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -1793,7 +1792,7 @@ public sealed class InMemoryCache
         }
 
         var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
-        return new ValueTask<long>(_SetRemoveItems<object>(key, valuesToRemove, comparer: null));
+        return new ValueTask<long>(_SetRemoveItems(key, valuesToRemove, comparer: null));
     }
 
     // Shared set-remove path for both the string (ordinal, case-sensitive) and object (default-comparer) member
@@ -3155,7 +3154,7 @@ internal static partial class InMemoryCacheLog
 
 file static class ConcurrentDictionaryExtensions
 {
-    public static bool TryUpdate<TKey, TValue>(
+    public static void TryUpdate<TKey, TValue>(
         this ConcurrentDictionary<TKey, TValue> dictionary,
         TKey key,
         Func<TKey, TValue, TValue> updateValueFactory
@@ -3168,11 +3167,9 @@ file static class ConcurrentDictionaryExtensions
 
             if (dictionary.TryUpdate(key, newValue, existingValue))
             {
-                return true;
+                return;
             }
         }
-
-        return false;
     }
 }
 

@@ -375,7 +375,7 @@ public readonly struct PostgreSqlAdvisoryLockKey : IEquatable<PostgreSqlAdvisory
     {
         var byteCount = Encoding.UTF8.GetByteCount(name);
         byte[]? rentedBytes = null;
-        Span<byte> utf8Bytes =
+        var utf8Bytes =
             byteCount <= _MaxStackallocUtf8Bytes
                 ? stackalloc byte[byteCount]
                 : rentedBytes = ArrayPool<byte>.Shared.Rent(byteCount);

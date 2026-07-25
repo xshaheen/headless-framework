@@ -326,7 +326,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         await lockAcquired.Task.WaitAsync(AbortToken);
         using var cancellation = new CancellationTokenSource();
 
-        var claim = Task.Run(async () => await storage.ClaimDelayedMessagesAsync(cancellation.Token));
+        var claim = Task.Run(async () => await storage.ClaimDelayedMessagesAsync(cancellation.Token), AbortToken);
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
         await cancellation.CancelAsync();
         releaseLock.TrySetResult();

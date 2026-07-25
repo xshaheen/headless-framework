@@ -587,7 +587,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         var downloadResult = new BlobDownloadResult(stream, "malformed.json");
         _storage.OpenReadStreamAsync(location, AbortToken).Returns(downloadResult);
 
-        Func<Task> read = async () =>
+        var read = async () =>
         {
             _ = await _storage.GetBlobContentAsync<TestData>(location, cancellationToken: AbortToken);
         };
@@ -607,7 +607,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         _storage.OpenReadStreamAsync(location, cancellationToken).Returns(downloadResult);
 
         var readTask = _storage.GetBlobContentAsync<TestData>(location, cancellationToken: cancellationToken).AsTask();
-        Func<Task> read = async () =>
+        var read = async () =>
         {
             _ = await readTask;
         };

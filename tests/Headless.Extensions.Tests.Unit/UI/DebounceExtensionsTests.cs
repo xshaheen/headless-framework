@@ -164,7 +164,7 @@ public sealed class DebounceExtensionsTests : TestBase
     public void debounce_throws_when_interval_is_zero()
     {
         // given
-        Action action = () => { };
+        var action = () => { };
 
         // when
         var act = () => action.Debounce(TimeSpan.Zero);
@@ -177,7 +177,7 @@ public sealed class DebounceExtensionsTests : TestBase
     public void debounce_throws_when_interval_is_negative()
     {
         // given
-        Action action = () => { };
+        var action = () => { };
 
         // when
         var act = () => action.Debounce(TimeSpan.FromMilliseconds(-1));

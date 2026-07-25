@@ -77,7 +77,7 @@ internal static class ServiceBuilder
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, builder, resolveOptionsTemplate);
+            _AddPersistenceProviderCore(services, builder, resolveOptionsTemplate);
         };
     }
 
@@ -109,7 +109,7 @@ internal static class ServiceBuilder
                 builder.PoolSize
             ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, builder, resolveOptionsTemplate);
+            _AddPersistenceProviderCore(services, builder, resolveOptionsTemplate);
         };
     }
 
