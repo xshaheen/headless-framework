@@ -16,6 +16,63 @@ namespace Tests.MultiTenancy;
 public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
 {
     [Fact]
+    public async Task descriptor_missing_compatibility_delegate_observes_job_tenant_and_restores_ambient()
+    {
+        var tenant = new AsyncLocalTenant();
+
+        var manager = Substitute.For<IInternalJobManager>();
+        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+
+        await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            currentTenant: tenant
+        );
+
+        string? observedTenant = null;
+        var job = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "descriptor-less-fn",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            TenantId = "t1",
+            CachedDelegate = (_, _, _) =>
+            {
+                observedTenant = tenant.Id;
+
+                return Task.CompletedTask;
+            },
+        };
+
+        using (tenant.Change("ambient"))
+        {
+            await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
+
+            tenant.Id.Should().Be("ambient", "the compatibility delegate's tenant scope must not leak");
+        }
+
+        observedTenant.Should().Be("t1");
+        tenant.Id.Should().BeNull();
+    }
+
+    [Fact]
     public async Task failure_callbacks_observe_the_job_tenant_scope()
     {
         // #278 finding #9: the exception observer and the exhausted callback run consumer code AFTER the execute

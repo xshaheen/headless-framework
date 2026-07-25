@@ -422,10 +422,14 @@ internal sealed class JobsExecutionTaskHandler
                             else
                             {
                                 // Older generated assemblies can still supply a cached registration without descriptor
-                                // metadata. Preserve their execution path while new generated assemblies use middleware.
-                                await context
-                                    .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
-                                    .ConfigureAwait(false);
+                                // metadata. Preserve tenant restoration even though this compatibility path cannot use
+                                // execute middleware.
+                                using (_EnterTenantScope(context))
+                                {
+                                    await context
+                                        .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                        .ConfigureAwait(false);
+                                }
                             }
                             success = true;
                         },
@@ -689,10 +693,10 @@ internal sealed class JobsExecutionTaskHandler
         };
     }
 
-    // #278: re-establish the job's tenant around a consumer failure callback. These callbacks run after the execute
-    // middleware's tenant scope has unwound (the handler threw, so `next` disposed it before Polly's retry/final
-    // callbacks fire), so a tenant-aware alert or compensating transaction would otherwise run system-scope. Returns
-    // null — a no-op scope — for a tenant-free job or a host without a tenant source.
+    // #278: re-establish the job's tenant around consumer code that runs outside execute middleware. Failure callbacks
+    // run after the middleware's tenant scope has unwound, and older generated assemblies can execute without a
+    // descriptor. Returns null — a no-op scope — without a tenant source, or for a tenant-free job when propagation is
+    // disabled.
     [MustDisposeResource]
     private IDisposable? _EnterTenantScope(JobExecutionState context)
     {
