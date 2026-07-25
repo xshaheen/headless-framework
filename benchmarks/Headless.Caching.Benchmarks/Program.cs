@@ -12,5 +12,6 @@ BenchmarkSwitcher
         typeof(FactoryCacheBenchmarks),
         typeof(FeatureCacheBenchmarks),
         typeof(InMemorySetPagingBenchmarks),
+        typeof(CacheEventDispatchBenchmarks),
     ])
     .Run(args, BenchmarkRunConfig.Create(args));
