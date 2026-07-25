@@ -160,3 +160,31 @@ production and active in development.
 The per-gate strictness setting: off (skip), warn (log and continue, recording degraded state), or
 strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
 set, otherwise from an environment-aware default keyed to its tier.
+
+## Multi-tenancy
+
+### Tenancy seam
+
+A named integration point (for example "Messaging", "Jobs") where a feature attaches to the
+multi-tenancy infrastructure: it records its tenant posture in the manifest via
+`HeadlessTenancyBuilder.RecordSeam` and contributes `IHeadlessTenancyValidator` startup checks.
+
+### Tenant posture
+
+The strengthen-only status a seam records in the posture manifest — precedence Configured <
+Propagating < Guarded < Enforcing — describing how strongly that seam handles tenant context.
+A later registration can raise a seam's posture but never lower it.
+
+## Jobs (tenancy)
+
+### System job
+
+A time job enqueued with `IsSystemJob = true`: persisted with a null tenant and executed without
+tenant scope. It can only be created outside tenant context — an ambient tenant rejects the flag
+(no tenant-to-system escalation) — and the system-job decision is logged at schedule time.
+
+### Cron fan-out
+
+The pattern for tenant-scoped recurring work: cron definitions and occurrences stay system-scope,
+and the cron function enumerates tenants in application code, scheduling one tenant-scoped time job
+per tenant. The framework never enumerates tenants.

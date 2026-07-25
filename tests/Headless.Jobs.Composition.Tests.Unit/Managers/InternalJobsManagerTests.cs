@@ -262,4 +262,115 @@ public sealed class InternalJobsManagerTests : TestBase
         var grandChildContext = childContext.TimeJobChildren.Should().ContainSingle().Which;
         grandChildContext.RunCondition.Should().Be(RunCondition.OnCancelled);
     }
+
+    [Fact]
+    public async Task run_timed_out_tickers_threads_the_persisted_tenant_at_every_chain_level()
+    {
+        // #278: the execute middleware restores ICurrentTenant from JobExecutionState.TenantId, which only exists if
+        // _BuildQueuedTimeJobContext copies the persisted TenantId at root/child/grandchild. A copy-paste slip on one
+        // of those three field assignments would silently run that level system-scope, so pin all three here.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>()
+        );
+
+        var grandChild = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "grand-child",
+            TenantId = "t-grand",
+        };
+        var child = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "child",
+            TenantId = "t-child",
+            Children = [grandChild],
+        };
+        var root = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "root",
+            ExecutionTime = DateTime.UtcNow,
+            TenantId = "t-root",
+            Children = [child],
+        };
+        provider.QueueTimedOutTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(new[] { root }.ToAsyncEnumerable());
+        provider
+            .QueueTimedOutCronJobOccurrencesAsync(Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<CronJobOccurrenceEntity<FakeCronJob>>());
+
+        var contexts = await manager.RunTimedOutTickers(AbortToken);
+
+        var rootContext = contexts.Should().ContainSingle().Which;
+        rootContext.TenantId.Should().Be("t-root");
+        var childContext = rootContext.TimeJobChildren.Should().ContainSingle().Which;
+        childContext.TenantId.Should().Be("t-child");
+        childContext.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-grand");
+    }
+
+    [Fact]
+    public async Task get_next_jobs_threads_the_persisted_tenant_at_every_chain_level()
+    {
+        // #278: same three-level TenantId threading assertion for the periodic-poll pickup path (GetNextJobs →
+        // QueueTimeJobsAsync → _BuildQueuedTimeJobContext), the sibling of the timed-out pickup above.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>()
+        );
+
+        var grandChild = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "grand-child",
+            TenantId = "t-grand",
+        };
+        var child = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "child",
+            TenantId = "t-child",
+            Children = [grandChild],
+        };
+        var root = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "root",
+            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            TenantId = "t-root",
+            Children = [child],
+        };
+
+        // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(new[] { root });
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<CronJobEntity>());
+        provider
+            .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+        provider
+            .QueueTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { root }.ToAsyncEnumerable());
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        var rootContext = functions.Should().ContainSingle().Which;
+        rootContext.TenantId.Should().Be("t-root");
+        var childContext = rootContext.TimeJobChildren.Should().ContainSingle().Which;
+        childContext.TenantId.Should().Be("t-child");
+        childContext.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-grand");
+    }
 }
