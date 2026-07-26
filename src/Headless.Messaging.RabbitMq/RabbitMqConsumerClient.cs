@@ -46,10 +46,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _connectionChannelPool = connectionChannelPool;
         _serviceProvider = serviceProvider;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
-        _exchangeName = connectionChannelPool.Exchange;
+        _exchangeName = RabbitMqPhysicalAddress.Exchange(connectionChannelPool.Exchange, lane);
         _rabbitMqOptions = options.Value;
         _consumerConfig = consumerConfig;
         _lane = lane;
+        if (lane == MessageLane.Bus)
+        {
+            _ = RabbitMqPhysicalAddress.Queue(lane, groupName, groupName);
+        }
     }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -75,12 +79,21 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         Argument.IsNotNull(messageNames);
 
+        var subscriptions = messageNames
+            .Select(messageName =>
+            {
+                RabbitMqValidation.ValidateMessageName(messageName);
+                return (
+                    QueueName: _GetQueueName(messageName),
+                    RoutingKey: RabbitMqPhysicalAddress.RoutingKey(_lane, messageName)
+                );
+            })
+            .ToArray();
+
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var messageName in messageNames)
+        foreach (var (queueName, routingKey) in subscriptions)
         {
-            RabbitMqValidation.ValidateMessageName(messageName);
-            var queueName = _GetQueueName(messageName);
             if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
             {
                 await _DeclareQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
@@ -88,7 +101,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             }
 
             await _channel!
-                .QueueBindAsync(queueName, _exchangeName, messageName, cancellationToken: cancellationToken)
+                .QueueBindAsync(queueName, _exchangeName, routingKey, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -272,7 +285,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 await channel
                     .ExchangeDeclareAsync(
                         _exchangeName,
-                        RabbitMqMessagingOptions.ExchangeType,
+                        RabbitMqPhysicalAddress.ExchangeType(_lane),
                         durable: true,
                         cancellationToken: cancellationToken
                     )
@@ -320,7 +333,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     internal static string GetQueueName(string groupName, string messageName, MessageLane lane)
     {
-        return lane == MessageLane.Queue ? messageName : groupName;
+        return RabbitMqPhysicalAddress.Queue(lane, groupName, messageName);
     }
 
     private async Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)

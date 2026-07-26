@@ -746,7 +746,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_when_custom_headers_builder_throws_with_concurrent_processing()
+    public async Task should_terminally_reject_when_custom_headers_builder_throws_with_concurrent_processing()
     {
         // given
         _channel.IsOpen.Returns(true);
@@ -786,11 +786,11 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         await _WaitForSignalAsync(consumeFailed.Task);
 
-        // then — message should be nacked, not left unacked
+        // then — malformed transport input is terminal and does not enter a requeue storm
         callbackInvoked.Should().BeFalse();
-        await _channel.Received(1).BasicNackAsync(999ul, false, true, Arg.Any<CancellationToken>());
+        await _channel.Received(1).BasicRejectAsync(999ul, false, Arg.Any<CancellationToken>());
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
-        _loggedEvents[0].Reason.Should().Contain("bad header builder");
+        _loggedEvents[0].Reason.Should().Contain("terminally rejected").And.NotContain("bad header builder");
     }
 
     private TaskCompletionSource _CreateSignal()
@@ -810,7 +810,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()
+    public async Task should_terminally_reject_when_custom_headers_builder_throws_without_concurrent_processing()
     {
         // given
         _channel.IsOpen.Returns(true);
@@ -845,9 +845,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             CancellationToken.None
         );
 
-        // then — message should be nacked, not left unacked
+        // then — malformed transport input is terminal and does not enter a requeue storm
         callbackInvoked.Should().BeFalse();
-        await _channel.Received(1).BasicNackAsync(888ul, false, true, Arg.Any<CancellationToken>());
+        await _channel.Received(1).BasicRejectAsync(888ul, false, Arg.Any<CancellationToken>());
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
     }
 

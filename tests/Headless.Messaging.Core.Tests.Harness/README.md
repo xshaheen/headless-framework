@@ -70,7 +70,7 @@ Provider leaves create an isolated `TransportConsumerConformanceSession` with a 
 
 NATS is the reference implementation. Its test leaf uses queue intent, a unique memory-backed JetStream stream and durable, and a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
 
-RabbitMQ uses unique exchanges and queues; ACK absence is observed beyond the provider window, reject proves broker requeue, and pause/resume proves a single recovered delivery. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
+RabbitMQ uses lane-qualified exchanges, routing keys, and owned queues; ACK absence is observed beyond the provider window, ordinary reject proves broker requeue, and malformed-envelope construction is terminally rejected without requeue. Its real-broker leaf also proves subscriber-group fan-out, replica competition, Queue ownership, same-name lane isolation, and a drained legacy exchange followed by roll-forward-only publication. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
 
 Kafka is queue/consumer-group only in the current provider contract. Pulsar proves both bus fan-out and queue competition; its negative-ack redelivery delay is shortened only in the test fixture, and broker-restart recovery remains a linked gap. Azure Service Bus runs against a dedicated real namespace using `HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING`. The credential must grant entity-management rights because the fixture creates and deletes only its uniquely named queues, topics, and subscriptions. Missing credentials produce precise local skips; the protected `Azure Service Bus Conformance` workflow fails preflight unless the secret exists and verifies that real tests—not only the credential marker—executed.
 
@@ -91,13 +91,13 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 | `StaleSettlement` | U | U | U | U | U | U | U | U |
 | `HandlerFailureRedelivery` | U | U | U | U | U | U | U | U |
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S |
-| `BusSubscriberGroupFanOut` | U | U | S | N/A | U | S† | S | S |
-| `BusReplicaCompetition` | U | U | S | N/A | U | S† | S | S |
-| `QueueOwnership` | U | U | S | S | U | S† | S | S |
-| `SameNameLaneIsolation` | U | U | S | N/A | U | S† | S | S |
+| `BusSubscriberGroupFanOut` | U | S | S | N/A | U | S† | S | S |
+| `BusReplicaCompetition` | U | S | S | N/A | U | S† | S | S |
+| `QueueOwnership` | U | S | S | S | U | S† | S | S |
+| `SameNameLaneIsolation` | U | S | S | N/A | U | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
-| `MalformedEnvelopeTerminalSettlement` | U | U | S | S | U | U | N/A | S |
-| `LegacyCutoverRecovery` | U | U | U | N/A | U | N/A | N/A | S |
+| `MalformedEnvelopeTerminalSettlement` | U | S | S | S | U | U | N/A | S |
+| `LegacyCutoverRecovery` | U | S | U | N/A | U | N/A | N/A | S |
 
 Evidence anchors:
 
@@ -110,6 +110,7 @@ Evidence anchors:
 - InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver.
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
 - Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `SetupTests`.
+- RabbitMQ lane isolation, subscriber-group/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities

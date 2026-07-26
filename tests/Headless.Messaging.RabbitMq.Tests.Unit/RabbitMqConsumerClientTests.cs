@@ -76,7 +76,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .ExchangeDeclareAsync(
-                "test.exchange",
+                "test.exchange.bus",
                 RabbitMqMessagingOptions.ExchangeType,
                 true,
                 false,
@@ -177,13 +177,34 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then
         await _channel
             .Received(1)
-            .QueueBindAsync("test-group", "test.exchange", "topic1", null, false, Arg.Any<CancellationToken>());
+            .QueueBindAsync(
+                "bus.test-group",
+                "test.exchange.bus",
+                "bus.topic1",
+                null,
+                false,
+                Arg.Any<CancellationToken>()
+            );
         await _channel
             .Received(1)
-            .QueueBindAsync("test-group", "test.exchange", "topic2", null, false, Arg.Any<CancellationToken>());
+            .QueueBindAsync(
+                "bus.test-group",
+                "test.exchange.bus",
+                "bus.topic2",
+                null,
+                false,
+                Arg.Any<CancellationToken>()
+            );
         await _channel
             .Received(1)
-            .QueueBindAsync("test-group", "test.exchange", "topic3", null, false, Arg.Any<CancellationToken>());
+            .QueueBindAsync(
+                "bus.test-group",
+                "test.exchange.bus",
+                "bus.topic3",
+                null,
+                false,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -206,8 +227,8 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .ExchangeDeclareAsync(
-                "test.exchange",
-                RabbitMqMessagingOptions.ExchangeType,
+                "test.exchange.queue",
+                ExchangeType.Direct,
                 true,
                 false,
                 null,
@@ -218,7 +239,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueDeclareAsync(
-                "orders.created",
+                "queue.orders.created",
                 true,
                 false,
                 false,
@@ -229,13 +250,20 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             );
         await _channel
             .Received(1)
-            .QueueBindAsync("orders.created", "test.exchange", "orders.created", null, false, cts.Token);
+            .QueueBindAsync(
+                "queue.orders.created",
+                "test.exchange.queue",
+                "queue.orders.created",
+                null,
+                false,
+                cts.Token
+            );
     }
 
     [Fact]
     public void should_use_group_queue_for_bus_intent()
     {
-        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", MessageLane.Bus).Should().Be("workers");
+        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", MessageLane.Bus).Should().Be("bus.workers");
     }
 
     [Fact]
@@ -244,7 +272,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         RabbitMqConsumerClient
             .GetQueueName("workers", "orders.created", MessageLane.Queue)
             .Should()
-            .Be("orders.created");
+            .Be("queue.orders.created");
     }
 
     [Fact]

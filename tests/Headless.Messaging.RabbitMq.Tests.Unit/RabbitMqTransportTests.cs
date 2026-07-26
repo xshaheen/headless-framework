@@ -97,8 +97,8 @@ public sealed class RabbitMqTransportTests : TestBase
         await _channel
             .Received(1)
             .BasicPublishAsync(
-                "test.exchange",
-                "TestMessage",
+                "test.exchange.bus",
+                "bus.TestMessage",
                 false,
                 Arg.Is<BasicProperties>(p => p.MessageId == "msg-123" && p.DeliveryMode == DeliveryModes.Persistent),
                 Arg.Any<ReadOnlyMemory<byte>>(),
@@ -339,7 +339,7 @@ public sealed class RabbitMqTransportTests : TestBase
         await _channel
             .Received(1)
             .BasicPublishAsync(
-                "custom.exchange",
+                "custom.exchange.bus",
                 Arg.Any<string>(),
                 Arg.Any<bool>(),
                 Arg.Any<BasicProperties>(),

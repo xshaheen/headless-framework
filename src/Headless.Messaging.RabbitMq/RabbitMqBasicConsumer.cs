@@ -14,7 +14,7 @@ namespace Headless.Messaging.RabbitMq;
 /// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
 /// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure the message is nacked with <c>requeue=true</c>.
+/// thread. On header or body parsing failure the malformed delivery is terminally rejected.
 /// </remarks>
 internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
@@ -136,7 +136,8 @@ internal sealed class RabbitMqBasicConsumer(
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, nacking delivery {deliveryTag}: {ex}",
+                    Reason =
+                        $"Malformed RabbitMQ transport envelope terminally rejected at delivery {deliveryTag}: {ex.GetType().Name}",
                 }
             );
 
@@ -144,7 +145,7 @@ internal sealed class RabbitMqBasicConsumer(
             {
                 if (Channel.IsOpen)
                 {
-                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true).ConfigureAwait(false);
+                    await Channel.BasicRejectAsync(deliveryTag, requeue: false).ConfigureAwait(false);
                 }
             }
             catch (Exception nackEx)
@@ -153,7 +154,8 @@ internal sealed class RabbitMqBasicConsumer(
                     new LogMessageEventArgs
                     {
                         LogType = MqLogType.ConsumeError,
-                        Reason = $"Failed to nack delivery {deliveryTag}: {nackEx}",
+                        Reason =
+                            $"Failed to terminally reject malformed RabbitMQ delivery {deliveryTag}: {nackEx.GetType().Name}",
                     }
                 );
             }

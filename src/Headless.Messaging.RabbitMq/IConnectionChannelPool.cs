@@ -258,18 +258,6 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             model = await connection
                 .CreateChannelAsync(BuildChannelOptions(_isPublishConfirms), cancellationToken)
                 .ConfigureAwait(false);
-            await model
-                .ExchangeDeclareAsync(
-                    Exchange,
-                    RabbitMqMessagingOptions.ExchangeType,
-                    durable: true,
-                    autoDelete: false,
-                    arguments: null,
-                    passive: false,
-                    noWait: false,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
         }
         catch (Exception e)
         {
