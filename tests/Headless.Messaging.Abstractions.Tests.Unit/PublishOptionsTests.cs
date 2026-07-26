@@ -50,7 +50,7 @@ public sealed class PublishOptionsTests : TestBase
     public void should_not_expose_lane_override()
     {
         // then
-        typeof(PublishOptions).GetProperty("Lane").Should().BeNull();
+        typeof(PublishOptions).GetProperties().Should().NotContain(property => property.Name == "Lane");
     }
 
     [Fact]

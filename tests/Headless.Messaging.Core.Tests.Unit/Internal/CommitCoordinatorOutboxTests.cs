@@ -182,12 +182,13 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             var storage = Substitute.For<IDataStorage>();
             var stored = _BuildMessage();
             stored.ExpiresAt = publishAt;
+            var commitTransaction = transaction;
             storage
                 .StoreScheduledMessageAsync(
                     Arg.Any<string>(),
                     Arg.Any<MediumMessage>(),
                     publishAt,
-                    transaction,
+                    commitTransaction,
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(stored);

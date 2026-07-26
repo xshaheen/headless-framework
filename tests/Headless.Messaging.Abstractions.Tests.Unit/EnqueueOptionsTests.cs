@@ -39,6 +39,6 @@ public sealed class EnqueueOptionsTests : TestBase
     public void should_not_expose_lane_override()
     {
         // then
-        typeof(EnqueueOptions).GetProperty("Lane").Should().BeNull();
+        typeof(EnqueueOptions).GetProperties().Should().NotContain(property => property.Name == "Lane");
     }
 }

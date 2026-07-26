@@ -1229,10 +1229,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             ? storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask()
             : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask();
 
-        await Task.WhenAll(busClaimTask, queueClaimTask);
+        var claimed = await Task.WhenAll(busClaimTask, queueClaimTask);
 
-        busClaimTask.Result.Should().ContainSingle(message => message.StorageId == busId);
-        queueClaimTask.Result.Should().ContainSingle(message => message.StorageId == queueId);
+        claimed[0].Should().ContainSingle(message => message.StorageId == busId);
+        claimed[1].Should().ContainSingle(message => message.StorageId == queueId);
         (await _ReadPersistedRowJsonAsync(connection, tableName, unknownAheadId)).Should().Be(unknownAheadBefore);
         (await _ReadPersistedRowJsonAsync(connection, tableName, unknownBetweenId)).Should().Be(unknownBetweenBefore);
 

@@ -45,9 +45,10 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     public async Task should_capture_durable_without_coordination_and_preserve_queue_lane()
     {
         await using var harness = _CreateHarness();
+        var storage = harness.Storage;
         MediumMessage? stored = null;
-        harness
-            .Storage.StoreMessageAsync(
+        storage
+            .StoreMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
@@ -108,6 +109,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
         var timeProvider = new FakeTimeProvider(now);
         await using var harness = _CreateHarness(timeProvider);
+        var storage = harness.Storage;
         var stored = new MediumMessage
         {
             StorageId = Guid.NewGuid(),
@@ -115,8 +117,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             Content = "{}",
             Lane = MessageLane.Bus,
         };
-        harness
-            .Storage.StoreScheduledMessageAsync(
+        storage
+            .StoreScheduledMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
                 now.AddMinutes(5),
