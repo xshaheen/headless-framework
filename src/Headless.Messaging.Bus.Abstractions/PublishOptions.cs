@@ -3,8 +3,8 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a broadcast (bus) publish operation with explicit message name, correlation, custom header,
-/// and (for outbox-backed publishes) delivery-delay overrides.
+/// Configures a broadcast (bus) publish operation with delivery behavior, explicit message name,
+/// correlation, custom headers, and an optional delivery delay.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,10 +24,11 @@ namespace Headless.Messaging;
 public sealed record PublishOptions : MessageOptions
 {
     /// <summary>
-    /// Gets the delay applied before the persisted message is dispatched.
+    /// Gets the relative delay applied before the durably captured message is dispatched.
     /// </summary>
     /// <remarks>
-    /// Honored only by outbox-backed bus publishers. Ignored by fire-and-forget publishers.
+    /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
+    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 

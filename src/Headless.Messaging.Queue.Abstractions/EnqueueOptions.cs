@@ -3,14 +3,13 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a point-to-point (queue) enqueue operation with explicit message name, correlation, custom
-/// header, and (for outbox-backed enqueues) delivery-delay overrides.
+/// Configures a point-to-point (queue) enqueue operation with delivery behavior, explicit message name,
+/// correlation, custom headers, and an optional delivery delay.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Accepted by <see cref="IQueue.EnqueueAsync{T}"/> and <see cref="IOutboxQueue.EnqueueAsync{T}"/>.
-/// <see cref="Delay"/> is honored only when the enqueue is persisted through the outbox
-/// (<see cref="IOutboxQueue"/>); direct enqueuers (<see cref="IQueue"/>) ignore it.
+/// Accepted by <see cref="IQueue.EnqueueAsync{T}"/>. The invoked queue verb fixes the Queue lane;
+/// <see cref="MessageOptions.DeliveryMode"/> controls durability independently.
 /// </para>
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression
@@ -22,11 +21,11 @@ namespace Headless.Messaging;
 public sealed record EnqueueOptions : MessageOptions
 {
     /// <summary>
-    /// Gets the delay applied before the persisted message is dispatched.
+    /// Gets the relative delay applied before the durably captured message is dispatched.
     /// </summary>
     /// <remarks>
-    /// Honored only by <see cref="IOutboxQueue"/>. Ignored by the fire-and-forget <see cref="IQueue"/>
-    /// interface (whose contract is immediate broker-side enqueue with no persistence).
+    /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
+    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 

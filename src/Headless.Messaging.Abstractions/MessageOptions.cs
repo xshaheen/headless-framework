@@ -3,14 +3,13 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Shared base for outbound message option records. Carries the intent-agnostic metadata fields
+/// Shared base for outbound message option records. Carries the delivery mode and intent-agnostic metadata fields
 /// (message name, identifiers, tenancy, headers, callback) that every send path accepts.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Intent-specific send interfaces (<c>IBus</c>, <c>IOutboxBus</c>, <c>IQueue</c>,
-/// <c>IOutboxQueue</c>) accept records derived from this base. Each derived record adds the
-/// intent-specific knobs (for example, <c>Delay</c> on the outbox variants).
+/// Bus and queue publisher interfaces accept records derived from this base. Each derived record adds the
+/// lane-specific publishing options while the invoked publisher verb remains the only lane authority.
 /// </para>
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression
@@ -31,6 +30,9 @@ public abstract record MessageOptions
     /// Maximum supported length for <see cref="TenantId"/> when publishing messages that may be stored durably.
     /// </summary>
     public const int TenantIdMaxLength = 200;
+
+    /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Auto"/>.</summary>
+    public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Auto;
 
     /// <summary>
     /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
@@ -113,7 +115,8 @@ public abstract record MessageOptions
             return false;
         }
 
-        return string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
+        return DeliveryMode == other.DeliveryMode
+            && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && CorrelationSequence == other.CorrelationSequence
@@ -130,6 +133,7 @@ public abstract record MessageOptions
     public override int GetHashCode()
     {
         var hash = new HashCode();
+        hash.Add(DeliveryMode);
         hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);

@@ -8,6 +8,52 @@ namespace Tests;
 public sealed class PublishOptionsTests : TestBase
 {
     [Fact]
+    public void should_expose_stable_delivery_mode_values()
+    {
+        // then
+        ((int)DeliveryMode.Auto)
+            .Should()
+            .Be(0);
+        ((int)DeliveryMode.Durable).Should().Be(1);
+        ((int)DeliveryMode.TransportDirect).Should().Be(2);
+    }
+
+    [Fact]
+    public void should_default_delivery_mode_to_auto()
+    {
+        // when
+        var options = new PublishOptions();
+
+        // then
+        options.DeliveryMode.Should().Be(DeliveryMode.Auto);
+    }
+
+    [Fact]
+    public void should_include_delivery_mode_and_delay_in_equality_and_hashing()
+    {
+        // given
+        var expected = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
+        var equivalent = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
+        var differentMode = expected with { DeliveryMode = DeliveryMode.Auto };
+        var differentDelay = expected with { Delay = TimeSpan.FromMinutes(2) };
+
+        // then
+        expected.Should().Be(equivalent);
+        expected.GetHashCode().Should().Be(equivalent.GetHashCode());
+        expected.Should().NotBe(differentMode);
+        expected.GetHashCode().Should().NotBe(differentMode.GetHashCode());
+        expected.Should().NotBe(differentDelay);
+        expected.GetHashCode().Should().NotBe(differentDelay.GetHashCode());
+    }
+
+    [Fact]
+    public void should_not_expose_lane_override()
+    {
+        // then
+        typeof(PublishOptions).GetProperty("Lane").Should().BeNull();
+    }
+
+    [Fact]
     public void should_default_tenant_id_to_null()
     {
         // when
