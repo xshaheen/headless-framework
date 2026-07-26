@@ -13,6 +13,7 @@ This harness enables consistent integration testing across all messaging provide
 | `TransportTestsBase` | Tests for `ITransport` implementations (sending messages) |
 | `ConsumerClientTestsBase` | Tests for `IConsumerClient` implementations (receiving messages) |
 | `TransportConsumerConformanceTestsBase` | Broker-observed round trip and real settlement invariants |
+| `TransportProviderConformanceDriver` | Provider-only broker operations consumed by shared routing, ownership, isolation, startup, poison, and migration assertions |
 | `BrokerFaultTestsBase` | Optional, manifest-driven recovery and fault invariants |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle tests with DI setup |
@@ -48,7 +49,7 @@ protected override ConsumerClientCapabilities Capabilities => new()
 };
 ```
 
-These flags describe producer or client API behavior only. Broker-observed round trip, header fidelity, commit, reject/redelivery, and fault behavior are tracked separately by `TransportConformanceManifest`. Its three states are:
+These flags describe producer or client API behavior only. Broker-observed routing, ownership, isolation, settlement, migration, and fault behavior are tracked separately by `TransportConformanceManifest`. Every profile also declares the provider-native terminal invariant, maximum delivery count, and restart-inclusive observation window used to rule out delayed malformed-envelope redelivery. Its three scenario states are:
 
 - `Supported`: an executable broker-backed assertion exists;
 - `Unsupported`: the gap has a rationale and linked issue;
@@ -77,19 +78,26 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 
 `S` means the manifest cell is `Supported` and names an executable broker-backed assertion. `U` means `Unsupported` with the manifest's [tracked gap](https://github.com/xshaheen/headless-framework/issues/359). `N/A` means `NotApplicable` with a topology or protocol rationale. `S†` is executable real-service evidence that still requires the protected Azure credential; a local skip-only run is not completion evidence.
 
-| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus |
-|---|---:|---:|---:|---:|---:|---:|
-| `QueueRoundTrip` | S | S | S | S | S | S† |
-| `BusRoundTrip` | S | S | S | N/A | S | S† |
-| `HeaderRoundTrip` | S | S | S | S | S | S† |
-| `EmptyBodyDispatch` | S | S | N/A | U | U | U |
-| `CommitSettlement` | S | S | S | S | S | S† |
-| `RejectRedelivery` | S | S | S | S | S | S† |
-| `ConsumerPauseRecovery` | S | S | U | S | S | S† |
-| `BrokerInterruptionRecovery` | U | U | U | U | U | U |
-| `StaleSettlement` | U | U | U | U | U | U |
-| `HandlerFailureRedelivery` | U | U | U | U | U | U |
-| `BoundedGracefulShutdown` | S | S | S | S | S | S† |
+| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus | InMemory | Redis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `QueueRoundTrip` | S | S | S | S | S | S† | S | S |
+| `BusRoundTrip` | S | S | S | N/A | S | S† | S | S |
+| `HeaderRoundTrip` | S | S | S | S | S | S† | S | S |
+| `EmptyBodyDispatch` | S | S | N/A | U | U | U | S | U |
+| `CommitSettlement` | S | S | S | S | S | S† | S | U |
+| `RejectRedelivery` | S | S | S | S | S | S† | S | U |
+| `ConsumerPauseRecovery` | S | S | U | S | S | S† | U | U |
+| `BrokerInterruptionRecovery` | U | U | U | U | U | U | U | U |
+| `StaleSettlement` | U | U | U | U | U | U | U | U |
+| `HandlerFailureRedelivery` | U | U | U | U | U | U | U | U |
+| `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | U |
+| `BusSubscriberGroupFanOut` | U | U | U | N/A | U | U | U | U |
+| `BusReplicaCompetition` | U | U | U | N/A | U | U | U | U |
+| `QueueOwnership` | U | U | U | U | U | U | U | U |
+| `SameNameLaneIsolation` | U | U | U | N/A | U | U | U | U |
+| `StartupRejectionBeforeSideEffects` | U | U | U | U | U | U | U | U |
+| `MalformedEnvelopeTerminalSettlement` | U | U | U | U | U | U | U | U |
+| `LegacyCutoverRecovery` | U | U | U | N/A | U | N/A | N/A | U |
 
 Evidence anchors:
 

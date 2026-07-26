@@ -37,7 +37,17 @@ public sealed class TransportConformanceManifestTests : TestBase
     [Fact]
     public void should_define_the_authoritative_provider_and_scenario_roster()
     {
-        var expectedProviders = new[] { "NATS", "RabbitMQ", "AWS/LocalStack", "Kafka", "Pulsar", "Azure Service Bus" };
+        var expectedProviders = new[]
+        {
+            "NATS",
+            "RabbitMQ",
+            "AWS/LocalStack",
+            "Kafka",
+            "Pulsar",
+            "Azure Service Bus",
+            "InMemory",
+            "Redis",
+        };
 
         TransportConformanceManifest.Providers.Keys.Should().BeEquivalentTo(expectedProviders);
 
@@ -94,6 +104,52 @@ public sealed class TransportConformanceManifestTests : TestBase
     public void should_keep_the_committed_manifest_valid()
     {
         TransportConformanceManifest.GetValidationErrors().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_require_bounded_malformed_envelope_evidence()
+    {
+        var profile = TransportConformanceProfile.CreateDisabled("Example") with { MalformedEnvelopeBound = null };
+
+        var errors = TransportConformanceManifest.GetValidationErrors(profile);
+
+        errors
+            .Should()
+            .Contain(error => error.Contains("malformed-envelope bound", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void should_require_restart_in_malformed_envelope_observation_window()
+    {
+        var profile = TransportConformanceProfile.CreateDisabled("Example") with
+        {
+            MalformedEnvelopeBound = new TransportMalformedEnvelopeBound(
+                "native terminal disposition",
+                MaximumDeliveryCount: 1,
+                ObservationWindow: TimeSpan.FromSeconds(1),
+                IncludesBrokerRestart: false
+            ),
+        };
+
+        var errors = TransportConformanceManifest.GetValidationErrors(profile);
+
+        errors.Should().Contain(error => error.Contains("restart", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void should_track_lane_isolation_and_cutover_as_explicit_scenarios()
+    {
+        Enum.GetValues<TransportConformanceScenario>()
+            .Should()
+            .Contain([
+                TransportConformanceScenario.BusSubscriberGroupFanOut,
+                TransportConformanceScenario.BusReplicaCompetition,
+                TransportConformanceScenario.QueueOwnership,
+                TransportConformanceScenario.SameNameLaneIsolation,
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                TransportConformanceScenario.LegacyCutoverRecovery,
+            ]);
     }
 
     [Fact]

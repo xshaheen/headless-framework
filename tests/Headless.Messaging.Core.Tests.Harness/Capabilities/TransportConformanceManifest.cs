@@ -21,6 +21,13 @@ public enum TransportConformanceScenario
     StaleSettlement,
     HandlerFailureRedelivery,
     BoundedGracefulShutdown,
+    BusSubscriberGroupFanOut,
+    BusReplicaCompetition,
+    QueueOwnership,
+    SameNameLaneIsolation,
+    StartupRejectionBeforeSideEffects,
+    MalformedEnvelopeTerminalSettlement,
+    LegacyCutoverRecovery,
 }
 
 /// <summary>
@@ -78,13 +85,51 @@ public sealed record TransportRuntimeCapabilityExpectation(
     }
 }
 
+/// <summary>Provider-native evidence bound used to rule out delayed poison-message redelivery.</summary>
+[PublicAPI]
+public sealed record TransportMalformedEnvelopeBound(
+    string TerminalInvariant,
+    int MaximumDeliveryCount,
+    TimeSpan ObservationWindow,
+    bool IncludesBrokerRestart
+)
+{
+    public IReadOnlyList<string> GetValidationErrors()
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(TerminalInvariant))
+        {
+            errors.Add("the malformed-envelope bound requires a provider-native terminal invariant.");
+        }
+
+        if (MaximumDeliveryCount <= 0)
+        {
+            errors.Add("the malformed-envelope bound requires a positive maximum delivery count.");
+        }
+
+        if (ObservationWindow <= TimeSpan.Zero)
+        {
+            errors.Add("the malformed-envelope bound requires a positive observation window.");
+        }
+
+        if (!IncludesBrokerRestart)
+        {
+            errors.Add("the malformed-envelope bound must include broker restart observation.");
+        }
+
+        return errors;
+    }
+}
+
 /// <summary>Conformance declarations for one provider's broker-backed integration leaf.</summary>
 [PublicAPI]
 public sealed record TransportConformanceProfile(
     string Provider,
     bool IsRealBrokerLeafEnabled,
     TransportRuntimeCapabilityExpectation ExpectedRuntimeCapabilities,
-    FrozenDictionary<TransportConformanceScenario, ConformanceSupport> Scenarios
+    FrozenDictionary<TransportConformanceScenario, ConformanceSupport> Scenarios,
+    TransportMalformedEnvelopeBound? MalformedEnvelopeBound
 )
 {
     private const string _GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/359";
@@ -105,7 +150,8 @@ public sealed record TransportConformanceProfile(
             provider,
             false,
             TransportRuntimeCapabilityExpectation.Disabled(provider),
-            scenarios.ToFrozenDictionary()
+            scenarios.ToFrozenDictionary(),
+            null
         );
     }
 
@@ -138,6 +184,23 @@ public sealed record TransportConformanceProfile(
         scenarios[scenario] = support;
         return this with { Scenarios = scenarios.ToFrozenDictionary() };
     }
+
+    public TransportConformanceProfile WithMalformedEnvelopeBound(
+        string terminalInvariant,
+        int maximumDeliveryCount,
+        TimeSpan observationWindow
+    )
+    {
+        return this with
+        {
+            MalformedEnvelopeBound = new TransportMalformedEnvelopeBound(
+                terminalInvariant,
+                maximumDeliveryCount,
+                observationWindow,
+                IncludesBrokerRestart: true
+            ),
+        };
+    }
 }
 
 /// <summary>Authoritative provider/scenario roster for broker-backed messaging conformance tests.</summary>
@@ -163,6 +226,7 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: false
                 )
+                .WithMalformedEnvelopeBound("JetStream terminal ACK", 1, TimeSpan.FromSeconds(3))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -180,6 +244,7 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: false
                 )
+                .WithMalformedEnvelopeBound("basic.reject with requeue disabled", 1, TimeSpan.FromSeconds(3))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -197,6 +262,7 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: true
                 )
+                .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(35))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -218,12 +284,35 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: false
                 )
+                .WithMalformedEnvelopeBound(
+                    "consumer offset committed past the rejected record",
+                    1,
+                    TimeSpan.FromSeconds(10)
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BusRoundTrip,
                     ConformanceSupport.NotApplicable(
                         "The current Kafka transport contract is queue/consumer-group based and has no fanout bus topology."
                     )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.BusSubscriberGroupFanOut,
+                    ConformanceSupport.NotApplicable("Kafka is a Queue-only transport.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.BusReplicaCompetition,
+                    ConformanceSupport.NotApplicable("Kafka is a Queue-only transport.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.SameNameLaneIsolation,
+                    ConformanceSupport.NotApplicable(
+                        "Kafka rejects Bus registration rather than creating Bus topology."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.LegacyCutoverRecovery,
+                    ConformanceSupport.NotApplicable("Kafka physical topology does not change in this release.")
                 )
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
@@ -239,6 +328,7 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: false
                 )
+                .WithMalformedEnvelopeBound("Pulsar terminal acknowledgement", 1, TimeSpan.FromSeconds(10))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -255,6 +345,13 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: true
                 )
+                .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10))
+                .WithScenario(
+                    TransportConformanceScenario.LegacyCutoverRecovery,
+                    ConformanceSupport.NotApplicable(
+                        "Azure Service Bus physical topology does not change in this release."
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -263,6 +360,38 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
+            ["InMemory"] = TransportConformanceProfile
+                .CreateDisabled("InMemory")
+                .WithRuntimeCapabilities(
+                    "InMemory",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: true
+                )
+                .WithMalformedEnvelopeBound("invalid in-process delivery discarded", 1, TimeSpan.FromSeconds(1))
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.LegacyCutoverRecovery,
+                    ConformanceSupport.NotApplicable("InMemory has no durable broker topology to migrate.")
+                ),
+            ["Redis"] = TransportConformanceProfile
+                .CreateDisabled("Redis")
+                .WithRuntimeCapabilities(
+                    "Redis",
+                    supportsBus: true,
+                    supportsQueue: true,
+                    supportsIndependentLaneTopology: true
+                )
+                .WithMalformedEnvelopeBound("Redis Stream entry acknowledged", 1, TimeSpan.FromSeconds(5))
+                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static IReadOnlyList<string> GetValidationErrors()
@@ -296,6 +425,17 @@ public static class TransportConformanceManifest
         foreach (var (scenario, support) in profile.Scenarios)
         {
             errors.AddRange(support.GetValidationErrors(scenario).Select(error => $"{profile.Provider}: {error}"));
+        }
+
+        if (profile.MalformedEnvelopeBound is null)
+        {
+            errors.Add($"{profile.Provider}: a malformed-envelope bound is required.");
+        }
+        else
+        {
+            errors.AddRange(
+                profile.MalformedEnvelopeBound.GetValidationErrors().Select(error => $"{profile.Provider}: {error}")
+            );
         }
 
         _ValidateLaneRoundTrip(
