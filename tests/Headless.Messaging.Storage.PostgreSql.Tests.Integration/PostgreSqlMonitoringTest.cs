@@ -410,6 +410,93 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         legacyView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
     }
 
+    [Theory]
+    [InlineData(MessageType.Publish, "published")]
+    [InlineData(MessageType.Subscribe, "received")]
+    public async Task should_return_bounded_unknown_lane_diagnostics_without_reading_content(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var ids = Enumerable.Range(0, 205).Select(_ => Guid.NewGuid()).ToArray();
+        var now = TimeProvider.System.GetUtcNow();
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            $"""
+            INSERT INTO messaging.{tableName}
+                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+            SELECT id, 'v1', 'unknown-lane-diagnostic', 'not-a-message-envelope', 77, 0, 0,
+                   @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', id::text{receivedValues}
+            FROM unnest(@Ids::uuid[]) AS id;
+            """,
+            new
+            {
+                Ids = ids,
+                Added = now,
+                NextRetryAt = now.AddMinutes(-1),
+            }
+        );
+        var before = await connection.QuerySingleAsync<string>(
+            $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+            new { Id = ids[0] }
+        );
+
+        var monitoring = _storage!.GetMonitoringApi();
+        var firstPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 1,
+                PageSize = 500,
+            },
+            AbortToken
+        );
+        var secondPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 2,
+                PageSize = 500,
+            },
+            AbortToken
+        );
+
+        firstPage.Items.Should().HaveCount(200);
+        firstPage.Size.Should().Be(200);
+        firstPage.TotalItems.Should().Be(205);
+        secondPage.Items.Should().HaveCount(5);
+        firstPage.Items.Should().OnlyContain(item => item.MessageType == messageType && item.RawLane == 77);
+        firstPage
+            .Items.Select(item => item.StorageId)
+            .Should()
+            .NotIntersectWith(secondPage.Items.Select(item => item.StorageId));
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+                new { Id = ids[0] }
+            )
+        )
+            .Should()
+            .Be(before);
+    }
+
+    [Fact]
+    public async Task should_reject_undefined_message_type_for_unknown_lane_diagnostics()
+    {
+        var monitoring = _storage!.GetMonitoringApi();
+        var act = async () =>
+            await monitoring.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery { MessageType = (MessageType)123 },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
 
     private static Message _CreateMessage()

@@ -30,6 +30,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/unknown-lanes',
+      name: 'UnknownLanes',
+      component: () => import('../views/UnknownLanes.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/subscribers',
       name: 'Subscribers',
       component: () => import('../views/Subscribers.vue'),

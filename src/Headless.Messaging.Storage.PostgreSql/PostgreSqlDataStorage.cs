@@ -684,6 +684,7 @@ internal sealed partial class PostgreSqlDataStorage(
                     WHERE "ExpiresAt" < @timeout
                     AND "StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                     AND "NextRetryAt" IS NULL
+                    AND "IntentType" IN (0, 1)
                     LIMIT @batchCount
                 )
                 """,
@@ -1136,14 +1137,10 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
-        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
-        var invalidLaneDiagnosticAssignment = isReceivedTable
-            ? ", \"ExceptionInfo\" = @InvalidLaneDiagnostic || target.\"IntentType\"::text"
-            : string.Empty;
-        // Transactional poison handling and claim-and-return: one command terminalizes a bounded
-        // set of eligible invalid-lane rows, then atomically leases and returns healthy rows in
-        // the requested lane. The claim UPDATE still performs leasing and RETURNING in one step.
-        // This replaces the previous two-step
+        // Transactional poison handling and claim-and-return. Unknown persisted lanes are excluded
+        // before ordering and limiting, so they cannot consume a batch slot and are never leased,
+        // deserialized, or mutated by automatic retry pickup. The claim UPDATE performs leasing and
+        // RETURNING in one step. This replaces the previous two-step
         // SELECT-FOR-UPDATE-then-Lease pattern, which committed the SELECT transaction before
         // _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the same
         // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
@@ -1160,34 +1157,6 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            WITH invalid_lanes AS MATERIALIZED (
-                SELECT message."Id"
-                FROM {tableName} AS message
-                WHERE "Retries" <= @Retries
-                  AND "Version" = @Version
-                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
-                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
-                  AND {_TerminalRowGuardSimple}
-                  AND message."IntentType" NOT IN (0, 1)
-                ORDER BY "NextRetryAt", "Id"
-                LIMIT @BatchSize
-                FOR UPDATE SKIP LOCKED
-            ),
-            terminalized_invalid AS (
-                UPDATE {tableName} AS target
-                SET "StatusName" = @FailedStatus,
-                    "NextRetryAt" = NULL,
-                    "LockedUntil" = NULL,
-                    "Owner" = NULL,
-                    "ExpiresAt" = @ExpiresAt
-                    {invalidLaneDiagnosticAssignment}
-                FROM invalid_lanes
-                WHERE target."Id" = invalid_lanes."Id"
-                  AND {_TerminalRowGuardSimple}
-                RETURNING target."Id", target."IntentType"
-            )
-            SELECT "Id", "IntentType" FROM terminalized_invalid;
-
             WITH candidates AS (
                 SELECT message."Id"
                 FROM {tableName} AS message
@@ -1217,15 +1186,6 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
-            new NpgsqlParameter("@FailedStatus", nameof(StatusName.Failed)),
-            new NpgsqlParameter(
-                "@ExpiresAt",
-                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
-            ),
-            new NpgsqlParameter(
-                "@InvalidLaneDiagnostic",
-                "Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType="
-            ),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
@@ -1244,21 +1204,6 @@ internal sealed partial class PostgreSqlDataStorage(
                 async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
-                    {
-                        RetryPickupLog.UnsupportedPersistedLaneTerminalized(
-                            logger,
-                            reader.GetGuid(0),
-                            reader.GetInt16(1),
-                            tableName
-                        );
-                    }
-
-                    if (!await reader.NextResultAsync(token).ConfigureAwait(false))
-                    {
-                        return messages;
-                    }
-
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var storageId = reader.GetGuid(0);
@@ -1455,6 +1400,7 @@ internal sealed partial class PostgreSqlDataStorage(
             WHERE "Owner" IS NOT NULL
               AND "Owner" = ANY(@DeadOwners)
               AND "LockedUntil" > statement_timestamp()
+              AND message."IntentType" IN (0, 1)
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -1472,22 +1418,6 @@ internal sealed partial class PostgreSqlDataStorage(
     private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
     {
         return new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
-    }
-
-    private static partial class RetryPickupLog
-    {
-        [LoggerMessage(
-            EventId = 8,
-            EventName = "UnsupportedPersistedLaneTerminalized",
-            Level = LogLevel.Warning,
-            Message = "Terminalized message {StorageId} in {Table} because persisted IntentType {IntentType} is not a supported messaging lane."
-        )]
-        public static partial void UnsupportedPersistedLaneTerminalized(
-            ILogger logger,
-            Guid storageId,
-            short intentType,
-            string table
-        );
     }
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);

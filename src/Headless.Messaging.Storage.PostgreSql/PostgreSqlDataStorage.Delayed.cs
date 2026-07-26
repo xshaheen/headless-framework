@@ -33,7 +33,7 @@ internal sealed partial class PostgreSqlDataStorage
     {
         var sql =
             $"SELECT \"Id\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\" FROM {_publishedTable} WHERE \"Version\"=@Version "
-            + $"AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
+            + $"AND \"IntentType\" IN (0, 1) AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
 
         var sqlParams = new object[]
         {
@@ -126,6 +126,7 @@ internal sealed partial class PostgreSqlDataStorage
                 SELECT message."Id"
                 FROM {_publishedTable} AS message, claim_clock
                 WHERE message."Version"=@Version
+                  AND message."IntentType" IN (0, 1)
                   AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= claim_clock.now)
                   AND (
                       (message."StatusName"=@DelayedStatusName AND message."ExpiresAt" < @TwoMinutesLater)

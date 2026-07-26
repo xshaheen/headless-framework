@@ -284,6 +284,51 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
     }
 
+    public ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var currentPage = Math.Max(query.CurrentPage, 1);
+        var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
+        var source = query.MessageType switch
+        {
+            MessageType.Publish => storage.PublishedMessages.Values,
+            MessageType.Subscribe => storage.ReceivedMessages.Values,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(query),
+                query.MessageType,
+                "Unknown-lane diagnostics require Publish or Subscribe."
+            ),
+        };
+        var unknown = source
+            .Where(message => message.Lane is not (MessageLane.Bus or MessageLane.Queue))
+            .OrderBy(message => message.Added)
+            .ThenBy(message => message.StorageId)
+            .ToList();
+        var offset = (long)(currentPage - 1) * pageSize;
+        var pageRows = offset >= unknown.Count ? [] : unknown.Skip((int)offset).Take(pageSize);
+        var items = pageRows
+            .Select(message => new UnknownLaneMessageView
+            {
+                StorageId = message.StorageId,
+                MessageType = query.MessageType,
+                RawLane = (short)message.Lane,
+                Name = message.Name,
+                StatusName = message.StatusName,
+                Added = message.Added,
+                NextRetryAt = message.NextRetryAt,
+                LockedUntil = message.LockedUntil,
+            })
+            .ToList();
+
+        return ValueTask.FromResult(
+            new IndexPage<UnknownLaneMessageView>(items, currentPage - 1, pageSize, unknown.Count)
+        );
+    }
+
     public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

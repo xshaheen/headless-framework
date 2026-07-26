@@ -390,8 +390,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var explicitHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString("D"),
-            [Headers.RequestedDeliveryMode] = DeliveryMode.Auto.ToString("G"),
-            [Headers.ResolvedDeliveryMode] = DeliveryMode.Durable.ToString("G"),
+            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+            [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable),
         };
         var explicitPublished = await _storage.StoreMessageAsync(
             "delivery-metadata-explicit",
@@ -462,6 +462,88 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         legacyView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
     }
 
+    [Theory]
+    [InlineData(MessageType.Publish, "Published")]
+    [InlineData(MessageType.Subscribe, "Received")]
+    public async Task should_return_bounded_deterministic_unknown_lane_diagnostics_without_mutation(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var oldestId = Guid.NewGuid();
+        var recognizedId = Guid.NewGuid();
+        var newestId = Guid.NewGuid();
+        var now = _timeProvider.GetUtcNow();
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertDiagnosticRowAsync(connection, tableName, oldestId, rawLane: 70, now.AddMinutes(-3));
+        await _InsertDiagnosticRowAsync(connection, tableName, recognizedId, rawLane: 0, now.AddMinutes(-2));
+        await _InsertDiagnosticRowAsync(connection, tableName, newestId, rawLane: 71, now.AddMinutes(-1));
+        var before = (
+            await connection.QueryAsync<(Guid Id, short RawLane, string Name, string StatusName, string Content)>(
+                $"SELECT Id, IntentType, Name, StatusName, Content FROM messaging.{tableName} ORDER BY Added, Id"
+            )
+        ).ToList();
+
+        var firstPage = await _monitoringApi.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 1,
+                PageSize = 1,
+            },
+            AbortToken
+        );
+        var secondPage = await _monitoringApi.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 2,
+                PageSize = 1,
+            },
+            AbortToken
+        );
+        var cappedPage = await _monitoringApi.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 0,
+                PageSize = 500,
+            },
+            AbortToken
+        );
+
+        firstPage.Items.Should().ContainSingle().Which.StorageId.Should().Be(oldestId);
+        firstPage.Items[0].RawLane.Should().Be(70);
+        firstPage.Items[0].MessageType.Should().Be(messageType);
+        firstPage.TotalItems.Should().Be(2);
+        secondPage.Items.Should().ContainSingle().Which.StorageId.Should().Be(newestId);
+        cappedPage.Index.Should().Be(0);
+        cappedPage.Size.Should().Be(200);
+        cappedPage.Items.Select(message => message.StorageId).Should().Equal(oldestId, newestId);
+        typeof(UnknownLaneMessageView).GetProperties().Select(property => property.Name).Should().NotContain("Content");
+
+        var after = (
+            await connection.QueryAsync<(Guid Id, short RawLane, string Name, string StatusName, string Content)>(
+                $"SELECT Id, IntentType, Name, StatusName, Content FROM messaging.{tableName} ORDER BY Added, Id"
+            )
+        ).ToList();
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task should_reject_unknown_message_type_for_unknown_lane_diagnostics()
+    {
+        var act = async () =>
+            await _monitoringApi.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery { MessageType = (MessageType)42 },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
     #endregion
 
     #region Hourly Timeline Tests
@@ -525,5 +607,39 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _storage.ChangeReceiveStateAsync(stored, status, cancellationToken: AbortToken);
 
         return stored;
+    }
+
+    private static Task _InsertDiagnosticRowAsync(
+        SqlConnection connection,
+        string tableName,
+        Guid id,
+        short rawLane,
+        DateTimeOffset added
+    )
+    {
+        var receivedColumns = string.Equals(tableName, "Received", StringComparison.Ordinal)
+            ? ", [Group], ExceptionInfo"
+            : string.Empty;
+        var receivedValues = string.Equals(tableName, "Received", StringComparison.Ordinal)
+            ? ", 'diagnostic-group', NULL"
+            : string.Empty;
+        return connection.ExecuteAsync(
+            $"""
+            INSERT INTO messaging.{tableName}
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
+            VALUES
+                (@Id, 'v1', @Name, @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId{receivedValues});
+            """,
+            new
+            {
+                Id = id,
+                Name = $"diagnostic-{rawLane}",
+                Content = $"opaque-{rawLane}",
+                IntentType = rawLane,
+                Added = added,
+                NextRetryAt = added,
+                MessageId = $"diagnostic-{id:N}",
+            }
+        );
     }
 }

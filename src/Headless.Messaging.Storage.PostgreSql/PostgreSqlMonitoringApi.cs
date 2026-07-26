@@ -270,6 +270,77 @@ internal sealed class PostgreSqlMonitoringApi(
         return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = query.MessageType switch
+        {
+            MessageType.Publish => _publishedTable,
+            MessageType.Subscribe => _receivedTable,
+            _ => throw new ArgumentOutOfRangeException(nameof(query), query.MessageType, "Unknown message type."),
+        };
+        var currentPage = Math.Max(query.CurrentPage, 1);
+        var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
+        var offset = (long)(currentPage - 1) * pageSize;
+        var countSql = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" NOT IN (0, 1)";
+        var pageSql = $"""
+            SELECT "Id", "IntentType", "Name", "StatusName", "Added", "NextRetryAt", "LockedUntil"
+            FROM {tableName}
+            WHERE "IntentType" NOT IN (0, 1)
+            ORDER BY "Added", "Id"
+            OFFSET @Offset LIMIT @Limit;
+            """;
+        object[] sqlParams = [new NpgsqlParameter("@Offset", offset), new NpgsqlParameter("@Limit", pageSize)];
+
+        await using var connection = _options.CreateConnection();
+        var totalCount = await connection
+            .ExecuteScalarAsync(
+                countSql,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        var items = await connection
+            .ExecuteReaderAsync(
+                pageSql,
+                async (reader, token) =>
+                {
+                    var messages = new List<UnknownLaneMessageView>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        messages.Add(
+                            new UnknownLaneMessageView
+                            {
+                                StorageId = reader.GetGuid(0),
+                                MessageType = query.MessageType,
+                                RawLane = reader.GetInt16(1),
+                                Name = reader.GetString(2),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(3)),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(4, token).ConfigureAwait(false),
+                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
+                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
+                            }
+                        );
+                    }
+
+                    return messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new(items, currentPage - 1, pageSize, (int)Math.Min(totalCount, int.MaxValue));
+    }
+
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {

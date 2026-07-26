@@ -76,7 +76,12 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (message)
             {
-                if ((message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null)
+                if (
+                    !_IsSupportedLane(message.Lane)
+                    || (
+                        (message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null
+                    )
+                )
                 {
                     continue;
                 }
@@ -799,7 +804,8 @@ internal sealed partial class InMemoryDataStorage(
         {
             var ids = PublishedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
+                    _IsSupportedLane(x.Lane)
+                    && x.ExpiresAt < timeout
                     && x.NextRetryAt is null
                     && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
@@ -812,7 +818,8 @@ internal sealed partial class InMemoryDataStorage(
         {
             var ids = ReceivedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
+                    _IsSupportedLane(x.Lane)
+                    && x.ExpiresAt < timeout
                     && x.NextRetryAt is null
                     && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
@@ -882,45 +889,6 @@ internal sealed partial class InMemoryDataStorage(
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
-
-        // Unknown persisted values are poison data, not a reason to fail every subsequent poll.
-        // Terminalize a bounded batch under the same per-row lock used by normal claims, retain
-        // the raw value for diagnosis, then continue claiming healthy rows for the requested lane.
-        var terminalizedInvalidCount = 0;
-        foreach (var candidate in source.Values)
-        {
-            if (terminalizedInvalidCount >= retryBatchSize)
-            {
-                break;
-            }
-
-            if (
-                !string.Equals(candidate.Version, version, StringComparison.Ordinal)
-                || _IsSupportedLane(candidate.Lane)
-            )
-            {
-                continue;
-            }
-
-            lock (candidate)
-            {
-                if (!_IsEligibleRetryCandidate(candidate, now, maxPersistedRetries))
-                {
-                    continue;
-                }
-
-                candidate.StatusName = StatusName.Failed;
-                candidate.NextRetryAt = null;
-                candidate.LockedUntil = null;
-                candidate.Owner = null;
-                candidate.ExpiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
-                candidate.ExceptionInfo = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.Lane}"
-                );
-                terminalizedInvalidCount++;
-            }
-        }
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
         // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
@@ -1098,7 +1066,7 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (message)
             {
-                if (message.Owner is null || !deadOwnerSet.Contains(message.Owner))
+                if (!_IsSupportedLane(message.Lane) || message.Owner is null || !deadOwnerSet.Contains(message.Owner))
                 {
                     continue;
                 }

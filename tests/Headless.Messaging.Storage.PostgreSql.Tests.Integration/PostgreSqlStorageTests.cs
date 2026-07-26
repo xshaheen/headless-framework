@@ -104,7 +104,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     protected override async Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
         IDataStorage storage,
         bool published,
-        short rawIntentType,
+        short rawLane,
         DateTimeOffset nextRetryAt,
         CancellationToken cancellationToken
     )
@@ -131,7 +131,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 {
                     Id = id,
                     Content = content,
-                    IntentType = rawIntentType,
+                    IntentType = rawLane,
                     Added = TimeProvider.GetUtcNow(),
                     NextRetryAt = nextRetryAt,
                     LockedUntil = nextRetryAt,
@@ -155,7 +155,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         var tableName = published ? "published" : "received";
         var exceptionInfo = published ? "NULL::text" : "\"ExceptionInfo\"";
         var sql = $"""
-            SELECT "IntentType" AS "RawIntentType", "StatusName", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner",
+            SELECT "IntentType" AS "RawLane", "StatusName", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner",
                    {exceptionInfo} AS "ExceptionInfo"
             FROM messaging.{tableName}
             WHERE "Id"=@Id;
@@ -394,15 +394,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_published_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+        return base.should_preserve_unsupported_lane_without_starving_published_retry();
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_received_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
+        return base.should_preserve_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]
@@ -1187,6 +1187,161 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_skip_unknown_lanes_without_consuming_retry_batch_or_mutating_rows(string tableName)
+    {
+        var storage = CreateStorageWithRetryBatchSize(1);
+        var now = TimeProvider.GetUtcNow();
+        var unknownAheadId = Guid.NewGuid();
+        var busId = Guid.NewGuid();
+        var unknownBetweenId = Guid.NewGuid();
+        var queueId = Guid.NewGuid();
+        var content = _serializer!.Serialize(CreateMessage("recognized-retry"));
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertRetryRowAsync(connection, tableName, unknownAheadId, rawLane: 77, content, now.AddMinutes(-5));
+        await _InsertRetryRowAsync(connection, tableName, busId, rawLane: 0, content, now.AddMinutes(-4));
+        await _InsertRetryRowAsync(
+            connection,
+            tableName,
+            unknownBetweenId,
+            rawLane: -3,
+            content: "not-a-message-envelope",
+            nextRetryAt: now.AddMinutes(-3)
+        );
+        await _InsertRetryRowAsync(connection, tableName, queueId, rawLane: 1, content, now.AddMinutes(-2));
+
+        var unknownAheadBefore = await _ReadPersistedRowJsonAsync(connection, tableName, unknownAheadId);
+        var unknownBetweenBefore = await _ReadPersistedRowJsonAsync(connection, tableName, unknownBetweenId);
+
+        var busClaimTask = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken).AsTask()
+            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken).AsTask();
+        var queueClaimTask = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask()
+            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask();
+
+        await Task.WhenAll(busClaimTask, queueClaimTask);
+
+        busClaimTask.Result.Should().ContainSingle(message => message.StorageId == busId);
+        queueClaimTask.Result.Should().ContainSingle(message => message.StorageId == queueId);
+        (await _ReadPersistedRowJsonAsync(connection, tableName, unknownAheadId)).Should().Be(unknownAheadBefore);
+        (await _ReadPersistedRowJsonAsync(connection, tableName, unknownBetweenId)).Should().Be(unknownBetweenBefore);
+
+        await connection.ExecuteAsync(
+            $"""UPDATE messaging.{tableName} SET "IntentType" = 0 WHERE "Id" = @Id""",
+            new { Id = unknownAheadId }
+        );
+
+        var repairedClaim = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+        repairedClaim.Should().ContainSingle(message => message.StorageId == unknownAheadId);
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_not_auto_delete_expired_unknown_lane_rows(string tableName)
+    {
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow();
+        var content = _serializer!.Serialize(CreateMessage("unknown-expired"));
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertRetryRowAsync(
+            connection,
+            tableName,
+            id,
+            rawLane: 77,
+            content,
+            nextRetryAt: null,
+            statusName: nameof(StatusName.Succeeded),
+            expiresAt: now.AddHours(-1)
+        );
+        var before = await _ReadPersistedRowJsonAsync(connection, tableName, id);
+
+        (await storage.DeleteExpiresAsync($"messaging.{tableName}", now, cancellationToken: AbortToken)).Should().Be(0);
+
+        (await _ReadPersistedRowJsonAsync(connection, tableName, id)).Should().Be(before);
+    }
+
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_not_reclaim_dead_owner_lease_on_unknown_lane_rows(string tableName)
+    {
+        const string deadOwner = "dead-unknown-lane-owner";
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow();
+        var content = _serializer!.Serialize(CreateMessage("unknown-owner"));
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertRetryRowAsync(connection, tableName, id, rawLane: 77, content, now.AddMinutes(-1));
+        await connection.ExecuteAsync(
+            $"""UPDATE messaging.{tableName} SET "LockedUntil" = @LockedUntil, "Owner" = @Owner WHERE "Id" = @Id""",
+            new
+            {
+                Id = id,
+                LockedUntil = now.AddMinutes(5),
+                Owner = deadOwner,
+            }
+        );
+        var before = await _ReadPersistedRowJsonAsync(connection, tableName, id);
+
+        var reclaimed = string.Equals(tableName, "published", StringComparison.Ordinal)
+            ? await storage.ReclaimDeadPublishedOwnersAsync([deadOwner], AbortToken)
+            : await storage.ReclaimDeadReceivedOwnersAsync([deadOwner], AbortToken);
+
+        reclaimed.Should().Be(0);
+        (await _ReadPersistedRowJsonAsync(connection, tableName, id)).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task should_not_claim_or_schedule_delayed_unknown_lane_rows()
+    {
+        var storage = GetStorage();
+        var id = Guid.NewGuid();
+        var now = TimeProvider.GetUtcNow();
+        var content = _serializer!.Serialize(CreateMessage("unknown-delayed"));
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertRetryRowAsync(
+            connection,
+            "published",
+            id,
+            rawLane: 77,
+            content,
+            nextRetryAt: null,
+            statusName: nameof(StatusName.Delayed),
+            expiresAt: now.AddMinutes(-1)
+        );
+        var before = await _ReadPersistedRowJsonAsync(connection, "published", id);
+
+        var claimed = await ((IDelayedMessageClaimStorage)storage).ClaimDelayedMessagesAsync(AbortToken);
+        IReadOnlyList<MediumMessage>? scheduled = null;
+        await storage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                scheduled = messages.ToList();
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+
+        claimed.Should().NotContain(message => message.StorageId == id);
+        scheduled.Should().NotBeNull().And.NotContain(message => message.StorageId == id);
+        (await _ReadPersistedRowJsonAsync(connection, "published", id)).Should().Be(before);
+    }
+
+    [Theory]
     [InlineData("published", "Added")]
     [InlineData("published", "ExpiresAt")]
     [InlineData("published", "NextRetryAt")]
@@ -1551,6 +1706,69 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 NextRetryAt = now.AddMinutes(-1),
                 MessageId = $"healthy-{id:N}",
             }
+        );
+    }
+
+    private static Task _InsertRetryRowAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        Guid id,
+        short rawLane,
+        string content,
+        DateTimeOffset? nextRetryAt,
+        string statusName = nameof(StatusName.Failed),
+        DateTimeOffset? expiresAt = null
+    )
+    {
+        if (string.Equals(tableName, "published", StringComparison.Ordinal))
+        {
+            return connection.ExecuteAsync(
+                """
+                INSERT INTO messaging.published
+                    ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
+                VALUES
+                    (@Id, 'v1', 'lane-contract-published', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    RawLane = rawLane,
+                    Added = nextRetryAt ?? expiresAt ?? TimeProvider.System.GetUtcNow(),
+                    ExpiresAt = expiresAt,
+                    NextRetryAt = nextRetryAt,
+                    StatusName = statusName,
+                    MessageId = $"lane-contract-{id:N}",
+                }
+            );
+        }
+
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received
+                ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
+            VALUES
+                (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId, NULL);
+            """,
+            new
+            {
+                Id = id,
+                Content = content,
+                RawLane = rawLane,
+                Added = nextRetryAt ?? expiresAt ?? TimeProvider.System.GetUtcNow(),
+                ExpiresAt = expiresAt,
+                NextRetryAt = nextRetryAt,
+                StatusName = statusName,
+                MessageId = $"lane-contract-{id:N}",
+            }
+        );
+    }
+
+    private static Task<string> _ReadPersistedRowJsonAsync(NpgsqlConnection connection, string tableName, Guid id)
+    {
+        return connection.QuerySingleAsync<string>(
+            $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+            new { Id = id }
         );
     }
 

@@ -91,6 +91,11 @@ public static class MessagingDashboardEndpoints
             .WithSummary("Get messaging infrastructure metadata");
         apiGroup.MapGet("/stats", _Stats).WithName("Messaging_Stats").WithSummary("Get aggregate message statistics");
         apiGroup
+            .MapGet("/unknown-lanes", _UnknownLaneMessages)
+            .WithName("Messaging_UnknownLaneMessages")
+            .WithSummary("List rows with unrecognized persisted delivery lanes")
+            .WithDescription("Read-only diagnostics. Message content is never loaded and no repair action is exposed.");
+        apiGroup
             .MapGet("/metrics-history", _MetricsHistory)
             .WithName("Messaging_MetricsHistory")
             .WithSummary("Get hourly metrics history for the last 24 hours");
@@ -293,6 +298,60 @@ public static class MessagingDashboardEndpoints
         cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
 
         return Results.Json(result);
+    }
+
+    private static async Task<IResult> _UnknownLaneMessages(
+        IServiceProvider sp,
+        HttpContext httpContext,
+        MessageType messageType = MessageType.Publish,
+        int perPage = 50,
+        int currentPage = 1
+    )
+    {
+        if (messageType is not (MessageType.Publish or MessageType.Subscribe))
+        {
+            return Results.BadRequest();
+        }
+
+        var dataStorage = sp.GetRequiredService<IDataStorage>();
+        var page = await dataStorage
+            .GetMonitoringApi()
+            .GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = messageType,
+                    CurrentPage = Math.Max(currentPage, 1),
+                    PageSize = perPage <= 0 ? 50 : Math.Min(perPage, _MaxPageSize),
+                },
+                httpContext.RequestAborted
+            )
+            .ConfigureAwait(false);
+
+        var items = page.Items.Select(message => new
+        {
+            StorageId = message.StorageId.ToString("D"),
+            MessageType = message.MessageType.ToString("G"),
+            message.RawLane,
+            message.Name,
+            StatusName = message.StatusName.ToString("G"),
+            message.Added,
+            message.NextRetryAt,
+            message.LockedUntil,
+        });
+
+        return Results.Json(
+            new
+            {
+                Items = items,
+                page.Index,
+                page.Size,
+                page.TotalItems,
+                page.TotalPages,
+                page.HasPrevious,
+                page.HasNext,
+                Totals = page.TotalItems,
+            }
+        );
     }
 
     private static async Task<IResult> _PublishedMessageDetails(Guid id, IServiceProvider sp)
