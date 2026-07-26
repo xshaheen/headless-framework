@@ -1156,13 +1156,13 @@ public sealed class DistributedLockTests : TestBase
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LeaseId == acquiredLock.LeaseId),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Durable),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }
 
     [Fact]
-    public async Task should_release_without_publishing_when_outbox_bus_is_absent()
+    public async Task should_release_without_publishing_when_bus_is_absent()
     {
         // given
         var provider = _CreateProvider(useNullBus: true);
@@ -1179,15 +1179,15 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_lock_even_when_outbox_publish_fails()
+    public async Task should_release_lock_even_when_wakeup_publish_fails()
     {
-        // given — healthy storage, but the outbox bus dies when publishing the release notification.
+        // given — healthy storage, but the bus dies when publishing the release notification.
         // The publish is a best-effort wake-up for waiters; its failure must not fail the release
         // itself (waiters fall back to polling / TTL expiry).
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
         _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("outbox down"));
+            .Returns(_ => throw new InvalidOperationException("bus down"));
 
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
         acquiredLock.Should().NotBeNull();
@@ -1205,7 +1205,7 @@ public sealed class DistributedLockTests : TestBase
     {
         // given — storage hangs forever on remove. DisposeTimeout bounds the release so application
         // shutdown is never blocked by sustained storage unavailability; on timeout the release
-        // returns without throwing, skips the outbox publish, and the record TTL is the fallback.
+        // returns without throwing, skips the wake-up publish, and the record TTL is the fallback.
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -1232,7 +1232,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_acquire_waiting_lock_with_polling_when_outbox_bus_is_absent()
+    public async Task should_acquire_waiting_lock_with_polling_when_bus_is_absent()
     {
         // given
         var provider = _CreateProvider(useNullBus: true);
@@ -1262,7 +1262,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_log_warning_when_outbox_bus_is_absent()
+    public void should_log_warning_when_bus_is_absent()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLock>>();
@@ -1288,7 +1288,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_not_log_warning_when_outbox_bus_is_present()
+    public void should_not_log_warning_when_bus_is_present()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLock>>();

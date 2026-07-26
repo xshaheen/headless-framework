@@ -35,7 +35,7 @@ public sealed class ImportJobs(IQueue queue)
 }
 ```
 
-Use `DeliveryMode.Durable` when the enqueue must survive process crashes, `TransportDirect` for explicit fire-and-forget delivery, or the default `Auto` to capture only in a compatible coordination boundary.
+Use `DeliveryMode.Durable` when the enqueue must survive process crashes, `TransportDirect` to bypass storage and any ambient coordination boundary, or the default `Auto` to capture in a compatible boundary and send directly with no boundary. `Auto` rejects an active incompatible boundary, and `TransportDirect` cannot be combined with `Delay`.
 
 ## Configuration
 

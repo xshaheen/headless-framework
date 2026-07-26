@@ -26,7 +26,7 @@ public sealed class DistributedLockOptions
 
     /// <summary>Fraction of the lease TTL used as the polling cadence when validating without renewal.</summary>
     /// <remarks>
-    /// Default is 0.5 (½ TTL) — the safety-net cadence for lease validation when the outbox fast-path
+    /// Default is 0.5 (½ TTL) — the safety-net cadence for lease validation when the wake-up fast-path
     /// is unavailable. The validator allows tuning <em>downward</em> to 0.1 (1/10 TTL) for workloads
     /// that need lower lease-loss detection latency at the cost of more frequent storage polls. The
     /// 0.5 ceiling is the design's slowest acceptable cadence: any slower and a lost lease could go

@@ -135,13 +135,29 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     [Theory]
     [InlineData(DeliveryMode.Auto)]
     [InlineData(DeliveryMode.Durable)]
-    [InlineData(DeliveryMode.TransportDirect)]
     public void should_reject_incompatible_coordination(DeliveryMode mode)
     {
         var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
         var act = () => DeliveryDecisionResolver.Resolve(MessageLane.Bus, mode, null, coordination, _Now);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*coordination*StorageProvider*");
+    }
+
+    [Fact]
+    public void should_bypass_incompatible_coordination_for_transport_direct()
+    {
+        var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.TransportDirect,
+            null,
+            coordination,
+            _Now
+        );
+
+        decision.ResolvedMode.Should().Be(DeliveryMode.TransportDirect);
+        decision.Path.Should().Be(DeliveryPath.TransportDirect);
     }
 
     private static DeliveryCoordination _CompatibleCoordination()

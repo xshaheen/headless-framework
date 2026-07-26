@@ -147,7 +147,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 `HeadlessDbContext` supports domain-driven design aggregate patterns:
 
 - Entities implementing `IDomainEventEmitter` can emit `IDomainEvent` objects that are collected and published via `ILocalEventBus` inside the save transaction. Handlers that enlist further changes into the same `SaveChanges` are supported because publication precedes the business save.
-- Entities implementing `IIntegrationEventEmitter` can emit `IIntegrationEvent` objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through `IOutboxBus.PublishAsync<TConcrete>` using a cached compiled delegate (one per runtime event type) for allocation efficiency.
+- Entities implementing `IIntegrationEventEmitter` can emit `IIntegrationEvent` objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through durable `IBus.PublishAsync<TConcrete>` using a cached compiled delegate (one per runtime event type) for allocation efficiency.
 - Both tiers are opt-in: neither `ILocalEventBus` nor `IHeadlessOutboxDispatcher` is registered by default. The runtime guard fires only when events are actually emitted against a missing tier — zero false positives at startup.
 
 ### Outbox-within-save-transaction bridge
@@ -155,7 +155,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 `Headless.EntityFramework.Messaging` is the seam that keeps `Headless.EntityFramework` free of any messaging dependency while still guaranteeing atomic outbox writes:
 
 1. `Headless.EntityFramework.CommitCoordination` replaces the core no-op coordinator, and the save pipeline synchronously enlists its transaction in commit coordination (`DatabaseFacade.EnlistCommitCoordination`). The synchronous enlist is by design — an `AsyncLocal` push inside an `async` helper does not flow back to the caller.
-2. The `OutboxIntegrationEventDispatcher` publishes each integration event to `IOutboxBus.PublishAsync<T>`. The outbox writer sees the ambient coordinator and buffers the rows inside the transaction — not sent to the broker in-band.
+2. The `OutboxIntegrationEventDispatcher` publishes each integration event to `IBus.PublishAsync<T>` with `DeliveryMode.Durable`. The outbox writer sees the ambient coordinator and buffers the rows inside the transaction — not sent to the broker in-band.
 3. The registered `IDbTransactionInterceptor` drains the buffered dispatch when the transaction commits and discards it on rollback.
 4. The background messaging relay sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path; pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 
@@ -501,7 +501,7 @@ Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integra
 ### Key Features
 
 - Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
-- Routes each concrete `IIntegrationEvent` to `IOutboxBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
+- Routes each concrete `IIntegrationEvent` to durable `IBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
 - Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
 - `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
 

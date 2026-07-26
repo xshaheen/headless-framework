@@ -4,7 +4,7 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Message published to the outbox when a distributed lock or semaphore slot is released.
+/// Best-effort message sent directly when a distributed lock or semaphore slot is released.
 /// Consumed by <see cref="DistributedLock.LockReleasedConsumer"/> to wake blocked acquirers
 /// immediately instead of relying on the exponential-backoff polling loop.
 /// </summary>

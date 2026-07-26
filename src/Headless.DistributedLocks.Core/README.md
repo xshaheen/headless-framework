@@ -21,7 +21,7 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 
 ## Design Notes
 
-- `IBus` is optional. When present, release notifications request durable delivery; without it, waiters fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `IBus` is optional. When present, release notifications use `DeliveryMode.TransportDirect` as best-effort wake-up hints; without it, waiters fall back to polling backoff and a warning is logged once when the provider is constructed.
 - When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires. The `reason` values are exposed as `public const` on `DistributedLockFailureReasons` for compile-time use in alert rules.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.

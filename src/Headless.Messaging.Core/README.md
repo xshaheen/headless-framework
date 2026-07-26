@@ -189,7 +189,7 @@ Core registers `IBus` and `IQueue` up front. Immutable provider descriptors then
 Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
-- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
 - `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
@@ -198,7 +198,7 @@ Use bus publishers for broadcast publish/subscribe delivery:
 Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
-- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
 - `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 

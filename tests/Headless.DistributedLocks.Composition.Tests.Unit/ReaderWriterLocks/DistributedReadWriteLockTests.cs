@@ -83,6 +83,31 @@ public sealed class DistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_release_signal_directly()
+    {
+        // given
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        var bus = Substitute.For<IBus>();
+        var provider = _CreateProvider(storage, bus);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var leaseId = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId, AbortToken);
+
+        // then
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(message => message.Resource == resource && message.LeaseId == leaseId),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_write_deadline_fires()
     {
         // given — write-lock storage that hangs so the non-blocking safety deadline ends the attempt

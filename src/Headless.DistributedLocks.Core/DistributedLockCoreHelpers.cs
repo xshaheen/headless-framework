@@ -17,6 +17,9 @@ namespace Headless.DistributedLocks;
 /// </summary>
 internal static class DistributedLockCoreHelpers
 {
+    public static PublishOptions ReleaseSignalPublishOptions { get; } =
+        new() { DeliveryMode = DeliveryMode.TransportDirect };
+
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
 
@@ -128,7 +131,7 @@ internal static class DistributedLockCoreHelpers
     }
 
     /// <summary>
-    /// Configures the durable bus reference used by the providers. Logs once when no bus
+    /// Configures the release-signal bus reference used by the providers. Logs once when no bus
     /// is registered so operators see why waiters fall back to polling.
     /// </summary>
     public static IBus? ConfigureBus(IBus? bus, ILogger logger)

@@ -7,14 +7,16 @@ namespace Headless.Messaging;
 public enum DeliveryMode
 {
     /// <summary>
-    /// Uses durable capture when compatible commit coordination is active or a delay is requested;
-    /// otherwise sends directly to the transport.
+    /// Uses durable capture when compatible commit coordination is active or a delay is requested.
+    /// With no coordination it sends directly; an active incompatible boundary is rejected.
     /// </summary>
     Auto = 0,
 
     /// <summary>Always captures the message durably before dispatch.</summary>
     Durable = 1,
 
-    /// <summary>Sends directly to the transport without durable capture.</summary>
+    /// <summary>
+    /// Sends directly to the transport without durable capture, regardless of ambient commit coordination.
+    /// </summary>
     TransportDirect = 2,
 }

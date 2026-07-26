@@ -223,7 +223,7 @@ public sealed partial class HybridCache
             {
                 // Re-publish the captured message unchanged (original timestamp) so receivers can still order
                 // it correctly against operations that happened after the original publish attempt.
-                await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
+                await publisher.PublishAsync(message, _InvalidationPublishOptions, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             },
             // The item's intent timestamp is the original publish time, not now: a foreign write that raced in

@@ -42,7 +42,7 @@ Issue #350 must make the public verb, delivery decision, durable representation,
 - R3. Add public `DeliveryMode` with stable values `Auto = 0`, `Durable = 1`, and `TransportDirect = 2`; immutable publish/enqueue options default to `Auto`, and their equality/hash behavior includes mode and delay.
 - R4. Resolve one immutable delivery decision before middleware: authoritative lane, requested mode, resolved behavior, normalized relative delay, coordination state, and commit path cannot be rerouted by middleware.
 - R5. `Auto` captures only inside a recognized compatible coordination boundary; without coordination it sends directly, except a delay resolves it to durable capture. `Durable` always captures. `TransportDirect` never captures.
-- R6. Undefined modes, incompatible coordination, invalid delay, and delayed `TransportDirect` reject before middleware, persistence, scheduling, transport, or acceptance diagnostics.
+- R6. Undefined modes, invalid delay, delayed `TransportDirect`, and incompatible coordination under `Auto` or `Durable` reject before middleware, persistence, scheduling, transport, or acceptance diagnostics. Explicit `TransportDirect` bypasses ambient coordination compatibility because it never captures.
 - R7. One-shot relative delay is the only scheduling behavior in scope. Absolute, recurring, calendar, cancellation, and schedule-management APIs remain issue #223.
 
 #### Durability and failure semantics
@@ -279,7 +279,7 @@ flowchart LR
 - **Test scenarios:**
   - DI resolves `IBus` and `IQueue` and cannot resolve removed facades or implementations.
   - EF integration events publish through Bus with `Durable` and remain transaction-atomic.
-  - Distributed-lock wakeups remain durable when Messaging is registered and retain polling fallback when it is absent.
+  - Distributed-lock wakeups use explicit `TransportDirect` when Messaging is registered; polling and lease expiry remain the correctness floor when the hint is absent or fails.
   - Testing harness exposes only Bus/Queue and can assert requested/resolved mode.
   - Demos and package-reference probes compile against the two-facade public graph.
 - **Verification:** Executable source and API/reflection scans contain no `IOutboxBus`, `IOutboxQueue`, `OutboxBus`, or `OutboxQueue` symbol.

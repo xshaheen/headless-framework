@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -30,6 +31,37 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
         var sent = harness.TransportMessages.Should().ContainSingle().Which;
         sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
+        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
+        await harness
+            .Storage.DidNotReceive()
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_send_transport_direct_through_incompatible_coordination_without_storage_side_effects()
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var harness = _CreateHarness(
+            currentCommitCoordinator: stack,
+            coordinationResolver: static () => new IncompatibleCoordinationResolver()
+        );
+
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("direct"),
+            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            AbortToken
+        );
+
+        harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
+        var sent = harness.TransportMessages.Should().ContainSingle().Which;
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
         sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
         await harness
             .Storage.DidNotReceive()
@@ -224,7 +256,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         TimeProvider? timeProvider = null,
         TimeSpan? transportPublishTimeout = null,
         ITransport? busTransport = null,
-        ISerializer? serializer = null
+        ISerializer? serializer = null,
+        ICurrentCommitCoordinator? currentCommitCoordinator = null,
+        Func<IDeliveryCoordinationResolver?>? coordinationResolver = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -271,8 +305,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             pipeline,
             timeProvider,
             capabilities,
-            new MessagingNullCommitCoordinator(),
-            static () => null,
+            currentCommitCoordinator ?? new MessagingNullCommitCoordinator(),
+            coordinationResolver ?? (static () => null),
             () => writer,
             telemetry: null,
             transportPublishTimeout
@@ -282,6 +316,22 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     private sealed record DeliveryMessage(string Value);
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+        {
+            return null;
+        }
+    }
+
+    private sealed class IncompatibleCoordinationResolver : IDeliveryCoordinationResolver
+    {
+        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        }
+    }
 
     private sealed class RecordingTransport(MessageLane lane, List<MessageLane> lanes, List<TransportMessage> messages)
         : ITransport

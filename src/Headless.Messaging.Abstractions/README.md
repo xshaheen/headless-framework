@@ -41,6 +41,8 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
+`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. `Durable` always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay`.
+
 ## Callbacks
 
 Callbacks are fire-and-forget async chaining, not request/reply. The publisher sets `PublishOptions.CallbackName` (or `EnqueueOptions.CallbackName`) on the request; the consumer shapes the response through two `ConsumeContext` methods:

@@ -37,8 +37,6 @@ internal sealed class DistributedReadWriteLock(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
-    private static readonly PublishOptions _DurablePublishOptions = new() { DeliveryMode = DeliveryMode.Durable };
-
     private readonly ScopedDistributedReadWriteLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
@@ -347,14 +345,14 @@ internal sealed class DistributedReadWriteLock(
     /// in the given <paramref name="mode"/>. The release path retries up to 15 times via a shared
     /// Polly pipeline and is bounded by <see cref="DistributedLockOptions.DisposeTimeout"/>; on
     /// timeout a warning is logged and the TTL acts as eventual cleanup. After storage release,
-    /// any active lease monitor is disposed, and if an outbox bus is configured a
+    /// any active lease monitor is disposed, and if a messaging bus is configured a
     /// <see cref="DistributedLockReleased"/> message is published to wake waiters.
     /// </summary>
     /// <param name="mode">Whether to release a read or write lease.</param>
     /// <param name="resource">The locked resource name.</param>
     /// <param name="leaseId">The lease identifier to release.</param>
     /// <param name="cancellationToken">
-    /// Used only for the outbox publish; the underlying storage release always uses
+    /// Used only for the release-signal publish; the underlying storage release always uses
     /// <see cref="CancellationToken.None"/> so disposal is not interrupted by caller cancellation.
     /// </param>
     /// <exception cref="ArgumentNullException">
@@ -446,7 +444,12 @@ internal sealed class DistributedReadWriteLock(
 
             try
             {
-                await _bus.PublishAsync(released, _DurablePublishOptions, cancellationToken).ConfigureAwait(false);
+                await _bus.PublishAsync(
+                        released,
+                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
             catch (Exception exception)
             {

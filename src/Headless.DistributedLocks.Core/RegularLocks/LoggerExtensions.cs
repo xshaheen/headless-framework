@@ -209,7 +209,7 @@ internal static partial class RegularLockLoggerExtensions
         EventId = 17,
         EventName = "LockReleasePublishFailed",
         Level = LogLevel.Warning,
-        Message = "Lock released but outbox publish failed; waiters will fall back to polling: R={Resource} Id={LeaseId}"
+        Message = "Lock released but wake-up publish failed; waiters will fall back to polling: R={Resource} Id={LeaseId}"
     )]
     public static partial void LogLockReleasePublishFailed(
         this ILogger logger,

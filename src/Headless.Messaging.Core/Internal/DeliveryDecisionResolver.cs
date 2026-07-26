@@ -56,7 +56,10 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (coordination.Status is DeliveryCoordinationStatus.Incompatible)
+        if (
+            coordination.Status is DeliveryCoordinationStatus.Incompatible
+            && requestedMode is not DeliveryMode.TransportDirect
+        )
         {
             throw new InvalidOperationException(
                 $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
