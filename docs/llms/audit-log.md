@@ -226,7 +226,7 @@ var entries = await readAuditLog.QueryAsync(
 | `SensitiveValueTransformer` | `null` | Required when effective strategy is `Transform`; must be pure and synchronous. |
 | `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result cached per type. |
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |
-| `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, `CreatedById`, `UpdatedById`, `DeletedById`, `SuspendedById`. |
+| `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `CreatedAt`, `UpdatedAt`, `DeletedAt`, `SuspendedAt`, `CreatedById`, `UpdatedById`, `DeletedById`, `SuspendedById`. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
 ### Dependencies

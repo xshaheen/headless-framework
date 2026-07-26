@@ -105,8 +105,8 @@ internal sealed class SqlServerSettingsStorageInitializer(
                         [Value] nvarchar({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
                         [ProviderName] nvarchar({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                         [ProviderKey] nvarchar({SettingValueRecordConstants.ProviderKeyMaxLength}) NULL,
-                        [DateCreated] datetimeoffset NOT NULL,
-                        [DateUpdated] datetimeoffset NULL,
+                        [CreatedAt] datetimeoffset NOT NULL,
+                        [UpdatedAt] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.SettingValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
@@ -114,6 +114,16 @@ internal sealed class SqlServerSettingsStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
+            """;
+
+        var migrateValuesTimestampColumns = $"""
+            IF COL_LENGTH(N'{valuesObject}', N'DateCreated') IS NOT NULL
+               AND COL_LENGTH(N'{valuesObject}', N'CreatedAt') IS NULL
+                EXEC sys.sp_rename N'{valuesObject}.DateCreated', N'CreatedAt', N'COLUMN';
+
+            IF COL_LENGTH(N'{valuesObject}', N'DateUpdated') IS NOT NULL
+               AND COL_LENGTH(N'{valuesObject}', N'UpdatedAt') IS NULL
+                EXEC sys.sp_rename N'{valuesObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
             """;
 
         var createDefinitionsIndex = $"""
@@ -180,6 +190,8 @@ internal sealed class SqlServerSettingsStorageInitializer(
                 {createDefinitionsTable}
 
                 {createValuesTable}
+
+                {migrateValuesTimestampColumns}
 
                 {createDefinitionsIndex}
 

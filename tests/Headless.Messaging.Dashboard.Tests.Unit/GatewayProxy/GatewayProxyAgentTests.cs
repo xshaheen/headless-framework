@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
@@ -424,7 +425,7 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         var services = new ServiceCollection()
             .AddLogging()
-            .AddMemoryCache()
+            .AddSingleton<MessagingDashboardCache>()
             .AddSingleton<KeyedAsyncLock>()
             .AddSingleton(discoveryProvider)
             .AddSingleton(httpClientFactory)
@@ -438,7 +439,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var sp = services.BuildServiceProvider();
         context.RequestServices = sp;
 
-        var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+        var cache = sp.GetRequiredService<MessagingDashboardCache>();
         var keyedLock = sp.GetRequiredService<KeyedAsyncLock>();
         return new GatewayProxyAgent(
             LoggerFactory,

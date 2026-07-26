@@ -18,13 +18,13 @@ public sealed class DurableCancellationProviderTests : TestBase
     private sealed class FakeCronJob : CronJobEntity;
 
     private const string _Owner = "node-a@incarnation";
-    private static readonly DateTime _Now = new(2026, 07, 15, 10, 30, 00, DateTimeKind.Utc);
+    private static readonly DateTimeOffset _Now = new(2026, 07, 15, 10, 30, 00, TimeSpan.Zero);
 
     [Fact]
     public async Task cancellation_uses_one_compare_and_swap_transition_for_each_supported_state()
     {
         var (provider, _) = _Create();
-        var lockedUntil = _Now.AddMinutes(5);
+        var lockedUntil = _Now.UtcDateTime.AddMinutes(5);
         var idle = _Job(JobStatus.Idle, _Owner, lockedUntil);
         var queued = _Job(JobStatus.Queued, _Owner, lockedUntil);
         var inProgress = _Job(JobStatus.InProgress, _Owner, lockedUntil);
@@ -99,7 +99,7 @@ public sealed class DurableCancellationProviderTests : TestBase
         rejected.ExecutionTime = null;
         rejected.RunCondition = RunCondition.OnSuccess;
         rejected.Children = [rejectedGrandchild];
-        var root = _Job(JobStatus.Idle, owner: null, lockedUntil: null, executionTime: _Now.AddMinutes(10));
+        var root = _Job(JobStatus.Idle, owner: null, lockedUntil: null, executionTime: _Now.UtcDateTime.AddMinutes(10));
         root.Children = [eligible, eligibleOnFailure, eligibleAlways, rejected];
         await provider.AddTimeJobsAsync([root], AbortToken);
 
@@ -109,7 +109,7 @@ public sealed class DurableCancellationProviderTests : TestBase
         {
             var released = await provider.GetTimeJobByIdAsync(id, AbortToken);
             released!.Status.Should().Be(JobStatus.Idle);
-            released.ExecutionTime.Should().Be(_Now);
+            released.ExecutionTime.Should().Be(_Now.UtcDateTime);
             released.ExecutedAt.Should().BeNull();
         }
 
@@ -145,7 +145,7 @@ public sealed class DurableCancellationProviderTests : TestBase
 
     private static (JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider, FakeTimeProvider Time) _Create()
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var time = new FakeTimeProvider(_Now);
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(time);
         services.AddHeadlessGuidGenerator();
@@ -167,7 +167,7 @@ public sealed class DurableCancellationProviderTests : TestBase
             Status = status,
             OwnerId = owner,
             LockedUntil = lockedUntil,
-            ExecutionTime = executionTime ?? _Now.AddMinutes(1),
+            ExecutionTime = executionTime ?? _Now.UtcDateTime.AddMinutes(1),
             CreatedAt = _Now.AddMinutes(-5),
             UpdatedAt = _Now.AddMinutes(-2),
         };

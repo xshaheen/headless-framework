@@ -1,15 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Abstractions;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs;
 
@@ -33,6 +36,13 @@ internal sealed class JobsExecutionTaskHandler
     private readonly JobsRetryOptions _retryOptions;
     private readonly JobsRetryPipeline _retryPipeline;
 
+    // #278: used to re-establish the job's tenant scope around consumer failure callbacks (exception observer,
+    // exhausted callback, cancellation handler), which run after the handler's own tenant scope has unwound. Null in
+    // the unit path and in standalone hosts without tenancy; AddHeadlessJobs registers the NullCurrentTenant fallback,
+    // so DI injection is safe. A null tenant on the job (system scope) or a null accessor here is a no-op.
+    private readonly ICurrentTenant? _currentTenant;
+    private readonly bool _propagateTenant;
+
     public JobsExecutionTaskHandler(
         IServiceProvider serviceProvider,
         TimeProvider timeProvider,
@@ -42,9 +52,12 @@ internal sealed class JobsExecutionTaskHandler
         JobsExecutionCancellationRegistry cancellationRegistry,
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
-        JobsRetryOptions? retryOptions = null
+        JobsRetryOptions? retryOptions = null,
+        ICurrentTenant? currentTenant = null,
+        IOptions<JobsTenancyOptions>? tenancyOptions = null
     )
     {
+        _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
         _serviceProvider = serviceProvider;
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
@@ -52,6 +65,7 @@ internal sealed class JobsExecutionTaskHandler
         _functionRegistry = functionRegistry;
         _cancellationRegistry = cancellationRegistry;
         _logger = logger;
+        _currentTenant = currentTenant;
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
         _leaseDuration = schedulerOptions.LeaseDuration;
         _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
@@ -77,16 +91,16 @@ internal sealed class JobsExecutionTaskHandler
             return;
         }
 
-        var childrenToRunAfter = new JobExecutionState[5];
-        var tasksToRunNow = new Task[6];
-
-        var childrenToRunAfterCount = 0;
-        var tasksToRunNowCount = 0;
-
         var hasChildren = context.TimeJobChildren.Count > 0;
 
+        // KTD8: persisted chains may carry more than the two children the typed builder authors (and R12's deeper
+        // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
+        // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
+        var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
+        var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
+
         // Add parent task
-        tasksToRunNow[tasksToRunNowCount++] = _RunContextFunctionAsync(context, isDue, cancellationToken, isChild);
+        tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, cancellationToken, isChild));
 
         if (hasChildren)
         {
@@ -97,50 +111,47 @@ internal sealed class JobsExecutionTaskHandler
                 {
                     if (child.RunCondition == RunCondition.InProgress)
                     {
-                        tasksToRunNow[tasksToRunNowCount++] = _SafeRecursiveExecution(child, isDue, cancellationToken);
+                        tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
                     }
                     else
                     {
-                        childrenToRunAfter[childrenToRunAfterCount++] = child;
+                        childrenToRunAfter.Add(child);
                     }
                 }
             }
         }
 
         // Wait for concurrent tasks (parent + InProgress children)
-        await Task.WhenAll(tasksToRunNow.AsSpan(0, tasksToRunNowCount)).ConfigureAwait(false);
+        await Task.WhenAll(tasksToRunNow).ConfigureAwait(false);
 
-        // Process deferred children after parent completion
-        if (childrenToRunAfterCount > 0)
+        // KTD7: process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
+        // its lease (or hit host shutdown, or was fenced out of completion) returns from _RunContextFunctionAsync
+        // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
+        // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
+        // still due to run elsewhere; leaving them unprocessed lets reclaim re-run the whole subtree correctly.
+        if (childrenToRunAfter.Count > 0 && _ParentReachedTerminalStatus(context))
         {
-            var childrenToSkip = new List<JobExecutionState>(30); // Pre-sized for performance
-            var childrenToRunAfterTask = new Task[childrenToRunAfterCount];
+            var childrenToSkip = new List<JobExecutionState>(childrenToRunAfter.Count);
+            var childrenToRunAfterTask = new List<Task>(childrenToRunAfter.Count);
 
-            var taskCount = 0;
-
-            for (var i = 0; i < childrenToRunAfterCount; i++)
+            foreach (var child in childrenToRunAfter)
             {
-                var child = childrenToRunAfter[i];
-
-                if (child.CachedDelegate != null)
+                if (_ShouldRunChild(child, context.Status))
                 {
-                    if (_ShouldRunChild(child, context.Status))
-                    {
-                        childrenToRunAfterTask[taskCount++] = _SafeRecursiveExecution(child, isDue, cancellationToken);
-                    }
-                    else
-                    {
-                        _jobsInstrumentation.LogJobSkipped(
-                            child.JobId,
-                            child.FunctionName,
-                            $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
-                        );
-                        child.ParentId = context.JobId;
-                        childrenToSkip.Add(child);
+                    childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                }
+                else
+                {
+                    _jobsInstrumentation.LogJobSkipped(
+                        child.JobId,
+                        child.FunctionName,
+                        $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
+                    );
+                    child.ParentId = context.JobId;
+                    childrenToSkip.Add(child);
 
-                        // Recursively gather all descendants to skip
-                        _GatherDescendantsToSkip(child, childrenToSkip);
-                    }
+                    // Recursively gather all descendants to skip
+                    _GatherDescendantsToSkip(child, childrenToSkip);
                 }
             }
 
@@ -153,11 +164,43 @@ internal sealed class JobsExecutionTaskHandler
             }
 
             // Wait for deferred tasks
-            if (taskCount > 0)
+            if (childrenToRunAfterTask.Count > 0)
             {
-                await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount)).ConfigureAwait(false);
+                await Task.WhenAll(childrenToRunAfterTask).ConfigureAwait(false);
             }
         }
+
+        // U5/KTD3: once the parent's terminal write has COMMITTED and is unfenced (LeaseLost guards a reclaimed row),
+        // reconcile its TIMED children — excluded from the in-tree hydration and claimed independently — so a matching
+        // one is released (past-due re-stamped, scheduler woken) and a non-matching one is skipped with its subtree.
+        // Runs AFTER the non-timed deferred children above and is best-effort: the reconcile is a recoverable
+        // side-effect (the poll-time safety net and set-based sweep reconcile any miss), so a failure here must NEVER
+        // strand the already-claimed non-timed children that were just processed. CancellationToken.None mirrors the
+        // terminal-write discipline so this post-commit step still runs on host stop.
+        if (_ParentReachedTerminalStatus(context))
+        {
+            try
+            {
+                await _internalJobsManager
+                    .ApplyParentTerminalRunConditionsAsync(context.JobId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Non-fatal post-commit side effect: logged, not rethrown (backstops reconcile any miss).
+            catch (Exception exception)
+            {
+                _logger.LogTimedChildReconcileFailed(exception, context.JobId, context.FunctionName);
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    // KTD7: a parent may drive child processing only when it reached a real terminal status. A lease-lost / host-stop /
+    // fenced-out parent returns with the row still non-terminal (InProgress) for the reclaim sweep; treating that as a
+    // terminal state would wrongly Skip its whole subtree. LeaseLost is the transient runtime flag the renewal loop
+    // raises on loss; a lease-lost row never carries a terminal status, but the flag is checked explicitly for clarity.
+    private static bool _ParentReachedTerminalStatus(JobExecutionState context)
+    {
+        return !context.LeaseLost && ChainRunConditionRules.IsTerminal(context.Status);
     }
 
     private async Task _RunContextFunctionAsync(
@@ -409,10 +452,14 @@ internal sealed class JobsExecutionTaskHandler
                             else
                             {
                                 // Older generated assemblies can still supply a cached registration without descriptor
-                                // metadata. Preserve their execution path while new generated assemblies use middleware.
-                                await context
-                                    .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
-                                    .ConfigureAwait(false);
+                                // metadata. Preserve tenant restoration even though this compatibility path cannot use
+                                // execute middleware.
+                                using (_EnterTenantScope(context))
+                                {
+                                    await context
+                                        .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                        .ConfigureAwait(false);
+                                }
                             }
                             success = true;
                         },
@@ -435,7 +482,11 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
-                            await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
+                            // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
+                            using (_EnterTenantScope(context))
+                            {
+                                await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
+                            }
                         },
                         retryable => lastFailureRetryable = retryable,
                         cancellationTokenSource.Token
@@ -470,7 +521,7 @@ internal sealed class JobsExecutionTaskHandler
 
                     context
                         .SetProperty(x => x.Status, JobStatus.Cancelled)
-                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
                         .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
                         .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
 
@@ -485,12 +536,24 @@ internal sealed class JobsExecutionTaskHandler
 
                     if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                     {
-                        await handler
-                            .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
-                            .ConfigureAwait(false);
+                        // #278: run the consumer cancellation handler under the job's tenant scope.
+                        using (_EnterTenantScope(context))
+                        {
+                            await handler
+                                .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
                     }
 
-                    await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+                    var cancelAffected = await _internalJobsManager
+                        .UpdateTickerAsync(context, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (cancelAffected == 0)
+                    {
+                        // KTD7: fenced terminal write — this Cancelled status was not persisted (the row was
+                        // reclaimed). Flag lease loss so the child-processing guard leaves children for reclaim.
+                        context.LeaseLost = true;
+                    }
 
                     return;
                 }
@@ -506,7 +569,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 context
                     .SetProperty(x => x.Status, ex.Status)
-                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
                     .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
 
                 if (ex.InnerException != null)
@@ -528,7 +591,15 @@ internal sealed class JobsExecutionTaskHandler
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
                 // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
-                await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+                var terminateAffected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (terminateAffected == 0)
+                {
+                    // KTD7: fenced terminal write — this terminal status was not persisted (the row was reclaimed).
+                    // Flag lease loss so the child-processing guard leaves children for reclaim.
+                    context.LeaseLost = true;
+                }
 
                 // Clean up and exit early on termination
                 return;
@@ -556,7 +627,7 @@ internal sealed class JobsExecutionTaskHandler
 
             context
                 .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime);
+                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow());
 
             if (success)
             {
@@ -586,6 +657,11 @@ internal sealed class JobsExecutionTaskHandler
                     // reconcile instead of treating the recorded failure as real and manually re-triggering — the very
                     // double-run that MarkFailed/Skip exist to prevent.
                     _logger.LogJobCompletionFencedAfterSuccess(context.JobId, context.FunctionName);
+
+                    // KTD7: this Succeeded status was never persisted (the durable row is the sweep's, possibly
+                    // contradictory, terminal). Flag lease loss so the child-processing guard leaves children for
+                    // reclaim instead of running them from state that never reached the store.
+                    context.LeaseLost = true;
                 }
             }
             else if (lastException != null)
@@ -613,7 +689,12 @@ internal sealed class JobsExecutionTaskHandler
                     success: false
                 );
 
-                await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
+                // #278: observe under the job's tenant so tenant-aware alerting/compensation is not system-scoped;
+                // keep the scope tight around the consumer callback, not the terminal persistence write below.
+                using (_EnterTenantScope(context))
+                {
+                    await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
+                }
 
                 // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
                 var affected = await _internalJobsManager
@@ -625,11 +706,21 @@ internal sealed class JobsExecutionTaskHandler
                     // user code so the renewal loop cannot mistake the expected terminal fence for loss.
                     await stopRenewalAsync().ConfigureAwait(false);
                 }
+                else
+                {
+                    // KTD7: fenced terminal write — this Failed status was not persisted (the row was reclaimed).
+                    // Flag lease loss so the child-processing guard leaves children for reclaim.
+                    context.LeaseLost = true;
+                }
 
                 var retryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
                 if (affected > 0 && lastFailureRetryable && context.RetryCount >= retryBudget)
                 {
-                    await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                    // #278: run the exhausted callback under the job's tenant scope.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -657,6 +748,25 @@ internal sealed class JobsExecutionTaskHandler
             JobType.TimeJob => nameof(JobType.TimeJob),
             _ => type.ToString(),
         };
+    }
+
+    // #278: re-establish the job's tenant around consumer code that runs outside execute middleware. Failure callbacks
+    // run after the middleware's tenant scope has unwound, and older generated assemblies can execute without a
+    // descriptor. Returns null — a no-op scope — without a tenant source, or for a tenant-free job when propagation is
+    // disabled.
+    [MustDisposeResource]
+    private IDisposable? _EnterTenantScope(JobExecutionState context)
+    {
+        // Scope symmetry with TenantRestoreExecuteMiddleware: a persisted tenant is always restored, and a
+        // system-scope job (null TenantId) gets an explicit null scope when propagation is enabled so a leaked
+        // ambient tenant never reaches its failure callbacks either. Only a tenant-free job on a propagation-off
+        // host is a pure pass-through.
+        if (_currentTenant is null || (context.TenantId is null && !_propagateTenant))
+        {
+            return null;
+        }
+
+        return _currentTenant.Change(context.TenantId);
     }
 
     private async ValueTask _ObserveJobExceptionAsync(
@@ -1224,6 +1334,19 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "retry on its next interval."
     )]
     public static partial void LogJobCancellationObservationFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3113,
+        Level = LogLevel.Warning,
+        Message = "Post-completion timed-descendant reconcile failed for job {JobId} ({Function}); its timed children "
+            + "will be reconciled by the poll-time safety net / set-based sweep instead. Deferred children already ran."
+    )]
+    public static partial void LogTimedChildReconcileFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,

@@ -375,10 +375,10 @@ PostgreSQL `timestamptz` stores microsecond precision (6 digits), while .NET `Da
 
 ```csharp
 // Brittle -- fails when the persisted value truncates the 100 ns tick
-result.DateCreated.Should().Be(expected);
+result.CreatedAt.Should().Be(expected);
 
 // Stable -- accommodates the storage precision difference
-result.DateCreated.Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1));
+result.CreatedAt.Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1));
 ```
 
 The same caveat applies to other databases with sub-tick storage precision (MySQL `DATETIME(6)`, SQL Server `datetime2(N)` for `N < 7`). Match the assertion tolerance to the column precision.

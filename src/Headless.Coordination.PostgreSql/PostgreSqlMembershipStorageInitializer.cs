@@ -71,7 +71,7 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                 {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
                 {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
                 {{PostgreSqlMembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
-                {{PostgreSqlMembershipSchema.DateUpdated}} timestamptz NOT NULL,
+                {{PostgreSqlMembershipSchema.UpdatedAt}} timestamptz NOT NULL,
                 CONSTRAINT pk_{{PostgreSqlMembershipSchema.Generation.Table}} PRIMARY KEY (
                     {{PostgreSqlMembershipSchema.ClusterName}},
                     {{PostgreSqlMembershipSchema.NodeId}}
@@ -86,7 +86,7 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                 {{PostgreSqlMembershipSchema.Descriptor.Endpoints}} jsonb NOT NULL DEFAULT '{}'::jsonb,
                 {{PostgreSqlMembershipSchema.Descriptor.Role}} varchar(200) NULL,
                 {{PostgreSqlMembershipSchema.Descriptor.Metadata}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{PostgreSqlMembershipSchema.DateCreated}} timestamptz NOT NULL,
+                {{PostgreSqlMembershipSchema.CreatedAt}} timestamptz NOT NULL,
                 CONSTRAINT pk_{{PostgreSqlMembershipSchema.Descriptor.Table}} PRIMARY KEY (
                     {{PostgreSqlMembershipSchema.ClusterName}},
                     {{PostgreSqlMembershipSchema.NodeId}},
@@ -106,6 +106,39 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                     {{PostgreSqlMembershipSchema.Incarnation}}
                 )
             );
+
+            DO $migration$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_attribute
+                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Generation.Table}}')
+                      AND attname = 'date_updated'
+                      AND NOT attisdropped
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM pg_attribute
+                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Generation.Table}}')
+                      AND attname = '{{PostgreSqlMembershipSchema.UpdatedAt}}'
+                      AND NOT attisdropped
+                ) THEN
+                    ALTER TABLE {{PostgreSqlMembershipSchema.Generation.Table}}
+                        RENAME COLUMN date_updated TO {{PostgreSqlMembershipSchema.UpdatedAt}};
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1 FROM pg_attribute
+                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Descriptor.Table}}')
+                      AND attname = 'date_created'
+                      AND NOT attisdropped
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM pg_attribute
+                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Descriptor.Table}}')
+                      AND attname = '{{PostgreSqlMembershipSchema.CreatedAt}}'
+                      AND NOT attisdropped
+                ) THEN
+                    ALTER TABLE {{PostgreSqlMembershipSchema.Descriptor.Table}}
+                        RENAME COLUMN date_created TO {{PostgreSqlMembershipSchema.CreatedAt}};
+                END IF;
+            END $migration$;
 
             CREATE INDEX IF NOT EXISTS ix_{{PostgreSqlMembershipSchema.Liveness.Table}}_cluster_lastbeat
                 ON {{PostgreSqlMembershipSchema.Liveness.Table}} ({{PostgreSqlMembershipSchema.ClusterName}}, {{PostgreSqlMembershipSchema.Liveness.LastBeat}});

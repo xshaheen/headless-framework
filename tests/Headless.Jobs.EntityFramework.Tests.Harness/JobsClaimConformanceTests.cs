@@ -162,7 +162,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     FunctionName = policy.ToString(),
                     Expression = "* * * * *",
                     OnNodeDeath = policy,
-                    NextCronOccurrence = new NextCronOccurrence(occurrenceId, DateTime.UtcNow.AddMinutes(-5)),
+                    NextCronOccurrence = new NextCronOccurrence(
+                        occurrenceId,
+                        TimeProvider.System.GetUtcNow().AddMinutes(-5)
+                    ),
                 };
                 results[policy] = await persistence
                     .QueueCronJobOccurrencesAsync((executionTime.AddSeconds((int)policy), [context]), ct)
@@ -191,10 +194,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var now = DateTime.UtcNow;
-            var executionTime = now.AddMinutes(1);
-            var expired = now.AddMinutes(-1);
-            var live = now.AddMinutes(5);
+            var now = TimeProvider.System.GetUtcNow();
+            var executionTime = now.UtcDateTime.AddMinutes(1);
+            var expired = now.UtcDateTime.AddMinutes(-1);
+            var live = now.UtcDateTime.AddMinutes(5);
             var ownerProbeCronId = Guid.NewGuid();
             await fixture.SeedCronJobAsync(ownerProbeCronId, "owner_probe", "* * * * *", NodeDeathPolicy.Retry, ct);
             var ownerProbe = await persistence
@@ -318,7 +321,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             foreach (var claim in claims)
             {
                 claim.OwnerId.Should().Be(currentOwner);
-                claim.LockedUntil.Should().BeAfter(now);
+                claim.LockedUntil.Should().BeAfter(now.UtcDateTime);
             }
         }
         finally
@@ -523,12 +526,14 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await persistence.AddTimeJobsAsync(cancellableRoots, ct);
             using var cancellation = new CancellationTokenSource();
             await using (
-                var enumerator = persistence.QueueTimedOutTimeJobsAsync(cancellation.Token).GetAsyncEnumerator()
+                var enumerator = persistence
+                    .QueueTimedOutTimeJobsAsync(cancellation.Token)
+                    .GetAsyncEnumerator(cancellation.Token)
             )
             {
                 (await enumerator.MoveNextAsync()).Should().BeTrue();
                 await cancellation.CancelAsync();
-                Func<Task> moveNext = async () =>
+                var moveNext = async () =>
                 {
                     await enumerator.MoveNextAsync();
                 };
@@ -594,7 +599,11 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var projection = await persistence.GetCronOccurrenceGraphStatusCountsAsync(cronId, today, ct);
 
             projection.Where(x => !x.IsRangeBoundary).Sum(x => x.Count).Should().Be(3);
-            var statements = capture.Statements;
+            // The host's background services may issue unrelated Jobs maintenance queries after Clear(); scope the
+            // assertion to the dashboard projection's CronJobOccurrences commands.
+            var statements = capture
+                .Statements.Where(sql => sql.Contains("CronJobOccurrences", StringComparison.Ordinal))
+                .ToArray();
             statements.Should().HaveCount(2);
             statements.Should().Contain(sql => sql.Contains("DISTINCT", StringComparison.OrdinalIgnoreCase));
             statements.Should().Contain(sql => sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase));
@@ -674,7 +683,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claimed.Should().ContainSingle();
             claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
-            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
+            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.UtcDateTime.Add(leaseDuration));
 
             var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
             lockedUntil.Should().Be(claimed[0].LockedUntil);

@@ -60,7 +60,7 @@ public sealed class HealthEndpointTests : TestBase
         // Gateway proxy deps for ActivatorUtilities resolution
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
-        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<MessagingDashboardCache>();
         builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         builder.Services.AddSingleton<GatewayProxyAgent>();

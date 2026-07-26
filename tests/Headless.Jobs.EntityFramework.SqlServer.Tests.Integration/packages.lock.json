@@ -796,18 +796,6 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
-      "headless.commitcoordination.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
-          "Microsoft.Extensions.Options": "[10.0.9, )"
-        }
-      },
       "headless.commitcoordination.sqlserver": {
         "type": "Project",
         "dependencies": {
@@ -949,6 +937,7 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
           "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
@@ -1041,10 +1030,8 @@
       "headless.messaging.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
+          "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
       "headless.multitenancy": {

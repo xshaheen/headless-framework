@@ -333,7 +333,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
             </template>
 
             <!-- Executed At Column -->
-            <template #[`item.ExecutedAt`]="{ item }">
+            <template #[`item.executedAt`]="{ item }">
               <div class="executed-at-cell">
                 <div v-if="hasStatus(item.status, Status.InProgress)" class="executing-indicator">
                   <v-icon size="16" class="spinning">mdi-loading</v-icon>

@@ -59,7 +59,7 @@ public class PropertyTransformOrder
 public class FrameworkManagedOrder
 {
     public Guid Id { get; set; }
-    public DateTimeOffset DateCreated { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
     public string Name { get; set; } = "";
 }
 
@@ -923,7 +923,7 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
             var order = new FrameworkManagedOrder
             {
                 Id = Guid.NewGuid(),
-                DateCreated = DateTimeOffset.UtcNow,
+                CreatedAt = DateTimeOffset.UtcNow,
                 Name = "Alice",
             };
             db.FrameworkManagedOrders.Add(order);
@@ -937,7 +937,7 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
             result.Should().ContainSingle();
             var entry = result[0];
             entry.NewValues.Should().ContainKey("Name");
-            entry.NewValues.Should().NotContainKey("DateCreated");
+            entry.NewValues.Should().NotContainKey("CreatedAt");
         }
     }
 
@@ -952,19 +952,19 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
             var order = new FrameworkManagedOrder
             {
                 Id = Guid.NewGuid(),
-                DateCreated = DateTimeOffset.UtcNow,
+                CreatedAt = DateTimeOffset.UtcNow,
                 Name = "Alice",
             };
             db.FrameworkManagedOrders.Add(order);
 
-            var sut = _CreateSut(opts => opts.DefaultExcludedProperties.Remove("DateCreated"));
+            var sut = _CreateSut(opts => opts.DefaultExcludedProperties.Remove("CreatedAt"));
 
             // when
             var result = _Capture(sut, db);
 
             // then
             result.Should().ContainSingle();
-            result[0].NewValues.Should().ContainKey("DateCreated");
+            result[0].NewValues.Should().ContainKey("CreatedAt");
         }
     }
 

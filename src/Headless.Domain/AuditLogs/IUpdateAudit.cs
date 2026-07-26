@@ -9,7 +9,7 @@ public interface IUpdateAudit
 {
     /// <summary>Timestamp when this entity was last updated.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateUpdated { get; }
+    DateTimeOffset? UpdatedAt { get; }
 }
 
 /// <summary>Extends <c>IUpdateAudit</c> with the identifier of the account that last updated the entity.</summary>

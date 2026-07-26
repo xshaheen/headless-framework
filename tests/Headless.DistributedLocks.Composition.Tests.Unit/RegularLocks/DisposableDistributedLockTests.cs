@@ -54,7 +54,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         await using var sut = _CreateLock(resource, leaseId);
 
         // then
-        sut.DateAcquired.Should().Be(expectedTime);
+        sut.AcquiredAt.Should().Be(expectedTime);
     }
 
     [Fact]

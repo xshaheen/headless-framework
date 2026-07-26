@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Base;
@@ -14,6 +15,7 @@ using Headless.Jobs.Models;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -284,12 +286,24 @@ public static class JobsCoordinationFixtureExtensions
         return _BuildCoordinatedEnqueueHost<TDbContext>(fixture, nodeId, configureOptions, includeMessaging);
     }
 
+    /// <summary>
+    /// Builds the coordinated-enqueue host with the Jobs tenancy seam enabled (<c>PropagateTenant</c>) plus a
+    /// consumer-supplied ambient <see cref="ICurrentTenant" /> so an integration test can prove schedule-time ambient
+    /// capture flows through the middleware into the persisted row. The consumer-supplied tenant also satisfies the
+    /// Jobs propagation startup validator's "a real tenant source is present" check.
+    /// </summary>
+    public static IHost BuildTenantPropagationEnqueueHost(this IJobsCoordinationFixture fixture, string nodeId)
+    {
+        return _BuildCoordinatedEnqueueHost<JobsDbContext>(fixture, nodeId, enableTenantPropagation: true);
+    }
+
     private static IHost _BuildCoordinatedEnqueueHost<TDbContext>(
         IJobsCoordinationFixture fixture,
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false,
-        JobsSideEffectsProbe? sideEffectsProbe = null
+        JobsSideEffectsProbe? sideEffectsProbe = null,
+        bool enableTenantPropagation = false
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -343,6 +357,15 @@ public static class JobsCoordinationFixtureExtensions
         // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
         // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
         fixture.ConfigureCommitCoordination(builder.Services);
+
+        if (enableTenantPropagation)
+        {
+            // Registered after AddHeadlessJobs (last-wins over the framework CurrentTenant fallback) so both the schedule
+            // middleware and the test resolve THIS ambient tenant. Being neither CurrentTenant nor NullCurrentTenant, it
+            // is the "real tenant source" the propagation startup validator requires, so StartAsync does not error.
+            builder.Services.AddSingleton<ICurrentTenant, HarnessAmbientCurrentTenant>();
+            builder.AddHeadlessTenancy(tenancy => tenancy.Jobs(jobs => jobs.PropagateTenant()));
+        }
 
         return builder.Build();
     }
@@ -492,12 +515,12 @@ public static class JobsCoordinationFixtureExtensions
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@function", function);
-        _AddParameter(command, "@status", ((JobStatus)status).ToString());
-        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        _AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@function", function);
+        AddParameter(command, "@status", ((JobStatus)status).ToString());
+        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -519,13 +542,13 @@ public static class JobsCoordinationFixtureExtensions
             $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
             + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
 
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@function", function);
-        _AddParameter(command, "@expression", expression);
-        _AddParameter(command, "@timeZoneId", DBNull.Value);
-        _AddParameter(command, "@isPaused", false);
-        _AddParameter(command, "@scheduleRevision", 0L);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@function", function);
+        AddParameter(command, "@expression", expression);
+        AddParameter(command, "@timeZoneId", DBNull.Value);
+        AddParameter(command, "@isPaused", false);
+        AddParameter(command, "@scheduleRevision", 0L);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -556,13 +579,13 @@ public static class JobsCoordinationFixtureExtensions
             + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
 
-        _AddParameter(command, "@id", id);
-        _AddParameter(command, "@cronJobId", cronJobId);
-        _AddParameter(command, "@status", ((JobStatus)status).ToString());
-        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        _AddParameter(command, "@executionTime", executionTime);
-        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        _AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@cronJobId", cronJobId);
+        AddParameter(command, "@status", ((JobStatus)status).ToString());
+        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        AddParameter(command, "@executionTime", executionTime);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -579,7 +602,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -606,7 +629,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -620,7 +643,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -631,7 +654,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -640,7 +663,8 @@ public static class JobsCoordinationFixtureExtensions
         }
 
         var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
-        return (lockedUntil, reader.GetDateTime(1));
+        var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
+        return (lockedUntil, updatedAt);
     }
 
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
@@ -673,7 +697,7 @@ public static class JobsCoordinationFixtureExtensions
         command.CommandText =
             "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
             + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -693,7 +717,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -704,7 +728,7 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
-        _AddParameter(command, "@id", id);
+        AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -713,7 +737,26 @@ public static class JobsCoordinationFixtureExtensions
         }
 
         var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
-        return (lockedUntil, reader.GetDateTime(1));
+        var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
+        return (lockedUntil, updatedAt);
+    }
+
+    /// <summary>Reads a TimeJob's persisted <c>TenantId</c> (system scope reads back as <see langword="null"/>).</summary>
+    public static async Task<string?> ReadTimeJobTenantAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT \"TenantId\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        AddParameter(command, "@id", id);
+
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+
+        return scalar is null or DBNull ? null : (string)scalar;
     }
 
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers
@@ -730,8 +773,8 @@ public static class JobsCoordinationFixtureExtensions
         "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "
         + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
-    // Both Npgsql and SqlClient accept the "@name" parameter form.
-    private static void _AddParameter(DbCommand command, string name, object value)
+    // Both Npgsql and SqlClient accept the "@name" parameter form. Internal so the chain-conformance tests reuse it.
+    internal static void AddParameter(DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
@@ -824,6 +867,36 @@ internal static class CoordinatedEnqueueJobsRegistration
                 ),
             }
         );
+    }
+}
+
+/// <summary>
+/// Consumer-supplied ambient <see cref="ICurrentTenant" /> for the tenancy conformance host: an AsyncLocal-backed
+/// tenant a test drives with <see cref="Change" /> to prove schedule-time ambient capture end-to-end. Being neither
+/// the framework <c>CurrentTenant</c> nor <c>NullCurrentTenant</c>, it registers as a real tenant source that satisfies
+/// the Jobs propagation startup validator.
+/// </summary>
+internal sealed class HarnessAmbientCurrentTenant : ICurrentTenant
+{
+    private readonly AsyncLocal<string?> _current = new();
+
+    public bool IsAvailable => _current.Value is not null;
+
+    public string? Id => _current.Value;
+
+    public string? Name => null;
+
+    public IDisposable Change(string? id, string? name = null)
+    {
+        var previous = _current.Value;
+        _current.Value = id;
+
+        return new TenantScope(() => _current.Value = previous);
+    }
+
+    private sealed class TenantScope(Action onDispose) : IDisposable
+    {
+        public void Dispose() => onDispose();
     }
 }
 

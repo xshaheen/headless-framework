@@ -138,10 +138,33 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
                 "Value" character varying({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
                 "ProviderName" character varying({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                 "ProviderKey" character varying({FeatureValueRecordConstants.ProviderKeyMaxLength}),
-                "DateCreated" timestamp with time zone NOT NULL,
-                "DateUpdated" timestamp with time zone,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone,
                 CONSTRAINT "PK_{options.FeatureValuesTableName}" PRIMARY KEY ("Id")
             );
+
+            DO $migration$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.FeatureValuesTableName}' AND column_name = 'DateCreated'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.FeatureValuesTableName}' AND column_name = 'CreatedAt'
+                ) THEN
+                    ALTER TABLE {valuesTable} RENAME COLUMN "DateCreated" TO "CreatedAt";
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.FeatureValuesTableName}' AND column_name = 'DateUpdated'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.FeatureValuesTableName}' AND column_name = 'UpdatedAt'
+                ) THEN
+                    ALTER TABLE {valuesTable} RENAME COLUMN "DateUpdated" TO "UpdatedAt";
+                END IF;
+            END $migration$;
             """;
     }
 

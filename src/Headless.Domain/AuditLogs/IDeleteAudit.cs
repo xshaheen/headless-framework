@@ -12,11 +12,11 @@ public interface IDeleteAudit
 
     /// <summary>Date and time the entity was soft-deleted. when it has a value it means that this entity is soft-deleted.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateDeleted { get; }
+    DateTimeOffset? DeletedAt { get; }
 
     /// <summary>Date and time the entity was restored.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateRestored { get; }
+    DateTimeOffset? RestoredAt { get; }
 }
 
 /// <summary>Extends <c>IDeleteAudit</c> with the identifiers of the accounts that soft-deleted and restored the entity.</summary>

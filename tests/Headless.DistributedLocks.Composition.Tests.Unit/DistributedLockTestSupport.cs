@@ -22,6 +22,21 @@ internal static class DistributedLockTestSupport
     /// <summary>Mirrors <c>_NonBlockingAcquireDeadline</c> in the providers (seconds).</summary>
     public const int NonBlockingAcquireDeadlineSeconds = 10;
 
+    public static async Task DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
+    {
+        for (var i = 0; i < 2000 && !condition(); i++)
+        {
+            if (i % 100 == 0)
+            {
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
+            }
+            else
+            {
+                await Task.Yield();
+            }
+        }
+    }
+
     /// <summary>
     /// Captures the namespaced reason tag values (<c>headless.lock.reason</c> /
     /// <c>headless.semaphore.reason</c>) recorded on the named failure counter

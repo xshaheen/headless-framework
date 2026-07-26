@@ -214,6 +214,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
         dbContext.Set<TTimeJob>().UpdateRange(timeJobs);
 
+        // TenantId is resolved once at schedule time and is not updatable through the generic update API —
+        // update payloads (e.g. dashboard edits) omit it, and writing it would silently clear the tenant.
+        foreach (var entry in dbContext.ChangeTracker.Entries<TTimeJob>())
+        {
+            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.TenantId)).IsModified = false;
+        }
+
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -256,7 +263,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -316,7 +323,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         Guid cronJobId,
         long expectedScheduleRevision,
         CronJobOccurrenceEntity<TCronJob> nextOccurrence,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -367,7 +374,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
         CronJobAtomicUpdate<TCronJob>[] updates,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {

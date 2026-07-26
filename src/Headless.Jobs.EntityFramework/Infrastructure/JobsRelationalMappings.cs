@@ -115,7 +115,8 @@ internal sealed record TimeJobRelationalMapping(
     string OnNodeDeath,
     string UpdatedAt,
     string ExecutionTime,
-    string ParentId
+    string ParentId,
+    string RunCondition
 )
 {
     public static TimeJobRelationalMapping Create<TDbContext, TTimeJob>(TDbContext dbContext)
@@ -152,7 +153,8 @@ internal sealed record TimeJobRelationalMapping(
             Column(nameof(TimeJobEntity.OnNodeDeath)),
             Column(nameof(TimeJobEntity.UpdatedAt)),
             Column(nameof(TimeJobEntity.ExecutionTime)),
-            Column(nameof(TimeJobEntity.ParentId))
+            Column(nameof(TimeJobEntity.ParentId)),
+            Column(nameof(TimeJobEntity.RunCondition))
         );
     }
 }

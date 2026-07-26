@@ -12,7 +12,8 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
-- **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a fluent chain.
+- **Typed chain enqueue**: `IJobScheduler.EnqueueAsync(JobChain, …)` resolves every node's descriptor, enforces `SchedulerOptionsBuilder.MaxChainDepth` (default 10) before persistence naming the configured limit, and persists the root plus its whole descendant tree atomically through the manager add path.
+- **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a persisted job chain.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. `LongRunning` work receives a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4). Long-running admission is queued on a detached lane (capped at two parked admissions per slot), so a saturated budget never blocks the dispatch loop; an admission rejected at the cap or dropped by cancellation/shutdown is recovered by the fallback reclaim sweep when its pickup lease lapses.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
@@ -22,12 +23,13 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates lease-expiry re-claim on `OnNodeDeath == Retry`; clock skew cannot re-run `Skip` or `MarkFailed` jobs.
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
+- **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` exposes `PropagateTenant()`, `RequireTenantOnEnqueue()`, and `RejectCrossTenantEnqueue()`; time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. See [Tenancy](#tenancy).
 
 ## Design Notes
 
 The in-memory provider uses the injected `TimeProvider` for pickup leases. The EF operational store translates `DateTime.UtcNow` inside each claim statement, so both lease-expiry comparison and `LockedUntil` stamping use the **database clock** without a separate clock query. EF renewal and reclaim use the same authority, preventing application/database clock skew from shortening or extending the initial lease.
 
-`AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. `FluentChainJobBuilder<TTimeJob>` therefore builds an unstamped object graph; `ITimeJobManager.AddAsync` / `AddBatchAsync` assign missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
+`AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.
 
@@ -37,7 +39,9 @@ Each `IHost` receives its own immutable runtime registry projected from the cano
 
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 
-Claiming a chained time job leases its direct children and grandchildren to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+Claiming a chained time job leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied by the parent's terminal state. A descendant carrying its own execution time is not claimed with the parent — it becomes claimable independently at the later of the parent's matching terminal state and its own time. Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+
+The whole chain executes in-process under the root's single pickup lease. If the owning node crashes mid-chain after the root already completed, the running tail can be orphaned (reclaim returns a non-timed descendant to idle with no execution time and nothing re-picks it up); per-node `OnNodeDeath` policies still apply, and per-node independent pickup is deferred hardening. Lowering `MaxChainDepth` after deeper chains were persisted truncates runtime traversal for those chains.
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes that flag immediately before user code and then on `CancellationObservationInterval`, using the same owner/status fence as lease renewal.
 
@@ -175,6 +179,60 @@ The generic constraint requires schedule and execute middleware to implement the
 
 Facade calls still flow through those managers, so scheduling inside an established `Headless.CommitCoordination` scope preserves the same atomic row write and deferred post-commit side effects.
 
+## Tenancy
+
+Time jobs carry a persisted, length-bounded `TenantId` (`BaseJobEntity.TenantId`, max `JobsTenancyOptions.TenantIdMaxLength = 200`). Enable propagation through the root tenancy seam contributed by this package:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+);
+```
+
+`PropagateTenant()` captures the ambient `ICurrentTenant.Id` onto a time job at schedule time (an explicit `EnqueueOptions.TenantId` wins — even when it differs from the ambient tenant, in which case the mismatch logs a warning; opt in to `RejectCrossTenantEnqueue()` to reject that lateral path instead, while explicit values from system scope stay honored for cron fan-out). A persisted `TenantId` is restored around every execution attempt — and around the failure callbacks (`IJobExceptionHandler`, cancellation handler, `OnExhausted`) — including retries, which Polly re-dispatches per attempt. Restoration happens whenever the row carries a tenant, **even on a host with `PropagateTenant()` off**: an explicit `EnqueueOptions.TenantId` is persisted regardless of the flag, so such a job always runs under its tenant rather than silently system-scope; manual restoration is only needed for work that runs outside the Jobs execute pipeline. `RequireTenantOnEnqueue()` rejects a tenantless, non-system enqueue with `Headless.Abstractions.MissingTenantContextException`. Set `EnqueueOptions.IsSystemJob = true` for a deliberate tenantless job; it is rejected when an ambient tenant is present so tenant code cannot escalate to system scope, and it is never persisted. Structural validation (cron-scope rejection, system-job contradictions, blank / over-length bounds) always runs; only ambient capture and strict enforcement are gated by the seam flags. Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant instead of the `NullCurrentTenant` fallback.
+
+Cron is always system-scope — a cron definition carrying a tenant is rejected with `JobValidatorException`. Run tenant-scoped recurring work by fanning out one tenant-scoped time job per tenant from a system-scope cron handler, passing an explicit `EnqueueOptions.TenantId`:
+
+```csharp
+using Headless.Jobs.Base;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
+
+// A tenant-scoped time job. When it runs, the execute middleware has already restored
+// ICurrentTenant to the job's TenantId, so tenant-scoped services (EF global filters,
+// permission cache) observe the right tenant automatically.
+public sealed record TenantReportRequest(string ReportKind);
+
+[JobFunction("GenerateTenantReport")]
+public sealed class GenerateTenantReport(IReportService reports)
+{
+    public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
+        reports.BuildAsync(context.Request.ReportKind, ct);
+}
+
+// A system-scope cron that fans out one tenant-scoped time job per tenant.
+[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
+public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+{
+    var scheduler = sp.GetRequiredService<IJobScheduler>();
+    var tenants = sp.GetRequiredService<IAppTenantDirectory>(); // application-owned enumeration
+
+    foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
+    {
+        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+        // inside a cron handler would silently persist tenantless jobs.
+        await scheduler.EnqueueAsync(
+            new TenantReportRequest("nightly"),
+            new EnqueueOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+            ct
+        );
+    }
+}
+```
+
+The framework owns no tenant enumeration — fan-out is application code by design (`IReportService` and `IAppTenantDirectory` above are application-owned). The full resolution rules, chain-propagation semantics, and startup diagnostics are documented in `Headless.MultiTenancy`'s domain docs.
+
 ## Configuration
 
 ```csharp
@@ -194,6 +252,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
+        scheduler.MaxChainDepth = 10; // default: 10; range 1..JobChain.MaxStructuralDepth (64)
     });
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
@@ -221,6 +280,7 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 - `Headless.Coordination.Abstractions`
 - `Headless.Coordination.Core`
 - `Headless.DistributedLocks.Abstractions`
+- `Headless.MultiTenancy`
 - `Headless.Extensions`
 - `NCrontab.Signed`
 - `Polly.Core`
@@ -232,3 +292,4 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a scheduler-scoped cron schedule cache and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
+- Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process; both no-op until the tenancy seam enables `JobsTenancyOptions`.

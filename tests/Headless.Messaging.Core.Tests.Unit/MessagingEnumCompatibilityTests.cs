@@ -38,11 +38,11 @@ public sealed class MessagingEnumCompatibilityTests
 
         new[]
         {
-            StatusName.Failed.ToString(),
-            StatusName.Scheduled.ToString(),
-            StatusName.Succeeded.ToString(),
-            StatusName.Delayed.ToString(),
-            StatusName.Queued.ToString(),
+            nameof(StatusName.Failed),
+            nameof(StatusName.Scheduled),
+            nameof(StatusName.Succeeded),
+            nameof(StatusName.Delayed),
+            nameof(StatusName.Queued),
         }
             .Should()
             .Equal("Failed", "Scheduled", "Succeeded", "Delayed", "Queued");

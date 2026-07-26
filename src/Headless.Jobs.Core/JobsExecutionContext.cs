@@ -40,31 +40,40 @@ internal sealed class JobsExecutionContext
         var copy = new JobExecutionState[functions.Length];
         functions.CopyTo(copy.AsSpan());
 
-        _CacheFunctionReferences(copy.AsSpan(), functionRegistry);
+        CacheFunctionReferences(copy.AsSpan(), functionRegistry);
         Volatile.Write(ref _functions, copy);
     }
 
     public void ClearFunctions() => Volatile.Write(ref _functions, []);
 
-    private static void _CacheFunctionReferences(
+    internal static void CacheFunctionReferences(
         Span<JobExecutionState> functions,
         JobFunctionRegistry functionRegistry
     )
     {
         for (var i = 0; i < functions.Length; i++)
         {
-            ref var context = ref functions[i];
-            if (functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
-            {
-                context.CachedDelegate = tickerItem.Delegate;
-                context.CachedPriority = tickerItem.Priority;
-                context.CachedMaxConcurrency = tickerItem.MaxConcurrency;
-            }
+            CacheFunctionReferences(functions[i], functionRegistry);
+        }
+    }
 
-            if (context.TimeJobChildren is { Count: > 0 })
+    // Stamps the cached delegate/priority/max-concurrency onto one context and recurses into its timed-job children.
+    // Shared with the fallback background service so both pickup paths hydrate the whole tree identically.
+    internal static void CacheFunctionReferences(JobExecutionState context, JobFunctionRegistry functionRegistry)
+    {
+        if (functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
+        {
+            context.CachedDelegate = tickerItem.Delegate;
+            context.CachedPriority = tickerItem.Priority;
+            context.CachedMaxConcurrency = tickerItem.MaxConcurrency;
+        }
+
+        if (context.TimeJobChildren is { Count: > 0 })
+        {
+            var childrenSpan = CollectionsMarshal.AsSpan(context.TimeJobChildren);
+            for (var i = 0; i < childrenSpan.Length; i++)
             {
-                var childrenSpan = CollectionsMarshal.AsSpan(context.TimeJobChildren);
-                _CacheFunctionReferences(childrenSpan, functionRegistry);
+                CacheFunctionReferences(childrenSpan[i], functionRegistry);
             }
         }
     }

@@ -86,7 +86,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         Resource = resource;
         LeaseId = leaseId;
         FencingToken = fencingToken;
-        DateAcquired = timeProvider.GetUtcNow();
+        AcquiredAt = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
         _timestamp = timeProvider.GetTimestamp();
         LeaseDuration = leaseDuration;
@@ -118,7 +118,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     public string Resource { get; }
 
     /// <summary>The UTC timestamp at which this lease was acquired.</summary>
-    public DateTimeOffset DateAcquired { get; }
+    public DateTimeOffset AcquiredAt { get; }
 
     /// <summary>The total wall-clock duration spent waiting before this lease was granted.</summary>
     public TimeSpan TimeWaitedForLock { get; }

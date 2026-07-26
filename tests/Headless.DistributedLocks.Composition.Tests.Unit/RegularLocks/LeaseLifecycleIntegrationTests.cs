@@ -185,7 +185,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 20 && !handle!.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle!.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then
@@ -237,7 +240,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 4; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
         }
 
         // then - LostToken still not fired (auto-extend kept storage row alive).
@@ -266,7 +269,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
         }
 
         // then - background renewals were recorded.
@@ -392,7 +395,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await _DrainUntilAsync(() => provider.GetActiveMonitorCount(resource) == 0, AbortToken);
+        await DistributedLockTestSupport.DrainUntilAsync(
+            () => provider.GetActiveMonitorCount(resource) == 0,
+            AbortToken
+        );
 
         // then - LostToken stays unfired after a monitor cadence opportunity.
         handle.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -457,7 +463,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle!.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(6));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then - polling cadence alone (no nudge) was sufficient to detect loss.
@@ -502,20 +511,5 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         provider.GetActiveMonitorCount(resource).Should().Be(1);
         provider.GetActiveMonitorResourceCount().Should().Be(1);
         GC.KeepAlive(handle);
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
-    {
-        for (var i = 0; i < 2000 && !condition(); i++)
-        {
-            if (i % 100 == 0)
-            {
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
-            }
-            else
-            {
-                await Task.Yield();
-            }
-        }
     }
 }

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.NodeDiscovery;
@@ -12,7 +12,7 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_getting_node()
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
+        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
         var provider = _CreateProvider(cache);
@@ -26,7 +26,7 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_getting_nodes()
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
+        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
         var provider = _CreateProvider(cache);
@@ -39,17 +39,17 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_registering_node()
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
+        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
         var provider = _CreateProvider(cache);
 
-        Func<Task> act = () => provider.RegisterNodeAsync(cancellationSource.Token);
+        var act = () => provider.RegisterNodeAsync(cancellationSource.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    private static ConsulNodeDiscoveryProvider _CreateProvider(IMemoryCache cache)
+    private static ConsulNodeDiscoveryProvider _CreateProvider(MessagingDashboardCache cache)
     {
         return new(
             NullLoggerFactory.Instance,

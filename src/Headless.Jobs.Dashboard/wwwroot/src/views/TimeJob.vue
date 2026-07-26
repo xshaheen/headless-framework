@@ -1268,7 +1268,7 @@ const canBeForceDeleted = ref<string[]>([])
               </v-badge>
             </template>
 
-            <template #[`item.ExecutedAt`]="{ item }">
+            <template #[`item.executedAt`]="{ item }">
               <div
                 v-if="hasStatus(item.status, Status.InProgress)"
                 class="snippet"

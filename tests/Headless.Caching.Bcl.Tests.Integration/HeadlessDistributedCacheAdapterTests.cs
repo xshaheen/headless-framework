@@ -167,7 +167,7 @@ public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture
         using var host = await _StartHostAsync(cacheName, keyPrefix, TimeSpan.FromHours(8));
         var distributedCache = host.Services.GetRequiredService<IDistributedCache>();
 
-        Func<Task> act = () =>
+        var act = () =>
             distributedCache.SetAsync(
                 "null-value",
                 null!,

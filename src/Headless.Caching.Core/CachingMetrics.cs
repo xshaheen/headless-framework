@@ -31,6 +31,7 @@ internal static class CachingMetrics
     internal const string FailSafeActivationsName = "headless.cache.failsafe.activations";
     internal const string RefreshesName = "headless.cache.refreshes";
     internal const string InvalidationsName = "headless.cache.invalidations";
+    internal const string EventDropsName = "headless.cache.events.dropped";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -143,6 +144,11 @@ internal static class CachingMetrics
         description: "Hybrid tag/clear/flush invalidation propagation."
     );
 
+    private static readonly Counter<long> _EventDrops = CachingDiagnostics.Meter.CreateCounter<long>(
+        EventDropsName,
+        description: "Cache event signals rejected by a full or shutting-down bounded dispatcher."
+    );
+
     /// <summary>Whether the evictions counter has a subscribed listener (used to gate O(n) count reads).</summary>
     internal static bool EvictionsEnabled => _Evictions.Enabled;
 
@@ -155,7 +161,8 @@ internal static class CachingMetrics
         || _FactoryDuration.Enabled
         || _FailSafeActivations.Enabled
         || _Refreshes.Enabled
-        || _Invalidations.Enabled;
+        || _Invalidations.Enabled
+        || _EventDrops.Enabled;
 
     // --- Record helpers ---------------------------------------------------------------------------------------
 
@@ -259,6 +266,17 @@ internal static class CachingMetrics
         };
 
         _Refreshes.Add(1, tags);
+    }
+
+    internal static void RecordEventDropped(string cacheName, long count)
+    {
+        if (count <= 0 || !_EventDrops.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList { { TagName, cacheName } };
+        _EventDrops.Add(count, tags);
     }
 
     internal static void RecordInvalidation(string cacheName, string invalidationKind, string direction)

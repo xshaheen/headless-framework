@@ -25,14 +25,14 @@ public sealed class SlidingLeaseProviderTests : TestBase
 
     private const string _NodeA = "node-a";
     private const string _NodeB = "node-b";
-    private static readonly DateTime _Now = new(2026, 06, 17, 12, 00, 00, DateTimeKind.Utc);
+    private static readonly DateTimeOffset _Now = new(2026, 06, 17, 12, 00, 00, TimeSpan.Zero);
     private static readonly TimeSpan _Lease = TimeSpan.FromMinutes(5);
 
     private static (JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider, FakeTimeProvider Time) _Create(
         string nodeId = _NodeA
     )
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var time = new FakeTimeProvider(_Now);
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(time);
         services.AddHeadlessGuidGenerator();
@@ -56,7 +56,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             OwnerId = owner,
             LockedUntil = lockedUntil,
             OnNodeDeath = policy,
-            ExecutionTime = _Now.AddMinutes(-2),
+            ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
     }
 
@@ -66,7 +66,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task renew_time_job_lease_advances_lease_and_returns_one_for_an_owned_running_row()
     {
         var (provider, time) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(1));
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         time.Advance(TimeSpan.FromMinutes(2)); // job runs past part of its lease
@@ -74,14 +74,14 @@ public sealed class SlidingLeaseProviderTests : TestBase
 
         affected.Should().Be(1);
         var renewed = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
-        renewed!.LockedUntil.Should().Be(_Now.AddMinutes(2).Add(_Lease)); // now (T+2m) + LeaseDuration
+        renewed!.LockedUntil.Should().Be(_Now.UtcDateTime.AddMinutes(2).Add(_Lease)); // now (T+2m) + LeaseDuration
     }
 
     [Fact]
     public async Task renew_time_job_lease_returns_zero_when_owner_changed()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeB, _Now.AddMinutes(1)); // owned by another node
+        var job = _TimeJob(JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1)); // owned by another node
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken);
@@ -93,7 +93,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task renew_time_job_lease_returns_zero_when_row_terminalized()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.Succeeded, _NodeA, _Now.AddMinutes(1));
+        var job = _TimeJob(JobStatus.Succeeded, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken);
@@ -107,7 +107,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         // #13: renewal slides a RUNNING lease only. A Queued row hasn't started, so renewal must NOT extend it (a
         // returned 1 would read as "lease held" and suppress the cancel-on-loss signal).
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.AddMinutes(1));
+        var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         (await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken)).Should().Be(0);
@@ -119,7 +119,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         // #5 invariant: no reclaim arm leaves (InProgress, Owner==original) true, so renewal can never resurrect a
         // reclaimed lease. After a Retry reclaim the row is Idle + ownerless, so the original owner renews 0 rows.
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
@@ -131,7 +131,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     {
         var (provider, _) = _Create();
         var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
-        root.ExecutionTime = _Now.AddMilliseconds(500);
+        root.ExecutionTime = _Now.UtcDateTime.AddMilliseconds(500);
         root.RetryCount = 2;
         var child = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
         child.ParentId = root.Id;
@@ -158,9 +158,9 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var storedChild = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
         var storedGrandChild = await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken);
         storedChild!.OwnerId.Should().Be(_NodeA);
-        storedChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedChild.LockedUntil.Should().Be(_Now.UtcDateTime.Add(_Lease));
         storedGrandChild!.OwnerId.Should().Be(_NodeA);
-        storedGrandChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedGrandChild.LockedUntil.Should().Be(_Now.UtcDateTime.Add(_Lease));
     }
 
     [Fact]
@@ -212,9 +212,9 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var storedChild = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
         var storedGrandChild = await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken);
         storedChild!.OwnerId.Should().Be(_NodeA);
-        storedChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedChild.LockedUntil.Should().Be(_Now.UtcDateTime.Add(_Lease));
         storedGrandChild!.OwnerId.Should().Be(_NodeA);
-        storedGrandChild.LockedUntil.Should().Be(_Now.Add(_Lease));
+        storedGrandChild.LockedUntil.Should().Be(_Now.UtcDateTime.Add(_Lease));
 
         var start = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
         (await provider.UpdateTimeJobsWithUnifiedContextAsync([root.Id], start, AbortToken)).Should().Equal(root.Id);
@@ -225,7 +225,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_time_jobs_retry_releases_lapsed_row_to_idle()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
@@ -241,7 +241,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_time_jobs_mark_failed_terminalizes_lapsed_row()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         await provider.ReclaimStalledTimeJobsAsync(AbortToken);
@@ -256,7 +256,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_time_jobs_skip_terminalizes_lapsed_row()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Skip);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         await provider.ReclaimStalledTimeJobsAsync(AbortToken);
@@ -271,7 +271,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_time_jobs_leaves_a_healthy_renewing_job_untouched()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(10)); // valid future lease
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(10)); // valid future lease
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
@@ -286,7 +286,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_time_jobs_is_idempotent()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
@@ -299,7 +299,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task dead_node_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(10)); // still-valid lease
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(10)); // still-valid lease
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
@@ -314,7 +314,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task dead_node_sweep_reclaims_a_lapsed_lease_inprogress_row_per_policy()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
@@ -329,8 +329,8 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task dead_node_sweep_reclaims_idle_and_queued_immediately_regardless_of_lease()
     {
         var (provider, _) = _Create();
-        var idle = _TimeJob(JobStatus.Idle, _NodeA, _Now.AddMinutes(10));
-        var queued = _TimeJob(JobStatus.Queued, _NodeA, _Now.AddMinutes(10));
+        var idle = _TimeJob(JobStatus.Idle, _NodeA, _Now.UtcDateTime.AddMinutes(10));
+        var queued = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(10));
         await provider.AddTimeJobsAsync([idle, queued], AbortToken);
 
         var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
@@ -346,7 +346,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task unified_context_update_does_not_stamp_a_row_reclaimed_by_another_owner()
     {
         var (provider, _) = _Create(); // this node is NodeA
-        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.AddMinutes(1)); // re-claimed by NodeB before we start it
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(1)); // re-claimed by NodeB before we start it
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
@@ -362,7 +362,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task unified_context_update_stamps_a_still_owned_row_inprogress()
     {
         var (provider, _) = _Create(); // this node is NodeA
-        var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.AddMinutes(1));
+        var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
@@ -376,7 +376,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task unified_context_update_does_not_restamp_an_already_running_row()
     {
         var (provider, _) = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.AddMinutes(1));
+        var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
         var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
 
@@ -402,7 +402,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             OwnerId = owner,
             LockedUntil = lockedUntil,
             OnNodeDeath = policy,
-            ExecutionTime = _Now.AddMinutes(-2),
+            ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
             CronJobId = Guid.NewGuid(),
         };
         occurrence.CronJob = new FakeCronJob
@@ -420,7 +420,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task queue_timed_out_cron_jobs_does_not_steal_a_live_main_scheduler_claim()
     {
         var (provider, time) = _Create();
-        var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.Add(_Lease));
+        var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.UtcDateTime.Add(_Lease));
 
         var whileLeased = await provider.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToListAsync(AbortToken);
 
@@ -445,7 +445,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task renew_cron_job_occurrence_lease_returns_zero_when_owner_changed()
     {
         var (provider, _) = _Create();
-        var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeB, _Now.AddMinutes(1));
+        var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1));
 
         (await provider.RenewCronJobOccurrenceLeaseAsync(id, AbortToken)).Should().Be(0);
     }
@@ -454,7 +454,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     public async Task reclaim_stalled_cron_job_occurrences_releases_lapsed_retry_to_idle()
     {
         var (provider, _) = _Create();
-        var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeA, _Now.AddMinutes(-1));
+        var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1));
 
         (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
         var rows = await provider.GetAllCronJobOccurrencesAsync(x => x.Id == id, AbortToken);
@@ -470,7 +470,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             provider,
             JobStatus.InProgress,
             _NodeA,
-            _Now.AddMinutes(-1),
+            _Now.UtcDateTime.AddMinutes(-1),
             NodeDeathPolicy.MarkFailed
         );
 
@@ -494,7 +494,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             provider,
             JobStatus.InProgress,
             _NodeA,
-            _Now.AddMinutes(-1),
+            _Now.UtcDateTime.AddMinutes(-1),
             NodeDeathPolicy.Skip
         );
 
@@ -514,7 +514,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
     {
         // #13 (cron): renewal slides a RUNNING occurrence lease only.
         var (provider, _) = _Create();
-        var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.AddMinutes(1));
+        var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
 
         (await provider.RenewCronJobOccurrenceLeaseAsync(id, AbortToken)).Should().Be(0);
     }
@@ -529,7 +529,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             provider,
             JobStatus.Queued,
             _NodeA,
-            _Now.AddMinutes(1),
+            _Now.UtcDateTime.AddMinutes(1),
             NodeDeathPolicy.Retry
         );
 
@@ -544,7 +544,10 @@ public sealed class SlidingLeaseProviderTests : TestBase
 
         var yielded = new List<CronJobOccurrenceEntity<FakeCronJob>>();
         await foreach (
-            var occurrence in provider.QueueCronJobOccurrencesAsync((_Now.AddMinutes(-2), [context]), AbortToken)
+            var occurrence in provider.QueueCronJobOccurrencesAsync(
+                (_Now.UtcDateTime.AddMinutes(-2), [context]),
+                AbortToken
+            )
         )
         {
             yielded.Add(occurrence);

@@ -817,7 +817,7 @@ internal static class IdempotencyTestApp
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+        public DateTimeOffset AcquiredAt { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

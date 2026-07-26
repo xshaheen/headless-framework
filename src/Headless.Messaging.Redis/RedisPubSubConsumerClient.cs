@@ -109,7 +109,10 @@ internal sealed class RedisPubSubConsumerClient(
             await queue.UnsubscribeAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
-        catch { }
+        catch
+        {
+            // ignored
+        }
 #pragma warning restore ERP022
     }
 

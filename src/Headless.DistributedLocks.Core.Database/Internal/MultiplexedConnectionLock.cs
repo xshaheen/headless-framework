@@ -364,7 +364,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; } = @lock._connection.TimeProvider.GetUtcNow();
+        public DateTimeOffset AcquiredAt { get; } = @lock._connection.TimeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

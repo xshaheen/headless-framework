@@ -123,8 +123,8 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                         [ProviderKey] nvarchar({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
                         [TenantId] nvarchar({PermissionGrantRecordConstants.TenantIdMaxLength}) NULL,
                         [IsGranted] bit NOT NULL DEFAULT CAST(1 AS bit),
-                        [DateCreated] datetimeoffset NOT NULL,
-                        [DateUpdated] datetimeoffset NULL,
+                        [CreatedAt] datetimeoffset NOT NULL,
+                        [UpdatedAt] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.PermissionGrantsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
@@ -132,6 +132,15 @@ internal sealed class SqlServerPermissionsStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
+
+            IF COL_LENGTH(N'{grantsObject}', N'DateCreated') IS NOT NULL
+               AND COL_LENGTH(N'{grantsObject}', N'CreatedAt') IS NULL
+                EXEC sys.sp_rename N'{grantsObject}.DateCreated', N'CreatedAt', N'COLUMN';
+
+            IF COL_LENGTH(N'{grantsObject}', N'DateUpdated') IS NOT NULL
+               AND COL_LENGTH(N'{grantsObject}', N'UpdatedAt') IS NULL
+                EXEC sys.sp_rename N'{grantsObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;

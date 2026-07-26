@@ -31,7 +31,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
     internal CompositeDistributedLease(
         IReadOnlyList<IDistributedLease> children,
         string resource,
-        DateTimeOffset dateAcquired,
+        DateTimeOffset acquiredAt,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,
         ILogger logger
@@ -75,7 +75,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
         LeaseId = Guid.NewGuid().ToString("N");
         Resource = resource;
-        DateAcquired = dateAcquired;
+        AcquiredAt = acquiredAt;
         TimeWaitedForLock = timeWaitedForLock;
         _canObserveLoss = canObserveLoss ? 1 : 0;
         LostTokenSignal = _lostSource?.Token ?? CancellationToken.None;
@@ -89,7 +89,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
     public int RenewalCount => _children.Min(child => child.RenewalCount);
 
-    public DateTimeOffset DateAcquired { get; }
+    public DateTimeOffset AcquiredAt { get; }
 
     public TimeSpan TimeWaitedForLock { get; }
 

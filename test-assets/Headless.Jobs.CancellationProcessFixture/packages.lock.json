@@ -495,6 +495,7 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
           "OpenTelemetry.Api": "[1.16.0, )",
           "Polly.Core": "[8.7.0, )"
@@ -516,6 +517,14 @@
         "dependencies": {
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.2, )"
+        }
+      },
+      "headless.multitenancy": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
         }
       },
       "headless.primitives": {

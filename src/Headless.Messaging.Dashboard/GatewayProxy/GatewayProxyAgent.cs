@@ -4,7 +4,6 @@ using System.Net;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Threading;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
@@ -21,7 +20,7 @@ internal sealed class GatewayProxyAgent(
     ILoggerFactory loggerFactory,
     IRequestMapper requestMapper,
     IHttpClientFactory httpClientFactory,
-    IMemoryCache cache,
+    MessagingDashboardCache cache,
     IServiceProvider serviceProvider,
     INodeDiscoveryProvider discoveryProvider,
     KeyedAsyncLock? keyedLock = null

@@ -49,6 +49,43 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task immediate_dispatch_threads_the_persisted_tenant_into_the_dispatched_state()
+    {
+        // #278: the immediate-dispatch branch builds JobExecutionState from the ACQUIRED row via
+        // _BuildContextFromNonGeneric (JobsManager.cs:532). The execute middleware restores the tenant from that state,
+        // so a copy-paste slip on the TenantId assignment would silently dispatch the job system-scope. Pin it here.
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true);
+        var acquiredChild = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = _FunctionName,
+            TenantId = "t-child",
+        };
+        var acquired = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = _FunctionName,
+            TenantId = "t-root",
+            ExecutionTime = DateTime.UtcNow,
+            Children = [acquiredChild],
+        };
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { acquired });
+        JobExecutionState[]? dispatched = null;
+        sut.Dispatcher.DispatchAsync(
+                Arg.Do<JobExecutionState[]>(states => dispatched = states),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.CompletedTask);
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
+
+        var rootState = dispatched.Should().ContainSingle().Which;
+        rootState.TenantId.Should().Be("t-root");
+        rootState.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-child");
+    }
+
+    [Fact]
     public async Task add_stamps_the_entire_chain_with_injected_identity_and_time_services()
     {
         var now = new DateTimeOffset(2026, 7, 18, 9, 30, 0, TimeSpan.Zero);
@@ -64,10 +101,37 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             timeProvider: timeProvider,
             guidGenerator: guidGenerator
         );
-        TimeJobEntity job = FluentChainJobBuilder<TimeJobEntity>
-            .BeginWith(parent => parent.SetFunction(_FunctionName).SetExecutionTime(now.UtcDateTime.AddHours(1)))
-            .WithFirstChild(child => child.SetFunction(_FunctionName))
-            .WithFirstGrandChild(grandChild => grandChild.SetFunction(_FunctionName));
+        // A pre-built root -> child -> grandchild tree with no ids or parent links, but every node carries distinct
+        // stale (non-now) CreatedAt/UpdatedAt. The manager must OVERWRITE those with its injected clock — asserted
+        // below — not merely fill defaults on unstamped nodes.
+        var stale = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var job = new TimeJobEntity
+        {
+            Function = _FunctionName,
+            ExecutionTime = now.UtcDateTime.AddHours(1),
+            CreatedAt = stale,
+            UpdatedAt = stale.AddDays(1),
+            Children =
+            [
+                new TimeJobEntity
+                {
+                    Function = _FunctionName,
+                    RunCondition = RunCondition.OnSuccess,
+                    CreatedAt = stale.AddDays(2),
+                    UpdatedAt = stale.AddDays(3),
+                    Children =
+                    [
+                        new TimeJobEntity
+                        {
+                            Function = _FunctionName,
+                            RunCondition = RunCondition.OnSuccess,
+                            CreatedAt = stale.AddDays(4),
+                            UpdatedAt = stale.AddDays(5),
+                        },
+                    ],
+                },
+            ],
+        };
 
         var result = await sut.Time.AddAsync(job, AbortToken);
 
@@ -81,8 +145,8 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         grandChild.ParentId.Should().Be(childId);
         foreach (var item in new[] { result, child, grandChild })
         {
-            item.CreatedAt.Should().Be(now.UtcDateTime);
-            item.UpdatedAt.Should().Be(now.UtcDateTime);
+            item.CreatedAt.Should().Be(now);
+            item.UpdatedAt.Should().Be(now);
         }
     }
 
@@ -275,12 +339,12 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         sut.Persistence.GetCronJobByIdAsync(current.Id, AbortToken).Returns(current);
         sut.Persistence.UpdateCronJobsAtomicallyAsync(
                 Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<DateTimeOffset>(),
                 AbortToken
             )
             .Returns([update]);
         var failure = new InvalidOperationException("notification offline");
-        sut.Notification.UpdateCronJobNotifyAsync(update).Returns<Task>(_ => throw failure);
+        sut.Notification.UpdateCronJobNotifyAsync(update).Returns(_ => throw failure);
 
         var result = await sut.Cron.UpdateAsync(update, AbortToken);
 
@@ -437,7 +501,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sideEffectStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
 
-        Func<Task> drainAction = async () => await drain;
+        var drainAction = async () => await drain;
         await drainAction.Should().NotThrowAsync();
         sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
     }
@@ -472,7 +536,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sideEffectStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(timeout + TimeSpan.FromTicks(1));
 
-        Func<Task> drainAction = async () => await drain;
+        var drainAction = async () => await drain;
         await drainAction.Should().NotThrowAsync();
         neverCompletes.Task.IsCompleted.Should().BeFalse();
         sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
@@ -738,7 +802,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(dispatcherEnabled);
 
-        FakeCommitCoordinator? coordinator = mode switch
+        var coordinator = mode switch
         {
             CoordinatorMode.None => null,
             CoordinatorMode.NonRelational => new FakeCommitCoordinator(relational: null),

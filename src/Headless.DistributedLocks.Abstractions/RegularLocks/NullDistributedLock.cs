@@ -138,7 +138,7 @@ public sealed class NullDistributedLock(TimeProvider timeProvider, ILogger<NullD
 
         public int RenewalCount => _renewalCount;
 
-        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+        public DateTimeOffset AcquiredAt { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

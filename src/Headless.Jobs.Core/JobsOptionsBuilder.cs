@@ -373,6 +373,19 @@ public sealed class SchedulerOptionsBuilder
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 
+    /// <summary>The default value for <see cref="MaxChainDepth"/> (10).</summary>
+    public const int DefaultMaxChainDepth = 10;
+
+    /// <summary>
+    /// The maximum number of nodes allowed on any single root-to-leaf path of an enqueued <c>JobChain</c>
+    /// (on-success and on-failure edges both count). Enforced by <c>IJobScheduler.EnqueueAsync(JobChain, …)</c>
+    /// before persistence — an over-deep chain is rejected naming this limit. Must be at least <c>1</c> and no more
+    /// than <c>JobChain.MaxStructuralDepth</c> (the structural ceiling <c>JobChainBuilder.Build()</c> enforces); the
+    /// registration guard rejects an out-of-range value so the two limits can never contradict. Defaults to
+    /// <see cref="DefaultMaxChainDepth"/>.
+    /// </summary>
+    public int MaxChainDepth { get; set; } = DefaultMaxChainDepth;
+
     /// <summary>
     /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration. Enabled only via the
     /// <c>UseDistributedLock(...)</c> builder extension (the setter is internal so the flag can never be

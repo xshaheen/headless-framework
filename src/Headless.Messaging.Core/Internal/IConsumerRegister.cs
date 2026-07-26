@@ -234,7 +234,7 @@ internal sealed class ConsumerRegister(
             if (_dispatcher is not null)
             {
                 await _dispatcher
-                    .DisposeAsync(_GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
+                    .DisposeAsync(_GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout), _hostStoppingToken)
                     .ConfigureAwait(false);
             }
 
@@ -267,7 +267,10 @@ internal sealed class ConsumerRegister(
                     .ConfigureAwait(false);
             }
 #pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
-            catch (Exception) { }
+            catch (Exception)
+            {
+                // ignored
+            }
 #pragma warning restore ERP022, RCS1075
         }
 
@@ -645,7 +648,7 @@ internal sealed class ConsumerRegister(
     {
         var intentType = MessageLaneCompatibility.ToIntentType(lane);
 
-        async Task OnMessageCallback(TransportMessage transportMessage, object? sender)
+        async Task onMessageCallback(TransportMessage transportMessage, object? sender)
         {
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
@@ -655,6 +658,7 @@ internal sealed class ConsumerRegister(
             // immutable struct, so this flag is what keeps the subscriber-not-found path (error emitted inline,
             // then routed to the poison store) from also emitting the success outcome on the same handle.
             var consumeOutcomeRecorded = false;
+
             try
             {
                 if (_circuitBreakerStateManager is not null)
@@ -665,6 +669,7 @@ internal sealed class ConsumerRegister(
                     {
                         // Settlement is must-complete: never abandon a reject on host shutdown.
                         await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+
                         return;
                     }
                 }
@@ -685,6 +690,7 @@ internal sealed class ConsumerRegister(
 
                 var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, lane, out var executor);
                 string? exceptionInfo = null;
+
                 try
                 {
                     if (!canFindSubscriber)
@@ -709,6 +715,7 @@ internal sealed class ConsumerRegister(
                     message = await _serializer
                         .DeserializeAsync(transportMessage, messageValueType, hostShutdownToken)
                         .ConfigureAwait(false);
+
                     message.RemoveException();
                 }
                 catch (Exception e)
@@ -720,6 +727,7 @@ internal sealed class ConsumerRegister(
                     exceptionInfo = e.ExpandMessage();
 
                     string? dataUri;
+
                     if (transportMessage.Headers.TryGetValue(Headers.Type, out var val))
                     {
                         dataUri =
@@ -747,6 +755,7 @@ internal sealed class ConsumerRegister(
                         await _circuitBreakerStateManager
                             .ReportFailureAsync(handleName, dispatchBypassException, CancellationToken.None)
                             .ConfigureAwait(false);
+
                         probeOutcomeTransferred = true;
                     }
 
@@ -774,6 +783,7 @@ internal sealed class ConsumerRegister(
                     await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
+
                     if (stored && bypassCallback is not null)
                     {
                         // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
@@ -856,6 +866,7 @@ internal sealed class ConsumerRegister(
                             CancellationToken.None
                         )
                         .ConfigureAwait(false);
+
                     mediumMessage.Origin = message;
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
@@ -864,6 +875,7 @@ internal sealed class ConsumerRegister(
                     await _dispatcher
                         .EnqueueToExecute(mediumMessage, executor, CancellationToken.None)
                         .ConfigureAwait(false);
+
                     probeOutcomeTransferred = true;
 
                     // Settlement is must-complete: never abandon a commit on host shutdown.
@@ -897,7 +909,7 @@ internal sealed class ConsumerRegister(
             }
         }
 
-        client.AttachCallbacks(OnMessageCallback, _WriteLog);
+        client.AttachCallbacks(onMessageCallback, _WriteLog);
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

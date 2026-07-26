@@ -46,7 +46,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                 return;
             }
 
-            azureFile.Metadata.DateExpiration = expires;
+            azureFile.Metadata.ExpiresAt = expires;
             await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
             _logger.ExpirationSet(fileId, expires);
@@ -93,7 +93,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             return null;
         }
 
-        return azureFile.Metadata.DateExpiration;
+        return azureFile.Metadata.ExpiresAt;
     }
 
     /// <summary>
@@ -133,7 +133,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             {
                 var metadata = TusAzureMetadata.FromAzure(blobItem.Metadata);
 
-                if (!(metadata.DateExpiration <= now))
+                if (!(metadata.ExpiresAt <= now))
                 {
                     continue;
                 }

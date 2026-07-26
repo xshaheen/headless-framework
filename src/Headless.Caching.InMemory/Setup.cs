@@ -168,7 +168,8 @@ public static class SetupInMemoryCache
                     provider.GetRequiredService<IOptionsMonitor<InMemoryCacheOptions>>().Get(name),
                     provider.GetService<ILogger<InMemoryCache>>(),
                     provider.GetService<ICacheFactoryLockProvider>(),
-                    provider.GetService<CacheInstrumentationConfig>()
+                    provider.GetService<CacheInstrumentationConfig>(),
+                    provider.GetService<CacheEventsConfig>()
                 )
         );
 

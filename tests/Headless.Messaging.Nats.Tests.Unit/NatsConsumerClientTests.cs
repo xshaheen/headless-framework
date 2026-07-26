@@ -1102,7 +1102,7 @@ public sealed class NatsConsumerClientTests : TestBase
                     .GetValue(client)!;
         inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
 
-        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         shutdown.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));

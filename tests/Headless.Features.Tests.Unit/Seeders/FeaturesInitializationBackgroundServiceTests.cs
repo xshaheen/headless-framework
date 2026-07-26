@@ -29,7 +29,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
     #region IInitializer Contract
 
     [Fact]
-    public async Task should_report_not_initialized_before_start()
+    public void should_report_not_initialized_before_start()
     {
         // given
         using var sut = _CreateSut(
@@ -392,7 +392,8 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
 
         await sut.StartAsync(cts.Token);
 
-        var act = () => sut.WaitForInitializationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        var act = () =>
+            sut.WaitForInitializationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await act.Should().ThrowAsync<OperationCanceledException>();
         await _store.DidNotReceive().SaveAsync(Arg.Any<CancellationToken>());
     }
@@ -469,7 +470,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         sut.Dispose();
 
         // then - should not throw on dispose (proper cleanup)
-        var action = () => sut.Dispose();
+        var action = sut.Dispose;
         action.Should().NotThrow();
     }
 

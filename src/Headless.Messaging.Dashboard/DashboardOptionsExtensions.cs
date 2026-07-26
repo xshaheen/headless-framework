@@ -37,7 +37,7 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         });
 
         services.AddSingleton<MessagingMetricsEventListener>();
-        services.AddMemoryCache();
+        services.TryAddSingleton<MessagingDashboardCache>();
         services.TryAddSingleton<KeyedAsyncLock>();
         services
             .AddHttpClient(

@@ -78,7 +78,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
             .EnqueueToScheduler(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<DateTimeOffset>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             );
 

@@ -44,5 +44,5 @@ public interface IRequestContext
     bool IsAvailable { get; }
 
     /// <summary>Gets the UTC timestamp captured at the start of the current request.</summary>
-    DateTimeOffset DateStarted { get; }
+    DateTimeOffset StartedAt { get; }
 }

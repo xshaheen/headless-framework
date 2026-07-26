@@ -17,7 +17,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -239,8 +238,8 @@ public static class MessagingDashboardEndpoints
         result.Subscribers = subscriberCache.GetCandidatesMethodsOfGroupNameGrouped().Sum(g => g.Value.Count);
 
         // Try to set server count from cache or discovery
-        var cache = sp.GetRequiredService<IMemoryCache>();
-        if (cache.TryGetValue("messaging.nodes.count", out int count))
+        var cache = sp.GetRequiredService<MessagingDashboardCache>();
+        if (cache.TryGetValue<int>("messaging.nodes.count", out var count))
         {
             result.Servers = count;
         }
@@ -262,8 +261,8 @@ public static class MessagingDashboardEndpoints
     private static async Task<IResult> _MetricsHistory(IServiceProvider sp)
     {
         const string cacheKey = "dashboard.metrics.history";
-        var cache = sp.GetRequiredService<IMemoryCache>();
-        if (cache.TryGetValue(cacheKey, out var ret))
+        var cache = sp.GetRequiredService<MessagingDashboardCache>();
+        if (cache.TryGetValue<object>(cacheKey, out var ret))
         {
             return Results.Json(ret);
         }

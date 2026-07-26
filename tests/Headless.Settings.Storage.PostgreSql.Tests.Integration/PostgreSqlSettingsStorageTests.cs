@@ -45,12 +45,12 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         (await _TableExistsAsync("SettingDefinitions")).Should().BeTrue();
         stored.Should().NotBeNull();
         stored!.Value.Should().Be("Dark");
-        stored.DateCreated.Should().NotBe(default);
-        stored.DateUpdated.Should().BeNull();
+        stored.CreatedAt.Should().NotBe(default);
+        stored.UpdatedAt.Should().BeNull();
         updated.Should().NotBeNull();
         updated!.Value.Should().Be("Light");
-        updated.DateCreated.Should().NotBe(default);
-        updated.DateUpdated.Should().NotBeNull();
+        updated.CreatedAt.Should().NotBe(default);
+        updated.UpdatedAt.Should().NotBeNull();
     }
 
     [Fact]
@@ -92,6 +92,31 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
             .BeTrue();
         (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
         (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_NullProviderKey")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_setting_value()
+    {
+        // given
+        await _DropSchemaAsync();
+        var id = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
+        using var host = _CreateHost();
+
+        // when
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var stored = await repository.FindAsync("Legacy.Theme", "Global", null, AbortToken);
+
+        // then
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(id);
+        stored.CreatedAt.Should().Be(createdAt);
+        stored.UpdatedAt.Should().Be(updatedAt);
+        (await _ColumnExistsAsync("SettingValues", "DateCreated")).Should().BeFalse();
+        (await _ColumnExistsAsync("SettingValues", "DateUpdated")).Should().BeFalse();
     }
 
     private IHost _CreateHost()
@@ -165,6 +190,54 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
+    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = @schema AND table_name = @table AND column_name = @column
+            )
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("schema", _Schema);
+        command.Parameters.AddWithValue("table", tableName);
+        command.Parameters.AddWithValue("column", columnName);
+
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private async Task _CreateLegacyValueTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            CREATE SCHEMA "{_Schema}";
+            CREATE TABLE "{_Schema}"."SettingValues" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "Name" character varying(128) NOT NULL,
+                "Value" character varying(2000) NOT NULL,
+                "ProviderName" character varying(64) NOT NULL,
+                "ProviderKey" character varying(64),
+                "DateCreated" timestamp with time zone NOT NULL,
+                "DateUpdated" timestamp with time zone
+            );
+            INSERT INTO "{_Schema}"."SettingValues"
+                ("Id", "Name", "Value", "ProviderName", "ProviderKey", "DateCreated", "DateUpdated")
+            VALUES (@id, 'Legacy.Theme', 'Dark', 'Global', NULL, @createdAt, @updatedAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue("updatedAt", updatedAt);
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -193,8 +266,8 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
                 "Value" character varying(2000) NOT NULL,
                 "ProviderName" character varying(64) NOT NULL,
                 "ProviderKey" character varying(64),
-                "DateCreated" timestamp with time zone NOT NULL,
-                "DateUpdated" timestamp with time zone,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone,
                 CONSTRAINT "PK_SettingValues" PRIMARY KEY ("Id")
             );
             """,

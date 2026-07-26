@@ -51,10 +51,10 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant, I
     public bool IsGranted { get; private init; }
 
     /// <summary>Gets the UTC timestamp when this grant record was first created.</summary>
-    public DateTimeOffset DateCreated { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>Gets the UTC timestamp of the last update, or <see langword="null"/> if the record has never been updated.</summary>
-    public DateTimeOffset? DateUpdated { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
 
     /// <summary>Parameterless constructor for ORM/serializer use only.</summary>
     [UsedImplicitly]
@@ -105,8 +105,8 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant, I
     /// <param name="providerKey">Provider-specific subject key.</param>
     /// <param name="isGranted"><see langword="true"/> for a grant; <see langword="false"/> for an explicit denial.</param>
     /// <param name="tenantId">Optional tenant scope; <see langword="null"/> for host-level grants.</param>
-    /// <param name="dateCreated">UTC timestamp when the record was first created.</param>
-    /// <param name="dateUpdated">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
+    /// <param name="createdAt">UTC timestamp when the record was first created.</param>
+    /// <param name="updatedAt">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
     /// <returns>A fully-hydrated <see cref="PermissionGrantRecord"/> with audit fields populated.</returns>
     public static PermissionGrantRecord FromStorage(
         Guid id,
@@ -115,14 +115,14 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant, I
         string providerKey,
         bool isGranted,
         string? tenantId,
-        DateTimeOffset dateCreated,
-        DateTimeOffset? dateUpdated
+        DateTimeOffset createdAt,
+        DateTimeOffset? updatedAt
     )
     {
         return new PermissionGrantRecord(id, name, providerName, providerKey, isGranted, tenantId)
         {
-            DateCreated = dateCreated,
-            DateUpdated = dateUpdated,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
         };
     }
 }

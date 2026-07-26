@@ -3,7 +3,6 @@
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using k8s;
 using k8s.Models;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.K8s;
@@ -14,7 +13,7 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// dashboard nodes, applying visibility and port-selection rules derived from
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
-public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
+public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardCache cache, K8sDiscoveryOptions options)
     : INodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
@@ -87,7 +86,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var configuredNamespace = _ResolveNamespace(null);
+        var configuredNamespace = _ResolveNamespace(requestedNamespace: null);
         List<string> namespaces = configuredNamespace == null ? [] : [configuredNamespace];
 
         return Task.FromResult(namespaces);

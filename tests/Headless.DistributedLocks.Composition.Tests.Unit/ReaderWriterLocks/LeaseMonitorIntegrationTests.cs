@@ -41,7 +41,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
         }
 
         // then
@@ -71,7 +71,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then
@@ -98,7 +101,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
         }
 
         // then
@@ -136,7 +139,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then
@@ -192,7 +198,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then
@@ -229,7 +238,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
         }
 
         // then
@@ -381,21 +393,6 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
-    {
-        for (var i = 0; i < 2000 && !condition(); i++)
-        {
-            if (i % 100 == 0)
-            {
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
-            }
-            else
-            {
-                await Task.Yield();
-            }
-        }
     }
 
     private sealed class CountingStorage : IDistributedReadWriteLockStorage

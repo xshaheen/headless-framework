@@ -12,6 +12,7 @@ using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
+using Headless.Api.UserAgent;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Security;
@@ -280,6 +281,8 @@ public static class SetupApi
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+            builder.Services.AddOptions<UserAgentParserOptions, UserAgentParserOptionsValidator>();
+            builder.Services.TryAddSingleton<IUserAgentParser, UserAgentParser>();
             builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
             builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();

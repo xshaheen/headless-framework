@@ -235,6 +235,28 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         (await _IndexExistsAsync("IX_PermissionGrants_Name_ProviderName_ProviderKey_NullTenantId")).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_permission_grant()
+    {
+        await _DropSchemaAsync();
+        var id = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyGrantTableAsync(id, createdAt, updatedAt);
+        using var host = _CreateHost();
+
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var stored = await repository.FindAsync("Legacy.Permission", "Role", "admin", AbortToken);
+
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(id);
+        stored.CreatedAt.Should().Be(createdAt);
+        stored.UpdatedAt.Should().Be(updatedAt);
+        (await _ColumnExistsAsync("PermissionGrants", "DateCreated")).Should().BeFalse();
+        (await _ColumnExistsAsync("PermissionGrants", "DateUpdated")).Should().BeFalse();
+    }
+
     private IHost _CreateHost(ICurrentTenant? currentTenant = null)
     {
         var builder = Host.CreateApplicationBuilder();
@@ -300,6 +322,55 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("index", indexName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = @schema AND table_name = @table AND column_name = @column
+            )
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("schema", _Schema);
+        command.Parameters.AddWithValue("table", tableName);
+        command.Parameters.AddWithValue("column", columnName);
+
+        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private async Task _CreateLegacyGrantTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            CREATE SCHEMA "{_Schema}";
+            CREATE TABLE "{_Schema}"."PermissionGrants" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "Name" character varying(128) NOT NULL,
+                "ProviderName" character varying(64) NOT NULL,
+                "ProviderKey" character varying(64) NOT NULL,
+                "TenantId" character varying(41),
+                "IsGranted" boolean NOT NULL,
+                "DateCreated" timestamp with time zone NOT NULL,
+                "DateUpdated" timestamp with time zone
+            );
+            INSERT INTO "{_Schema}"."PermissionGrants"
+                ("Id", "Name", "ProviderName", "ProviderKey", "TenantId", "IsGranted", "DateCreated", "DateUpdated")
+            VALUES (@id, 'Legacy.Permission', 'Role', 'admin', NULL, TRUE, @createdAt, @updatedAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue("updatedAt", updatedAt);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task _CreateInsertCommandCounterAsync()

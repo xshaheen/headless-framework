@@ -90,7 +90,7 @@ internal sealed class IsolatedPulsarFixture : HeadlessPulsarFixture
 {
     public ValueTask StartAsync()
     {
-        return base.InitializeAsync();
+        return InitializeAsync();
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

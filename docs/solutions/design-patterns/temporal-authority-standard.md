@@ -211,10 +211,14 @@ override it.
 
 ## 5. Storage and representation
 
+- **Names:** describe the event and suffix timestamp properties with `At` (`CreatedAt`, `UpdatedAt`,
+  `DeletedAt`, `PublishedAt`). Reserve `On` for date-only values such as `EffectiveOn`; do not use
+  `DateCreated`-style prefixes. This convention applies only to framework-owned contracts. Preserve
+  provider-owned CLR members, JSON fields, and protocol keys exactly as the third party defines them.
 - **Persisted instants and public API contracts use `DateTimeOffset`.** `DateTime` carries a `Kind` that
   is trivially lost — by EF materialization, by serializers, by provider SDKs — and a doc-comment is not
   a type-system guarantee. `DateTimeOffset` makes "this is an instant" unforgeable.
-- **Columns:** PostgreSQL `timestamptz`; SQL Server `datetime2(7)`. Never SQL Server `datetime` (3.33 ms).
+- **Columns:** PostgreSQL `timestamptz`; SQL Server `datetimeoffset(7)`. Never SQL Server `datetime` (3.33 ms).
   Never PostgreSQL `timestamp` (no zone) for an instant — it cannot express "this is UTC" and relies
   entirely on convention.
 - **Never trust `DateTime.Kind` from an external SDK.** AWS S3 returns `LastModified` with
