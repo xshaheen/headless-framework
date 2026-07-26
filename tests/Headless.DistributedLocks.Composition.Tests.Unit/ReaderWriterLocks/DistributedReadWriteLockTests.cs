@@ -19,7 +19,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
     private DistributedReadWriteLock _CreateProvider(
         IDistributedReadWriteLockStorage? storage = null,
-        IOutboxBus? outboxBus = null,
+        IBus? bus = null,
         DistributedLockOptions? options = null
     )
     {
@@ -27,7 +27,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         return new DistributedReadWriteLock(
             storage ?? new InMemoryDistributedReadWriteLockStorage(_timeProvider),
-            outboxBus,
+            bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -43,7 +43,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         return new DistributedReadWriteLock(
             storage,
-            outboxBus: null,
+            bus: null,
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

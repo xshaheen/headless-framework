@@ -384,7 +384,7 @@ public sealed class TenantPropagationE2ETests : TestBase
     [Fact]
     public async Task should_propagate_ambient_tenant_through_outbox_publisher()
     {
-        // given — IOutboxBus routes through the same publish pipeline (and filter chain)
+        // given — durable IBus delivery routes through the same publish pipeline (and filter chain)
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -394,12 +394,16 @@ public sealed class TenantPropagationE2ETests : TestBase
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
-        var outbox = harness.ServiceProvider.GetRequiredService<IOutboxBus>();
+        var bus = harness.ServiceProvider.GetRequiredService<IBus>();
 
         // when — publish via outbox under ambient tenant
         using (currentTenant.Change("globex"))
         {
-            await outbox.PublishAsync(new TenantOrderEvent("ORD-OUTBOX"), cancellationToken: AbortToken);
+            await bus.PublishAsync(
+                new TenantOrderEvent("ORD-OUTBOX"),
+                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                AbortToken
+            );
         }
 
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(10), AbortToken);

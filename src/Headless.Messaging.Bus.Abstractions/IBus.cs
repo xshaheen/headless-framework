@@ -3,19 +3,16 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Publishes broadcast (publish/subscribe) messages directly to the configured bus transport.
-/// Fire-and-forget — no persistence, no scheduling.
+/// Publishes broadcast (publish/subscribe) messages through the configured delivery mode.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The <see cref="IBus"/> contract is broadcast intent: every subscriber receives its own copy of
-/// each published message. <see cref="IBus"/> writes straight to the broker; if your application
-/// needs at-least-once delivery semantics, use <see cref="IOutboxBus"/> instead.
+/// each published message. <see cref="PublishOptions.DeliveryMode"/> selects automatic,
+/// durable, or transport-direct delivery without changing the Bus lane.
 /// </para>
 /// <para>
-/// <see cref="PublishOptions.Delay"/> is ignored on this interface (direct publishers are
-/// fire-and-forget). Use <see cref="IOutboxBus"/> with <see cref="PublishOptions.Delay"/> set for
-/// scheduled delivery.
+/// Delayed delivery is durable and cannot be combined with <see cref="DeliveryMode.TransportDirect"/>.
 /// </para>
 /// <para>
 /// At least one <see cref="IBusTransport"/> must be registered in DI for direct bus publishing.
@@ -31,7 +28,7 @@ public interface IBus
     /// </summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
-    /// <param name="options">Optional publish overrides for message name, correlation, and custom headers.</param>
+    /// <param name="options">Optional publish overrides for delivery, message name, correlation, delay, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the publish operation.</returns>
     /// <exception cref="ArgumentException">

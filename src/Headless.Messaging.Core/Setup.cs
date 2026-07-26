@@ -238,8 +238,6 @@ public static class SetupMessaging
         ));
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
         services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
-        services.TryAddSingleton<IOutboxBus>(sp => new OutboxBus(sp.GetRequiredService<IBus>()));
-        services.TryAddSingleton<IOutboxQueue>(sp => new OutboxQueue(sp.GetRequiredService<IQueue>()));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that

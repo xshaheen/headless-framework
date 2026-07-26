@@ -79,12 +79,12 @@ public static class SetupSqlServerEntityFrameworkMessaging
         public void Configure(SqlServerOptions options)
         {
             if (
-                RuntimeTypeInspection.DeclaresFieldOfType<IOutboxBus>(typeof(TContext))
-                || RuntimeTypeInspection.DeclaresFieldOfType<IOutboxQueue>(typeof(TContext))
+                RuntimeTypeInspection.DeclaresFieldOfType<IBus>(typeof(TContext))
+                || RuntimeTypeInspection.DeclaresFieldOfType<IQueue>(typeof(TContext))
             )
             {
                 throw new InvalidOperationException(
-                    "The DbContext must not capture IOutboxBus or IOutboxQueue. Inject the storage extension directly to avoid a circular dependency."
+                    "The DbContext must not capture IBus or IQueue. Inject the storage extension directly to avoid a circular dependency."
                 );
             }
 

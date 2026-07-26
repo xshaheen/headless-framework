@@ -128,17 +128,17 @@ internal static class DistributedLockCoreHelpers
     }
 
     /// <summary>
-    /// Configures the outbox bus reference used by the providers. Logs once when no bus
+    /// Configures the durable bus reference used by the providers. Logs once when no bus
     /// is registered so operators see why waiters fall back to polling.
     /// </summary>
-    public static IOutboxBus? ConfigureOutboxBus(IOutboxBus? outboxBus, ILogger logger)
+    public static IBus? ConfigureBus(IBus? bus, ILogger logger)
     {
-        if (outboxBus is null)
+        if (bus is null)
         {
-            logger.LogOutboxBusAbsent();
+            logger.LogBusAbsent();
         }
 
-        return outboxBus;
+        return bus;
     }
 
     /// <summary>

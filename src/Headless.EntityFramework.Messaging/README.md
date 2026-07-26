@@ -9,7 +9,7 @@ Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration ev
 ## Key Features
 
 - Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
-- Routes each concrete `IIntegrationEvent` to `IOutboxBus.PublishAsync<TConcrete>` through `IntegrationEventPublishInvokerCache` — one compiled delegate per runtime event type for allocation efficiency
+- Routes each concrete `IIntegrationEvent` to durable `IBus.PublishAsync<TConcrete>` through `IntegrationEventPublishInvokerCache` — one compiled delegate per runtime event type for allocation efficiency
 - Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
 - `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
 

@@ -438,7 +438,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // via its own cadence-driven probe. Confirm that polling alone (no nudge) eventually
         // surfaces LostToken when storage is mutated by another party.
         var options = new DistributedLockOptions();
-        var provider = _CreateProvider(options, outboxBus: null);
+        var provider = _CreateProvider(options, bus: null);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
@@ -475,16 +475,16 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
     private DistributedLock _CreateProvider(DistributedLockOptions? options = null)
     {
-        return _CreateProvider(options, Substitute.For<IOutboxBus>());
+        return _CreateProvider(options, Substitute.For<IBus>());
     }
 
-    private DistributedLock _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
+    private DistributedLock _CreateProvider(DistributedLockOptions? options, IBus? bus)
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedLock(
             _storage,
-            outboxBus,
+            bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

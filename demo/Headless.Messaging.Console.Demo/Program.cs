@@ -36,13 +36,14 @@ _ = Task.Run(
         {
             await Task.Delay(2000, cts.Token);
 
-            await sp.GetRequiredService<IOutboxBus>()
+            await sp.GetRequiredService<IBus>()
                 .PublishAsync(
                     new ShowTimeEvent(DateTime.UtcNow),
                     new PublishOptions
                     {
                         MessageName = "sample.console.showtime",
                         CallbackName = "sample.console.showtime.response",
+                        DeliveryMode = DeliveryMode.Durable,
                     },
                     cts.Token
                 );

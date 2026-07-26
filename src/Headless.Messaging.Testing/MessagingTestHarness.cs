@@ -437,12 +437,6 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>Returns a queue publisher backed by the in-memory transport.</summary>
     public IQueue Queue => ServiceProvider.GetRequiredService<IQueue>();
 
-    /// <summary>Returns a durable bus publisher backed by the in-memory outbox.</summary>
-    public IOutboxBus OutboxBus => ServiceProvider.GetRequiredService<IOutboxBus>();
-
-    /// <summary>Returns a durable queue publisher backed by the in-memory outbox.</summary>
-    public IOutboxQueue OutboxQueue => ServiceProvider.GetRequiredService<IOutboxQueue>();
-
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
         where T : notnull

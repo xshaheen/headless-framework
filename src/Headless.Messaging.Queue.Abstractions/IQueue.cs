@@ -3,19 +3,16 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Enqueues point-to-point (work-queue) messages directly to the configured queue transport.
-/// Fire-and-forget — no persistence, no scheduling.
+/// Enqueues point-to-point (work-queue) messages through the configured delivery mode.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The <see cref="IQueue"/> contract is point-to-point intent: exactly one competing worker
-/// receives each enqueued message. <see cref="IQueue"/> writes straight to the broker; if your
-/// application needs at-least-once delivery semantics, use <see cref="IOutboxQueue"/> instead.
+/// receives each enqueued message. <see cref="EnqueueOptions.DeliveryMode"/> selects automatic,
+/// durable, or transport-direct delivery without changing the Queue lane.
 /// </para>
 /// <para>
-/// <see cref="EnqueueOptions.Delay"/> is ignored on this interface (direct enqueuers are
-/// fire-and-forget). Use <see cref="IOutboxQueue"/> with <see cref="EnqueueOptions.Delay"/> set for
-/// scheduled delivery.
+/// Delayed delivery is durable and cannot be combined with <see cref="DeliveryMode.TransportDirect"/>.
 /// </para>
 /// <para>
 /// At least one <see cref="IQueueTransport"/> must be registered in DI for direct queue publishing.
@@ -31,7 +28,7 @@ public interface IQueue
     /// </summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
-    /// <param name="options">Optional enqueue overrides for destination, correlation, and custom headers.</param>
+    /// <param name="options">Optional enqueue overrides for delivery, destination, correlation, delay, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the enqueue operation.</returns>
     /// <exception cref="ArgumentException">

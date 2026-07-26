@@ -17,7 +17,7 @@ public sealed class InMemoryReaderWriterLockProviderTests : DistributedReadWrite
     {
         return new DistributedReadWriteLock(
             new InMemoryDistributedReadWriteLockStorage(_timeProvider),
-            outboxBus: null,
+            bus: null,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

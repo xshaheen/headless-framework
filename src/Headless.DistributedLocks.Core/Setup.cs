@@ -136,7 +136,7 @@ internal static class DistributedLockCoreServiceCollectionExtensions
         // resolving against the same concrete type.
         services.TryAddSingleton<DistributedLock>(provider => new DistributedLock(
             storageFactory(provider),
-            provider.GetService<IOutboxBus>(),
+            provider.GetService<IBus>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -184,7 +184,7 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
 
         services.TryAddSingleton<DistributedReadWriteLock>(provider => new DistributedReadWriteLock(
             provider.GetRequiredService<TStorage>(),
-            provider.GetService<IOutboxBus>(),
+            provider.GetService<IBus>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -216,7 +216,7 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
 
         services.TryAddSingleton(provider => new DistributedSemaphoreProvider(
             provider.GetRequiredService<TStorage>(),
-            provider.GetService<IOutboxBus>(),
+            provider.GetService<IBus>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),

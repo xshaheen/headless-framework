@@ -19,7 +19,7 @@ Provides both Redis Streams queue delivery and Redis Pub/Sub broadcast delivery 
 
 Redis Streams and Redis Pub/Sub are different broker semantics behind one package. Use Streams (`UseRedis`) for queue consumers and durable work distribution. Use Pub/Sub (`UseRedisPubSub`) for broadcast events where disconnected subscribers may miss messages.
 
-`IOutboxBus + UseRedisPubSub` persists the framework-side publish until Redis accepts `PUBLISH`; broker-side delivery remains volatile after that handoff. Choose Streams when Redis itself must retain messages for disconnected or competing consumers.
+`IBus` with `DeliveryMode.Durable` plus `UseRedisPubSub` persists the framework-side publish until Redis accepts `PUBLISH`; broker-side delivery remains volatile after that handoff. Choose Streams when Redis itself must retain messages for disconnected or competing consumers.
 
 ## Installation
 

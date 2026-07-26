@@ -79,8 +79,6 @@ public sealed class MessagingBuilderTests
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
         provider.GetRequiredService<IBus>().Should().NotBeNull();
         provider.GetRequiredService<IQueue>().Should().NotBeNull();
-        provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
-        provider.GetRequiredService<IOutboxQueue>().Should().NotBeNull();
     }
 
     [Fact]

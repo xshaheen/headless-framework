@@ -8,7 +8,7 @@ Console demo for the smallest in-process messaging setup.
 - In-memory transport through `UseInMemory()`.
 - In-memory storage through `UseInMemoryStorage()`.
 - Bus consumer registration with `OnBus<TConsumer>()`.
-- `IOutboxBus.PublishAsync(...)` with callback metadata.
+- `IBus.PublishAsync(...)` with callback metadata and `DeliveryMode.Durable`.
 - A custom bus consume middleware.
 
 ## Run

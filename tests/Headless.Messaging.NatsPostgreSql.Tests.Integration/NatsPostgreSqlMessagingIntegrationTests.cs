@@ -214,7 +214,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     public async Task should_attach_runtime_subscriber_after_bootstrap_and_receive_real_nats_message()
     {
         var runtimeSubscriber = ServiceProvider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = ServiceProvider.GetRequiredService<IOutboxBus>();
+        var publisher = ServiceProvider.GetRequiredService<IBus>();
 
         await using var handle = await runtimeSubscriber.SubscribeAsync<Fixtures.TestMessage>(
             static (context, services, _) =>
@@ -240,7 +240,11 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             Payload = "runtime",
         };
 
-        await publisher.PublishAsync(message, new PublishOptions { MessageName = "runtime-message" }, AbortToken);
+        await publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "runtime-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
         var consumed = await probe.Delivered.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 

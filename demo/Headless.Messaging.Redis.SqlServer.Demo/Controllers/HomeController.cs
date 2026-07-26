@@ -5,14 +5,14 @@ namespace Demo.Controllers;
 
 [ApiController]
 [Route("[controller]/[action]")]
-public class HomeController(IOutboxQueue publisher) : ControllerBase
+public class HomeController(IQueue publisher) : ControllerBase
 {
     [HttpGet]
     public async Task Publish([FromQuery] string message = "test-message")
     {
         await publisher.EnqueueAsync(
             new Person { Age = 11, Name = "James" },
-            new EnqueueOptions { MessageName = message }
+            new EnqueueOptions { MessageName = message, DeliveryMode = DeliveryMode.Durable }
         );
     }
 }

@@ -8,7 +8,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 ## Key Features
 
-- **Verb-Conveyed Lanes**: `IBus` / `IOutboxBus` select broadcast Bus semantics and `IQueue` / `IOutboxQueue` select point-to-point Queue semantics; contracts remain plain types
+- **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
 - **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
 - **Lane-Owned Consumer Management**: `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, lane-scoped assembly scanning, invocation, and per-dispatch lifecycle handling
@@ -71,10 +71,10 @@ using var app = builder.Build();
 await app.Services.GetRequiredService<IBootstrapper>()
     .BootstrapAsync(CancellationToken.None);
 
-await app.Services.GetRequiredService<IOutboxBus>()
+await app.Services.GetRequiredService<IBus>()
     .PublishAsync(
         new OrderPlaced("order-123"),
-        new PublishOptions { MessageName = "orders.placed" },
+        new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
         CancellationToken.None
     );
 
@@ -90,13 +90,13 @@ public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : I
 }
 ```
 
-Publish through the outbox when durability matters:
+Request durable delivery when persistence matters:
 
 ```csharp
-await serviceProvider.GetRequiredService<IOutboxBus>()
+await serviceProvider.GetRequiredService<IBus>()
     .PublishAsync(
         new OrderPlaced("order-123"),
-        new PublishOptions { MessageName = "orders.placed" },
+        new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
         cancellationToken
     );
 ```
@@ -182,24 +182,24 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 
 ## Publisher Options
 
-Core registers the generic publisher plumbing up front. Immutable provider descriptors then gate behavior: `IBus` / `IOutboxBus` require Bus transport (and storage for outbox), while `IQueue` / `IOutboxQueue` require the Queue equivalents. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
+Core registers `IBus` and `IQueue` up front. Immutable provider descriptors then gate transport-direct, durable, and delayed behavior per lane. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
 
 ### Bus Publishers
 
 Use bus publishers for broadcast publish/subscribe delivery:
 
-- `IBus` sends directly to an `IBusTransport`.
-- `IOutboxBus` stores first, then dispatches through an `IBusTransport`.
-- `PublishOptions.Delay` is honored by `IOutboxBus` and ignored by `IBus`.
+- `IBus` always selects the Bus lane.
+- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `IntentType.Bus`.
 
 ### Queue Publishers
 
 Use queue publishers for point-to-point competing-worker delivery:
 
-- `IQueue` sends directly to an `IQueueTransport`.
-- `IOutboxQueue` stores first, then dispatches through an `IQueueTransport`.
-- `EnqueueOptions.Delay` is honored by `IOutboxQueue` and ignored by `IQueue`.
+- `IQueue` always selects the Queue lane.
+- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `IntentType.Queue`.
 
 ### Publisher Contracts
@@ -216,7 +216,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-Durable publishes use `IOutboxBus` or `IOutboxQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay`.
+Durable publishes use `DeliveryMode.Durable` on `IBus` or `IQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 

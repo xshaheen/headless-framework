@@ -395,19 +395,19 @@ public sealed class EndToEndTests : TestBase
             AbortToken
         );
 
-        var outboxBus = harness.GetRequiredService<IOutboxBus>();
-        var outboxQueue = harness.GetRequiredService<IOutboxQueue>();
+        var bus = harness.GetRequiredService<IBus>();
+        var queue = harness.GetRequiredService<IQueue>();
         var recorder = harness.GetRequiredService<IntentRecorder>();
 
         // when
-        await outboxBus.PublishAsync(
+        await bus.PublishAsync(
             new OrderCreatedEvent("outbox-bus", 10m),
-            new PublishOptions { MessageName = "outbox-order-created" },
+            new PublishOptions { MessageName = "outbox-order-created", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
-        await outboxQueue.EnqueueAsync(
+        await queue.EnqueueAsync(
             new OrderCreatedEvent("outbox-queue", 20m),
-            new EnqueueOptions { MessageName = "outbox-order-created" },
+            new EnqueueOptions { MessageName = "outbox-order-created", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 

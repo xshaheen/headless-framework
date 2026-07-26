@@ -9,7 +9,7 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The intent flows end-to-end through the framework: publisher interface (<c>IBus</c> /
-/// <c>IQueue</c> / <c>IOutboxBus</c> / <c>IOutboxQueue</c>) → outbox row →
+/// <c>IQueue</c>) → optional outbox row →
 /// drainer → transport interface (<c>IBusTransport</c> / <c>IQueueTransport</c>) →
 /// <c>ConsumeContext&lt;TMessage&gt;.IntentType</c> → OpenTelemetry tag.
 /// </para>

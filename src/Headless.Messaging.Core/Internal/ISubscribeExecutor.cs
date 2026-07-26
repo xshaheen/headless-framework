@@ -557,11 +557,12 @@ internal sealed class SubscribeExecutor(
                 }
 
                 await provider
-                    .GetRequiredService<IOutboxBus>()
+                    .GetRequiredService<IBus>()
                     .PublishAsync(
                         ret.Result,
                         new PublishOptions
                         {
+                            DeliveryMode = DeliveryMode.Durable,
                             MessageName = ret.CallbackName,
                             Headers = ret.CallbackHeader,
                             MessageType = ret.ResultType,

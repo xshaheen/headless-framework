@@ -194,7 +194,11 @@ await db.ExecuteCoordinatedTransactionAsync(
         ctx.Orders.Add(order);
         await ctx.SaveChangesAsync(ct);
 
-        await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct);
+        await bus.PublishAsync(
+            new OrderPlaced(order.Id),
+            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+            ct
+        );
 
         await jobScheduler.ScheduleAsync(
             new OrderReminderRequest(order.Id),

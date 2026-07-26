@@ -68,7 +68,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
     private async Task _PublishBatch(int count, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
-        var publisher = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
+        var publisher = scope.ServiceProvider.GetRequiredService<IBus>();
 
         for (var i = 0; i < count; i++)
         {
@@ -77,7 +77,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         }
     }
 
-    private async Task _PublishRandomMessage(IOutboxBus publisher, CancellationToken ct)
+    private async Task _PublishRandomMessage(IBus publisher, CancellationToken ct)
     {
         switch (Random.Shared.Next(4))
         {
@@ -93,7 +93,8 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                             MidpointRounding.AwayFromZero
                         ),
                     },
-                    cancellationToken: ct
+                    new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                    ct
                 );
                 break;
 
@@ -110,7 +111,8 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                         ),
                         Currency = _Currencies[Random.Shared.Next(_Currencies.Length)],
                     },
-                    cancellationToken: ct
+                    new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                    ct
                 );
                 break;
 
@@ -122,7 +124,8 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                         Email = string.Create(CultureInfo.InvariantCulture, $"user{_counter}@example.com"),
                         Plan = _Plans[Random.Shared.Next(_Plans.Length)],
                     },
-                    cancellationToken: ct
+                    new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                    ct
                 );
                 break;
 
@@ -134,7 +137,8 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                         Quantity = Random.Shared.Next(0, 500),
                         Warehouse = _Warehouses[Random.Shared.Next(_Warehouses.Length)],
                     },
-                    cancellationToken: ct
+                    new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                    ct
                 );
                 break;
         }

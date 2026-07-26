@@ -15,7 +15,7 @@ namespace Headless.Messaging;
 /// </para>
 /// <para>
 /// Capability is therefore declared at the package boundary: if your application registers
-/// <see cref="IBus"/> or <see cref="IOutboxBus"/>, the host must also register at least one provider
+/// <see cref="IBus"/>, the host must also register at least one provider
 /// that ships an <see cref="IBusTransport"/>. Misconfigurations are caught at host startup.
 /// </para>
 /// </remarks>

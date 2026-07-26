@@ -157,7 +157,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         try
         {
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var publisher = host.Services.GetRequiredService<IOutboxBus>();
+            var publisher = host.Services.GetRequiredService<IBus>();
             var job = _TimeJob();
 
             await fixture.RunCoordinatedTransactionAsync(
@@ -165,7 +165,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 async (connection, transaction, innerCt) =>
                 {
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
-                    await publisher.PublishAsync(new CapstoneMessage(job.Id), cancellationToken: innerCt);
+                    await publisher.PublishAsync(
+                        new CapstoneMessage(job.Id),
+                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                        innerCt
+                    );
                     await manager.AddAsync(job, innerCt);
                 },
                 ct
@@ -189,7 +193,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         try
         {
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var publisher = host.Services.GetRequiredService<IOutboxBus>();
+            var publisher = host.Services.GetRequiredService<IBus>();
             var job = _TimeJob();
             var sentinel = new InvalidOperationException("force rollback");
 
@@ -199,7 +203,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     async (connection, transaction, innerCt) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
-                        await publisher.PublishAsync(new CapstoneMessage(job.Id), cancellationToken: innerCt);
+                        await publisher.PublishAsync(
+                            new CapstoneMessage(job.Id),
+                            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                            innerCt
+                        );
                         await manager.AddAsync(job, innerCt);
                         throw sentinel;
                     },

@@ -24,7 +24,7 @@ public sealed class SetupTests : TestBase
 
         // then
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        provider.GetService<IOutboxBus>().Should().BeNull();
+        provider.GetService<IBus>().Should().BeNull();
         // Auto-registration is unconditional. The lock-release consumer descriptor is present even
         // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
         // so waiters fall back to polling.
@@ -38,7 +38,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddSingleton(Substitute.For<IBus>());
 
         // when — register the lock provider BEFORE AddHeadlessMessaging.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
@@ -63,7 +63,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddSingleton(Substitute.For<IBus>());
 
         // when — the provider registers both lock and semaphore; they share one consumer via the
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.

@@ -207,7 +207,6 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(registry);
         services.AddSingleton(Substitute.For<IQueueTransport>());
         services.AddSingleton(Substitute.For<IBus>());
-        services.AddSingleton(Substitute.For<IOutboxBus>());
         _AddCapabilityModel(
             services,
             MessagingProviderCapabilities.Transport(
@@ -237,9 +236,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddHeadlessMessaging(setup => setup.RegisterExtension(new QueueOnlyMessagingExtension()));
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
     }
 
     [Fact]
@@ -250,9 +247,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddHeadlessMessaging(setup => setup.RegisterExtension(new BusOnlyMessagingExtension()));
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
     }
 
     [Fact]

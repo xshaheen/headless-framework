@@ -43,37 +43,57 @@ var app = builder.Build();
 
 app.MapGet(
     "/entity-created-for-integration",
-    async (IOutboxBus publisher) =>
+    async (IBus publisher) =>
     {
         var message = new EntityCreatedForIntegration(Guid.NewGuid());
-        await publisher.PublishAsync(message, new PublishOptions { MessageName = nameof(EntityCreatedForIntegration) });
+        await publisher.PublishAsync(
+            message,
+            new PublishOptions
+            {
+                MessageName = nameof(EntityCreatedForIntegration),
+                DeliveryMode = DeliveryMode.Durable,
+            }
+        );
     }
 );
 
 app.MapGet(
     "/entity-deleted-for-integration",
-    async (IOutboxBus publisher) =>
+    async (IBus publisher) =>
     {
         var message = new EntityDeletedForIntegration(Guid.NewGuid());
-        await publisher.PublishAsync(message, new PublishOptions { MessageName = nameof(EntityDeletedForIntegration) });
+        await publisher.PublishAsync(
+            message,
+            new PublishOptions
+            {
+                MessageName = nameof(EntityDeletedForIntegration),
+                DeliveryMode = DeliveryMode.Durable,
+            }
+        );
     }
 );
 
 app.MapGet(
     "/entity-created",
-    async (IOutboxBus publisher) =>
+    async (IBus publisher) =>
     {
         var message = new EntityCreated(Guid.NewGuid());
-        await publisher.PublishAsync(message, new PublishOptions { MessageName = nameof(EntityCreated) });
+        await publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = nameof(EntityCreated), DeliveryMode = DeliveryMode.Durable }
+        );
     }
 );
 
 app.MapGet(
     "/entity-deleted",
-    async (IOutboxBus publisher) =>
+    async (IBus publisher) =>
     {
         var message = new EntityDeleted(Guid.NewGuid());
-        await publisher.PublishAsync(message, new PublishOptions { MessageName = nameof(EntityDeleted) });
+        await publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = nameof(EntityDeleted), DeliveryMode = DeliveryMode.Durable }
+        );
     }
 );
 

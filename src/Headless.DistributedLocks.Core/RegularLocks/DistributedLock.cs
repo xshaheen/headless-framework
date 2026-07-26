@@ -25,7 +25,7 @@ namespace Headless.DistributedLocks;
 /// receives an <see cref="IDistributedLease"/> handle that can be released explicitly or on dispose.
 /// </para>
 /// <para>
-/// Wake-up model: when <see cref="IOutboxBus"/> is available, a <see cref="DistributedLockReleased"/>
+/// Wake-up model: when <see cref="IBus"/> is available, a durable <see cref="DistributedLockReleased"/>
 /// message is published after each confirmed release; blocked acquirers are signalled immediately
 /// instead of waiting for the next backoff interval. Without the bus, callers fall back to polling.
 /// </para>
@@ -50,7 +50,7 @@ namespace Headless.DistributedLocks;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
-    IOutboxBus? outboxBus,
+    IBus? bus,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
@@ -58,7 +58,7 @@ public sealed class DistributedLock(
 ) : IDistributedLock, ICanReceiveLockReleased
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
+    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
@@ -658,14 +658,17 @@ public sealed class DistributedLock(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _outboxBus is not null)
+        if (removed && _bus is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, leaseId);
 
             try
             {
-                await _outboxBus
-                    .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
+                await _bus.PublishAsync(
+                        distributedLockReleased,
+                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             catch (Exception ex)

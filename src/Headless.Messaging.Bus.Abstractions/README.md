@@ -8,9 +8,9 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 
 ## Key Features
 
-- `IBus` publishes directly to the configured bus transport.
-- `IOutboxBus` persists messages first, then drains them through the configured bus transport.
-- `PublishOptions.Delay` schedules delayed outbox bus delivery.
+- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- Durable delivery persists messages first, then drains them through the configured bus transport.
+- `PublishOptions.Delay` schedules durable bus delivery.
 - Every bus publish carries `IntentType.Bus` through storage, tracing, dashboard projections, and consume context.
 
 ## Installation
@@ -22,20 +22,24 @@ dotnet add package Headless.Messaging.Bus.Abstractions
 ## Quick Start
 
 ```csharp
-public sealed class OrderEvents(IOutboxBus bus)
+public sealed class OrderEvents(IBus bus)
 {
     public Task PublishAsync(OrderPlaced message, CancellationToken cancellationToken)
     {
-        return bus.PublishAsync(message, new PublishOptions { MessageName = "orders.placed" }, cancellationToken);
+        return bus.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
+            cancellationToken
+        );
     }
 }
 ```
 
-Use `IBus` only when transport-direct, fire-and-forget delivery is acceptable. Use `IOutboxBus` when the publish must survive process crashes or coordinate with an application transaction.
+Use `DeliveryMode.Durable` when the publish must survive process crashes, `TransportDirect` for explicit fire-and-forget delivery, or the default `Auto` to capture only in a compatible coordination boundary.
 
 ## Configuration
 
-None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`; without that provider, `IBus` and `IOutboxBus` are not registered.
+None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus bus transport and storage providers.
 
 ## Dependencies
 

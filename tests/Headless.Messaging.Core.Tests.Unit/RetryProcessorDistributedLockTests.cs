@@ -31,7 +31,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
         _realLockProvider = new DistributedLock(
             storage,
-            Substitute.For<IOutboxBus>(),
+            Substitute.For<IBus>(),
             new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

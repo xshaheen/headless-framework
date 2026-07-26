@@ -12,7 +12,7 @@ Defines the stable message envelope, consume context, consumer contract, publish
 - `IntentType` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
-- Intent-specific publisher contracts: `IBus`, `IQueue`, `IOutboxBus`, and `IOutboxQueue`.
+- Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
 
 ## Installation
 

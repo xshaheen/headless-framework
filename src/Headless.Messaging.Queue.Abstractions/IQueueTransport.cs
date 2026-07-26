@@ -18,7 +18,7 @@ namespace Headless.Messaging;
 /// </para>
 /// <para>
 /// Capability is therefore declared at the package boundary: if your application registers
-/// <see cref="IQueue"/> or <see cref="IOutboxQueue"/>, the host must also register at least one
+/// <see cref="IQueue"/>, the host must also register at least one
 /// provider that ships an <see cref="IQueueTransport"/>. Misconfigurations are caught at host startup.
 /// </para>
 /// </remarks>

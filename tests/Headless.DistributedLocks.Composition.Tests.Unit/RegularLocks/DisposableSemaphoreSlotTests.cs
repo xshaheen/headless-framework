@@ -400,7 +400,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 
         var provider = new DistributedSemaphoreProvider(
             _storage,
-            Substitute.For<IOutboxBus>(),
+            Substitute.For<IBus>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

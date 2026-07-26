@@ -12,12 +12,12 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     public async Task should_use_same_scope_for_class_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
         var recorder = provider.GetRequiredService<ScopedExecutionRecorder>();
 
         await publisher.PublishAsync(
             new ScopedMessage("class"),
-            new PublishOptions { MessageName = "scope.class" },
+            new PublishOptions { MessageName = "scope.class", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -32,7 +32,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     public async Task should_use_same_scope_for_runtime_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var recorder = provider.GetRequiredService<ScopedExecutionRecorder>();
 
@@ -53,7 +53,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new ScopedMessage("runtime"),
-            new PublishOptions { MessageName = "scope.runtime" },
+            new PublishOptions { MessageName = "scope.runtime", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 

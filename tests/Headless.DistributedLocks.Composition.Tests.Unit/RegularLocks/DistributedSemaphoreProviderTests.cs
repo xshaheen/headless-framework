@@ -357,7 +357,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         var provider = new DistributedSemaphoreProvider(
             storage,
-            Substitute.For<IOutboxBus>(),
+            Substitute.For<IBus>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -382,11 +382,11 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         hangingStorage
             .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
-        var outboxBus = Substitute.For<IOutboxBus>();
+        var bus = Substitute.For<IBus>();
 
         var provider = new DistributedSemaphoreProvider(
             hangingStorage,
-            outboxBus,
+            bus,
             new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) },
             _guidGenerator,
             _timeProvider,
@@ -406,8 +406,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await outboxBus
-            .DidNotReceive()
+        await bus.DidNotReceive()
             .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
     }
 
@@ -417,7 +416,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         return new DistributedSemaphoreProvider(
             _storage,
-            Substitute.For<IOutboxBus>(),
+            Substitute.For<IBus>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

@@ -8,9 +8,9 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 
 ## Key Features
 
-- `IQueue` enqueues directly to the configured queue transport.
-- `IOutboxQueue` persists messages first, then drains them through the configured queue transport.
-- `EnqueueOptions.Delay` schedules delayed outbox queue delivery.
+- `IQueue` is the only queue publisher; `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- Durable delivery persists messages first, then drains them through the configured queue transport.
+- `EnqueueOptions.Delay` schedules durable queue delivery.
 - Every queue enqueue carries `IntentType.Queue` through storage, tracing, dashboard projections, and consume context.
 
 ## Installation
@@ -22,20 +22,24 @@ dotnet add package Headless.Messaging.Queue.Abstractions
 ## Quick Start
 
 ```csharp
-public sealed class ImportJobs(IOutboxQueue queue)
+public sealed class ImportJobs(IQueue queue)
 {
     public Task EnqueueAsync(ImportRequested message, CancellationToken cancellationToken)
     {
-        return queue.EnqueueAsync(message, new EnqueueOptions { MessageName = "imports.requested" }, cancellationToken);
+        return queue.EnqueueAsync(
+            message,
+            new EnqueueOptions { MessageName = "imports.requested", DeliveryMode = DeliveryMode.Durable },
+            cancellationToken
+        );
     }
 }
 ```
 
-Use `IQueue` only when transport-direct, fire-and-forget delivery is acceptable. Use `IOutboxQueue` when the enqueue must survive process crashes or coordinate with an application transaction.
+Use `DeliveryMode.Durable` when the enqueue must survive process crashes, `TransportDirect` for explicit fire-and-forget delivery, or the default `Auto` to capture only in a compatible coordination boundary.
 
 ## Configuration
 
-None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`; without that provider, `IQueue` and `IOutboxQueue` are not registered.
+None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus queue transport and storage providers.
 
 ## Dependencies
 

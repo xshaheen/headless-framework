@@ -4,14 +4,18 @@ using Microsoft.AspNetCore.Mvc;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxBus producer) : Controller
+public class ValuesController(IBus producer) : Controller
 {
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
         await producer.PublishAsync(
             DateTime.UtcNow,
-            new PublishOptions { MessageName = "persistent://public/default/headlesstesttopic" }
+            new PublishOptions
+            {
+                MessageName = "persistent://public/default/headlesstesttopic",
+                DeliveryMode = DeliveryMode.Durable,
+            }
         );
 
         return Ok();
