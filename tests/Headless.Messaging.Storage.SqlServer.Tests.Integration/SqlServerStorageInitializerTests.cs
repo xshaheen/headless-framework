@@ -175,7 +175,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     )
     {
         // Pin every equality predicate before the NextRetryAt range so each lane gets an isolated seek.
-        const string schema = "index_shape_test";
+        var schema = $"index_shape_test_{Guid.NewGuid():N}";
         var initializer = _CreateInitializer(schema, useStorageLock: false);
 
         await initializer.InitializeAsync(AbortToken);
@@ -184,17 +184,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await connection.OpenAsync(AbortToken);
 
         var indexName = indexNamePattern.Replace("{schema}", schema, StringComparison.Ordinal);
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                DROP INDEX [{indexName}] ON [{schema}].[{table}];
-                CREATE NONCLUSTERED INDEX [{indexName}] ON [{schema}].[{table}] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
-                """,
-                cancellationToken: AbortToken
-            )
-        );
-        await initializer.InitializeAsync(AbortToken);
 
         await _AssertRetryIndexShapeAsync(connection, schema, table, indexName);
 
@@ -208,26 +197,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
-    public async Task should_serialize_concurrent_retry_index_repairs()
+    public async Task should_serialize_concurrent_fresh_initialization()
     {
-        const string schema = "concurrent_index_repair_test";
-        var initializer = _CreateInitializer(schema, useStorageLock: false);
-        await initializer.InitializeAsync(AbortToken);
-
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                DROP INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published];
-                CREATE NONCLUSTERED INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
-                DROP INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
-                CREATE NONCLUSTERED INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
-                """,
-                cancellationToken: AbortToken
-            )
-        );
+        var schema = $"concurrent_init_test_{Guid.NewGuid():N}";
 
         var initializationTasks = Enumerable
             .Range(0, 8)
@@ -235,6 +207,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             .ToArray();
 
         await Task.WhenAll(initializationTasks);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
 
         await _AssertRetryIndexShapeAsync(
             connection,
