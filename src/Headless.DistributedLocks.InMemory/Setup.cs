@@ -12,7 +12,7 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// This provider is not distributed and does not coordinate across application instances.
-/// Messaging is optional; when an <see cref="Headless.Messaging.IOutboxBus"/> registration exists before lock setup,
+/// Messaging is optional; when an <see cref="Headless.Messaging.IBus"/> registration exists before lock setup,
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]

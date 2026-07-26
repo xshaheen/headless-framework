@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,7 @@ public static class SetupInMemoryStorage
 
             services.AddSingleton<InMemoryDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<InMemoryDataStorage>());
+            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<InMemoryDataStorage>());
             services.AddSingleton<IStorageInitializer, InMemoryStorageInitializer>();
         }
     }

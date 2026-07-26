@@ -28,7 +28,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = storageId,
             Origin = message,
             Content = content,
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         // then
@@ -46,7 +46,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         // then
@@ -65,7 +65,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = addedTime,
         };
 
@@ -82,7 +82,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         // then
@@ -98,7 +98,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         // then
@@ -114,7 +114,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Owner = "node-a@7",
         };
 
@@ -134,7 +134,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ExpiresAt = expiresAt,
         };
 
@@ -151,7 +151,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         // then
@@ -167,7 +167,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Retries = 5,
         };
 
@@ -184,7 +184,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Retries = 0,
         };
 
@@ -204,7 +204,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var newAddedTime = DateTimeOffset.UtcNow;
 
@@ -224,7 +224,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
 

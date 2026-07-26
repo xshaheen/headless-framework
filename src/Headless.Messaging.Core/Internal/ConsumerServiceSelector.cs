@@ -119,7 +119,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 MessageNamePrefix = _messagingOptions.MessageNamePrefix,
                 Concurrency = consumer.Concurrency,
                 HandlerId = consumer.ResolvedHandlerId,
-                IntentType = consumer.IntentType,
+                Lane = consumer.Lane,
             };
 
             results.Add(descriptor);

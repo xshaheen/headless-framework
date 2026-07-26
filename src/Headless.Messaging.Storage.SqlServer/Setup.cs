@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Extensions.Configuration;
@@ -94,7 +95,9 @@ public static class SetupSqlServerMessaging
                 )
             );
             configureOptions(services);
-            services.AddSingleton<IDataStorage, SqlServerDataStorage>();
+            services.AddSingleton<SqlServerDataStorage>();
+            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<SqlServerDataStorage>());
+            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         }
     }

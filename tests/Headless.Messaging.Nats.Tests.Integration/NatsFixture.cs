@@ -171,7 +171,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
             options
         );
         var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool);
-        var consumer = new NatsConsumerClient(group, 1, options, services, intentType: _ToIntentType(lane));
+        var consumer = new NatsConsumerClient(group, 1, options, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
 
         try
@@ -212,11 +212,11 @@ public sealed class NatsFixture : HeadlessNatsFixture
         }
     }
 
-    private static IntentType _ToIntentType(MessageLane lane) =>
+    private static MessageLane _ToMessageLane(MessageLane lane) =>
         lane switch
         {
-            MessageLane.Bus => IntentType.Bus,
-            MessageLane.Queue => IntentType.Queue,
+            MessageLane.Bus => MessageLane.Bus,
+            MessageLane.Queue => MessageLane.Queue,
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
         };
 

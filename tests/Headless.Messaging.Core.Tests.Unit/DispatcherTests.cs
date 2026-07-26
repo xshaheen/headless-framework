@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Reflection;
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -7,6 +8,8 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Transactions;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -832,6 +835,182 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_accelerate_committed_message_without_waiting_for_public_dispatch_path()
+    {
+        var sender = new TestThreadSafeMessageSender();
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await using (dispatcher)
+        using (var cts = new CancellationTokenSource())
+        {
+            var message = _CreateTestMessage(_StorageGuid(1));
+            await dispatcher.StartAsync(cts.Token);
+
+            ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(message);
+
+            for (var attempt = 0; attempt < 100 && sender.Count != 1; attempt++)
+            {
+                await Task.Delay(10, AbortToken);
+            }
+            sender.ReceivedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
+            await cts.CancelAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_drop_committed_acceleration_after_shutdown_without_throwing()
+    {
+        var sender = new TestThreadSafeMessageSender();
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.DisposeAsync();
+
+        var act = () => ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(_CreateTestMessage());
+
+        act.Should().NotThrow("the committed row remains recoverable by the relay after shutdown");
+        sender.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_drop_standalone_delayed_acceleration_while_disposal_is_in_progress()
+    {
+        var flushStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFlush = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<DateTimeOffset?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+        _storage
+            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                flushStarted.TrySetResult();
+                return new ValueTask(releaseFlush.Task);
+            });
+        var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(_StorageGuid(1)),
+            DateTimeOffset.UtcNow.AddSeconds(30),
+            cancellationToken: AbortToken
+        );
+        var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(10), AbortToken).AsTask();
+        await flushStarted.Task.WaitAsync(AbortToken);
+        var delayed = _CreateTestMessage(_StorageGuid(2));
+        delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
+
+        var act = () => ((ICommittedDelayedMessageDispatcher)dispatcher).EnqueueCommittedDelayedMessage(delayed);
+
+        act.Should().NotThrow();
+        releaseFlush.TrySetResult();
+        await disposeTask;
+    }
+
+    [Fact]
+    public async Task should_drop_coordinated_delayed_acceleration_after_disposal()
+    {
+        var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());
+        await dispatcher.DisposeAsync();
+        var coordinator = new CommitCoordinator();
+        var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
+        var delayed = _CreateTestMessage(_StorageGuid(1));
+        delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        buffer.Add(delayed);
+        using var commitServices = _scopeFactory.CreateScope();
+
+        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_accept_multiple_concurrent_committed_publish_writers()
+    {
+        const int messageCount = 256;
+        var sender = new TestThreadSafeMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var committed = (ICommittedMessageDispatcher)dispatcher;
+
+        Parallel.For(0, messageCount, index => committed.EnqueueCommittedMessage(_CreateTestMessage(index + 1)));
+
+        await sender.WaitForCountAsync(messageCount, TimeSpan.FromSeconds(10), AbortToken);
+        sender.ReceivedMessages.Should().OnlyHaveUniqueItems(static message => message.StorageId);
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_return_from_committed_enqueue_before_a_synchronous_sender_unblocks()
+    {
+        using var sender = new SynchronouslyBlockingMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+
+        var enqueueTask = Task.Run(
+            () => ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(_CreateTestMessage()),
+            AbortToken
+        );
+
+        await sender.Entered.Task.WaitAsync(AbortToken);
+        var returnedBeforeRelease = enqueueTask.IsCompleted;
+        sender.Release();
+        await enqueueTask;
+
+        returnedBeforeRelease.Should().BeTrue("committed enqueue must not run the sender continuation inline");
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_return_from_commit_signal_before_a_synchronous_sender_unblocks()
+    {
+        using var sender = new SynchronouslyBlockingMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var coordinator = new CommitCoordinator();
+        var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
+        buffer.Add(_CreateTestMessage());
+        using var commitServices = _scopeFactory.CreateScope();
+
+        var commitTask = Task.Run(
+            async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider),
+            AbortToken
+        );
+
+        await sender.Entered.Task.WaitAsync(AbortToken);
+        var returnedBeforeRelease = commitTask.IsCompleted;
+        sender.Release();
+        await commitTask;
+
+        returnedBeforeRelease.Should().BeTrue("commit signaling must not run the sender continuation inline");
+        await cts.CancelAsync();
+    }
+
+    [Fact]
     public async Task should_unwind_as_cancellation_when_write_to_channel_post_dispose_with_full_channel()
     {
         // Companion to enqueue_after_dispose_*: the previous test only proves the early `_tasksCts is
@@ -1215,6 +1394,19 @@ public sealed class DispatcherTests : TestBase
         return _CreateTestMessage(_StorageGuid(storageId));
     }
 
+    private Dispatcher _CreateDispatcher(IMessageSender sender)
+    {
+        return new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+    }
+
     private static MediumMessage _CreateTestMessage(Guid? storageId = null)
     {
         var resolvedStorageId = storageId ?? Guid.NewGuid();
@@ -1229,13 +1421,43 @@ public sealed class DispatcherTests : TestBase
             StorageId = resolvedStorageId,
             Origin = message,
             Content = JsonSerializer.Serialize(message),
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 
     private static Guid _StorageGuid(int value)
     {
         return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
+
+    private sealed class SynchronouslyBlockingMessageSender : IMessageSender, IDisposable
+    {
+        private readonly ManualResetEventSlim _release = new(initialState: false);
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<OperateResult> SendAsync(MediumMessage message)
+        {
+            Entered.TrySetResult();
+            _release.Wait();
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
+        {
+            return SendAsync(message);
+        }
+
+        internal void Release()
+        {
+            _release.Set();
+        }
+
+        public void Dispose()
+        {
+            _release.Set();
+            _release.Dispose();
+        }
     }
 
     /// <summary>

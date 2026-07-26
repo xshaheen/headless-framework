@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.Extensions.Configuration;
@@ -97,7 +98,9 @@ public static class SetupPostgreSqlMessaging
                 )
             );
             configureOptions(services);
-            services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
+            services.AddSingleton<PostgreSqlDataStorage>();
+            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
+            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         }
     }

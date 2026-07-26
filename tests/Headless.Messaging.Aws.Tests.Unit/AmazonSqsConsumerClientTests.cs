@@ -115,7 +115,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             1,
             _CreateOptions(),
             logger,
-            IntentType.Queue
+            MessageLane.Queue
         );
 
         var sqsClient = Substitute.For<IAmazonSQS>();
@@ -138,7 +138,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             1,
             _CreateOptions(),
             logger,
-            IntentType.Queue
+            MessageLane.Queue
         );
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient

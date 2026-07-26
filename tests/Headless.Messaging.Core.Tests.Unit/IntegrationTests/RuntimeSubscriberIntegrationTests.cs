@@ -15,7 +15,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         await using var provider = await _CreateStartedProviderAsync();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
         var middlewareProbe = provider.GetRequiredService<RecordingConsumeMiddlewareProbe>();
         var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
 
@@ -27,7 +27,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("first"),
-            new PublishOptions { MessageName = "runtime.integration" },
+            new PublishOptions { MessageName = "runtime.integration", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -47,7 +47,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         await using var provider = await _CreateStartedProviderAsync();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
         var probe = provider.GetRequiredService<BlockingRuntimeProbe>();
 
         var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
@@ -58,7 +58,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("first"),
-            new PublishOptions { MessageName = "runtime.blocking" },
+            new PublishOptions { MessageName = "runtime.blocking", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -67,7 +67,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("second"),
-            new PublishOptions { MessageName = "runtime.blocking" },
+            new PublishOptions { MessageName = "runtime.blocking", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -85,7 +85,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         await using var provider = _CreateProvider(blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
         var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
 
         var bootstrapTask = bootstrapper.BootstrapAsync(AbortToken);
@@ -103,7 +103,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("mid-bootstrap"),
-            new PublishOptions { MessageName = "runtime.mid-bootstrap" },
+            new PublishOptions { MessageName = "runtime.mid-bootstrap", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 

@@ -145,7 +145,7 @@ internal sealed class MessageSender : IMessageSender
 
         var transport = selected.Transport!;
         var brokerAddress = transport.BrokerAddress;
-        var traceHandle = _TracingBefore(transportMsg, message.IntentType, brokerAddress);
+        var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
@@ -155,18 +155,18 @@ internal sealed class MessageSender : IMessageSender
         {
             result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            // Publish timeout / shutdown: stop (export) the span without an error status; the retry
-            // machinery above owns the failure classification. Rethrow unchanged.
-            traceHandle.Activity?.Dispose();
+            // Timeout or shutdown can race broker acceptance. Preserve cancellation semantics while
+            // recording the at-least-once duplicate window explicitly.
+            MessagingTelemetry.PublishAmbiguous(traceHandle.Activity, transportMsg, brokerAddress, ex, message.Lane);
             throw;
         }
         catch (Exception ex)
         {
             // A throwing send must stop the span and record messaging.publish.errors exactly like the
             // failed-OperateResult path below; the exception then propagates unchanged.
-            _TracingError(traceHandle, transportMsg, brokerAddress, OperateResult.Failed(ex));
+            _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, OperateResult.Failed(ex));
             throw;
         }
 
@@ -176,45 +176,50 @@ internal sealed class MessageSender : IMessageSender
             {
                 await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
-                // The transport send succeeded but the success-state write failed: stop (export) the span
-                // without an error status so it is never orphaned; the storage exception propagates unchanged
-                // and the retry machinery owns the failure classification.
-                traceHandle.Activity?.Dispose();
+                // Broker acceptance is known, but durable success-state persistence is not. A retry can
+                // therefore duplicate delivery, so surface the ambiguity before preserving the storage failure.
+                MessagingTelemetry.PublishAmbiguous(
+                    traceHandle.Activity,
+                    transportMsg,
+                    brokerAddress,
+                    ex,
+                    message.Lane
+                );
                 throw;
             }
 
-            _TracingAfter(traceHandle, transportMsg, brokerAddress);
+            _TracingAfter(traceHandle, transportMsg, message.Lane, brokerAddress);
 
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
-        _TracingError(traceHandle, transportMsg, brokerAddress, result);
+        _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, result);
 
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
     {
-        if (!Enum.IsDefined(message.IntentType))
+        if (!Enum.IsDefined(message.Lane))
         {
             var ex = new InvalidOperationException(
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                    $"Stored message {message.StorageId} has unsupported MessageLane value '{(short)message.Lane}'."
                 )
             );
-            await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+            await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));
         }
 
-        return message.IntentType switch
+        return message.Lane switch
         {
-            IntentType.Bus when _busTransport is not null => (_busTransport, null),
-            IntentType.Queue when _queueTransport is not null => (_queueTransport, null),
-            IntentType.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
-            IntentType.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
+            MessageLane.Bus when _busTransport is not null => (_busTransport, null),
+            MessageLane.Queue when _queueTransport is not null => (_queueTransport, null),
+            MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
+            MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
             _ => throw new UnreachableException(),
         };
     }
@@ -227,11 +232,11 @@ internal sealed class MessageSender : IMessageSender
         var ex = new InvalidOperationException(
             $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
         );
-        await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+        await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
         return (null, OperateResult.Failed(ex));
     }
 
-    private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
+    private async Task _MarkMissingLaneTransportFailedAsync(MediumMessage message, Exception ex)
     {
         var originalInlineAttempts = message.InlineAttempts;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
@@ -249,7 +254,7 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
 
-        _logger.StoredMessageUnsupportedIntent(ex, message.StorageId, message.IntentType.ToString("D"));
+        _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
     }
 
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
@@ -522,7 +527,7 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private MessagingTraceHandle _TracingBefore(TransportMessage message, IntentType intentType, BrokerAddress broker)
+    private MessagingTraceHandle _TracingBefore(TransportMessage message, MessageLane lane, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -532,12 +537,17 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.PublishStart(message, intentType, broker, now);
+        var activity = _telemetry.PublishStart(message, lane, broker, now);
 
         return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(MessagingTraceHandle traceHandle, TransportMessage message, BrokerAddress broker)
+    private void _TracingAfter(
+        MessagingTraceHandle traceHandle,
+        TransportMessage message,
+        MessageLane lane,
+        BrokerAddress broker
+    )
     {
         if (!traceHandle.IsRecording)
         {
@@ -545,12 +555,20 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        MessagingTelemetry.PublishStop(traceHandle.Activity, message, broker, traceHandle.StartTimestampMs!.Value, now);
+        MessagingTelemetry.PublishStop(
+            traceHandle.Activity,
+            message,
+            broker,
+            traceHandle.StartTimestampMs!.Value,
+            now,
+            lane
+        );
     }
 
     private static void _TracingError(
         MessagingTraceHandle traceHandle,
         TransportMessage message,
+        MessageLane lane,
         BrokerAddress broker,
         OperateResult result
     )
@@ -561,7 +579,7 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-        MessagingTelemetry.PublishError(traceHandle.Activity, message, broker, ex);
+        MessagingTelemetry.PublishError(traceHandle.Activity, message, broker, ex, lane);
     }
 
     #endregion

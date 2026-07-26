@@ -22,13 +22,13 @@ public sealed class PulsarConsumerClientTests : TestBase
     [Fact]
     public void should_use_group_for_bus_intent_when_get_subscription_name()
     {
-        PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Bus).Should().Be("payments");
+        PulsarConsumerClient.GetSubscriptionName("payments", MessageLane.Bus).Should().Be("payments");
     }
 
     [Fact]
     public void should_use_shared_subscription_for_queue_intent_when_get_subscription_name()
     {
-        PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Queue).Should().Be("headless-queue");
+        PulsarConsumerClient.GetSubscriptionName("payments", MessageLane.Queue).Should().Be("headless-queue");
     }
 
     [Fact]

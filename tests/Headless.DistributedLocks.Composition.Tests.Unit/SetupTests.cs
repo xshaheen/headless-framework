@@ -24,7 +24,7 @@ public sealed class SetupTests : TestBase
 
         // then
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        provider.GetService<IOutboxBus>().Should().BeNull();
+        provider.GetService<IBus>().Should().BeNull();
         // Auto-registration is unconditional. The lock-release consumer descriptor is present even
         // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
         // so waiters fall back to polling.
@@ -38,7 +38,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddSingleton(Substitute.For<IBus>());
 
         // when — register the lock provider BEFORE AddHeadlessMessaging.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
@@ -53,7 +53,7 @@ public sealed class SetupTests : TestBase
         var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
         metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.Concurrency.Should().Be(1);
     }
 
@@ -63,7 +63,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddSingleton(Substitute.For<IBus>());
 
         // when — the provider registers both lock and semaphore; they share one consumer via the
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
@@ -103,7 +103,7 @@ public sealed class SetupTests : TestBase
             .Should()
             .ContainSingle(metadata =>
                 metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
-                && metadata.IntentType == IntentType.Bus
+                && metadata.Lane == MessageLane.Bus
             );
     }
 

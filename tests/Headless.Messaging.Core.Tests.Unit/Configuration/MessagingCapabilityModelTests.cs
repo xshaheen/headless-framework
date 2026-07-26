@@ -274,8 +274,13 @@ public sealed class MessagingCapabilityModelTests : TestBase
         });
 
         await using var provider = services.BuildServiceProvider();
-        var outbox = provider.GetRequiredService<IOutboxBus>();
-        var act = () => outbox.PublishAsync(new SharedContract(), cancellationToken: AbortToken);
+        var bus = provider.GetRequiredService<IBus>();
+        var act = () =>
+            bus.PublishAsync(
+                new SharedContract(),
+                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                AbortToken
+            );
 
         await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*storage*capabilit*");
         storageFactoryCalls.Should().Be(0);
@@ -309,18 +314,18 @@ public sealed class MessagingCapabilityModelTests : TestBase
         {
             MessageLane.Bus => () =>
                 provider
-                    .GetRequiredService<IOutboxBus>()
+                    .GetRequiredService<IBus>()
                     .PublishAsync(
                         new SharedContract(),
-                        new PublishOptions { Delay = TimeSpan.FromSeconds(1) },
+                        new PublishOptions { Delay = TimeSpan.FromSeconds(1), DeliveryMode = DeliveryMode.Durable },
                         AbortToken
                     ),
             MessageLane.Queue => () =>
                 provider
-                    .GetRequiredService<IOutboxQueue>()
+                    .GetRequiredService<IQueue>()
                     .EnqueueAsync(
                         new SharedContract(),
-                        new EnqueueOptions { Delay = TimeSpan.FromSeconds(1) },
+                        new EnqueueOptions { Delay = TimeSpan.FromSeconds(1), DeliveryMode = DeliveryMode.Durable },
                         AbortToken
                     ),
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, "Unknown messaging lane."),

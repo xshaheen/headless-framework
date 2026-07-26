@@ -3,8 +3,8 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a broadcast (bus) publish operation with explicit message name, correlation, custom header,
-/// and (for outbox-backed publishes) delivery-delay overrides.
+/// Configures a broadcast (bus) publish operation with delivery behavior, explicit message name,
+/// correlation, custom headers, and an optional delivery delay.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,38 +21,4 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record PublishOptions : MessageOptions
-{
-    /// <summary>
-    /// Gets the delay applied before the persisted message is dispatched.
-    /// </summary>
-    /// <remarks>
-    /// Honored only by outbox-backed bus publishers. Ignored by fire-and-forget publishers.
-    /// </remarks>
-    public TimeSpan? Delay { get; init; }
-
-    /// <summary>
-    /// Determines whether the specified <see cref="PublishOptions"/> equals this instance using
-    /// value semantics across every scalar field plus structural comparison on <see cref="Headers"/>.
-    /// </summary>
-    public bool Equals(PublishOptions? other)
-    {
-        if (other is null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(this, other))
-        {
-            return true;
-        }
-
-        return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
-    }
-
-    /// <summary>Returns the hash code for this instance using structural <see cref="Headers"/> hashing.</summary>
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(base.GetHashCode(), Delay);
-    }
-}
+public sealed record PublishOptions : MessageOptions;

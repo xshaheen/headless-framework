@@ -58,7 +58,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             var message = _CreateTransportMessage("orders.placed");
             message.Headers.Should().NotContainKey("traceparent");
 
-            var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+            var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
 
             // Metrics-only: no messaging trace listener, so no span is started — the relay path is taken.
             publish.Should().BeNull();
@@ -106,7 +106,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
                     ["baggage"] = "tenant=t-42",
                 }
             );
-            var consume = telemetry.ConsumeStart(consumed, IntentType.Queue, _Broker, 100);
+            var consume = telemetry.ConsumeStart(consumed, MessageLane.Queue, _Broker, 100);
             consume.Should().BeNull();
 
             // The handler publishes a fresh message with no trace context of its own, and there is no ambient
@@ -115,7 +115,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             var outgoing = _CreateTransportMessage("orders.shipped");
             outgoing.Headers.Should().NotContainKey("traceparent");
 
-            var publish = telemetry.PublishStart(outgoing, IntentType.Bus, _Broker, 200);
+            var publish = telemetry.PublishStart(outgoing, MessageLane.Bus, _Broker, 200);
 
             publish.Should().BeNull();
             outgoing.Headers.Should().ContainKey("traceparent");
@@ -158,7 +158,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             var subscriber = telemetry.SubscriberInvokeStart(
                 invokeMessage,
                 invokeMessage.Name,
-                IntentType.Bus,
+                MessageLane.Bus,
                 _Method,
                 retryCount: 0,
                 100
@@ -166,7 +166,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             subscriber.Should().BeNull();
 
             var outgoing = _CreateTransportMessage("orders.shipped");
-            var publish = telemetry.PublishStart(outgoing, IntentType.Bus, _Broker, 200);
+            var publish = telemetry.PublishStart(outgoing, MessageLane.Bus, _Broker, 200);
 
             publish.Should().BeNull();
             outgoing.Headers.Should().ContainKey("traceparent");
@@ -202,7 +202,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             var message = _CreateMessage("orders.placed");
             message.Headers.Should().NotContainKey("traceparent");
 
-            var persist = telemetry.PersistStart(message, message.Name, IntentType.Bus, 100);
+            var persist = telemetry.PersistStart(message, message.Name, MessageLane.Bus, 100);
 
             persist.Should().BeNull();
             message.Headers.Should().ContainKey("traceparent");
@@ -232,7 +232,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             Activity.Current.Should().BeNull();
 
             var message = _CreateTransportMessage("orders.placed");
-            var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+            var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
 
             publish.Should().BeNull();
             message.Headers.Should().NotContainKey("traceparent");
@@ -273,7 +273,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             }
         );
 
-        var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
 
         publish.Should().NotBeNull();
         publish!.TraceId.Should().Be(traceId); // continues the incoming trace

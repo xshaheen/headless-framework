@@ -8,7 +8,7 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxQueue producer, IServiceProvider services) : Controller
+public class ValuesController(IQueue producer, IServiceProvider services) : Controller
 {
     private const string _MessageName = "sample.kafka.postgrsql";
 
@@ -33,7 +33,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = _MessageName }
+            new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable }
         );
 
         return Ok();
@@ -44,7 +44,12 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new EnqueueOptions
+            {
+                MessageName = _MessageName,
+                Delay = TimeSpan.FromSeconds(delaySeconds),
+                DeliveryMode = DeliveryMode.Durable,
+            }
         );
 
         return Ok();
@@ -84,7 +89,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
             await producer.EnqueueAsync(
                 new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { MessageName = _MessageName },
+                new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                 ct
             );
 
@@ -116,7 +121,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions { MessageName = _MessageName },
+                    new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                     ct
                 );
             },
@@ -149,7 +154,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                     await producer.EnqueueAsync(
                         new KafkaMessage(DateTime.UtcNow),
-                        new EnqueueOptions { MessageName = _MessageName },
+                        new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                         ct
                     );
 
@@ -186,7 +191,12 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
+                    new EnqueueOptions
+                    {
+                        MessageName = _MessageName,
+                        Delay = TimeSpan.FromSeconds(delaySeconds),
+                        DeliveryMode = DeliveryMode.Durable,
+                    },
                     ct
                 );
             },

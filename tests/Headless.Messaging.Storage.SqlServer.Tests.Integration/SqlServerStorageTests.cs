@@ -104,7 +104,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     protected override async Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
         IDataStorage storage,
         bool published,
-        short rawIntentType,
+        short rawLane,
         DateTimeOffset nextRetryAt,
         CancellationToken cancellationToken
     )
@@ -131,7 +131,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 {
                     Id = id,
                     Content = content,
-                    IntentType = rawIntentType,
+                    IntentType = rawLane,
                     Added = TimeProvider.GetUtcNow(),
                     NextRetryAt = nextRetryAt,
                     LockedUntil = nextRetryAt,
@@ -155,7 +155,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         var tableName = published ? "Published" : "Received";
         var exceptionInfo = published ? "CAST(NULL AS nvarchar(max))" : "ExceptionInfo";
         var sql = $"""
-            SELECT IntentType AS RawIntentType, StatusName, ExpiresAt, NextRetryAt, LockedUntil, Owner,
+            SELECT IntentType AS RawLane, StatusName, ExpiresAt, NextRetryAt, LockedUntil, Owner,
                    {exceptionInfo} AS ExceptionInfo
             FROM messaging.{tableName}
             WHERE Id=@Id;
@@ -289,6 +289,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        return base.should_store_scheduled_message_with_atomic_not_before_state();
+    }
+
+    [Fact]
     public override Task should_store_published_message_with_non_numeric_message_id()
     {
         return base.should_store_published_message_with_non_numeric_message_id();
@@ -367,15 +373,15 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_published_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+        return base.should_preserve_unsupported_lane_without_starving_published_retry();
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_received_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
+        return base.should_preserve_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]
@@ -448,6 +454,63 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_store_message_with_transaction()
     {
         return base.should_store_message_with_transaction();
+    }
+
+    [Fact]
+    public async Task should_commit_scheduled_message_and_not_before_state_in_one_transaction()
+    {
+        var storage = GetStorage();
+        var publishAt = TimeProvider.System.GetUtcNow().AddMinutes(30);
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-transaction-commit",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            publishAt,
+            transaction,
+            AbortToken
+        );
+        await transaction.CommitAsync(AbortToken);
+
+        var retrieved = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        retrieved.Should().NotBeNull();
+        retrieved!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        retrieved.NextRetryAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_rollback_scheduled_message_and_not_before_state_together()
+    {
+        var storage = GetStorage();
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-transaction-rollback",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            TimeProvider.System.GetUtcNow().AddMinutes(30),
+            transaction,
+            AbortToken
+        );
+        await transaction.RollbackAsync(AbortToken);
+
+        var retrieved = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        retrieved.Should().BeNull();
     }
 
     [Fact]
@@ -791,6 +854,233 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // then
         monitoringApi.Should().BeOfType<SqlServerMonitoringApi>();
         await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_skip_unknown_lane_without_starving_concurrent_lane_claims(string tableName)
+    {
+        var busStorage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 1 });
+        var queueStorage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 1 });
+        var serializer = GetSerializer();
+        var now = TimeProvider.GetUtcNow();
+        var published = string.Equals(tableName, "Published", StringComparison.Ordinal);
+        var unknownId = (
+            await SeedUnsupportedLaneRetryRowAsync(
+                busStorage,
+                published,
+                rawLane: 77,
+                nextRetryAt: now.AddMinutes(-5),
+                AbortToken
+            )
+        )!.Value;
+        var betweenUnknownId = (
+            await SeedUnsupportedLaneRetryRowAsync(
+                busStorage,
+                published,
+                rawLane: 78,
+                nextRetryAt: now.AddMinutes(-3).AddSeconds(-30),
+                AbortToken
+            )
+        )!.Value;
+        var busId = Guid.NewGuid();
+        var queueId = Guid.NewGuid();
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                busId,
+                serializer.Serialize(CreateMessage("healthy-bus-retry")),
+                now.AddMinutes(-4),
+                rawLane: 0
+            );
+            await _InsertHealthyRetryRowAsync(
+                connection,
+                tableName,
+                queueId,
+                serializer.Serialize(CreateMessage("healthy-queue-retry")),
+                now.AddMinutes(-3),
+                rawLane: 1
+            );
+        }
+
+        var unknownBefore = await GetPersistedPoisonRetryStateAsync(busStorage, published, unknownId, AbortToken);
+        var betweenUnknownBefore = await GetPersistedPoisonRetryStateAsync(
+            busStorage,
+            published,
+            betweenUnknownId,
+            AbortToken
+        );
+
+        var claims = await Task.WhenAll(
+            _ClaimRetryAsync(busStorage, published, MessageLane.Bus),
+            _ClaimRetryAsync(queueStorage, published, MessageLane.Queue)
+        );
+
+        claims[0].Select(message => message.StorageId).Should().Equal(busId);
+        claims[1].Select(message => message.StorageId).Should().Equal(queueId);
+        var unknownAfter = await GetPersistedPoisonRetryStateAsync(busStorage, published, unknownId, AbortToken);
+        unknownAfter.Should().Be(unknownBefore, "automatic pickup must not mutate unknown lanes");
+        var betweenUnknownAfter = await GetPersistedPoisonRetryStateAsync(
+            busStorage,
+            published,
+            betweenUnknownId,
+            AbortToken
+        );
+        betweenUnknownAfter
+            .Should()
+            .Be(betweenUnknownBefore, "unknown lanes between valid rows must not consume claim capacity or be mutated");
+
+        await using (var repairConnection = new SqlConnection(fixture.ConnectionString))
+        {
+            await repairConnection.OpenAsync(AbortToken);
+            await repairConnection.ExecuteAsync(
+                $"UPDATE messaging.{tableName} SET IntentType = 1, LockedUntil = NULL, Owner = NULL WHERE Id = @Id",
+                new { Id = unknownId }
+            );
+        }
+
+        var repaired = await _ClaimRetryAsync(queueStorage, published, MessageLane.Queue);
+        repaired.Select(message => message.StorageId).Should().Equal(unknownId);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_not_reclaim_dead_owner_lease_on_unknown_lane_rows(bool published)
+    {
+        const string deadOwner = "stale-unsupported-lane-owner";
+        var storage = GetStorage();
+        var id = (
+            await SeedUnsupportedLaneRetryRowAsync(
+                storage,
+                published,
+                rawLane: 77,
+                nextRetryAt: TimeProvider.GetUtcNow().AddMinutes(5),
+                AbortToken
+            )
+        )!.Value;
+        var before = await GetPersistedPoisonRetryStateAsync(storage, published, id, AbortToken);
+
+        var reclaimed = published
+            ? await storage.ReclaimDeadPublishedOwnersAsync([deadOwner], AbortToken)
+            : await storage.ReclaimDeadReceivedOwnersAsync([deadOwner], AbortToken);
+
+        reclaimed.Should().Be(0);
+        (await GetPersistedPoisonRetryStateAsync(storage, published, id, AbortToken))
+            .Should()
+            .Be(before, "automatic reclaim must not mutate unknown lanes");
+    }
+
+    [Fact]
+    public async Task should_preserve_unknown_lanes_during_expiry_and_delayed_maintenance()
+    {
+        var storage = _CreateStorage(new MessagingOptions { Version = "v1", SchedulerBatchSize = 2 });
+        var serializer = GetSerializer();
+        var now = TimeProvider.GetUtcNow();
+        var unknownExpiredId = Guid.NewGuid();
+        var unknownDelayedId = Guid.NewGuid();
+        var unknownQueuedId = Guid.NewGuid();
+        var validDelayedId = Guid.NewGuid();
+        var validQueuedId = Guid.NewGuid();
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await _InsertPublishedRowAsync(
+                connection,
+                unknownExpiredId,
+                serializer.Serialize(CreateMessage("unknown-expired")),
+                StatusName.Failed,
+                expiresAt: now.AddHours(-2),
+                nextRetryAt: null,
+                rawLane: 70
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                unknownDelayedId,
+                serializer.Serialize(CreateMessage("unknown-delayed")),
+                StatusName.Delayed,
+                expiresAt: now.AddMinutes(-30),
+                nextRetryAt: null,
+                rawLane: 71
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                unknownQueuedId,
+                serializer.Serialize(CreateMessage("unknown-queued")),
+                StatusName.Queued,
+                expiresAt: now.AddMinutes(-20),
+                nextRetryAt: null,
+                rawLane: 72
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                validDelayedId,
+                serializer.Serialize(CreateMessage("valid-delayed")),
+                StatusName.Delayed,
+                expiresAt: now.AddMinutes(-10),
+                nextRetryAt: null,
+                rawLane: 0
+            );
+            await _InsertPublishedRowAsync(
+                connection,
+                validQueuedId,
+                serializer.Serialize(CreateMessage("valid-queued")),
+                StatusName.Queued,
+                expiresAt: now.AddMinutes(-5),
+                nextRetryAt: null,
+                rawLane: 1
+            );
+        }
+
+        var scheduled = new List<MediumMessage>();
+        await storage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                scheduled.AddRange(messages);
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+        var claimed = await storage.ClaimDelayedMessagesAsync(AbortToken);
+        var deleted = await storage.DeleteExpiresAsync(
+            "messaging.Published",
+            now.AddHours(-1),
+            batchCount: 10,
+            AbortToken
+        );
+
+        scheduled.Select(message => message.StorageId).Should().BeEquivalentTo([validDelayedId, validQueuedId]);
+        claimed.Select(message => message.StorageId).Should().BeEquivalentTo([validDelayedId, validQueuedId]);
+        deleted.Should().Be(0);
+
+        await using var assertConnection = new SqlConnection(fixture.ConnectionString);
+        var unknownRows = (
+            await assertConnection.QueryAsync<(
+                Guid Id,
+                short IntentType,
+                string StatusName,
+                DateTimeOffset? LockedUntil
+            )>(
+                """
+                SELECT Id, IntentType, StatusName, LockedUntil
+                FROM messaging.Published
+                WHERE Id IN @Ids
+                ORDER BY Id;
+                """,
+                new { Ids = new[] { unknownExpiredId, unknownDelayedId, unknownQueuedId } }
+            )
+        ).ToList();
+        unknownRows.Should().HaveCount(3);
+        unknownRows.Should().AllSatisfy(row => row.LockedUntil.Should().BeNull());
+        unknownRows.Single(row => row.Id == unknownExpiredId).IntentType.Should().Be(70);
+        unknownRows.Single(row => row.Id == unknownDelayedId).StatusName.Should().Be(nameof(StatusName.Delayed));
+        unknownRows.Single(row => row.Id == unknownQueuedId).StatusName.Should().Be(nameof(StatusName.Queued));
     }
 
     [Theory]
@@ -1255,7 +1545,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         string content,
         StatusName statusName,
         DateTimeOffset? expiresAt,
-        DateTimeOffset? nextRetryAt
+        DateTimeOffset? nextRetryAt,
+        short rawLane = 0
     )
     {
         return connection.ExecuteAsync(
@@ -1263,7 +1554,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             INSERT INTO messaging.Published
                 (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
             VALUES
-                (@Id, 'v1', 'sql-provider-test', @Content, 0, 0, @Now, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
+                (@Id, 'v1', 'sql-provider-test', @Content, @IntentType, 0, @Now, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
             """,
             new
             {
@@ -1272,6 +1563,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 Now = DateTimeOffset.UtcNow,
                 ExpiresAt = expiresAt,
                 NextRetryAt = nextRetryAt,
+                IntentType = rawLane,
                 StatusName = statusName.ToString("G"),
                 MessageId = $"sql-{id:N}",
             }
@@ -1283,7 +1575,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         string tableName,
         Guid id,
         string content,
-        DateTimeOffset now
+        DateTimeOffset nextRetryAt,
+        short rawLane = 0
     )
     {
         if (string.Equals(tableName, "Published", StringComparison.Ordinal))
@@ -1293,14 +1586,15 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                 INSERT INTO messaging.Published
                     (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
                 VALUES
-                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                    (@Id, 'v1', 'healthy-published', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
                 """,
                 new
                 {
                     Id = id,
                     Content = content,
-                    Now = now,
-                    NextRetryAt = now.AddMinutes(-1),
+                    Now = nextRetryAt,
+                    NextRetryAt = nextRetryAt,
+                    IntentType = rawLane,
                     MessageId = $"healthy-{id:N}",
                 }
             );
@@ -1311,17 +1605,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             INSERT INTO messaging.Received
                 (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
             VALUES
-                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
             """,
             new
             {
                 Id = id,
                 Content = content,
-                Now = now,
-                NextRetryAt = now.AddMinutes(-1),
+                Now = nextRetryAt,
+                NextRetryAt = nextRetryAt,
+                IntentType = rawLane,
                 MessageId = $"healthy-{id:N}",
             }
         );
+    }
+
+    private static async Task<IReadOnlyList<MediumMessage>> _ClaimRetryAsync(
+        IDataStorage storage,
+        bool published,
+        MessageLane lane
+    )
+    {
+        var messages = published
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
+        return messages.ToList();
     }
 
     #endregion

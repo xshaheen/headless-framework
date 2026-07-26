@@ -69,7 +69,7 @@ public class ConsumeDispatchBenchmarks
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(ConsumeDispatchBenchmarks).GetMethod(
                 nameof(ExecuteDispatch),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -98,7 +98,7 @@ public class ConsumeDispatchBenchmarks
                 StorageId = Guid.NewGuid(),
                 Origin = origin,
                 Content = "{}",
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 Added = DateTimeOffset.UtcNow,
             }
         );

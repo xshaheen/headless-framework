@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Primitives;
@@ -12,7 +13,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            storage.PublishedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.PublishedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane)
+                ? (MediumMessage?)message
+                : null
         );
     }
 
@@ -26,7 +29,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var id in storageIds)
         {
-            if (storage.PublishedMessages.TryGetValue(id, out var message))
+            if (storage.PublishedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane))
             {
                 result.Add(message);
             }
@@ -39,7 +42,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            storage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.ReceivedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane)
+                ? (MediumMessage?)message
+                : null
         );
     }
 
@@ -53,7 +58,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var id in storageIds)
         {
-            if (storage.ReceivedMessages.TryGetValue(id, out var message))
+            if (storage.ReceivedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane))
             {
                 result.Add(message);
             }
@@ -75,6 +80,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         // dictionary up to 4× per side; this collapses it to 1×.
         foreach (var msg in storage.PublishedMessages.Values)
         {
+            if (!_IsRecognizedLane(msg.Lane))
+            {
+                continue;
+            }
+
             switch (msg.StatusName)
             {
                 case StatusName.Succeeded:
@@ -100,6 +110,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var msg in storage.ReceivedMessages.Values)
         {
+            if (!_IsRecognizedLane(msg.Lane))
+            {
+                continue;
+            }
+
             switch (msg.StatusName)
             {
                 case StatusName.Succeeded:
@@ -157,7 +172,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         if (query.MessageType == MessageType.Publish)
         {
-            var expression = storage.PublishedMessages.Values.Where(x => true);
+            var expression = storage.PublishedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
 
             if (query.StatusName is not null)
             {
@@ -174,9 +189,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
-            if (query.IntentType is { } intentType)
+            if (query.Lane is { } lane)
             {
-                expression = expression.Where(x => x.IntentType == intentType);
+                expression = expression.Where(x => x.Lane == lane);
             }
 
             var offset = query.CurrentPage * query.PageSize;
@@ -188,20 +203,26 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             var pageItems = filtered
                 .Skip(offset)
                 .Take(size)
-                .Select(x => new MessageView
+                .Select(x =>
                 {
-                    Added = x.Added,
-                    StorageId = x.StorageId,
-                    MessageId = x.Origin.Id,
-                    Version = "N/A",
-                    Content = x.Content,
-                    IntentType = x.IntentType,
-                    ExpiresAt = x.ExpiresAt,
-                    Name = x.Name,
-                    Retries = x.Retries,
-                    StatusName = x.StatusName,
-                    NextRetryAt = x.NextRetryAt,
-                    LockedUntil = x.LockedUntil,
+                    var delivery = DeliveryMetadata.ReadStoredHeaders(x.Origin.Headers);
+                    return new MessageView
+                    {
+                        Added = x.Added,
+                        StorageId = x.StorageId,
+                        MessageId = x.Origin.Id,
+                        Version = "N/A",
+                        Content = x.Content,
+                        Lane = x.Lane,
+                        RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+                        ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
+                        ExpiresAt = x.ExpiresAt,
+                        Name = x.Name,
+                        Retries = x.Retries,
+                        StatusName = x.StatusName,
+                        NextRetryAt = x.NextRetryAt,
+                        LockedUntil = x.LockedUntil,
+                    };
                 })
                 .ToList();
 
@@ -211,7 +232,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
         else
         {
-            var expression = storage.ReceivedMessages.Values.Where(x => true);
+            var expression = storage.ReceivedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
 
             if (query.StatusName is not null)
             {
@@ -235,9 +256,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
-            if (query.IntentType is { } intentType)
+            if (query.Lane is { } lane)
             {
-                expression = expression.Where(x => x.IntentType == intentType);
+                expression = expression.Where(x => x.Lane == lane);
             }
 
             var offset = query.CurrentPage * query.PageSize;
@@ -247,21 +268,27 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             var pageItems = filtered
                 .Skip(offset)
                 .Take(size)
-                .Select(x => new MessageView
+                .Select(x =>
                 {
-                    Added = x.Added,
-                    Group = x.Group,
-                    StorageId = x.StorageId,
-                    MessageId = x.Origin.Id,
-                    Version = "N/A",
-                    Content = x.Content,
-                    IntentType = x.IntentType,
-                    ExpiresAt = x.ExpiresAt,
-                    Name = x.Name,
-                    Retries = x.Retries,
-                    StatusName = x.StatusName,
-                    NextRetryAt = x.NextRetryAt,
-                    LockedUntil = x.LockedUntil,
+                    var delivery = DeliveryMetadata.ReadStoredHeaders(x.Origin.Headers);
+                    return new MessageView
+                    {
+                        Added = x.Added,
+                        Group = x.Group,
+                        StorageId = x.StorageId,
+                        MessageId = x.Origin.Id,
+                        Version = "N/A",
+                        Content = x.Content,
+                        Lane = x.Lane,
+                        RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+                        ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
+                        ExpiresAt = x.ExpiresAt,
+                        Name = x.Name,
+                        Retries = x.Retries,
+                        StatusName = x.StatusName,
+                        NextRetryAt = x.NextRetryAt,
+                        LockedUntil = x.LockedUntil,
+                    };
                 })
                 .ToList();
 
@@ -271,28 +298,85 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
     }
 
+    public ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var currentPage = Math.Max(query.CurrentPage, 1);
+        var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
+        var source = query.MessageType switch
+        {
+            MessageType.Publish => storage.PublishedMessages.Values,
+            MessageType.Subscribe => storage.ReceivedMessages.Values,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(query),
+                query.MessageType,
+                "Unknown-lane diagnostics require Publish or Subscribe."
+            ),
+        };
+        var unknown = source
+            .Where(message => message.Lane is not (MessageLane.Bus or MessageLane.Queue))
+            .OrderBy(message => message.Added)
+            .ThenBy(message => message.StorageId)
+            .ToList();
+        var offset = (long)(currentPage - 1) * pageSize;
+        var pageRows = offset >= unknown.Count ? [] : unknown.Skip((int)offset).Take(pageSize);
+        var items = pageRows
+            .Select(message => new UnknownLaneMessageView
+            {
+                StorageId = message.StorageId,
+                MessageType = query.MessageType,
+                RawLane = (short)message.Lane,
+                Name = message.Name,
+                StatusName = message.StatusName,
+                Added = message.Added,
+                NextRetryAt = message.NextRetryAt,
+                LockedUntil = message.LockedUntil,
+            })
+            .ToList();
+
+        return ValueTask.FromResult(
+            new IndexPage<UnknownLaneMessageView>(items, currentPage - 1, pageSize, unknown.Count)
+        );
+    }
+
     public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
+        return new ValueTask<long>(
+            storage.PublishedMessages.Values.Count(x => _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Failed)
+        );
     }
 
     public ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
+        return new ValueTask<long>(
+            storage.PublishedMessages.Values.Count(x =>
+                _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Succeeded
+            )
+        );
     }
 
     public ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
+        return new ValueTask<long>(
+            storage.ReceivedMessages.Values.Count(x => _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Failed)
+        );
     }
 
     public ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
+        return new ValueTask<long>(
+            storage.ReceivedMessages.Values.Count(x =>
+                _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Succeeded
+            )
+        );
     }
 
     private ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> _GetHourlyTimelineStats(
@@ -316,7 +400,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var message in messages)
         {
-            if (message.StatusName != statusName)
+            if (!_IsRecognizedLane(message.Lane) || message.StatusName != statusName)
             {
                 continue;
             }
@@ -330,5 +414,10 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
 
         return ValueTask.FromResult<IReadOnlyDictionary<DateTimeOffset, int>>(result);
+    }
+
+    private static bool _IsRecognizedLane(MessageLane lane)
+    {
+        return lane is MessageLane.Bus or MessageLane.Queue;
     }
 }

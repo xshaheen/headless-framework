@@ -9,10 +9,10 @@ Defines the stable message envelope, consume context, consumer contract, publish
 ## Key Features
 
 - `IConsume<TMessage>` with `ConsumeContext<TMessage>` for type-safe handlers.
-- `IntentType` for broadcast bus versus point-to-point queue delivery.
+- `MessageLane` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
-- Intent-specific publisher contracts: `IBus`, `IQueue`, `IOutboxBus`, and `IOutboxQueue`.
+- Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
 
 ## Installation
 
@@ -31,7 +31,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
             "Processing {OrderId} from {MessageName} with {Intent}",
             context.Message.OrderId,
             context.MessageName,
-            context.IntentType
+            context.Lane
         );
 
         return ValueTask.CompletedTask;
@@ -40,6 +40,8 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 ```
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
+
+`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. `Durable` always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay`.
 
 ## Callbacks
 

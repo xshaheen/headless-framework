@@ -54,7 +54,7 @@ public class DelayedSchedulingBenchmarks
                         StorageId = Guid.Empty,
                         Origin = origin,
                         Content = string.Empty,
-                        IntentType = IntentType.Bus,
+                        Lane = MessageLane.Bus,
                         ExpiresAt = expiresAt,
                     }
                 )

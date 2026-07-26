@@ -36,13 +36,19 @@ internal sealed partial class SqlServerDataStorage
             WITH DelayedCandidates AS (
                 SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
                 FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = @DelayedStatusName AND ExpiresAt < @TwoMinutesLater
+                WHERE Version = @Version
+                  AND IntentType IN (0, 1)
+                  AND StatusName = @DelayedStatusName
+                  AND ExpiresAt < @TwoMinutesLater
                 ORDER BY ExpiresAt, Id
             ),
             QueuedCandidates AS (
                 SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
                 FROM {_publishedTable} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = @QueuedStatusName AND ExpiresAt < @OneMinutesAgo
+                WHERE Version = @Version
+                  AND IntentType IN (0, 1)
+                  AND StatusName = @QueuedStatusName
+                  AND ExpiresAt < @OneMinutesAgo
                 ORDER BY ExpiresAt, Id
             ),
             Candidates AS (
@@ -88,7 +94,7 @@ internal sealed partial class SqlServerDataStorage
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
@@ -145,6 +151,7 @@ internal sealed partial class SqlServerDataStorage
                 SELECT TOP (@BatchSize) Id
                 FROM {_publishedTable} WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Version=@Version
+                  AND IntentType IN (0, 1)
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
                   AND (
                       (StatusName=@DelayedStatusName AND ExpiresAt < @TwoMinutesLater)
@@ -169,7 +176,8 @@ internal sealed partial class SqlServerDataStorage
                    inserted.LockedUntil,inserted.Owner
             FROM {_publishedTable} AS target
             INNER JOIN Candidates ON target.Id=Candidates.Id
-            WHERE (target.LockedUntil IS NULL OR target.LockedUntil <= @ClaimNow)
+            WHERE target.IntentType IN (0, 1)
+              AND (target.LockedUntil IS NULL OR target.LockedUntil <= @ClaimNow)
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -218,7 +226,7 @@ internal sealed partial class SqlServerDataStorage
                                     StorageId = storageId,
                                     Origin = serializer.Deserialize(content)!,
                                     Content = content,
-                                    IntentType = (IntentType)reader.GetInt16(2),
+                                    Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                     Retries = reader.GetInt32(3),
                                     InlineAttempts = reader.GetInt32(4),
                                     Added = await reader

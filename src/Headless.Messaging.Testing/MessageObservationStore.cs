@@ -16,7 +16,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
     private readonly ConcurrentQueue<RecordedMessage> _exhausted = new();
     private readonly ConcurrentDictionary<
-        (Type, MessageObservationType, IntentType),
+        (Type, MessageObservationType, MessageLane),
         ConcurrentQueue<RecordedMessage>
     > _typeIndex = [];
     private readonly ConcurrentDictionary<
@@ -43,7 +43,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     {
         var queue = _GetQueue(type);
         queue.Enqueue(message);
-        _typeIndex.GetOrAdd((message.MessageType, type, message.IntentType), static _ => new()).Enqueue(message);
+        _typeIndex.GetOrAdd((message.MessageType, type, message.Lane), static _ => new()).Enqueue(message);
         _typeOnlyIndex.GetOrAdd((message.MessageType, type), static _ => new()).Enqueue(message);
 
         // Snapshot candidates under lock, evaluate predicates outside to avoid
@@ -64,7 +64,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         {
             if (
                 waiter.Type == type
-                && (waiter.IntentType is null || waiter.IntentType == message.IntentType)
+                && (waiter.Lane is null || waiter.Lane == message.Lane)
                 && waiter.MessageType.IsAssignableFrom(message.MessageType)
                 && (waiter.Predicate == null || waiter.Predicate(message.Message))
             )
@@ -94,7 +94,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     public async Task<RecordedMessage> WaitForAsync(
         Type messageType,
         MessageObservationType type,
-        IntentType? intentType,
+        MessageLane? lane,
         Func<object, bool>? predicate,
         TimeSpan timeout,
         CancellationToken cancellationToken = default
@@ -103,13 +103,13 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         var tcs = new TaskCompletionSource<RecordedMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Check existing messages first before registering a waiter (fast path)
-        var existing = _FindExisting(messageType, type, intentType, predicate);
+        var existing = _FindExisting(messageType, type, lane, predicate);
         if (existing != null)
         {
             return existing;
         }
 
-        var entry = new WaiterEntry(messageType, type, intentType, predicate, tcs);
+        var entry = new WaiterEntry(messageType, type, lane, predicate, tcs);
 
         // Create CTS before registering waiter to ensure timeout is armed before Record() can signal.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -118,7 +118,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         lock (_waitersLock)
         {
             // Double-check after acquiring lock to avoid a race with Record()
-            existing = _FindExisting(messageType, type, intentType, predicate);
+            existing = _FindExisting(messageType, type, lane, predicate);
             if (existing != null)
             {
                 return existing;
@@ -149,7 +149,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
                 type,
                 elapsed,
                 observed,
-                hasPredicate: predicate is not null || intentType is not null
+                hasPredicate: predicate is not null || lane is not null
             );
         }
         finally
@@ -193,14 +193,14 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private RecordedMessage? _FindExisting(
         Type messageType,
         MessageObservationType type,
-        IntentType? intentType,
+        MessageLane? lane,
         Func<object, bool>? predicate
     )
     {
         // Fast path: exact type match avoids scanning all messages
         if (
-            intentType is { } concreteIntentType
-            && _typeIndex.TryGetValue((messageType, type, concreteIntentType), out var indexed)
+            lane is { } concreteMessageLane
+            && _typeIndex.TryGetValue((messageType, type, concreteMessageLane), out var indexed)
         )
         {
             var match = indexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
@@ -209,7 +209,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
                 return match;
             }
         }
-        else if (intentType is null && _typeOnlyIndex.TryGetValue((messageType, type), out var typeIndexed))
+        else if (lane is null && _typeOnlyIndex.TryGetValue((messageType, type), out var typeIndexed))
         {
             var match = typeIndexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
             if (match != null)
@@ -221,7 +221,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         // Assignability scan for polymorphic queries and index-race fallback
         return _GetQueue(type)
             .FirstOrDefault(m =>
-                (intentType is null || intentType == m.IntentType)
+                (lane is null || lane == m.Lane)
                 && messageType.IsAssignableFrom(m.MessageType)
                 && (predicate == null || predicate(m.Message))
             );
@@ -247,7 +247,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private sealed record WaiterEntry(
         Type MessageType,
         MessageObservationType Type,
-        IntentType? IntentType,
+        MessageLane? Lane,
         Func<object, bool>? Predicate,
         TaskCompletionSource<RecordedMessage> Tcs
     );

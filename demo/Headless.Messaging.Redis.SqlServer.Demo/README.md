@@ -6,7 +6,7 @@ ASP.NET Core demo for Redis transport with SQL Server messaging storage.
 
 - Redis transport setup through `UseRedis(...)`.
 - SQL Server messaging storage through `UseSqlServer(...)`.
-- Queue consumer registration with `OnQueue<TConsumer>()`.
+- Queue consumer registration with `Queue.Consumer<TConsumer>()`.
 - Dashboard registration with `WithNoAuth()`.
 - Swagger UI in Development.
 

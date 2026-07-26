@@ -133,7 +133,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 null
             ), // null value
             Content = string.Empty,
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
 
@@ -169,7 +169,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // Manually create descriptor with wrong method
         var badDescriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = typeof(InvokerTestConsumer).GetMethod(
@@ -718,7 +718,7 @@ public sealed class SubscribeInvokerTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, json),
             Content = json,
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -737,7 +737,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -769,7 +769,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

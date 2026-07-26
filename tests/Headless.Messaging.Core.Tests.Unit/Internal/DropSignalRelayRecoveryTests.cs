@@ -49,16 +49,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         var stack = new CommitScopeStack();
         var dispatcher = Substitute.For<IDispatcher>();
 
-        var writer = new OutboxMessageWriter(
-            storage,
-            dispatcher,
-            _CreatePublishRequestFactory(),
-            stack,
-            new NoopPublishMiddlewarePipeline(),
-            TimeProvider.System,
-            Options.Create(new MessagingOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
-        );
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
 
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -68,7 +59,15 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         await using (scope)
         {
             // Stores the durable row in-transaction and buffers the accelerator dispatch on the coordinator.
-            await writer.PublishAsync(new RelayMessage("value"), options: null, intentType: IntentType.Bus, AbortToken);
+            var request = _CreatePublishRequestFactory().Create(new RelayMessage("value"), lane: MessageLane.Bus);
+            var decision = DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Durable,
+                delay: null,
+                DeliveryCoordination.Compatible(stack.Current!, transaction),
+                TimeProvider.System.GetUtcNow()
+            );
+            await writer.WriteAsync(request, decision, AbortToken);
         }
 
         // The signal was DROPPED (un-signalled dispose drains as rollback): the accelerator must not fire.
@@ -124,28 +123,26 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
-            TimeSpan? delayTime,
-            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-            bool isTransactional = false,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
             CancellationToken cancellationToken = default
         )
         {
-            return innerPublish(messageOptions, delayTime, cancellationToken);
+            return innerPublish(messageOptions, cancellationToken);
         }
 
         public Task ExecuteAsync<T>(
             T? contentObj,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
-            TimeSpan? delayTime,
-            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-            bool isTransactional = false,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
             CancellationToken cancellationToken = default
         )
         {
-            return innerPublish(messageOptions, delayTime, cancellationToken);
+            return innerPublish(messageOptions, cancellationToken);
         }
     }
 

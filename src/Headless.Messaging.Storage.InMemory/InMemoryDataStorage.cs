@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -20,20 +21,20 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage, IDelayedMessageClaimStorage
+) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
     public ConcurrentDictionary<Guid, MemoryMessage> ReceivedMessages { get; } = new();
 
-    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, IntentType).
+    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, MessageLane).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
     // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
     // over the whole received-message map. Updated in lockstep with every code path that inserts
     // into or removes from ReceivedMessages. ValueTuple's default equality uses ordinal string
     // equality for each component, matching the SQL providers' BINARY-collation key semantics.
     private readonly ConcurrentDictionary<
-        (string Version, string MessageId, string? Group, IntentType IntentType),
+        (string Version, string MessageId, string? Group, MessageLane Lane),
         Guid
     > _receivedIdentityIndex = new();
 
@@ -43,6 +44,18 @@ internal sealed partial class InMemoryDataStorage(
     // rows for the same (Version, MessageId, Group) tuple. Renamed from _receivedExceptionUpsertLock
     // when the consume path adopted the same check-then-insert pattern in R3.
     private readonly Lock _receivedUpsertLock = new();
+
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    {
+        if (coordinator.State is not CommitCoordinatorState.Active)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+
+        return coordinator.TryGetCapability<IRelationalCommitContext>(out _)
+            ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
+            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+    }
 
     public void Clear()
     {
@@ -63,7 +76,12 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (message)
             {
-                if ((message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null)
+                if (
+                    !_IsSupportedLane(message.Lane)
+                    || (
+                        (message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null
+                    )
+                )
                 {
                     continue;
                 }
@@ -395,18 +413,43 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        return _StoreMessageAsync(name, message, publishAt: null, cancellationToken);
+    }
+
+    public ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _StoreMessageAsync(name, message, publishAt, cancellationToken);
+    }
+
+    private ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        CancellationToken cancellationToken
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var added = timeProvider.GetUtcNow();
+        var statusName =
+            publishAt is null ? StatusName.Scheduled
+            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
+            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
-            ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            ExpiresAt = publishAt,
+            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -419,7 +462,7 @@ internal sealed partial class InMemoryDataStorage(
             Name = name,
             Origin = stored.Origin,
             Content = stored.Content,
-            IntentType = stored.IntentType,
+            Lane = stored.Lane,
             Retries = stored.Retries,
             InlineAttempts = stored.InlineAttempts,
             Added = stored.Added,
@@ -427,7 +470,7 @@ internal sealed partial class InMemoryDataStorage(
             NextRetryAt = stored.NextRetryAt,
             LockedUntil = stored.LockedUntil,
             Owner = stored.Owner,
-            StatusName = StatusName.Scheduled,
+            StatusName = statusName,
             Version = messagingOptions.Value.Version,
         };
 
@@ -448,7 +491,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             dbTransaction,
             cancellationToken
@@ -475,7 +518,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = origin,
                 Content = content,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             exceptionInfo,
             cancellationToken
@@ -498,7 +541,7 @@ internal sealed partial class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var indexKey = (version, messageId, (string?)group, message.IntentType);
+        var indexKey = (version, messageId, (string?)group, message.Lane);
 
         // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
@@ -561,7 +604,7 @@ internal sealed partial class InMemoryDataStorage(
                 Origin = message.Origin,
                 Name = name,
                 Content = content,
-                IntentType = message.IntentType,
+                Lane = message.Lane,
                 Retries = retries,
                 Added = now,
                 ExpiresAt = expiresAt,
@@ -604,7 +647,7 @@ internal sealed partial class InMemoryDataStorage(
             return ValueTask.FromResult(inserted);
         }
 
-        var indexKey = (version, messageId!, (string?)group, message.IntentType);
+        var indexKey = (version, messageId!, (string?)group, message.Lane);
 
         // R3 — extend the same lock + check-then-insert/update pattern from
         // StoreReceivedExceptionMessageAsync to the non-exception path. Before R3 two concurrent
@@ -674,7 +717,7 @@ internal sealed partial class InMemoryDataStorage(
 
                 existing.Origin = message.Origin;
                 existing.Content = serialized;
-                existing.IntentType = message.IntentType;
+                existing.Lane = message.Lane;
                 // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
                 // The existing counters remain authoritative across lease expiry and restart.
                 existing.Added = added;
@@ -707,7 +750,7 @@ internal sealed partial class InMemoryDataStorage(
             StorageId = storageId ?? guidGenerator.Create(),
             Origin = message.Origin,
             Content = serialized,
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = initialNextRetryAt,
@@ -733,7 +776,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );
@@ -755,7 +798,7 @@ internal sealed partial class InMemoryDataStorage(
         {
             StorageId = mdMessage.StorageId,
             Origin = mdMessage.Origin,
-            IntentType = mdMessage.IntentType,
+            Lane = mdMessage.Lane,
             Group = group,
             Name = name,
             Content = mdMessage.Content,
@@ -786,7 +829,8 @@ internal sealed partial class InMemoryDataStorage(
         {
             var ids = PublishedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
+                    _IsSupportedLane(x.Lane)
+                    && x.ExpiresAt < timeout
                     && x.NextRetryAt is null
                     && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
@@ -799,7 +843,8 @@ internal sealed partial class InMemoryDataStorage(
         {
             var ids = ReceivedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
+                    _IsSupportedLane(x.Lane)
+                    && x.ExpiresAt < timeout
                     && x.NextRetryAt is null
                     && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
@@ -863,51 +908,12 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _ = MessageLaneCompatibility.ToIntentType(lane);
+        _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
-
-        // Unknown persisted values are poison data, not a reason to fail every subsequent poll.
-        // Terminalize a bounded batch under the same per-row lock used by normal claims, retain
-        // the raw value for diagnosis, then continue claiming healthy rows for the requested lane.
-        var terminalizedInvalidCount = 0;
-        foreach (var candidate in source.Values)
-        {
-            if (terminalizedInvalidCount >= retryBatchSize)
-            {
-                break;
-            }
-
-            if (
-                !string.Equals(candidate.Version, version, StringComparison.Ordinal)
-                || _IsSupportedIntentType(candidate.IntentType)
-            )
-            {
-                continue;
-            }
-
-            lock (candidate)
-            {
-                if (!_IsEligibleRetryCandidate(candidate, now, maxPersistedRetries))
-                {
-                    continue;
-                }
-
-                candidate.StatusName = StatusName.Failed;
-                candidate.NextRetryAt = null;
-                candidate.LockedUntil = null;
-                candidate.Owner = null;
-                candidate.ExpiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
-                candidate.ExceptionInfo = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.IntentType}"
-                );
-                terminalizedInvalidCount++;
-            }
-        }
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
         // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
@@ -935,12 +941,12 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (candidate)
             {
-                if (!_IsSupportedIntentType(candidate.IntentType))
+                if (!_IsSupportedLane(candidate.Lane))
                 {
                     continue;
                 }
 
-                if (MessageLaneCompatibility.ToLane(candidate.IntentType) != lane)
+                if (candidate.Lane != lane)
                 {
                     continue;
                 }
@@ -973,9 +979,9 @@ internal sealed partial class InMemoryDataStorage(
         return claimed;
     }
 
-    private static bool _IsSupportedIntentType(IntentType intentType)
+    private static bool _IsSupportedLane(MessageLane lane)
     {
-        return intentType is IntentType.Bus or IntentType.Queue;
+        return lane is MessageLane.Bus or MessageLane.Queue;
     }
 
     private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
@@ -1012,7 +1018,7 @@ internal sealed partial class InMemoryDataStorage(
             Retries = m.Retries,
             InlineAttempts = m.InlineAttempts,
             ExceptionInfo = m.ExceptionInfo,
-            IntentType = m.IntentType,
+            Lane = m.Lane,
         };
     }
 
@@ -1085,7 +1091,7 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (message)
             {
-                if (message.Owner is null || !deadOwnerSet.Contains(message.Owner))
+                if (!_IsSupportedLane(message.Lane) || message.Owner is null || !deadOwnerSet.Contains(message.Owner))
                 {
                     continue;
                 }

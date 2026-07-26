@@ -219,7 +219,7 @@ public sealed class CorrelationPrecedenceTests
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
             MessageName = "source",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

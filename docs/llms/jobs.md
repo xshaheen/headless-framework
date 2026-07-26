@@ -271,7 +271,11 @@ await db.ExecuteCoordinatedTransactionAsync(
         ctx.Orders.Add(order);
         await ctx.SaveChangesAsync(ct);
 
-        await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct); // outbox publish
+        await bus.PublishAsync(
+            new OrderPlaced(order.Id),
+            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+            ct
+        );
 
         await timeJobManager.AddAsync(
             new TimeJobEntity // enlists in same transaction
@@ -287,7 +291,7 @@ await db.ExecuteCoordinatedTransactionAsync(
     services,
     ct
 );
-// On commit: order row + outbox message + job row all persist; dispatch fires post-commit.
+// On commit: order row + durable message + job row all persist; dispatch fires post-commit.
 // On rollback: none persist, no dispatch.
 ```
 

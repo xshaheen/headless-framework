@@ -6,7 +6,7 @@ namespace Demo.Controllers;
 
 [Authorize]
 [Route("api/[controller]")]
-public sealed class ValuesController(IOutboxBus publisher) : Controller
+public sealed class ValuesController(IBus publisher) : Controller
 {
     private const string _MyTopic = "sample.dashboard.auth";
 
@@ -15,7 +15,7 @@ public sealed class ValuesController(IOutboxBus publisher) : Controller
     {
         await publisher.PublishAsync(
             new Person { Id = Random.Shared.Next(1, 100), Name = "Bar" },
-            new PublishOptions { MessageName = _MyTopic }
+            new PublishOptions { MessageName = _MyTopic, DeliveryMode = DeliveryMode.Durable }
         );
 
         return Ok();

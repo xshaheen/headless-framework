@@ -12,7 +12,7 @@ public sealed class MessageObservationStoreTests : TestBase
         Type type,
         string id = "msg-1",
         object? payload = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     )
     {
         return new()
@@ -24,7 +24,7 @@ public sealed class MessageObservationStoreTests : TestBase
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal),
             MessageName = "test-messageName",
             Timestamp = DateTimeOffset.UtcNow,
-            IntentType = intentType,
+            Lane = lane,
         };
     }
 
@@ -111,7 +111,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Published,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
@@ -133,7 +133,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
@@ -155,7 +155,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout: TimeSpan.FromSeconds(5),
             cancellationToken: AbortToken
@@ -193,7 +193,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Published,
-            intentType: null,
+            lane: null,
             predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "yes", StringComparison.Ordinal),
             timeout: TimeSpan.FromSeconds(5),
             cancellationToken: AbortToken
@@ -226,7 +226,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "match-me", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
@@ -245,13 +245,13 @@ public sealed class MessageObservationStoreTests : TestBase
             typeof(SimpleMessage),
             "bus",
             new SimpleMessage { Value = "same" },
-            IntentType.Bus
+            MessageLane.Bus
         );
         var queueMessage = _MakeMessage(
             typeof(SimpleMessage),
             "queue",
             new SimpleMessage { Value = "same" },
-            IntentType.Queue
+            MessageLane.Queue
         );
 
         store.Record(busMessage, MessageObservationType.Published);
@@ -261,7 +261,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Published,
-            intentType: IntentType.Queue,
+            lane: MessageLane.Queue,
             predicate: p => p is SimpleMessage sm && string.Equals(sm.Value, "same", StringComparison.Ordinal),
             timeout: TimeSpan.FromMilliseconds(50),
             cancellationToken: AbortToken
@@ -284,7 +284,7 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(SimpleMessage),
                 MessageObservationType.Published,
-                intentType: null,
+                lane: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(50),
                 cancellationToken: AbortToken
@@ -312,7 +312,7 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(OtherMessage),
                 MessageObservationType.Published,
-                intentType: null,
+                lane: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(60),
                 cancellationToken: AbortToken
@@ -346,7 +346,7 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(SimpleMessage),
                 MessageObservationType.Faulted,
-                intentType: null,
+                lane: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(50),
                 cancellationToken: AbortToken
@@ -375,7 +375,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout: TimeSpan.FromSeconds(30),
             cancellationToken: cts.Token

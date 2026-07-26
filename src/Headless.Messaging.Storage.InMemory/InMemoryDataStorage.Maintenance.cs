@@ -122,7 +122,7 @@ internal sealed partial class InMemoryDataStorage
     {
         if (removed.Origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
         {
-            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.IntentType), out _);
+            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.Lane), out _);
         }
     }
 
@@ -163,6 +163,7 @@ internal sealed partial class InMemoryDataStorage
         var result = PublishedMessages
             .Values.Where(x =>
                 string.Equals(x.Version, version, StringComparison.Ordinal)
+                && _IsSupportedLane(x.Lane)
                 && (
                     (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().AddMinutes(2))
                     || (x.StatusName == StatusName.Queued && x.ExpiresAt < timeProvider.GetUtcNow().AddMinutes(-1))
@@ -191,6 +192,7 @@ internal sealed partial class InMemoryDataStorage
         var candidates = PublishedMessages
             .Values.Where(message =>
                 string.Equals(message.Version, version, StringComparison.Ordinal)
+                && _IsSupportedLane(message.Lane)
                 && message.ExpiresAt is not null
                 && (
                     (message.StatusName == StatusName.Delayed && message.ExpiresAt < delayedBefore)
@@ -221,6 +223,7 @@ internal sealed partial class InMemoryDataStorage
             {
                 if (
                     !string.Equals(candidate.Version, version, StringComparison.Ordinal)
+                    || !_IsSupportedLane(candidate.Lane)
                     || candidate.ExpiresAt is null
                     || (candidate.LockedUntil is not null && candidate.LockedUntil > now)
                     || (

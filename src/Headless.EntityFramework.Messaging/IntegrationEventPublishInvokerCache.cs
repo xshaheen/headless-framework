@@ -10,43 +10,43 @@ namespace Headless.EntityFramework;
 
 /// <summary>
 /// Caches per-runtime-type compiled invokers that bridge a non-generic <see cref="IIntegrationEvent"/> to the
-/// generic <see cref="IOutboxBus.PublishAsync{T}"/>. <see cref="IOutboxBus"/> exposes no non-generic publish
+/// generic <see cref="IBus.PublishAsync{T}"/>. <see cref="IBus"/> exposes no non-generic publish
 /// overload, so each concrete event type must be dispatched through its own closed generic method; compiling
 /// the call once per type avoids per-publish reflection cost (prior art: the messaging consume pipeline).
 /// </summary>
 internal sealed class IntegrationEventPublishInvokerCache
 {
-    private readonly ConcurrentDictionary<
-        Type,
-        Func<IOutboxBus, IIntegrationEvent, CancellationToken, Task>
-    > _invokers = new();
+    private readonly ConcurrentDictionary<Type, Func<IBus, IIntegrationEvent, CancellationToken, Task>> _invokers =
+        new();
 
-    private static readonly MethodInfo _GenericPublishAsync = typeof(IOutboxBus)
+    private static readonly MethodInfo _GenericPublishAsync = typeof(IBus)
         .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-        .Single(m => m is { Name: nameof(IOutboxBus.PublishAsync), IsGenericMethodDefinition: true });
+        .Single(m => m is { Name: nameof(IBus.PublishAsync), IsGenericMethodDefinition: true });
 
-    public Func<IOutboxBus, IIntegrationEvent, CancellationToken, Task> GetPublishInvoker(Type eventType)
+    private static readonly PublishOptions _DurableOptions = new() { DeliveryMode = DeliveryMode.Durable };
+
+    public Func<IBus, IIntegrationEvent, CancellationToken, Task> GetPublishInvoker(Type eventType)
     {
         return _invokers.GetOrAdd(eventType, _CreateInvoker);
     }
 
-    private static Func<IOutboxBus, IIntegrationEvent, CancellationToken, Task> _CreateInvoker(Type eventType)
+    private static Func<IBus, IIntegrationEvent, CancellationToken, Task> _CreateInvoker(Type eventType)
     {
-        var bus = Expression.Parameter(typeof(IOutboxBus), "bus");
+        var bus = Expression.Parameter(typeof(IBus), "bus");
         var integrationEvent = Expression.Parameter(typeof(IIntegrationEvent), "integrationEvent");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
 
-        // bus.PublishAsync<TConcrete>((TConcrete)integrationEvent, options: null, cancellationToken)
+        // bus.PublishAsync<TConcrete>((TConcrete)integrationEvent, durableOptions, cancellationToken)
         var call = Expression.Call(
             bus,
             _GenericPublishAsync.MakeGenericMethod(eventType),
             Expression.Convert(integrationEvent, eventType),
-            Expression.Constant(null, typeof(PublishOptions)),
+            Expression.Constant(_DurableOptions, typeof(PublishOptions)),
             cancellationToken
         );
 
         return Expression
-            .Lambda<Func<IOutboxBus, IIntegrationEvent, CancellationToken, Task>>(
+            .Lambda<Func<IBus, IIntegrationEvent, CancellationToken, Task>>(
                 call,
                 bus,
                 integrationEvent,

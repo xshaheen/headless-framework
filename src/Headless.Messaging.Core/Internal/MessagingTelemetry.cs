@@ -31,7 +31,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     // --- Persist (message.persist) --------------------------------------------------------------------------
 
-    public Activity? PersistStart(Message message, string operation, IntentType intentType, long startTimestampMs)
+    public Activity? PersistStart(Message message, string operation, MessageLane lane, long startTimestampMs)
     {
         var extracted = _Extract(message.Headers);
         var parentContext = extracted.ActivityContext;
@@ -66,7 +66,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Persist,
                     message.Id,
                     operation,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -83,7 +83,14 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         return activity;
     }
 
-    public static void PersistStop(Activity? activity, string operation, long startTimestampMs, long endTimestampMs)
+    public static void PersistStop(
+        Activity? activity,
+        string operation,
+        long startTimestampMs,
+        long endTimestampMs,
+        MessageLane? lane = null,
+        DeliveryMetadataValues delivery = default
+    )
     {
         var elapsedMs = endTimestampMs - startTimestampMs;
 
@@ -95,7 +102,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordPersistence(operation, elapsedMs, isPublish: true);
+        MessagingMetrics.RecordPersistence(operation, elapsedMs, isPublish: true, lane, delivery);
 
         activity?.Stop();
     }
@@ -116,7 +123,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     public Activity? PublishStart(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress broker,
         long startTimestampMs
     )
@@ -155,7 +162,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Publish,
                     message.Id,
                     message.Name,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -172,7 +179,8 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         TransportMessage message,
         BrokerAddress broker,
         long startTimestampMs,
-        long endTimestampMs
+        long endTimestampMs,
+        MessageLane lane = MessageLane.Bus
     )
     {
         var elapsedMs = endTimestampMs - startTimestampMs;
@@ -185,7 +193,8 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordPublish(message.Name, broker.Name, elapsedMs);
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublish(message.Name, broker.Name, lane, delivery, elapsedMs);
 
         activity?.Stop();
     }
@@ -194,10 +203,12 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         Activity? activity,
         TransportMessage message,
         BrokerAddress broker,
-        Exception exception
+        Exception exception,
+        MessageLane lane = MessageLane.Bus
     )
     {
-        MessagingMetrics.RecordPublishError(message.Name, broker.Name, exception.GetType().Name);
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublishError(message.Name, broker.Name, exception.GetType().Name, lane, delivery);
 
         if (activity is null)
         {
@@ -209,11 +220,34 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         activity.Stop();
     }
 
+    public static void PublishAmbiguous(
+        Activity? activity,
+        TransportMessage message,
+        BrokerAddress broker,
+        Exception exception,
+        MessageLane lane = MessageLane.Bus
+    )
+    {
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublishError(message.Name, broker.Name, "AmbiguousDelivery", lane, delivery);
+
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.SetTag(MessagingTags.DeliveryOutcome, "ambiguous");
+        activity.SetStatus(ActivityStatusCode.Error, "Transport acceptance is ambiguous.");
+        activity.AddException(exception);
+        activity.AddEvent(new ActivityEvent("message.publish.ambiguous"));
+        activity.Stop();
+    }
+
     // --- Consume (message.consume) --------------------------------------------------------------------------
 
     public Activity? ConsumeStart(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress broker,
         long startTimestampMs
     )
@@ -259,7 +293,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Consume,
                     message.Id,
                     message.Name,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -317,7 +351,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
     public Activity? SubscriberInvokeStart(
         Message message,
         string operation,
-        IntentType intentType,
+        MessageLane lane,
         MethodInfo method,
         int retryCount,
         long startTimestampMs
@@ -355,7 +389,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.SubscriberInvoke,
                     message.Id,
                     operation,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount
                 )
@@ -510,17 +544,20 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         MessagingEventKind kind,
         string messageId,
         string operation,
-        IntentType intentType,
+        MessageLane lane,
         IDictionary<string, string?> headers,
         int retryCount
     )
     {
+        var delivery = DeliveryMetadata.Read(headers);
         return new MessagingEnrichmentContext
         {
             Kind = kind,
             MessageId = messageId,
             MessageName = operation,
-            IntentType = intentType,
+            Lane = lane,
+            RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+            ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
             TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
             CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
             RetryCount = retryCount,

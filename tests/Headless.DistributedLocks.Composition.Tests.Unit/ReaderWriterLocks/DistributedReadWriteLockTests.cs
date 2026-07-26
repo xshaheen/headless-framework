@@ -19,7 +19,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
     private DistributedReadWriteLock _CreateProvider(
         IDistributedReadWriteLockStorage? storage = null,
-        IOutboxBus? outboxBus = null,
+        IBus? bus = null,
         DistributedLockOptions? options = null
     )
     {
@@ -27,7 +27,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         return new DistributedReadWriteLock(
             storage ?? new InMemoryDistributedReadWriteLockStorage(_timeProvider),
-            outboxBus,
+            bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -43,7 +43,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         return new DistributedReadWriteLock(
             storage,
-            outboxBus: null,
+            bus: null,
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -80,6 +80,31 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_publish_release_signal_directly()
+    {
+        // given
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        var bus = Substitute.For<IBus>();
+        var provider = _CreateProvider(storage, bus);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var leaseId = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId, AbortToken);
+
+        // then
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(message => message.Resource == resource && message.LeaseId == leaseId),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

@@ -199,17 +199,17 @@ internal static partial class RegularLockLoggerExtensions
 
     [LoggerMessage(
         EventId = 16,
-        EventName = "OutboxBusAbsent",
+        EventName = "BusAbsent",
         Level = LogLevel.Warning,
-        Message = "No IOutboxBus registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
+        Message = "No IBus registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
     )]
-    public static partial void LogOutboxBusAbsent(this ILogger logger);
+    public static partial void LogBusAbsent(this ILogger logger);
 
     [LoggerMessage(
         EventId = 17,
         EventName = "LockReleasePublishFailed",
         Level = LogLevel.Warning,
-        Message = "Lock released but outbox publish failed; waiters will fall back to polling: R={Resource} Id={LeaseId}"
+        Message = "Lock released but wake-up publish failed; waiters will fall back to polling: R={Resource} Id={LeaseId}"
     )]
     public static partial void LogLockReleasePublishFailed(
         this ILogger logger,

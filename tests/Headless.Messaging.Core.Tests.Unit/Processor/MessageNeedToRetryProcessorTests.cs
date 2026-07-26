@@ -29,7 +29,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
     private static string _CircuitKey(string group)
     {
-        return $"{IntentType.Bus:D}:{group}";
+        return $"{MessageLane.Bus:D}:{group}";
     }
 
     private static MediumMessage _CreateMessage(string? group = _Group)
@@ -50,7 +50,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, null),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

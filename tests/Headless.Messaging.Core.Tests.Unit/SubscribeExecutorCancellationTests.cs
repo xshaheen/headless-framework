@@ -37,7 +37,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -54,7 +54,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

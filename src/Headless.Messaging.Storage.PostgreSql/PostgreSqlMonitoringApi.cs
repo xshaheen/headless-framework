@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -75,25 +76,25 @@ internal sealed class PostgreSqlMonitoringApi(
         var sql = $"""
             SELECT
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Succeeded'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
             ) AS "PublishedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Succeeded'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
             ) AS "ReceivedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Failed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
             ) AS "PublishedFailed",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Failed'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
             ) AS "ReceivedFailed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Delayed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Delayed'
             ) AS "PublishedDelayed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "NextRetryAt" IS NOT NULL
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
             ) AS "PublishedPendingRetry",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "NextRetryAt" IS NOT NULL
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
             ) AS "ReceivedPendingRetry";
             """;
 
@@ -141,7 +142,7 @@ internal sealed class PostgreSqlMonitoringApi(
             query.MessageType == MessageType.Publish
                 ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
                 : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
-        var where = string.Empty;
+        var where = " AND \"IntentType\" IN (0, 1)";
 
         if (query.StatusName is not null)
         {
@@ -163,7 +164,7 @@ internal sealed class PostgreSqlMonitoringApi(
             where += " AND \"Content\" ILIKE @Content ESCAPE '\\'";
         }
 
-        if (query.IntentType is { })
+        if (query.Lane is { })
         {
             where += " AND \"IntentType\" = @IntentType";
         }
@@ -187,7 +188,10 @@ internal sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@Group", query.Group ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
             new NpgsqlParameter("@Content", contentLike),
-            new NpgsqlParameter("@IntentType", (short?)query.IntentType ?? 0),
+            new NpgsqlParameter(
+                "@IntentType",
+                query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value)
+            ),
             new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
@@ -216,42 +220,44 @@ internal sealed class PostgreSqlMonitoringApi(
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var index = 0;
-                        messages.Add(
-                            new MessageView
-                            {
-                                StorageId = reader.GetGuid(index++),
-                                MessageId = reader.GetString(index++),
-                                Version = reader.GetString(index++),
-                                Name = reader.GetString(index++),
-                                Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(index - 1),
-                                Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(index - 1),
-                                IntentType = (IntentType)reader.GetInt16(index++),
-                                Retries = reader.GetInt32(index++),
-                                Added = await reader
-                                    .GetFieldValueAsync<DateTimeOffset>(index++, token)
+                        var message = new MessageView
+                        {
+                            StorageId = reader.GetGuid(index++),
+                            MessageId = reader.GetString(index++),
+                            Version = reader.GetString(index++),
+                            Name = reader.GetString(index++),
+                            Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(index++)),
+                            Retries = reader.GetInt32(index++),
+                            Added = await reader
+                                .GetFieldValueAsync<DateTimeOffset>(index++, token)
+                                .ConfigureAwait(false),
+                            ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
                                     .ConfigureAwait(false),
-                                ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                                StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
-                                NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                                LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                            }
-                        );
+                            StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
+                            NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                    .ConfigureAwait(false),
+                            LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                    .ConfigureAwait(false),
+                        };
+                        var delivery = DeliveryMetadata.ReadStoredEnvelope(serializer, message.Content);
+                        message.RequestedDeliveryMode = delivery.RequestedDeliveryMode;
+                        message.ResolvedDeliveryMode = delivery.ResolvedDeliveryMode;
+                        messages.Add(message);
                     }
                     return messages;
                 },
@@ -262,6 +268,77 @@ internal sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
 
         return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = query.MessageType switch
+        {
+            MessageType.Publish => _publishedTable,
+            MessageType.Subscribe => _receivedTable,
+            _ => throw new ArgumentOutOfRangeException(nameof(query), query.MessageType, "Unknown message type."),
+        };
+        var currentPage = Math.Max(query.CurrentPage, 1);
+        var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
+        var offset = (long)(currentPage - 1) * pageSize;
+        var countSql = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" NOT IN (0, 1)";
+        var pageSql = $"""
+            SELECT "Id", "IntentType", "Name", "StatusName", "Added", "NextRetryAt", "LockedUntil"
+            FROM {tableName}
+            WHERE "IntentType" NOT IN (0, 1)
+            ORDER BY "Added", "Id"
+            OFFSET @Offset LIMIT @Limit;
+            """;
+        object[] sqlParams = [new NpgsqlParameter("@Offset", offset), new NpgsqlParameter("@Limit", pageSize)];
+
+        await using var connection = _options.CreateConnection();
+        var totalCount = await connection
+            .ExecuteScalarAsync(
+                countSql,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        var items = await connection
+            .ExecuteReaderAsync(
+                pageSql,
+                async (reader, token) =>
+                {
+                    var messages = new List<UnknownLaneMessageView>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        messages.Add(
+                            new UnknownLaneMessageView
+                            {
+                                StorageId = reader.GetGuid(0),
+                                MessageType = query.MessageType,
+                                RawLane = reader.GetInt16(1),
+                                Name = reader.GetString(2),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(3)),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(4, token).ConfigureAwait(false),
+                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
+                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
+                            }
+                        );
+                    }
+
+                    return messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new(items, currentPage - 1, pageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
@@ -323,7 +400,8 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"StatusName\" = @State";
+        var sqlQuery =
+            $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" IN (0, 1) AND \"StatusName\" = @State";
 
         await using var connection = _options.CreateConnection();
 
@@ -387,7 +465,7 @@ internal sealed class PostgreSqlMonitoringApi(
                 SELECT to_char("Added" AT TIME ZONE 'UTC','yyyy-MM-dd-HH24') AS "Key",
                 COUNT("Id") AS "Count"
                 FROM {tableName}
-                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
+                    WHERE "IntentType" IN (0, 1) AND "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
                 GROUP BY to_char("Added" AT TIME ZONE 'UTC', 'yyyy-MM-dd-HH24')
             )
             SELECT "Key","Count" from Aggr;
@@ -446,7 +524,7 @@ internal sealed class PostgreSqlMonitoringApi(
             return [];
         }
 
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids)");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids) AND \"IntentType\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 
@@ -477,7 +555,7 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id AND \"IntentType\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 
@@ -525,7 +603,7 @@ internal sealed class PostgreSqlMonitoringApi(
             StorageId = reader.GetGuid(0),
             Origin = serializer.Deserialize(content)!,
             Content = content,
-            IntentType = (IntentType)reader.GetInt16(2),
+            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
             Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, token).ConfigureAwait(false),
             ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
                 ? null

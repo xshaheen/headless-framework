@@ -19,8 +19,23 @@ interface NavLink {
 
 const navigationLinks: NavLink[] = [
   { icon: 'mdi-view-dashboard', text: 'Dashboard', path: '/' },
-  { icon: 'mdi-send', text: 'Published', path: '/published', badgeKey: 'publishedFailed', badgeColor: 'error', badgeHideWhenZero: true },
-  { icon: 'mdi-inbox-arrow-down', text: 'Received', path: '/received', badgeKey: 'receivedFailed', badgeColor: 'error', badgeHideWhenZero: true },
+  {
+    icon: 'mdi-send',
+    text: 'Published',
+    path: '/published',
+    badgeKey: 'publishedFailed',
+    badgeColor: 'error',
+    badgeHideWhenZero: true,
+  },
+  {
+    icon: 'mdi-inbox-arrow-down',
+    text: 'Received',
+    path: '/received',
+    badgeKey: 'receivedFailed',
+    badgeColor: 'error',
+    badgeHideWhenZero: true,
+  },
+  { icon: 'mdi-alert-circle-outline', text: 'Unknown Lanes', path: '/unknown-lanes' },
   { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers' },
   { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes' },
 ]
@@ -83,7 +98,9 @@ function handleAuthLogout() {
               <v-badge
                 v-for="link in navigationLinks"
                 :key="link.path"
-                :model-value="link.badgeKey != null && !(link.badgeHideWhenZero && stats[link.badgeKey] === 0)"
+                :model-value="
+                  link.badgeKey != null && !(link.badgeHideWhenZero && stats[link.badgeKey] === 0)
+                "
                 :content="link.badgeKey != null ? stats[link.badgeKey] : undefined"
                 :color="link.badgeColor ?? 'secondary'"
                 size="x-small"

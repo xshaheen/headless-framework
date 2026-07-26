@@ -18,19 +18,24 @@ public abstract class PublishContext
         object? content,
         Type messageType,
         Type concreteMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
+        DeliveryDecision decision,
+        bool deliveryFrozen,
         CancellationToken cancellationToken
     )
     {
         Content = content;
         MessageType = Argument.IsNotNull(messageType);
         ConcreteMessageType = Argument.IsNotNull(concreteMessageType);
-        IntentType = intentType;
-        Lane = MessageLaneCompatibility.ToLane(intentType);
+        Lane = lane;
+        RequestedDeliveryMode = decision.RequestedMode;
+        ResolvedDeliveryMode = decision.ResolvedMode;
         OptionsCore = options;
-        DelayTimeCore = delayTime;
+        DelayTime = decision.Delay;
+        PublishAt = decision.PublishAt;
+        IsTransactional = decision.IsTransactional;
+        DeliveryFrozen = deliveryFrozen;
         Headers = _CreateHeaders(options);
         MessageName = options?.MessageName;
         CancellationToken = cancellationToken;
@@ -46,13 +51,15 @@ public abstract class PublishContext
     public Type ConcreteMessageType { get; internal set; }
 
     /// <summary>
-    /// Gets the publish intent for this operation (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).
-    /// Available to middleware to make intent-aware decisions without inspecting the concrete options type.
+    /// Gets the authoritative publish lane for this operation.
     /// </summary>
-    public IntentType IntentType { get; }
-
-    /// <summary>Gets the checked runtime lane for this publish operation.</summary>
     public MessageLane Lane { get; }
+
+    /// <summary>Gets the delivery mode requested by the caller before resolution.</summary>
+    public DeliveryMode RequestedDeliveryMode { get; }
+
+    /// <summary>Gets the delivery mode selected before middleware executes.</summary>
+    public DeliveryMode ResolvedDeliveryMode { get; }
 
     /// <summary>Gets the currently active cancellation token for this publish operation.</summary>
     public CancellationToken CancellationToken { get; private set; }
@@ -70,11 +77,17 @@ public abstract class PublishContext
     public MessageOptions? Options => OptionsCore;
 
     /// <summary>Gets the scheduled delay for this operation. <see langword="null"/> means immediate publish.</summary>
-    public TimeSpan? DelayTime => DelayTimeCore;
+    public TimeSpan? DelayTime { get; private set; }
+
+    /// <summary>Gets the resolved UTC not-before timestamp for delayed delivery.</summary>
+    public DateTimeOffset? PublishAt { get; }
+
+    /// <summary>Gets whether durable capture is enlisted in the ambient commit boundary.</summary>
+    public bool IsTransactional { get; }
+
+    private bool DeliveryFrozen { get; }
 
     private protected MessageOptions? OptionsCore { get; set; }
-
-    private protected TimeSpan? DelayTimeCore { get; set; }
 
     /// <summary>
     /// Replaces the active cancellation token forwarded to downstream middleware and the inner publisher.
@@ -98,20 +111,30 @@ public abstract class PublishContext
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
+        if (DeliveryFrozen && (options?.DeliveryMode ?? DeliveryMode.Auto) != RequestedDeliveryMode)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
+        }
+
+        if (DeliveryFrozen && options?.Delay != DelayTime)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery delay.");
+        }
+
         OptionsCore = options;
         RefreshOptionSnapshot(options);
     }
 
-    /// <summary>
-    /// Replaces the scheduled delivery delay forwarded to the inner publisher.
-    /// Must not be called after the <c>next()</c> delegate has returned.
-    /// </summary>
-    /// <param name="delayTime">The replacement delay, or <see langword="null"/> for immediate delivery.</param>
-    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
+    /// <summary>Replaces the delay on a manually-created legacy context.</summary>
     public void WithDelayTime(TimeSpan? delayTime)
     {
         ThrowIfCompleted();
-        DelayTimeCore = delayTime;
+        if (DeliveryFrozen && delayTime != DelayTime)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery delay.");
+        }
+
+        DelayTime = delayTime;
     }
 
     private protected void RefreshOptionSnapshot(MessageOptions? options)
@@ -145,38 +168,97 @@ public abstract class PublishContext
 /// <typeparam name="TMessage">The message type being published.</typeparam>
 /// <remarks>Initializes a new instance of the <see cref="PublishContext{TMessage}"/> class.</remarks>
 [PublicAPI]
-public sealed class PublishContext<TMessage>(
-    TMessage? content,
-    IntentType intentType,
-    MessageOptions? options,
-    TimeSpan? delayTime,
-    bool isTransactional = false,
-    CancellationToken cancellationToken = default
-)
-    : PublishContext(
-        content,
-        typeof(TMessage),
-        content?.GetType() ?? typeof(TMessage),
-        intentType,
-        options,
-        delayTime,
-        cancellationToken
-    ),
-        ICompletablePublishContext
+public sealed class PublishContext<TMessage> : PublishContext, ICompletablePublishContext
 {
+    /// <summary>Initializes a publish context for direct construction by middleware tests and tooling.</summary>
+    public PublishContext(
+        TMessage? content,
+        MessageLane lane,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        bool isTransactional = false,
+        CancellationToken cancellationToken = default
+    )
+        : base(
+            content,
+            typeof(TMessage),
+            content?.GetType() ?? typeof(TMessage),
+            lane,
+            options,
+            _CreateLegacyDecision(lane, options, delayTime, isTransactional),
+            deliveryFrozen: false,
+            cancellationToken
+        ) { }
+
+    private static DeliveryDecision _CreateLegacyDecision(
+        MessageLane lane,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        bool isTransactional
+    )
+    {
+        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Auto;
+        var resolvedMode = requestedMode switch
+        {
+            DeliveryMode.Durable => DeliveryMode.Durable,
+            DeliveryMode.TransportDirect => DeliveryMode.TransportDirect,
+            DeliveryMode.Auto when isTransactional || delayTime is not null => DeliveryMode.Durable,
+            DeliveryMode.Auto => DeliveryMode.TransportDirect,
+            _ => requestedMode,
+        };
+        var path = resolvedMode switch
+        {
+            DeliveryMode.Durable when isTransactional => DeliveryPath.DurableCoordinated,
+            DeliveryMode.Durable => DeliveryPath.DurableStandalone,
+            _ => DeliveryPath.TransportDirect,
+        };
+
+        return new DeliveryDecision(
+            requestedMode,
+            resolvedMode,
+            path,
+            delayTime,
+            PublishAt: null,
+            DeliveryCoordination.None
+        );
+    }
+
+    internal PublishContext(
+        TMessage? content,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        CancellationToken cancellationToken
+    )
+        : this(
+            content,
+            content?.GetType() ?? typeof(TMessage),
+            lane,
+            options,
+            decision,
+            deliveryFrozen: true,
+            cancellationToken
+        ) { }
+
     internal PublishContext(
         TMessage? content,
         Type concreteMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional,
+        DeliveryDecision decision,
+        bool deliveryFrozen,
         CancellationToken cancellationToken
     )
-        : this(content, intentType, options, delayTime, isTransactional, cancellationToken)
-    {
-        ConcreteMessageType = concreteMessageType;
-    }
+        : base(
+            content,
+            typeof(TMessage),
+            concreteMessageType,
+            lane,
+            options,
+            decision,
+            deliveryFrozen,
+            cancellationToken
+        ) { }
 
     /// <summary>Gets the strongly-typed message payload being published. May be <see langword="null"/>.</summary>
     public new TMessage? Content => (TMessage?)base.Content;
@@ -191,17 +273,12 @@ public sealed class PublishContext<TMessage>(
         set { WithOptions(value); }
     }
 
-    /// <summary>Gets or sets the scheduled delay before the inner publisher runs.</summary>
+    /// <summary>Gets or sets the delay on a manually-created legacy context.</summary>
     public new TimeSpan? DelayTime
     {
-        get => DelayTimeCore;
+        get => base.DelayTime;
         set { WithDelayTime(value); }
     }
-
-    /// <summary>
-    /// Gets a value indicating whether the publish is buffered inside an ambient outbox transaction.
-    /// </summary>
-    public bool IsTransactional { get; init; } = isTransactional;
 
     /// <summary>
     /// Marks this context as completed, making all mutator properties and methods throw

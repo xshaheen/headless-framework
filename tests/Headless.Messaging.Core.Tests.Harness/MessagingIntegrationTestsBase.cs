@@ -62,10 +62,10 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     protected IBootstrapper Bootstrapper => ServiceProvider.GetRequiredService<IBootstrapper>();
 
     /// <summary>Gets the publisher for sending messages.</summary>
-    protected IOutboxBus Publisher => ServiceProvider.GetRequiredService<IOutboxBus>();
+    protected IBus Publisher => ServiceProvider.GetRequiredService<IBus>();
 
     /// <summary>Gets the queue publisher for sending point-to-point messages.</summary>
-    protected IOutboxQueue QueuePublisher => ServiceProvider.GetRequiredService<IOutboxQueue>();
+    protected IQueue QueuePublisher => ServiceProvider.GetRequiredService<IQueue>();
 
     /// <summary>Gets the data storage for message persistence.</summary>
     protected IDataStorage DataStorage => ServiceProvider.GetRequiredService<IDataStorage>();
@@ -294,7 +294,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "test-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
         // Allow time for message processing
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -323,7 +327,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "HandlerInvocationTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "test-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -346,7 +354,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "StorageTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "test-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -364,7 +376,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "failing-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "failing-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
         var attempted = await failingSubscriber.WaitForAttemptAsync(
             TimeSpan.FromSeconds(10),
             cancellationToken: AbortToken
@@ -389,7 +405,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // when
         var publishTasks = messages.Select(m =>
-            Publisher.PublishAsync(m, new PublishOptions { MessageName = "test-message" }, AbortToken)
+            Publisher.PublishAsync(
+                m,
+                new PublishOptions { MessageName = "test-message", DeliveryMode = DeliveryMode.Durable },
+                AbortToken
+            )
         );
         await Task.WhenAll(publishTasks);
 
@@ -409,7 +429,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
 
         // when — wait for at least 2 attempts to prove the message was actually retried
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "failing-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "failing-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
         var retried = await failingSubscriber.WaitForAttemptAsync(
             TimeSpan.FromSeconds(30),
             minAttempts: 2,
@@ -430,7 +454,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "LifecycleTest" };
 
         // when - publish -> consume -> store -> ack
-        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { MessageName = "test-message", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
         // Wait for message to complete lifecycle
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -461,7 +489,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             message,
-            new PublishOptions { MessageName = "test-message", Headers = headers },
+            new PublishOptions
+            {
+                MessageName = "test-message",
+                Headers = headers,
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -488,7 +521,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             message,
-            new PublishOptions { MessageName = "test-message", Delay = TimeSpan.FromSeconds(2) },
+            new PublishOptions
+            {
+                MessageName = "test-message",
+                Delay = TimeSpan.FromSeconds(2),
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -525,7 +563,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -535,7 +578,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         received.Should().BeTrue("callback response should be delivered through the outbox bus path");
         var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
         context.Message.RequestId.Should().Be(request.Id);
-        context.Message.SourceIntent.Should().Be(nameof(IntentType.Bus));
+        context.Message.SourceIntent.Should().Be(nameof(MessageLane.Bus));
         context.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
         context.CorrelationId.Should().NotBeNullOrWhiteSpace();
         context.Headers[Headers.CorrelationSequence].Should().Be("1");
@@ -557,6 +600,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                 MessageId = requestMessageId,
                 MessageName = "callback-queue-request",
                 CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
@@ -567,16 +611,16 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         received.Should().BeTrue("queue-originated requests should still publish callbacks on the bus path");
         var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
         context.Message.RequestId.Should().Be(request.Id);
-        context.Message.SourceIntent.Should().Be(nameof(IntentType.Queue));
+        context.Message.SourceIntent.Should().Be(nameof(MessageLane.Queue));
         context.MessageName.Should().Be(ResolveMessageName("callback-response"));
-        context.IntentType.Should().Be(IntentType.Bus);
+        context.Lane.Should().Be(MessageLane.Bus);
         context.CorrelationId.Should().Be(requestMessageId);
-        context.Headers[Headers.Intent].Should().Be(nameof(IntentType.Bus));
+        context.Headers[Headers.Intent].Should().Be(nameof(MessageLane.Bus));
         context.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
 
         await ServiceProvider.GetRequiredService<TimeProvider>().Delay(TimeSpan.FromMilliseconds(250), AbortToken);
-        var busCallbacks = await _FindStoredCallbacksAsync(requestMessageId, "callback-response", IntentType.Bus);
-        var queueCallbacks = await _FindStoredCallbacksAsync(requestMessageId, "callback-response", IntentType.Queue);
+        var busCallbacks = await _FindStoredCallbacksAsync(requestMessageId, "callback-response", MessageLane.Bus);
+        var queueCallbacks = await _FindStoredCallbacksAsync(requestMessageId, "callback-response", MessageLane.Queue);
         busCallbacks.Should().ContainSingle("the Queue request must emit exactly one Bus callback");
         queueCallbacks.Should().BeEmpty("callback delivery remains on Bus even when the request originated on Queue");
     }
@@ -600,6 +644,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                 MessageId = requestMessageId,
                 MessageName = "callback-queue-request",
                 CallbackName = "callback-contract-response",
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
@@ -610,28 +655,28 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         received.Should().BeTrue("the concrete response should cross the real broker on the Bus callback path");
         var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
         context.Message.RequestId.Should().Be(request.Id);
-        context.Message.SourceIntent.Should().Be(nameof(IntentType.Queue));
-        context.IntentType.Should().Be(IntentType.Bus);
+        context.Message.SourceIntent.Should().Be(nameof(MessageLane.Queue));
+        context.Lane.Should().Be(MessageLane.Bus);
         context.CorrelationId.Should().Be(requestMessageId);
-        context.Headers[Headers.Intent].Should().Be(nameof(IntentType.Bus));
+        context.Headers[Headers.Intent].Should().Be(nameof(MessageLane.Bus));
         context.Headers[Headers.Type].Should().Be(nameof(ICallbackResponseContract));
 
         var snapshot = recorder.Snapshots.Should().ContainSingle().Subject;
         snapshot.DeclaredMessageType.Should().Be<ICallbackResponseContract>();
         snapshot.ConcreteMessageType.Should().Be<ConcreteCallbackResponse>();
         snapshot.Content.Should().BeOfType<ConcreteCallbackResponse>();
-        snapshot.IntentType.Should().Be(IntentType.Bus);
+        snapshot.Lane.Should().Be(MessageLane.Bus);
 
         await ServiceProvider.GetRequiredService<TimeProvider>().Delay(TimeSpan.FromMilliseconds(250), AbortToken);
         var busCallbacks = await _FindStoredCallbacksAsync(
             requestMessageId,
             "callback-contract-response",
-            IntentType.Bus
+            MessageLane.Bus
         );
         var queueCallbacks = await _FindStoredCallbacksAsync(
             requestMessageId,
             "callback-contract-response",
-            IntentType.Queue
+            MessageLane.Queue
         );
         busCallbacks.Should().ContainSingle();
         queueCallbacks.Should().BeEmpty();
@@ -653,6 +698,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                 MessageId = requestMessageId,
                 MessageName = "callback-request",
                 CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
@@ -662,8 +708,8 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // then
         callback.Should().NotBeNull("the typed-null callback should reach transport and durable receive storage");
         callback!.Origin.Value.Should().BeNull();
-        callback.IntentType.Should().Be(IntentType.Bus);
-        callback.Origin.Headers[Headers.Intent].Should().Be(nameof(IntentType.Bus));
+        callback.Lane.Should().Be(MessageLane.Bus);
+        callback.Origin.Headers[Headers.Intent].Should().Be(nameof(MessageLane.Bus));
         callback.Origin.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
         callback.Origin.Headers[Headers.CorrelationId].Should().Be(requestMessageId);
         callback.ExceptionInfo.Should().Contain($"Failed to deserialize message of type {nameof(CallbackResponse)}");
@@ -672,7 +718,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         snapshot.DeclaredMessageType.Should().Be<CallbackResponse>();
         snapshot.ConcreteMessageType.Should().Be<CallbackResponse>();
         snapshot.Content.Should().BeNull();
-        snapshot.IntentType.Should().Be(IntentType.Bus);
+        snapshot.Lane.Should().Be(MessageLane.Bus);
     }
 
     public virtual async Task should_publish_headers_only_callback_response()
@@ -689,6 +735,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                 MessageId = requestMessageId,
                 MessageName = "callback-request",
                 CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
@@ -715,7 +762,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -740,7 +792,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -765,7 +822,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Normal);
 
         // when
-        await Publisher.PublishAsync(request, new PublishOptions { MessageName = "callback-request" }, AbortToken);
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions { MessageName = "callback-request", DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
         // Gate the absence poll on the request consumer actually running, so the negative assertion below
         // only runs after the consumer body has executed SetResponse (with no callback name present).
@@ -788,7 +849,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "fanout-request", CallbackName = "fanout-response" },
+            new PublishOptions
+            {
+                MessageName = "fanout-request",
+                CallbackName = "fanout-response",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -811,7 +877,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "isolation-request", CallbackName = "isolation-callback" },
+            new PublishOptions
+            {
+                MessageName = "isolation-request",
+                CallbackName = "isolation-callback",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -835,7 +906,12 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions { MessageName = "chain-request", CallbackName = "chain-intermediate-callback" },
+            new PublishOptions
+            {
+                MessageName = "chain-request",
+                CallbackName = "chain-intermediate-callback",
+                DeliveryMode = DeliveryMode.Durable,
+            },
             AbortToken
         );
 
@@ -866,6 +942,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                 MessageName = "callback-failure-request",
                 MessageId = messageId,
                 CallbackName = "callback-response",
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
@@ -925,7 +1002,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     private async Task<IReadOnlyList<MediumMessage>> _FindStoredCallbacksAsync(
         string correlationId,
         string callbackName,
-        IntentType intentType
+        MessageLane lane
     )
     {
         var monitoringApi = DataStorage.GetMonitoringApi();
@@ -934,7 +1011,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             {
                 MessageType = MessageType.Publish,
                 Name = ResolveMessageName(callbackName),
-                IntentType = intentType,
+                Lane = lane,
                 CurrentPage = 0,
                 PageSize = 100,
             },

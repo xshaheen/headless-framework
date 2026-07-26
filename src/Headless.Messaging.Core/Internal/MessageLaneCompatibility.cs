@@ -2,29 +2,47 @@
 
 namespace Headless.Messaging.Internal;
 
-/// <summary>
-/// Converts the persisted and wire-compatible <see cref="IntentType"/> representation at Core boundaries.
-/// </summary>
+/// <summary>Checked mappings at the stable persisted and wire compatibility boundaries.</summary>
 internal static class MessageLaneCompatibility
 {
-    public static MessageLane ToLane(IntentType intentType) =>
-        intentType switch
+    internal const short BusPersistedValue = 0;
+    internal const short QueuePersistedValue = 1;
+    internal const string BusWireValue = "Bus";
+    internal const string QueueWireValue = "Queue";
+
+    internal static MessageLane FromPersistedValue(short value) =>
+        value switch
         {
-            IntentType.Bus => MessageLane.Bus,
-            IntentType.Queue => MessageLane.Queue,
+            BusPersistedValue => MessageLane.Bus,
+            QueuePersistedValue => MessageLane.Queue,
             _ => throw new InvalidOperationException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Unsupported persisted messaging intent value '{(short)intentType}'."
-                )
+                string.Create(CultureInfo.InvariantCulture, $"Unsupported persisted messaging lane value '{value}'.")
             ),
         };
 
-    public static IntentType ToIntentType(MessageLane lane) =>
+    internal static short ToPersistedValue(MessageLane lane) =>
         lane switch
         {
-            MessageLane.Bus => IntentType.Bus,
-            MessageLane.Queue => IntentType.Queue,
+            MessageLane.Bus => BusPersistedValue,
+            MessageLane.Queue => QueuePersistedValue,
+            _ => throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture, $"Unsupported messaging lane value '{(short)lane}'.")
+            ),
+        };
+
+    internal static MessageLane FromWireValue(string value) =>
+        value switch
+        {
+            BusWireValue => MessageLane.Bus,
+            QueueWireValue => MessageLane.Queue,
+            _ => throw new InvalidOperationException($"Unsupported messaging lane header value '{value}'."),
+        };
+
+    internal static string ToWireValue(MessageLane lane) =>
+        lane switch
+        {
+            MessageLane.Bus => BusWireValue,
+            MessageLane.Queue => QueueWireValue,
             _ => throw new InvalidOperationException(
                 string.Create(CultureInfo.InvariantCulture, $"Unsupported messaging lane value '{(short)lane}'.")
             ),

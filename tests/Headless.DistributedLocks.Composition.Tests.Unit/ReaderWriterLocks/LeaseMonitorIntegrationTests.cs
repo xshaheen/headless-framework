@@ -387,7 +387,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         return new DistributedReadWriteLock(
             storage ?? _storage,
-            outboxBus: null,
+            bus: null,
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

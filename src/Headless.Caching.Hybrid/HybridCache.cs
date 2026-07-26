@@ -48,6 +48,11 @@ public sealed partial class HybridCache(
     CacheEventsConfig? eventsConfig = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
+    private static readonly PublishOptions _InvalidationPublishOptions = new()
+    {
+        DeliveryMode = DeliveryMode.TransportDirect,
+    };
+
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
@@ -313,7 +318,7 @@ public sealed partial class HybridCache(
 
         try
         {
-            await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
+            await publisher.PublishAsync(message, _InvalidationPublishOptions, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (!FactoryCacheCoordinator.IsCallerCancellation(ex, ct))
         {

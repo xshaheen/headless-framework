@@ -20,7 +20,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly string _exchangeName;
     private readonly RabbitMqMessagingOptions _rabbitMqOptions;
     private readonly RabbitMqConsumerConfig? _consumerConfig;
-    private readonly IntentType _intentType;
+    private readonly MessageLane _lane;
     private readonly List<string> _queueNames = [];
     private readonly List<string> _consumerTags = [];
     private readonly ConsumerPauseGate _pauseGate = new();
@@ -36,7 +36,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IOptions<RabbitMqMessagingOptions> options,
         IServiceProvider serviceProvider,
         RabbitMqConsumerConfig? consumerConfig = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     )
     {
         RabbitMqValidation.ValidateQueueName(groupName);
@@ -49,7 +49,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _exchangeName = connectionChannelPool.Exchange;
         _rabbitMqOptions = options.Value;
         _consumerConfig = consumerConfig;
-        _intentType = intentType;
+        _lane = lane;
     }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -280,7 +280,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
                 _channel = channel;
 
-                if (_intentType == IntentType.Bus && !_queueNames.Contains(_groupName, StringComparer.Ordinal))
+                if (_lane == MessageLane.Bus && !_queueNames.Contains(_groupName, StringComparer.Ordinal))
                 {
                     await _DeclareQueueAsync(_groupName, cancellationToken).ConfigureAwait(false);
                     _queueNames.Add(_groupName);
@@ -315,12 +315,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     private string _GetQueueName(string messageName)
     {
-        return GetQueueName(_groupName, messageName, _intentType);
+        return GetQueueName(_groupName, messageName, _lane);
     }
 
-    internal static string GetQueueName(string groupName, string messageName, IntentType intentType)
+    internal static string GetQueueName(string groupName, string messageName, MessageLane lane)
     {
-        return intentType == IntentType.Queue ? messageName : groupName;
+        return lane == MessageLane.Queue ? messageName : groupName;
     }
 
     private async Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)

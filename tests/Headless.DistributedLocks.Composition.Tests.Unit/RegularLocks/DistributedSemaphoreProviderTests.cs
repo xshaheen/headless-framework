@@ -89,6 +89,30 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_release_signal_directly()
+    {
+        // given
+        var bus = Substitute.For<IBus>();
+        var provider = _CreateProvider(bus: bus);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var semaphore = provider.CreateSemaphore(resource, maxCount: 1);
+        await using var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
+
+        // when
+        await slot.ReleaseAsync();
+
+        // then
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(message =>
+                    message.Resource == resource && message.LeaseId == slot.LeaseId
+                ),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_report_holder_count()
     {
         // given
@@ -357,7 +381,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         var provider = new DistributedSemaphoreProvider(
             storage,
-            Substitute.For<IOutboxBus>(),
+            Substitute.For<IBus>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -377,16 +401,16 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     {
         // given — slot storage hangs forever on release. DisposeTimeout bounds the release so
         // shutdown is never blocked; on timeout the release returns without throwing, skips the
-        // outbox publish, and the slot's TTL is the fallback.
+        // wake-up publish, and the slot's TTL is the fallback.
         var hangingStorage = Substitute.For<IDistributedSemaphoreStorage>();
         hangingStorage
             .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
-        var outboxBus = Substitute.For<IOutboxBus>();
+        var bus = Substitute.For<IBus>();
 
         var provider = new DistributedSemaphoreProvider(
             hangingStorage,
-            outboxBus,
+            bus,
             new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) },
             _guidGenerator,
             _timeProvider,
@@ -406,18 +430,17 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await outboxBus
-            .DidNotReceive()
+        await bus.DidNotReceive()
             .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
     }
 
-    private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)
+    private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null, IBus? bus = null)
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedSemaphoreProvider(
             _storage,
-            Substitute.For<IOutboxBus>(),
+            bus ?? Substitute.For<IBus>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

@@ -25,7 +25,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -61,7 +61,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -96,7 +96,7 @@ public sealed class ConsumerLifecycleTests
 
         var firstContext = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() },
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -107,7 +107,7 @@ public sealed class ConsumerLifecycleTests
 
         var secondContext = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() },
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -146,7 +146,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -181,7 +181,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -209,7 +209,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -242,7 +242,7 @@ public sealed class ConsumerLifecycleTests
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = _faker.Random.Guid().ToString(),
             CorrelationId = null,

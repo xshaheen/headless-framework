@@ -36,7 +36,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
     private static string _CircuitKey(string group)
     {
-        return $"{IntentType.Bus:D}:{group}";
+        return $"{MessageLane.Bus:D}:{group}";
     }
 
     private CircuitBreakerStateManager _CreateStateManager(
@@ -96,7 +96,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, null),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 
@@ -376,8 +376,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         // given
         const string group = "integration.group.shared";
-        var busKey = CircuitBreakerGroupKeys.For(IntentType.Bus, group);
-        var queueKey = CircuitBreakerGroupKeys.For(IntentType.Queue, group);
+        var busKey = CircuitBreakerGroupKeys.For(MessageLane.Bus, group);
+        var queueKey = CircuitBreakerGroupKeys.For(MessageLane.Queue, group);
         var busPaused = false;
         var queuePaused = false;
         var queueResumed = false;

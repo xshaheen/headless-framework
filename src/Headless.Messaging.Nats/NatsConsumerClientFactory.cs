@@ -19,13 +19,7 @@ internal sealed class NatsConsumerClientFactory(
         CancellationToken cancellationToken = default
     )
     {
-        var client = new NatsConsumerClient(
-            groupName,
-            groupConcurrent,
-            natsOptions,
-            serviceProvider,
-            intentType: MessageLaneCompatibility.ToIntentType(lane)
-        );
+        var client = new NatsConsumerClient(groupName, groupConcurrent, natsOptions, serviceProvider, lane: lane);
         try
         {
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

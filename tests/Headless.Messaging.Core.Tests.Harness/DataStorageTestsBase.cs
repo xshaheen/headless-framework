@@ -87,13 +87,13 @@ public abstract class DataStorageTestsBase : TestBase
     protected readonly record struct PersistedLeaseIdentity(DateTimeOffset LockedUntil, string? Owner);
 
     /// <summary>
-    /// Seeds one eligible retry row with an unsupported raw intent value through the provider's
+    /// Seeds one eligible retry row with an unsupported raw lane value through the provider's
     /// authoritative storage representation. Providers without a raw-row seam return <see langword="null"/>.
     /// </summary>
     protected virtual Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
         IDataStorage storage,
         bool published,
-        short rawIntentType,
+        short rawLane,
         DateTimeOffset nextRetryAt,
         CancellationToken cancellationToken
     )
@@ -101,7 +101,7 @@ public abstract class DataStorageTestsBase : TestBase
         return Task.FromResult<Guid?>(null);
     }
 
-    /// <summary>Reads an unsupported-lane retry row without passing its raw intent through enum validation.</summary>
+    /// <summary>Reads an unsupported-lane retry row without passing its raw value through enum validation.</summary>
     protected virtual Task<PersistedPoisonRetryState?> GetPersistedPoisonRetryStateAsync(
         IDataStorage storage,
         bool published,
@@ -112,9 +112,9 @@ public abstract class DataStorageTestsBase : TestBase
         return Task.FromResult<PersistedPoisonRetryState?>(null);
     }
 
-    /// <summary>Provider-neutral persisted state used to verify poison-row terminalization.</summary>
+    /// <summary>Provider-neutral persisted state used to verify poison rows remain unchanged.</summary>
     protected readonly record struct PersistedPoisonRetryState(
-        short RawIntentType,
+        short RawLane,
         string StatusName,
         DateTimeOffset? ExpiresAt,
         DateTimeOffset? NextRetryAt,
@@ -202,6 +202,52 @@ public abstract class DataStorageTestsBase : TestBase
         result.Origin.Should().BeSameAs(message);
     }
 
+    public virtual async Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        if (!Capabilities.SupportsDelayedScheduling || !Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support delayed scheduling and monitoring roundtrip");
+        }
+
+        var storage = GetStorage();
+        var publishAt = TimeProvider.GetUtcNow().AddMinutes(30);
+        var envelope = new MediumMessage
+        {
+            StorageId = Guid.Empty,
+            Origin = CreateMessage(),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+        };
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-atomic-state",
+            envelope,
+            publishAt,
+            cancellationToken: AbortToken
+        );
+
+        stored.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromMilliseconds(1));
+        stored.NextRetryAt.Should().BeNull();
+
+        var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        roundTripped.Should().NotBeNull();
+        roundTripped!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        roundTripped.NextRetryAt.Should().BeNull();
+
+        var page = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    Name = "scheduled-atomic-state",
+                    PageSize = 20,
+                },
+                AbortToken
+            );
+        page.Items.Should().ContainSingle().Which.StatusName.Should().Be(StatusName.Delayed);
+    }
+
     public virtual async Task should_store_published_message_with_non_numeric_message_id()
     {
         // given
@@ -226,32 +272,32 @@ public abstract class DataStorageTestsBase : TestBase
         }
 
         var storage = GetStorage();
-        var legacyIntents = new[] { (IntentType.Bus, Value: (short)0), (IntentType.Queue, Value: (short)1) };
+        var legacyIntents = new[] { (MessageLane.Bus, Value: (short)0), (MessageLane.Queue, Value: (short)1) };
 
-        foreach (var (intentType, value) in legacyIntents)
+        foreach (var (lane, value) in legacyIntents)
         {
             var envelope = new MediumMessage
             {
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = intentType,
+                Lane = lane,
             };
 
             // when
             var result = await storage.StoreMessageAsync(
-                $"test-published-message-{intentType}",
+                $"test-published-message-{lane}",
                 envelope,
                 cancellationToken: AbortToken
             );
 
             // then
-            result.IntentType.Should().Be(intentType);
-            ((short)result.IntentType).Should().Be(value);
+            result.Lane.Should().Be(lane);
+            ((short)result.Lane).Should().Be(value);
             var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(result.StorageId, AbortToken);
             roundTripped.Should().NotBeNull();
-            roundTripped!.IntentType.Should().Be(intentType);
-            ((short)roundTripped.IntentType).Should().Be(value);
+            roundTripped!.Lane.Should().Be(lane);
+            ((short)roundTripped.Lane).Should().Be(value);
         }
     }
 
@@ -271,7 +317,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken: AbortToken
         );
@@ -282,7 +328,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Queue,
+                Lane = MessageLane.Queue,
             },
             cancellationToken: AbortToken
         );
@@ -295,14 +341,14 @@ public abstract class DataStorageTestsBase : TestBase
                 {
                     MessageType = MessageType.Publish,
                     Name = "intent-filter",
-                    IntentType = IntentType.Queue,
+                    Lane = MessageLane.Queue,
                     PageSize = 20,
                 },
                 AbortToken
             );
 
         // then
-        page.Items.Should().OnlyContain(message => message.IntentType == IntentType.Queue);
+        page.Items.Should().OnlyContain(message => message.Lane == MessageLane.Queue);
         page.Items.Should().ContainSingle();
     }
 
@@ -342,7 +388,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = bus,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             AbortToken
         );
@@ -354,7 +400,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = queue,
                 Content = string.Empty,
-                IntentType = IntentType.Queue,
+                Lane = MessageLane.Queue,
             },
             AbortToken
         );
@@ -574,14 +620,14 @@ public abstract class DataStorageTestsBase : TestBase
         return _ShouldClaimRetryMessagesByLaneAsync(published: false);
     }
 
-    public virtual Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    public virtual Task should_preserve_unsupported_lane_without_starving_published_retry()
     {
-        return _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(published: true);
+        return _ShouldPreserveUnsupportedLaneWithoutStarvingRetryAsync(published: true);
     }
 
-    public virtual Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    public virtual Task should_preserve_unsupported_lane_without_starving_received_retry()
     {
-        return _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(published: false);
+        return _ShouldPreserveUnsupportedLaneWithoutStarvingRetryAsync(published: false);
     }
 
     public virtual async Task should_delete_expired_messages()
@@ -805,7 +851,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = now.AddSeconds(30),
             },
             cancellationToken: AbortToken
@@ -817,7 +863,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = now.AddSeconds(20),
             },
             cancellationToken: AbortToken
@@ -864,7 +910,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = expiresAt,
             },
             cancellationToken: AbortToken
@@ -911,7 +957,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = expiresAt,
             },
             cancellationToken: AbortToken
@@ -960,7 +1006,7 @@ public abstract class DataStorageTestsBase : TestBase
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                     ExpiresAt = expiresAt,
                 },
                 cancellationToken: AbortToken
@@ -1812,7 +1858,7 @@ public abstract class DataStorageTestsBase : TestBase
                             StorageId = storedMessage.StorageId,
                             Origin = storedMessage.Origin,
                             Content = storedMessage.Content,
-                            IntentType = IntentType.Bus,
+                            Lane = MessageLane.Bus,
                             Retries = 1,
                         };
                         var ok = await storage.ChangeReceiveStateAsync(
@@ -2377,15 +2423,15 @@ public abstract class DataStorageTestsBase : TestBase
         return stored;
     }
 
-    private async Task _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(bool published)
+    private async Task _ShouldPreserveUnsupportedLaneWithoutStarvingRetryAsync(bool published)
     {
-        const short unsupportedIntentType = 99;
+        const short unsupportedLane = 99;
         var storage = GetStorage();
         var now = _Now();
         var invalidId = await SeedUnsupportedLaneRetryRowAsync(
             storage,
             published,
-            unsupportedIntentType,
+            unsupportedLane,
             now.AddMinutes(-2),
             AbortToken
         );
@@ -2397,18 +2443,12 @@ public abstract class DataStorageTestsBase : TestBase
 
         async Task<MediumMessage> storeHealthyAsync(MessageLane lane)
         {
-            var intentType = lane switch
-            {
-                MessageLane.Bus => IntentType.Bus,
-                MessageLane.Queue => IntentType.Queue,
-                _ => throw new InvalidOperationException($"Unsupported test lane '{lane}'."),
-            };
             var envelope = new MediumMessage
             {
                 StorageId = Guid.Empty,
                 Origin = CreateMessage($"healthy-{published}-{lane}-{Guid.NewGuid():N}"),
                 Content = string.Empty,
-                IntentType = intentType,
+                Lane = lane,
             };
             var stored = published
                 ? await storage.StoreMessageAsync(
@@ -2445,6 +2485,9 @@ public abstract class DataStorageTestsBase : TestBase
             return stored;
         }
 
+        var stateBeforeClaim = await GetPersistedPoisonRetryStateAsync(storage, published, invalidId.Value, AbortToken);
+        stateBeforeClaim.Should().NotBeNull();
+
         var busMessage = await storeHealthyAsync(MessageLane.Bus);
         var queueMessage = await storeHealthyAsync(MessageLane.Queue);
 
@@ -2458,19 +2501,32 @@ public abstract class DataStorageTestsBase : TestBase
         busClaim.Should().NotContain(message => message.StorageId == queueMessage.StorageId);
         busClaim.Should().NotContain(message => message.StorageId == invalidId.Value);
 
-        var invalidState = await GetPersistedPoisonRetryStateAsync(storage, published, invalidId.Value, AbortToken);
-        invalidState.Should().NotBeNull();
-        var persisted = invalidState.GetValueOrDefault();
-        persisted.RawIntentType.Should().Be(unsupportedIntentType);
-        persisted.StatusName.Should().Be(nameof(StatusName.Failed));
-        persisted.ExpiresAt.Should().NotBeNull();
-        persisted.NextRetryAt.Should().BeNull();
-        persisted.LockedUntil.Should().BeNull();
-        persisted.Owner.Should().BeNull();
-        if (!published)
-        {
-            persisted.ExceptionInfo.Should().Contain("Unsupported persisted messaging lane").And.Contain("99");
-        }
+        var stateAfterBusClaim = await GetPersistedPoisonRetryStateAsync(
+            storage,
+            published,
+            invalidId.Value,
+            AbortToken
+        );
+        stateAfterBusClaim.Should().Be(stateBeforeClaim);
+
+        var unknownPage = await storage
+            .GetMonitoringApi()
+            .GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = published ? MessageType.Publish : MessageType.Subscribe,
+                    CurrentPage = 0,
+                    PageSize = 500,
+                },
+                AbortToken
+            );
+        unknownPage.Index.Should().Be(0);
+        unknownPage.Size.Should().Be(200);
+        unknownPage.Items.Should().ContainSingle();
+        var unknownView = unknownPage.Items.Single();
+        unknownView.StorageId.Should().Be(invalidId.Value);
+        unknownView.MessageType.Should().Be(published ? MessageType.Publish : MessageType.Subscribe);
+        unknownView.RawLane.Should().Be(unsupportedLane);
 
         var queueClaim = (
             published
@@ -2479,6 +2535,14 @@ public abstract class DataStorageTestsBase : TestBase
         ).ToList();
         queueClaim.Should().ContainSingle(message => message.StorageId == queueMessage.StorageId);
         queueClaim.Should().NotContain(message => message.StorageId == invalidId.Value);
+
+        var stateAfterQueueClaim = await GetPersistedPoisonRetryStateAsync(
+            storage,
+            published,
+            invalidId.Value,
+            AbortToken
+        );
+        stateAfterQueueClaim.Should().Be(stateBeforeClaim);
     }
 
     private async Task _ShouldClaimRetryMessagesByLaneAsync(bool published)
@@ -2495,18 +2559,12 @@ public abstract class DataStorageTestsBase : TestBase
         {
             for (var index = 0; index < batchSize + 1; index++)
             {
-                var intentType = lane switch
-                {
-                    MessageLane.Bus => IntentType.Bus,
-                    MessageLane.Queue => IntentType.Queue,
-                    _ => throw new InvalidOperationException($"Unsupported test lane '{lane}'."),
-                };
                 var envelope = new MediumMessage
                 {
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = intentType,
+                    Lane = lane,
                 };
                 var stored = published
                     ? await storage.StoreMessageAsync(
@@ -2551,7 +2609,7 @@ public abstract class DataStorageTestsBase : TestBase
             ).ToList();
 
             firstClaim.Should().HaveCount(batchSize);
-            firstClaim.Should().OnlyContain(message => (short)message.IntentType == (short)lane);
+            firstClaim.Should().OnlyContain(message => (short)message.Lane == (short)lane);
         }
 
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
@@ -2562,7 +2620,7 @@ public abstract class DataStorageTestsBase : TestBase
                     : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)
             ).ToList();
 
-            ((short)secondClaim.Should().ContainSingle().Which.IntentType).Should().Be((short)lane);
+            ((short)secondClaim.Should().ContainSingle().Which.Lane).Should().Be((short)lane);
         }
     }
 
@@ -2699,7 +2757,7 @@ public abstract class DataStorageTestsBase : TestBase
             StorageId = message.StorageId,
             Origin = message.Origin,
             Content = message.Content,
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = message.Added,
             ExpiresAt = message.ExpiresAt,
             NextRetryAt = message.NextRetryAt,

@@ -25,7 +25,7 @@ namespace Headless.DistributedLocks;
 /// breaks the capacity-reclaim contract.
 /// </para>
 /// <para>
-/// Wake-up model mirrors <see cref="DistributedLock"/>: when <see cref="IOutboxBus"/> is available,
+/// Wake-up model mirrors <see cref="DistributedLock"/>: when <see cref="IBus"/> is available,
 /// a <see cref="DistributedLockReleased"/> message is published after each confirmed release so
 /// blocked acquirers are woken immediately. Without the bus, callers fall back to polling.
 /// </para>
@@ -36,7 +36,7 @@ namespace Headless.DistributedLocks;
 /// </remarks>
 internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
-    IOutboxBus? outboxBus,
+    IBus? bus,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
@@ -46,7 +46,7 @@ internal sealed class DistributedSemaphoreProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
-    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
+    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
         timeProvider,
         logger
@@ -378,12 +378,15 @@ internal sealed class DistributedSemaphoreProvider(
             await monitor.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (removed && _outboxBus is not null)
+        if (removed && _bus is not null)
         {
             try
             {
-                await _outboxBus
-                    .PublishAsync(new DistributedLockReleased(resource, leaseId), cancellationToken: cancellationToken)
+                await _bus.PublishAsync(
+                        new DistributedLockReleased(resource, leaseId),
+                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             catch (Exception exception)

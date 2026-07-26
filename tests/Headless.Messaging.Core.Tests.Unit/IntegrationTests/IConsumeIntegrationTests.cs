@@ -66,7 +66,7 @@ public sealed class IConsumeIntegrationTests
         var message = new OrderPlaced("ORDER-123", 99.99m);
         var context = new ConsumeContext<OrderPlaced>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -230,7 +230,7 @@ public sealed class IConsumeIntegrationTests
 
         var placedContext = new ConsumeContext<OrderPlaced>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = orderPlaced,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -241,7 +241,7 @@ public sealed class IConsumeIntegrationTests
 
         var cancelledContext = new ConsumeContext<OrderCancelled>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = orderCancelled,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,

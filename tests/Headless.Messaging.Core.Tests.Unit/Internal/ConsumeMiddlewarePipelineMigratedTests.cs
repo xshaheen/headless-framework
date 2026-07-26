@@ -112,7 +112,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
                 Timestamp = DateTimeOffset.UtcNow,
                 MessageName = "previous",
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
         };
         var previous = accessor.Current;
@@ -323,7 +323,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         var descriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
@@ -343,7 +343,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 StorageId = Guid.NewGuid(),
                 Origin = new Message(headers, new MigratedConsumeMessage("stored")),
                 Content = "{}",
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 Added = DateTimeOffset.UtcNow,
             }
         );

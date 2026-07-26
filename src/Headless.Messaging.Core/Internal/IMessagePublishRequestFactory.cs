@@ -16,16 +16,25 @@ internal interface IMessagePublishRequestFactory
     PreparedPublishMessage Create(
         object? contentObj,
         Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan delayTime,
+        DateTimeOffset publishAt,
+        MessageLane lane
+    );
+
+    PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
         MessageOptions? options = null,
         TimeSpan? delayTime = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     );
 
     PreparedPublishMessage Create<T>(
         T? contentObj,
         MessageOptions? options = null,
         TimeSpan? delayTime = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     );
 }
 
@@ -50,6 +59,8 @@ internal sealed class MessagePublishRequestFactory(
         Headers.SentTime,
         Headers.DelayTime,
         Headers.Intent,
+        Headers.RequestedDeliveryMode,
+        Headers.ResolvedDeliveryMode,
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
@@ -65,10 +76,10 @@ internal sealed class MessagePublishRequestFactory(
         T? contentObj,
         MessageOptions? options = null,
         TimeSpan? delayTime = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     )
     {
-        return Create(contentObj, options?.MessageType ?? typeof(T), options, delayTime, intentType);
+        return Create(contentObj, options?.MessageType ?? typeof(T), options, delayTime, lane);
     }
 
     public PreparedPublishMessage Create(
@@ -76,11 +87,36 @@ internal sealed class MessagePublishRequestFactory(
         Type declaredMessageType,
         MessageOptions? options = null,
         TimeSpan? delayTime = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
+    )
+    {
+        var publishAt = _ResolvePublishAt(delayTime);
+        return _Create(contentObj, declaredMessageType, options, delayTime, publishAt, lane);
+    }
+
+    public PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan delayTime,
+        DateTimeOffset publishAt,
+        MessageLane lane
+    )
+    {
+        return _Create(contentObj, declaredMessageType, options, delayTime, publishAt, lane);
+    }
+
+    private PreparedPublishMessage _Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        DateTimeOffset publishAt,
+        MessageLane lane
     )
     {
         Argument.IsNotNull(declaredMessageType);
-        var lane = MessageLaneCompatibility.ToLane(intentType);
+        _ = MessageLaneCompatibility.ToPersistedValue(lane);
 
         if (delayTime is { } requestedDelay)
         {
@@ -99,12 +135,10 @@ internal sealed class MessagePublishRequestFactory(
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
             consumeContextAccessor?.Current?.CorrelationId
         );
-        var publishAt = _ResolvePublishAt(delayTime);
-
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
-        headers[Headers.Intent] = intentType.ToString();
+        headers[Headers.Intent] = MessageLaneCompatibility.ToWireValue(lane);
 
         if (delayTime.HasValue)
         {
@@ -118,7 +152,7 @@ internal sealed class MessagePublishRequestFactory(
             MessageName = messageName,
             PublishAt = publishAt,
             Message = new Message(headers, contentObj),
-            IntentType = intentType,
+            Lane = lane,
             DeclaredMessageType = declaredMessageType,
             ConcreteMessageType = contentObj?.GetType() ?? declaredMessageType,
         };
@@ -532,7 +566,7 @@ internal sealed class PreparedPublishMessage
 
     public required Message Message { get; init; }
 
-    public required IntentType IntentType { get; init; }
+    public required MessageLane Lane { get; init; }
 
     public required Type DeclaredMessageType { get; init; }
 

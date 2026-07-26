@@ -32,7 +32,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         {
             StorageId = messageId,
             Content = "{\"received\":\"data\"}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -58,13 +58,15 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(
             cancellationToken: AbortToken
         );
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
-        payload.Should().ContainKey("intentType");
-        ((JsonElement)payload["intentType"]!).GetInt32().Should().Be((int)IntentType.Bus);
+        payload.Should().ContainKey("lane");
+        payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
+        payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
+        payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_bind_intent_filter_and_project_intent_with_pagination_metadata_when_received_list()
+    public async Task should_bind_lane_filter_and_project_delivery_metadata_with_pagination_when_received_list()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -101,7 +103,9 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     Version = "v1",
                     Name = "orders.received",
                     Group = "workers",
-                    IntentType = IntentType.Queue,
+                    Lane = MessageLane.Queue,
+                    RequestedDeliveryMode = DeliveryMode.TransportDirect,
+                    ResolvedDeliveryMode = DeliveryMode.TransportDirect,
                     Content = "{\"received\":\"data\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 11, 00, 00, TimeSpan.Zero),
                     Retries = 1,
@@ -124,7 +128,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // when
         var response = await client.GetAsync(
-            "/api/received/Failed?currentPage=1&perPage=10&group=workers&intentType=Queue",
+            "/api/received/Failed?currentPage=1&perPage=10&group=workers&lane=Queue",
             AbortToken
         );
 
@@ -145,7 +149,9 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111456");
         item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
         item.GetProperty("group").GetString().Should().Be("workers");
-        item.GetProperty("intentType").GetInt32().Should().Be((int)IntentType.Queue);
+        item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
+        item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
 
         await _monitoringApi
             .Received(1)
@@ -154,7 +160,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     query.MessageType == MessageType.Subscribe
                     && query.StatusName == StatusName.Failed
                     && query.Group == "workers"
-                    && query.IntentType == IntentType.Queue
+                    && query.Lane == MessageLane.Queue
                     && query.CurrentPage == 0
                     && query.PageSize == 10
                 ),
@@ -177,7 +183,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
-        // when — intentType omitted from query string
+        // when — lane omitted from query string
         var response = await client.GetAsync("/api/received/Failed?currentPage=1&perPage=10&group=workers", AbortToken);
 
         // then
@@ -190,7 +196,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     query.MessageType == MessageType.Subscribe
                     && query.StatusName == StatusName.Failed
                     && query.Group == "workers"
-                    && query.IntentType == null
+                    && query.Lane == null
                     && query.CurrentPage == 0
                     && query.PageSize == 10
                 ),

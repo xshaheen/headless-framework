@@ -43,10 +43,7 @@ public sealed class ConsumerExecutorDescriptor
     /// <summary>
     /// Delivery intent used to subscribe this consumer.
     /// </summary>
-    public required IntentType IntentType { get; init; }
-
-    /// <summary>Gets the checked runtime lane represented by <see cref="IntentType"/>.</summary>
-    internal MessageLane Lane => MessageLaneCompatibility.ToLane(IntentType);
+    public required MessageLane Lane { get; init; }
 
     /// <summary>
     /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is

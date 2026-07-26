@@ -11,15 +11,15 @@ namespace Tests.Internal;
 public sealed class MessagePublishRequestFactoryTests
 {
     [Theory]
-    [InlineData(IntentType.Bus, "Bus")]
-    [InlineData(IntentType.Queue, "Queue")]
-    public void should_preserve_legacy_intent_header(IntentType intentType, string wireValue)
+    [InlineData(MessageLane.Bus, "Bus")]
+    [InlineData(MessageLane.Queue, "Queue")]
+    public void should_preserve_legacy_intent_header(MessageLane lane, string wireValue)
     {
         // given
         var factory = _CreateFactory();
 
         // when
-        var prepared = factory.Create(new CallbackResponse("accepted"), intentType: intentType);
+        var prepared = factory.Create(new CallbackResponse("accepted"), lane: lane);
 
         // then
         Headers.Intent.Should().Be("headless-intent");
@@ -41,6 +41,22 @@ public sealed class MessagePublishRequestFactoryTests
 
         // then
         prepared.Message.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
+    }
+
+    [Theory]
+    [InlineData(Headers.RequestedDeliveryMode)]
+    [InlineData(Headers.ResolvedDeliveryMode)]
+    public void should_reject_custom_delivery_metadata_headers(string header)
+    {
+        var factory = _CreateFactory();
+        var options = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [header] = "Durable" },
+        };
+
+        var act = () => factory.Create(new CallbackResponse("accepted"), options);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{header}*reserved*");
     }
 
     private static MessagePublishRequestFactory _CreateFactory()

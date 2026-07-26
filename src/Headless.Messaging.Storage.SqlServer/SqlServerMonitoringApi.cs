@@ -3,6 +3,7 @@
 using System.Data;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -37,13 +38,13 @@ internal sealed class SqlServerMonitoringApi(
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Delayed') AS PublishedDelayed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -118,7 +119,7 @@ internal sealed class SqlServerMonitoringApi(
             query.MessageType == MessageType.Publish
                 ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
                 : "[Id],[MessageId],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
-        var where = string.Empty;
+        var where = " AND [IntentType] IN (0, 1)";
         if (query.StatusName is not null)
         {
             where += " AND [StatusName]=@StatusName";
@@ -139,7 +140,7 @@ internal sealed class SqlServerMonitoringApi(
             where += " AND [Content] LIKE @Content ESCAPE '\\'";
         }
 
-        if (query.IntentType is { })
+        if (query.Lane is { })
         {
             where += " AND [IntentType]=@IntentType";
         }
@@ -157,7 +158,10 @@ internal sealed class SqlServerMonitoringApi(
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
+            },
         ];
 
         object[] pageSqlParams =
@@ -166,7 +170,10 @@ internal sealed class SqlServerMonitoringApi(
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
+            },
             new SqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new SqlParameter("@Limit", query.PageSize),
         ];
@@ -197,40 +204,105 @@ internal sealed class SqlServerMonitoringApi(
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         var index = 0;
+                        var message = new MessageView
+                        {
+                            StorageId = reader.GetGuid(index++),
+                            MessageId = reader.GetString(index++),
+                            Version = reader.GetString(index++),
+                            Name = reader.GetString(index++),
+                            Group = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Content = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(index++)),
+                            Retries = reader.GetInt32(index++),
+                            Added = await reader.GetFieldValueAsync<DateTimeOffset>(index++, ct).ConfigureAwait(false),
+                            ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(index - 1, ct).ConfigureAwait(false),
+                            StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
+                            NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(index - 1, ct).ConfigureAwait(false),
+                            LockedUntil = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(index - 1, ct).ConfigureAwait(false),
+                        };
+                        var delivery = DeliveryMetadata.ReadStoredEnvelope(serializer, message.Content);
+                        message.RequestedDeliveryMode = delivery.RequestedDeliveryMode;
+                        message.ResolvedDeliveryMode = delivery.ResolvedDeliveryMode;
+                        messages.Add(message);
+                    }
+
+                    return messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: pageSqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = query.MessageType switch
+        {
+            MessageType.Publish => _publishedTable,
+            MessageType.Subscribe => _receivedTable,
+            _ => throw new ArgumentOutOfRangeException(nameof(query), query.MessageType, "Unknown message type."),
+        };
+        var currentPage = Math.Max(query.CurrentPage, 1);
+        var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
+        var offset = (long)(currentPage - 1) * pageSize;
+        var countSql = $"SELECT COUNT_BIG(Id) FROM {tableName} WHERE IntentType NOT IN (0, 1)";
+        var pageSql = $"""
+            SELECT Id, IntentType, Name, StatusName, Added, NextRetryAt, LockedUntil
+            FROM {tableName}
+            WHERE IntentType NOT IN (0, 1)
+            ORDER BY Added, Id
+            OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+            """;
+        object[] pageSqlParams = [new SqlParameter("@Offset", offset), new SqlParameter("@Limit", pageSize)];
+
+        await using var connection = new SqlConnection(_options.ConnectionString);
+        var totalCount = await connection
+            .ExecuteScalarAsync(
+                countSql,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        var items = await connection
+            .ExecuteReaderAsync(
+                pageSql,
+                async (reader, token) =>
+                {
+                    var messages = new List<UnknownLaneMessageView>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
                         messages.Add(
-                            new MessageView
+                            new UnknownLaneMessageView
                             {
-                                StorageId = reader.GetGuid(index++),
-                                MessageId = reader.GetString(index++),
-                                Version = reader.GetString(index++),
-                                Name = reader.GetString(index++),
-                                Group = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                StorageId = reader.GetGuid(0),
+                                MessageType = query.MessageType,
+                                RawLane = reader.GetInt16(1),
+                                Name = reader.GetString(2),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(3)),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(4, token).ConfigureAwait(false),
+                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetString(index - 1),
-                                Content = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
+                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                     ? null
-                                    : reader.GetString(index - 1),
-                                IntentType = (IntentType)reader.GetInt16(index++),
-                                Retries = reader.GetInt32(index++),
-                                Added = await reader
-                                    .GetFieldValueAsync<DateTimeOffset>(index++, ct)
-                                    .ConfigureAwait(false),
-                                ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
-                                        .ConfigureAwait(false),
-                                StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
-                                NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
-                                        .ConfigureAwait(false),
-                                LockedUntil = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, ct)
-                                        .ConfigureAwait(false),
+                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
                             }
                         );
                     }
@@ -243,7 +315,7 @@ internal sealed class SqlServerMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+        return new(items, currentPage - 1, pageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
@@ -312,7 +384,8 @@ internal sealed class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT_BIG(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
+        var sqlQuery =
+            $"SELECT COUNT_BIG(Id) FROM {tableName} WITH (NOLOCK) WHERE IntentType IN (0, 1) AND StatusName = @StatusName";
         await using var connection = new SqlConnection(_options.ConnectionString);
 
         return await connection
@@ -374,7 +447,7 @@ internal sealed class SqlServerMonitoringApi(
             SELECT CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2) AS [Key],
                 COUNT(Id) [Count]
             FROM  {tableName}
-            WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added < @MaxAdded
+            WHERE IntentType IN (0, 1) AND StatusName = @StatusName AND Added >= @MinAdded AND Added < @MaxAdded
             GROUP BY CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2)
             )
             SELECT [Key], [Count] FROM Aggr WITH (NOLOCK);
@@ -458,7 +531,7 @@ internal sealed class SqlServerMonitoringApi(
         };
 
         var sql =
-            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids)";
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids) AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -477,7 +550,7 @@ internal sealed class SqlServerMonitoringApi(
                                 StorageId = reader.GetGuid(0),
                                 Origin = serializer.Deserialize(reader.GetString(1))!,
                                 Content = reader.GetString(1),
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(4, ct).ConfigureAwait(false)
                                     ? null
@@ -515,7 +588,7 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id";
+            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -534,7 +607,7 @@ internal sealed class SqlServerMonitoringApi(
                             StorageId = reader.GetGuid(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
-                            IntentType = (IntentType)reader.GetInt16(2),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                             Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
                             ExpiresAt = expiresAtIsNull
                                 ? null

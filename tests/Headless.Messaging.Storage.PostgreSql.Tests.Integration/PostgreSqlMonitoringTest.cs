@@ -3,6 +3,7 @@
 using Dapper;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -287,7 +288,20 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
 
         // when
-        var result = await storage.StoreMessageAsync("tx-test", msg, transaction, AbortToken);
+        var publishAt = TimeProvider.System.GetUtcNow().AddMinutes(30);
+        var result = await storage.StoreScheduledMessageAsync(
+            "tx-test",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = msg,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            publishAt,
+            transaction,
+            AbortToken
+        );
 
         // then — message is visible within the transaction
         result.Should().NotBeNull();
@@ -299,6 +313,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var monitoringApi = storage.GetMonitoringApi();
         var retrieved = await monitoringApi.GetPublishedMessageAsync(result.StorageId, AbortToken);
         retrieved.Should().NotBeNull();
+        retrieved!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        retrieved.NextRetryAt.Should().BeNull();
     }
 
     [Fact]
@@ -313,7 +329,19 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
 
         // when — store then rollback
-        var result = await storage.StoreMessageAsync("rollback-test", msg, transaction, AbortToken);
+        var result = await storage.StoreScheduledMessageAsync(
+            "rollback-test",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = msg,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            TimeProvider.System.GetUtcNow().AddMinutes(30),
+            transaction,
+            AbortToken
+        );
         await transaction.RollbackAsync(AbortToken);
 
         // then — message should not be persisted
@@ -342,6 +370,227 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // then
         page.Items.Should().BeEmpty();
         page.TotalItems.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
+    {
+        var explicitMessage = _CreateMessage();
+        explicitMessage.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.Auto.ToString("G");
+        explicitMessage.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.Durable.ToString("G");
+
+        var explicitPublished = await _storage!.StoreMessageAsync(
+            "delivery-metadata-explicit",
+            explicitMessage,
+            cancellationToken: AbortToken
+        );
+        var malformedPublished = await _storage.StoreMessageAsync(
+            "delivery-metadata-malformed",
+            _CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        var legacyReceived = await _storage.StoreReceivedMessageAsync(
+            "delivery-metadata-legacy",
+            "delivery-metadata-group",
+            _CreateMessage(),
+            AbortToken
+        );
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.ExecuteAsync(
+                "UPDATE messaging.published SET \"Content\" = @Content WHERE \"Id\" = @Id",
+                new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
+            );
+        }
+
+        var monitoring = _storage.GetMonitoringApi();
+        var publishedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        var receivedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Subscribe,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        var explicitView = publishedPage.Items.Single(x => x.StorageId == explicitPublished.StorageId);
+        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        explicitView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+
+        var malformedView = publishedPage.Items.Single(x => x.StorageId == malformedPublished.StorageId);
+        malformedView.RequestedDeliveryMode.Should().BeNull();
+        malformedView.ResolvedDeliveryMode.Should().BeNull();
+
+        var legacyView = receivedPage.Items.Single(x => x.StorageId == legacyReceived.StorageId);
+        legacyView.RequestedDeliveryMode.Should().BeNull();
+        legacyView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+    }
+
+    [Theory]
+    [InlineData(MessageType.Publish, "published")]
+    [InlineData(MessageType.Subscribe, "received")]
+    public async Task should_return_bounded_unknown_lane_diagnostics_without_reading_content(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var ids = Enumerable.Range(0, 205).Select(_ => Guid.NewGuid()).ToArray();
+        var now = TimeProvider.System.GetUtcNow();
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            $"""
+            INSERT INTO messaging.{tableName}
+                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+            SELECT id, 'v1', 'unknown-lane-diagnostic', 'not-a-message-envelope', 77, 0, 0,
+                   @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', id::text{receivedValues}
+            FROM unnest(@Ids::uuid[]) AS id;
+            """,
+            new
+            {
+                Ids = ids,
+                Added = now,
+                NextRetryAt = now.AddMinutes(-1),
+            }
+        );
+        var before = await connection.QuerySingleAsync<string>(
+            $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+            new { Id = ids[0] }
+        );
+
+        var monitoring = _storage!.GetMonitoringApi();
+        var firstPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 1,
+                PageSize = 500,
+            },
+            AbortToken
+        );
+        var secondPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 2,
+                PageSize = 500,
+            },
+            AbortToken
+        );
+
+        firstPage.Items.Should().HaveCount(200);
+        firstPage.Size.Should().Be(200);
+        firstPage.TotalItems.Should().Be(205);
+        secondPage.Items.Should().HaveCount(5);
+        firstPage.Items.Should().OnlyContain(item => item.MessageType == messageType && item.RawLane == 77);
+        firstPage
+            .Items.Select(item => item.StorageId)
+            .Should()
+            .NotIntersectWith(secondPage.Items.Select(item => item.StorageId));
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+                new { Id = ids[0] }
+            )
+        )
+            .Should()
+            .Be(before);
+    }
+
+    [Theory]
+    [InlineData(MessageType.Publish, "published")]
+    [InlineData(MessageType.Subscribe, "received")]
+    public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var id = Guid.NewGuid();
+        var now = TimeProvider.System.GetUtcNow();
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            $"""
+            INSERT INTO messaging.{tableName}
+                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+            VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, NULL, NULL, 'Failed', @MessageId{receivedValues});
+            """,
+            new
+            {
+                Id = id,
+                Added = now,
+                MessageId = $"unknown-lane-{id:N}",
+            }
+        );
+
+        var monitoring = _storage!.GetMonitoringApi();
+        var single =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedMessageAsync(id, AbortToken)
+                : await monitoring.GetReceivedMessageAsync(id, AbortToken);
+        var multiple =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedMessagesAsync([id], AbortToken)
+                : await monitoring.GetReceivedMessagesAsync([id], AbortToken);
+        var count =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedFailedCountAsync(AbortToken)
+                : await monitoring.GetReceivedFailedCountAsync(AbortToken);
+        var page = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        single.Should().BeNull();
+        multiple.Should().BeEmpty();
+        count.Should().Be(0);
+        page.Items.Should().BeEmpty();
+        (
+            await monitoring.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = messageType,
+                    CurrentPage = 1,
+                    PageSize = 10,
+                },
+                AbortToken
+            )
+        ).Items.Should().ContainSingle().Which.StorageId.Should().Be(id);
+    }
+
+    [Fact]
+    public async Task should_reject_undefined_message_type_for_unknown_lane_diagnostics()
+    {
+        var monitoring = _storage!.GetMonitoringApi();
+        var act = async () =>
+            await monitoring.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery { MessageType = (MessageType)123 },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;

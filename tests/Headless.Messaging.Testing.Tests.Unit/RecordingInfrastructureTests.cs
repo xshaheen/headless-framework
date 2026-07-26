@@ -51,7 +51,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         {
             StorageId = Guid.NewGuid(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
             Origin = new Message(_BaseHeaders(id, name, correlationId), value: null),
         };
@@ -61,7 +61,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(RecordingInfrastructureTests).GetMethod(
                 nameof(_MakeConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static,

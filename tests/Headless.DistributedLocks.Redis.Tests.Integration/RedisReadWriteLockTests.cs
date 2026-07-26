@@ -20,7 +20,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
     {
         return new DistributedReadWriteLock(
             fixture.ReaderWriterLockStorage,
-            outboxBus: null,
+            bus: null,
             options ?? new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

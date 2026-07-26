@@ -674,7 +674,7 @@ No product-level question remains open. Implementation may choose internal type 
 - Extend package-fence tests to enforce abstraction boundaries after removal of `IOutbox*`.
 - In PR 4, add local-feed package-family probes for the previous all-old and new all-new Messaging graphs and record unsupported mixed-family combinations in release documentation.
 
-**Approach:** Choose lane from domain semantics and delivery mode from failure/transaction requirements. Cache invalidation is Bus and transport-direct unless a caller opts into durability; distributed-lock wake-up is durable; ORM integration-event dispatch uses Bus with coordinated durable capture; Permissions chooses the lane matching its existing fan-out/ownership semantics. Record any non-obvious choice in the matching package docs.
+**Approach:** Choose lane from domain semantics and delivery mode from failure/transaction requirements. Cache invalidation is Bus and transport-direct. Distributed-lock wake-up is also transport-direct because it is a latency hint; polling and lease expiry remain the correctness floor. ORM integration-event dispatch uses Bus with coordinated durable capture; Permissions chooses the lane matching its existing fan-out/ownership semantics. Record any non-obvious choice in the matching package docs.
 
 **Test scenarios:**
 

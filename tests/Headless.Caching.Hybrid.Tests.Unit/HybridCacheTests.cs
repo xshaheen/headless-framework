@@ -377,7 +377,7 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options == null),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -432,7 +432,7 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Prefix == prefix),
-                Arg.Is<PublishOptions?>(options => options == null),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -464,7 +464,7 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.FlushAll),
-                Arg.Is<PublishOptions?>(options => options == null),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1064,7 +1064,7 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options == null),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }

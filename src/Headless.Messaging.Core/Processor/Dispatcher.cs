@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher
+internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher, ICommittedMessageDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
@@ -193,6 +193,12 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
     void ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
     {
+        if (_IsCancellationRequested())
+        {
+            _logger.MessagePersistButSystemStopped();
+            return;
+        }
+
         if (message.ExpiresAt is not { } publishTime)
         {
             throw new InvalidOperationException("A committed delayed message must have an expiration time.");
@@ -200,6 +206,19 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
         // A full in-memory queue is safe here: the committed message remains durable as Delayed work.
         _ = _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
+    }
+
+    void ICommittedMessageDispatcher.EnqueueCommittedMessage(MediumMessage message)
+    {
+        if (_IsCancellationRequested())
+        {
+            _logger.MessagePersistButSystemStopped();
+            return;
+        }
+
+        // A full channel is not a publish failure: the row already committed, so the relay is the
+        // recovery authority. This path must never wait for channel capacity or broker progress.
+        _ = PublishedChannel.Writer.TryWrite(message);
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
@@ -483,9 +502,10 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         PublishedChannel = Channel.CreateBounded<MediumMessage>(
             new BoundedChannelOptions(_publishChannelSize)
             {
-                AllowSynchronousContinuations = true,
+                AllowSynchronousContinuations = false,
                 SingleReader = true,
-                SingleWriter = !_enableParallelSend,
+                // Public publishes, relay pickup, and post-commit acceleration can all write concurrently.
+                SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );

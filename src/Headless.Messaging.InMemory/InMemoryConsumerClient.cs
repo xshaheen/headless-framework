@@ -18,7 +18,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
 
     private readonly MemoryQueue _queue;
     private readonly string _groupId;
-    private readonly IntentType _intentType;
+    private readonly MessageLane _lane;
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new(_MaxPendingMessages);
     private readonly SemaphoreSlim _semaphore;
@@ -36,15 +36,15 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         MemoryQueue queue,
         string groupId,
         byte groupConcurrent,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     )
     {
         _queue = queue;
         _groupId = groupId;
-        _intentType = intentType;
+        _lane = lane;
         _groupConcurrent = groupConcurrent;
         _semaphore = new SemaphoreSlim(groupConcurrent);
-        _queue.RegisterConsumerClient(intentType, groupId, this);
+        _queue.RegisterConsumerClient(lane, groupId, this);
     }
 
     /// <summary>
@@ -78,7 +78,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         Argument.IsNotNull(messageNames);
         cancellationToken.ThrowIfCancellationRequested();
-        _queue.Subscribe(_intentType, _groupId, messageNames);
+        _queue.Subscribe(_lane, _groupId, messageNames);
         _ready.TrySetResult();
 
         return ValueTask.CompletedTask;
@@ -302,7 +302,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         _ready.TrySetCanceled();
         _semaphore.Dispose();
         _messageQueue.Dispose();
-        _queue.Unsubscribe(_intentType, _groupId, this);
+        _queue.Unsubscribe(_lane, _groupId, this);
         return ValueTask.CompletedTask;
     }
 }

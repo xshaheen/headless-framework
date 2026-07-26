@@ -20,7 +20,7 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     {
         return new DistributedLock(
             fixture.LockStorage,
-            outboxBus: null,
+            bus: null,
             new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

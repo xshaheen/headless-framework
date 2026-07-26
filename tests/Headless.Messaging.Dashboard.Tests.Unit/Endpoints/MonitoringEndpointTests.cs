@@ -4,9 +4,11 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -47,6 +49,60 @@ public sealed class MonitoringEndpointTests : TestBase
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("100"); // PublishedSucceeded
         body.Should().Contain("200"); // ReceivedSucceeded
+    }
+
+    [Fact]
+    public async Task should_return_bounded_read_only_unknown_lane_diagnostics()
+    {
+        // given
+        UnknownLaneMessageQuery? capturedQuery = null;
+        var storageId = Guid.Parse("11111111-1111-1111-1111-111111111350");
+        var page = new IndexPage<UnknownLaneMessageView>(
+            [
+                new()
+                {
+                    StorageId = storageId,
+                    MessageType = MessageType.Subscribe,
+                    RawLane = 99,
+                    Name = "poison-row",
+                    StatusName = StatusName.Failed,
+                    Added = DateTimeOffset.Parse("2026-07-26T08:00:00Z", CultureInfo.InvariantCulture),
+                    NextRetryAt = DateTimeOffset.Parse("2026-07-26T08:05:00Z", CultureInfo.InvariantCulture),
+                    LockedUntil = null,
+                },
+            ],
+            index: 0,
+            size: 200,
+            totalItems: 1
+        );
+        _monitoringApi
+            .GetUnknownLaneMessagesAsync(
+                Arg.Do<UnknownLaneMessageQuery>(query => capturedQuery = query),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(page));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync(
+            "/api/unknown-lanes?messageType=Subscribe&currentPage=0&perPage=500",
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.MessageType.Should().Be(MessageType.Subscribe);
+        capturedQuery.CurrentPage.Should().Be(1);
+        capturedQuery.PageSize.Should().Be(200);
+
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        body.Should().Contain(storageId.ToString("D")).And.Contain("\"rawLane\":99");
+        body.Contains("content", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
     }
 
     [Fact]

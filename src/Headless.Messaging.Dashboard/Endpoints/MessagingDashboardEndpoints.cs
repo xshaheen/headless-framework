@@ -7,6 +7,7 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -89,6 +90,11 @@ public static class MessagingDashboardEndpoints
             .WithName("Messaging_MetaInfo")
             .WithSummary("Get messaging infrastructure metadata");
         apiGroup.MapGet("/stats", _Stats).WithName("Messaging_Stats").WithSummary("Get aggregate message statistics");
+        apiGroup
+            .MapGet("/unknown-lanes", _UnknownLaneMessages)
+            .WithName("Messaging_UnknownLaneMessages")
+            .WithSummary("List rows with unrecognized persisted delivery lanes")
+            .WithDescription("Read-only diagnostics. Message content is never loaded and no repair action is exposed.");
         apiGroup
             .MapGet("/metrics-history", _MetricsHistory)
             .WithName("Messaging_MetricsHistory")
@@ -294,6 +300,60 @@ public static class MessagingDashboardEndpoints
         return Results.Json(result);
     }
 
+    private static async Task<IResult> _UnknownLaneMessages(
+        IServiceProvider sp,
+        HttpContext httpContext,
+        MessageType messageType = MessageType.Publish,
+        int perPage = 50,
+        int currentPage = 1
+    )
+    {
+        if (messageType is not (MessageType.Publish or MessageType.Subscribe))
+        {
+            return Results.BadRequest();
+        }
+
+        var dataStorage = sp.GetRequiredService<IDataStorage>();
+        var page = await dataStorage
+            .GetMonitoringApi()
+            .GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = messageType,
+                    CurrentPage = Math.Max(currentPage, 1),
+                    PageSize = perPage <= 0 ? 50 : Math.Min(perPage, _MaxPageSize),
+                },
+                httpContext.RequestAborted
+            )
+            .ConfigureAwait(false);
+
+        var items = page.Items.Select(message => new
+        {
+            StorageId = message.StorageId.ToString("D"),
+            MessageType = message.MessageType.ToString("G"),
+            message.RawLane,
+            message.Name,
+            StatusName = message.StatusName.ToString("G"),
+            message.Added,
+            message.NextRetryAt,
+            message.LockedUntil,
+        });
+
+        return Results.Json(
+            new
+            {
+                Items = items,
+                page.Index,
+                page.Size,
+                page.TotalItems,
+                page.TotalPages,
+                page.HasPrevious,
+                page.HasNext,
+                Totals = page.TotalItems,
+            }
+        );
+    }
+
     private static async Task<IResult> _PublishedMessageDetails(Guid id, IServiceProvider sp)
     {
         var dataStorage = sp.GetRequiredService<IDataStorage>();
@@ -305,13 +365,17 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
+        var delivery = DeliveryMetadata.ReadStoredHeaders(message.Origin.Headers);
+
         return Results.Json(
             new
             {
                 StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
-                message.IntentType,
+                Lane = message.Lane.ToString("G"),
+                RequestedDeliveryMode = delivery.RequestedDeliveryMode?.ToString("G"),
+                ResolvedDeliveryMode = delivery.ResolvedDeliveryMode?.ToString("G"),
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -331,6 +395,8 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
+        var delivery = DeliveryMetadata.ReadStoredHeaders(message.Origin.Headers);
+
         return Results.Json(
             new
             {
@@ -338,7 +404,9 @@ public static class MessagingDashboardEndpoints
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
                 Group = message.Origin.GetGroup(),
-                message.IntentType,
+                Lane = message.Lane.ToString("G"),
+                RequestedDeliveryMode = delivery.RequestedDeliveryMode?.ToString("G"),
+                ResolvedDeliveryMode = delivery.ResolvedDeliveryMode?.ToString("G"),
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -376,10 +444,10 @@ public static class MessagingDashboardEndpoints
 
         foreach (var message in messages)
         {
-            var hasTransport = message.IntentType switch
+            var hasTransport = message.Lane switch
             {
-                IntentType.Bus => busTransport is not null,
-                IntentType.Queue => queueTransport is not null,
+                MessageLane.Bus => busTransport is not null,
+                MessageLane.Queue => queueTransport is not null,
                 _ => false,
             };
 
@@ -449,10 +517,10 @@ public static class MessagingDashboardEndpoints
 
         foreach (var message in messages)
         {
-            var hasTransport = message.IntentType switch
+            var hasTransport = message.Lane switch
             {
-                IntentType.Bus => busTransport is not null,
-                IntentType.Queue => queueTransport is not null,
+                MessageLane.Bus => busTransport is not null,
+                MessageLane.Queue => queueTransport is not null,
                 _ => false,
             };
 
@@ -499,7 +567,7 @@ public static class MessagingDashboardEndpoints
         IServiceProvider sp,
         string? name = null,
         string? content = null,
-        IntentType? intentType = null,
+        MessageLane? lane = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -522,7 +590,7 @@ public static class MessagingDashboardEndpoints
             MessageType = MessageType.Publish,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
-            IntentType = intentType,
+            Lane = lane,
             StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -538,7 +606,7 @@ public static class MessagingDashboardEndpoints
         string? name = null,
         string? group = null,
         string? content = null,
-        IntentType? intentType = null,
+        MessageLane? lane = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -562,7 +630,7 @@ public static class MessagingDashboardEndpoints
             Group = group ?? string.Empty,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
-            IntentType = intentType,
+            Lane = lane,
             StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -615,7 +683,9 @@ public static class MessagingDashboardEndpoints
             message.MessageId,
             message.Group,
             message.Name,
-            message.IntentType,
+            Lane = message.Lane.ToString("G"),
+            RequestedDeliveryMode = message.RequestedDeliveryMode?.ToString("G"),
+            ResolvedDeliveryMode = message.ResolvedDeliveryMode?.ToString("G"),
             message.Content,
             message.Added,
             message.ExpiresAt,

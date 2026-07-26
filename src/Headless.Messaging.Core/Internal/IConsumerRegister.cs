@@ -646,8 +646,6 @@ internal sealed class ConsumerRegister(
         CancellationToken hostShutdownToken
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-
         async Task onMessageCallback(TransportMessage transportMessage, object? sender)
         {
             var probeAcquired = false;
@@ -681,7 +679,7 @@ internal sealed class ConsumerRegister(
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
-                traceHandle = _TracingBefore(transportMessage, intentType, _serverAddress);
+                traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
 
                 var name = transportMessage.Name;
 
@@ -772,7 +770,7 @@ internal sealed class ConsumerRegister(
                                 StorageId = Guid.Empty,
                                 Origin = message,
                                 Content = content,
-                                IntentType = intentType,
+                                Lane = lane,
                             },
                             exceptionInfo,
                             hostShutdownToken
@@ -807,7 +805,7 @@ internal sealed class ConsumerRegister(
                                     ServiceProvider = exhaustedScope.ServiceProvider,
                                     MessageType = MessageType.Subscribe,
                                     Message = message,
-                                    IntentType = intentType,
+                                    Lane = lane,
                                     Exception =
                                         dispatchBypassException
                                         ?? new InvalidOperationException(
@@ -861,7 +859,7 @@ internal sealed class ConsumerRegister(
                                 StorageId = Guid.Empty,
                                 Origin = message,
                                 Content = string.Empty,
-                                IntentType = intentType,
+                                Lane = lane,
                             },
                             CancellationToken.None
                         )
@@ -1087,7 +1085,7 @@ internal sealed class ConsumerRegister(
 
     #region Tracing
 
-    private MessagingTraceHandle _TracingBefore(TransportMessage message, IntentType intentType, BrokerAddress broker)
+    private MessagingTraceHandle _TracingBefore(TransportMessage message, MessageLane lane, BrokerAddress broker)
     {
         if (!MessagingDiagnostics.IsEnabled)
         {
@@ -1095,7 +1093,7 @@ internal sealed class ConsumerRegister(
         }
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.ConsumeStart(message, intentType, broker, now);
+        var activity = _telemetry.ConsumeStart(message, lane, broker, now);
 
         return new MessagingTraceHandle(activity, now);
     }

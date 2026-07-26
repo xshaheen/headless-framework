@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 namespace Tests.Internal;
 
 /// <summary>
-/// Tests for F9 — <see cref="PublishContext{TMessage}.IsTransactional"/>: surfaces the transactional
+/// Tests for F9 — <see cref="PublishContext.IsTransactional"/>: surfaces the transactional
 /// boundary as a typed contract so post-success middleware can detect when a publish is enlisted on an
 /// ambient commit coordinator whose relational commit drives outbox dispatch post-commit.
 /// </summary>
@@ -84,13 +84,13 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
         await using (scope)
         {
-            var publisher = _BuildOutboxMessageWriter(pipeline, stack);
+            var publisher = _BuildMessagePublisher(pipeline, stack);
 
             // when
             await publisher.PublishAsync(
+                MessageLane.Bus,
                 new TestMessage("hi"),
                 options: null,
-                intentType: IntentType.Bus,
                 cancellationToken: AbortToken
             );
 
@@ -112,13 +112,13 @@ public sealed class IsTransactionalPropagationTests : TestBase
         );
         var pipeline = _BuildPublishPipeline(services);
 
-        var publisher = _BuildOutboxMessageWriter(pipeline, new MessagingNullCommitCoordinator());
+        var publisher = _BuildMessagePublisher(pipeline, new MessagingNullCommitCoordinator());
 
         // when
         await publisher.PublishAsync(
+            MessageLane.Bus,
             new TestMessage("hi"),
             options: null,
-            intentType: IntentType.Bus,
             cancellationToken: AbortToken
         );
 
@@ -126,7 +126,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         observed.Captured.Should().BeFalse();
     }
 
-    private static OutboxMessageWriter _BuildOutboxMessageWriter(
+    private static MessagePublisher _BuildMessagePublisher(
         IPublishMiddlewarePipeline pipeline,
         ICurrentCommitCoordinator currentCommitCoordinator
     )
@@ -159,7 +159,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                         StorageId = Guid.NewGuid(),
                         Origin = content,
                         Content = "{}",
-                        IntentType = IntentType.Bus,
+                        Lane = MessageLane.Bus,
                         Added = DateTimeOffset.UtcNow,
                     }
                 );
@@ -178,15 +178,27 @@ public sealed class IsTransactionalPropagationTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        return new OutboxMessageWriter(
-            storage,
-            dispatcher,
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var transport = new SuccessfulTransport();
+        var capabilities = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport(
+                "TestTransport",
+                [MessageLane.Bus],
+                supportsIndependentLaneTopology: true
+            ),
+            MessagingProviderCapabilities.Storage("TestStorage", [MessageLane.Bus], supportsDelayedScheduling: true),
+        ]);
+
+        return new MessagePublisher(
+            new JsonUtf8Serializer(optionsAccessor),
+            _ => transport,
             publishRequestFactory,
-            currentCommitCoordinator,
             pipeline,
             TimeProvider.System,
-            Options.Create(new MessagingOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+            capabilities,
+            currentCommitCoordinator,
+            static () => new TestDeliveryCoordinationResolver(),
+            () => writer
         );
     }
 
@@ -219,6 +231,33 @@ public sealed class IsTransactionalPropagationTests : TestBase
         public object? GetService(Type serviceType)
         {
             return null;
+        }
+    }
+
+    private sealed class TestDeliveryCoordinationResolver : IDeliveryCoordinationResolver
+    {
+        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
+        {
+            return
+                coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
+                && relational.Transaction is { } transaction
+                ? DeliveryCoordination.Compatible(coordinator, transaction)
+                : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        }
+    }
+
+    private sealed class SuccessfulTransport : ITransport
+    {
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
         }
     }
 

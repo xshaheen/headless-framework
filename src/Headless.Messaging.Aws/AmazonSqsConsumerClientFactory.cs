@@ -24,13 +24,7 @@ internal sealed class AmazonSqsConsumerClientFactory(
 
         try
         {
-            var client = new AmazonSqsConsumerClient(
-                groupName,
-                groupConcurrent,
-                amazonSqsOptions,
-                logger,
-                MessageLaneCompatibility.ToIntentType(lane)
-            );
+            var client = new AmazonSqsConsumerClient(groupName, groupConcurrent, amazonSqsOptions, logger, lane);
             return Task.FromResult<IConsumerClient>(client);
         }
         catch (Exception e) when (e is not OperationCanceledException)

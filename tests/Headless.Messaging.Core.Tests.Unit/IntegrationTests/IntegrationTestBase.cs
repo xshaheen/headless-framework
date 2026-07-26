@@ -11,7 +11,7 @@ public abstract class IntegrationTestBase(ITestOutputHelper testOutput) : TestBa
     protected CancellationTokenSource CancellationTokenSource { get; } = new(TimeSpan.FromSeconds(10));
     protected ServiceProvider Container { get; private set; } = null!;
     protected ObservableCollection<object> HandledMessages { get; } = [];
-    protected IOutboxBus Publisher { get; private set; } = null!;
+    protected IBus Publisher { get; private set; } = null!;
 
     protected IServiceScope Scope { get; private set; } = null!;
 
@@ -29,7 +29,7 @@ public abstract class IntegrationTestBase(ITestOutputHelper testOutput) : TestBa
 
         Container = services.BuildTestContainer(CancellationToken);
         Scope = Container.CreateScope();
-        Publisher = Scope.ServiceProvider.GetRequiredService<IOutboxBus>();
+        Publisher = Scope.ServiceProvider.GetRequiredService<IBus>();
 
         return base.InitializeAsync();
     }

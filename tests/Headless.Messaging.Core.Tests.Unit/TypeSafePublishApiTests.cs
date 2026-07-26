@@ -127,7 +127,7 @@ public sealed class TypeSafePublishApiTests
         // when
         await using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<IConsumerRegistry>();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
+        var publisher = provider.GetRequiredService<IBus>();
 
         // then - Mapping is available for type-safe publishing
         registry.TryGetRawMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
@@ -145,30 +145,32 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public void should_expose_intent_specific_publish_contracts()
+    public void should_expose_only_verb_specific_publish_contracts()
     {
         typeof(IBus)
             .GetMethods()
             .Should()
             .ContainSingle(method => method.Name == nameof(IBus.PublishAsync) && method.IsGenericMethod);
-        typeof(IOutboxBus)
-            .GetMethods()
-            .Should()
-            .ContainSingle(method => method.Name == nameof(IOutboxBus.PublishAsync) && method.IsGenericMethod);
         typeof(IQueue)
             .GetMethods()
             .Should()
             .ContainSingle(method => method.Name == nameof(IQueue.EnqueueAsync) && method.IsGenericMethod);
-        typeof(IOutboxQueue)
-            .GetMethods()
+
+        typeof(IBus).Assembly.GetTypes().Should().NotContain(type => type.FullName == "Headless.Messaging.IOutboxBus");
+        typeof(IQueue)
+            .Assembly.GetTypes()
             .Should()
-            .ContainSingle(method => method.Name == nameof(IOutboxQueue.EnqueueAsync) && method.IsGenericMethod);
+            .NotContain(type => type.FullName == "Headless.Messaging.IOutboxQueue");
     }
 
     [Fact]
-    public void should_not_expose_mutable_outbox_publisher_state()
+    public void should_not_expose_mutable_publisher_state()
     {
-        var publicPropertyNames = typeof(IOutboxBus).GetProperties().Select(property => property.Name).ToList();
+        var publicPropertyNames = typeof(IBus)
+            .GetProperties()
+            .Concat(typeof(IQueue).GetProperties())
+            .Select(property => property.Name)
+            .ToList();
 
         publicPropertyNames.Should().NotContain("ServiceProvider");
         publicPropertyNames.Should().NotContain("Transaction");

@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
@@ -19,10 +20,8 @@ using Tests.Helpers;
 namespace Tests.Diagnostics;
 
 /// <summary>
-/// Regression coverage for the caller-cancellation / guarded-send span fixes (commit e4dda16f9):
-/// <see cref="DirectPublisherCore.SendAsync"/> and <see cref="MessageSender"/>'s transport-send guard must
-/// stop the <c>message.publish</c> span un-errored on an <see cref="OperationCanceledException"/> rethrow,
-/// instead of leaking it into <see cref="Activity.Current"/>.
+/// Regression coverage for transport/state ambiguity diagnostics. Cancellation can race broker acceptance,
+/// and a successful send followed by a failed durable state write creates the same at-least-once duplicate window.
 /// </summary>
 public sealed class MessagingTelemetryCancellationTests : TestBase
 {
@@ -31,7 +30,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
     // (a) DirectPublisherCore: the shared send-and-trace kernel behind Bus/Queue. No DI required — it takes
     // every collaborator (serializer, transport delegate, telemetry) as a plain parameter.
     [Fact]
-    public async Task should_stop_publish_span_without_error_status_when_direct_publisher_send_transport_cancels()
+    public async Task should_diagnose_ambiguous_delivery_when_direct_publisher_send_transport_cancels()
     {
         // given
         var message = _CreateMessage("orders.placed");
@@ -55,12 +54,14 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         var act = () =>
             DirectPublisherCore.SendAsync(
                 message,
-                IntentType.Bus,
+                MessageLane.Bus,
                 serializer,
                 _Broker,
                 SendTransport,
                 nowMs: () => 100,
                 MessagingTelemetry.Default,
+                TimeSpan.FromSeconds(10),
+                TimeProvider.System,
                 AbortToken
             );
 
@@ -70,7 +71,9 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         published.Should().NotBeNull();
         published!.OperationName.Should().Be("message.publish");
         stopped.All.Should().Contain(published);
-        published.Status.Should().NotBe(ActivityStatusCode.Error);
+        published.Status.Should().Be(ActivityStatusCode.Error);
+        published.GetTagItem(MessagingTags.DeliveryOutcome).Should().Be("ambiguous");
+        published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
     }
 
     // (b) IMessageSender: MessageSender._SendWithoutRetryAsync's transport-send guard. transport.SendAsync
@@ -79,7 +82,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
     // the exception propagates all the way out of the public SendAsync call, matching the "propagates
     // unchanged" contract in the fix's own comment.
     [Fact]
-    public async Task should_stop_publish_span_without_error_status_when_message_sender_transport_cancels()
+    public async Task should_diagnose_ambiguous_delivery_when_message_sender_transport_cancels()
     {
         // given
         var storage = Substitute.For<IDataStorage>();
@@ -125,7 +128,66 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         published.Should().NotBeNull();
         published!.OperationName.Should().Be("message.publish");
         stopped.All.Should().Contain(published);
-        published.Status.Should().NotBe(ActivityStatusCode.Error);
+        published.Status.Should().Be(ActivityStatusCode.Error);
+        published.GetTagItem(MessagingTags.DeliveryOutcome).Should().Be("ambiguous");
+        published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
+    }
+
+    [Fact]
+    public async Task should_diagnose_duplicate_risk_when_transport_accepts_before_success_state_write_fails()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("state store unavailable"));
+
+        var transportMessage = _CreateTransportMessage("test.messageName");
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        Activity? published = null;
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(_Broker);
+        busTransport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                published = Activity.Current;
+                return OperateResult.Success;
+            });
+
+        using var stopped = new PublishActivityCollector();
+        var sender = _CreateSender(storage, serializer, busTransport, new MessagingOptions());
+
+        // when
+        var act = () => sender.SendAsync(_CreateMediumMessage());
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("state store unavailable");
+        published.Should().NotBeNull();
+        stopped.All.Should().Contain(published);
+        published!.Status.Should().Be(ActivityStatusCode.Error);
+        published.GetTagItem(MessagingTags.DeliveryOutcome).Should().Be("ambiguous");
+        published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
     }
 
     // (b, companion) The sibling guard: a non-cancellation throw from transport.SendAsync must record
@@ -278,7 +340,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }

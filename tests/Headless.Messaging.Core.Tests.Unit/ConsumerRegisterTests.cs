@@ -159,7 +159,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -236,7 +236,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,

@@ -261,7 +261,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         delivery.Message.Body.ToArray().Should().Equal(expectedBody);
         delivery.Message.Id.Should().Be(expectedId);
         delivery.Message.Name.Should().Be(session.Destination);
-        delivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Queue));
+        delivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(MessageLane.Queue));
         delivery.Message.Headers["x-headless-conformance"].Should().Be("round-trip");
         delivery.SettlementValue.Should().NotBeNull();
 
@@ -447,7 +447,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         {
             [MessagingHeaders.MessageId] = messageId,
             [MessagingHeaders.MessageName] = destination,
-            [MessagingHeaders.Intent] = nameof(IntentType.Queue),
+            [MessagingHeaders.Intent] = nameof(MessageLane.Queue),
             ["x-headless-conformance"] = "round-trip",
         };
 

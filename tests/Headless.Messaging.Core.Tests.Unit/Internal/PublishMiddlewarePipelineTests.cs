@@ -24,10 +24,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) =>
+            _DirectDecision,
+            innerPublish: (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -51,10 +51,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) =>
+            _DirectDecision,
+            innerPublish: (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -78,10 +78,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) =>
+            _DirectDecision,
+            innerPublish: (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -107,10 +107,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
-                delayTime: null,
-                innerPublish: (_, _, _) => Task.CompletedTask,
+                _DirectDecision,
+                innerPublish: (_, _) => Task.CompletedTask,
                 cancellationToken: cts.Token
             );
 
@@ -132,10 +132,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
-                delayTime: null,
-                innerPublish: (_, _, _) => Task.CompletedTask,
+                _DirectDecision,
+                innerPublish: (_, _) => Task.CompletedTask,
                 cancellationToken: cts.Token
             );
 
@@ -157,10 +157,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
-                delayTime: null,
-                innerPublish: (_, _, _) => Task.CompletedTask,
+                _DirectDecision,
+                innerPublish: (_, _) => Task.CompletedTask,
                 cancellationToken: cts.Token
             );
 
@@ -182,10 +182,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
-                delayTime: null,
-                innerPublish: (_, _, ct) =>
+                _DirectDecision,
+                innerPublish: (_, ct) =>
                 {
                     ct.ThrowIfCancellationRequested();
                     return Task.CompletedTask;
@@ -212,10 +212,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) => Task.CompletedTask,
+            _DirectDecision,
+            innerPublish: (_, _) => Task.CompletedTask,
             cancellationToken: AbortToken
         );
 
@@ -236,10 +236,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) => Task.CompletedTask,
+            _DirectDecision,
+            innerPublish: (_, _) => Task.CompletedTask,
             cancellationToken: AbortToken
         );
 
@@ -267,10 +267,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherMiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            innerPublish: (_, _, _) =>
+            _DirectDecision,
+            innerPublish: (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -330,6 +330,15 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         return services;
     }
 
+    private static DeliveryDecision _DirectDecision =>
+        DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Auto,
+            delay: null,
+            DeliveryCoordination.None,
+            DateTimeOffset.UnixEpoch
+        );
+
     private static IPublishMiddlewarePipeline _BuildPipeline(ServiceCollection services)
     {
         return new PublishMiddlewarePipeline(services.BuildServiceProvider());
@@ -341,42 +350,15 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         Type declaredContract
     )
     {
-        var overload = pipeline
-            .GetType()
-            .GetMethod(
-                nameof(IPublishMiddlewarePipeline.ExecuteAsync),
-                BindingFlags.Instance | BindingFlags.Public,
-                binder: null,
-                types:
-                [
-                    typeof(object),
-                    typeof(Type),
-                    typeof(IntentType),
-                    typeof(MessageOptions),
-                    typeof(TimeSpan?),
-                    typeof(Func<MessageOptions?, TimeSpan?, CancellationToken, Task>),
-                    typeof(bool),
-                    typeof(CancellationToken),
-                ],
-                modifiers: null
-            );
-
-        overload.Should().NotBeNull("the runtime must carry the declared contract separately from the payload");
-
-        return (Task)
-            overload!.Invoke(
-                pipeline,
-                [
-                    content,
-                    declaredContract,
-                    IntentType.Bus,
-                    null,
-                    null,
-                    (Func<MessageOptions?, TimeSpan?, CancellationToken, Task>)((_, _, _) => Task.CompletedTask),
-                    false,
-                    AbortToken,
-                ]
-            )!;
+        return pipeline.ExecuteAsync(
+            content,
+            declaredContract,
+            MessageLane.Bus,
+            options: null,
+            _DirectDecision,
+            static (_, _) => Task.CompletedTask,
+            AbortToken
+        );
     }
 
     private static Type _ConcreteType(PublishContext context)

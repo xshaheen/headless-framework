@@ -9,7 +9,7 @@ internal static class ConsumerRegistryExtensions
     public static TConfig? ResolveConsumerConfig<TConfig>(
         this IConsumerRegistry registry,
         string groupName,
-        IntentType intentType
+        MessageLane lane
     )
         where TConfig : class
     {
@@ -32,7 +32,7 @@ internal static class ConsumerRegistryExtensions
         var configs = registry
             .GetAll()
             .Where(consumer =>
-                consumer.IntentType == intentType && string.Equals(consumer.Group, groupName, StringComparison.Ordinal)
+                consumer.Lane == lane && string.Equals(consumer.Group, groupName, StringComparison.Ordinal)
             )
             .Select(consumer =>
                 consumer.ProviderConfigs.TryGetValue(typeof(TConfig), out var config) ? config as TConfig : null

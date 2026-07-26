@@ -3,6 +3,9 @@ import { ref, computed, watch } from 'vue'
 import { parseJsonSafe } from '@/utilities/jsonBig'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
+export type MessageLane = 'Bus' | 'Queue'
+export type DeliveryMode = 'Auto' | 'Durable' | 'TransportDirect'
+
 export interface MessageDetail {
   storageId: string
   messageId: string
@@ -11,6 +14,9 @@ export interface MessageDetail {
   added: string
   expiresAt: string | null
   retries: number
+  lane: MessageLane
+  requestedDeliveryMode: DeliveryMode | null
+  resolvedDeliveryMode: DeliveryMode | null
   group?: string
   exceptionInfo?: string
 }
@@ -123,10 +129,7 @@ const isException = computed(() => contentKind.value?.type === 'structured')
 const isPlain = computed(() => contentKind.value?.type === 'plain')
 
 function highlightJson(jsonStr: string): string {
-  const html = jsonStr
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  const html = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return html.replace(
     /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
     (match) => {
@@ -190,8 +193,6 @@ async function copyContent() {
     // clipboard not available
   }
 }
-
-
 </script>
 
 <template>
@@ -229,8 +230,20 @@ async function copyContent() {
             {{ message.name }}
           </v-chip>
 
+          <!-- Lane -->
+          <v-chip size="small" color="info" variant="tonal" class="mr-1 mb-1">
+            <v-icon start size="x-small">mdi-directions-fork</v-icon>
+            {{ message.lane }}
+          </v-chip>
+
           <!-- Group (received only) -->
-          <v-chip v-if="message.group" size="small" color="secondary" variant="tonal" class="mr-1 mb-1">
+          <v-chip
+            v-if="message.group"
+            size="small"
+            color="secondary"
+            variant="tonal"
+            class="mr-1 mb-1"
+          >
             <v-icon start size="x-small">mdi-group</v-icon>
             {{ message.group }}
           </v-chip>
@@ -271,6 +284,14 @@ async function copyContent() {
             <span class="meta-label">Retries</span>
             <span class="meta-value">{{ message.retries }}</span>
           </div>
+          <div class="meta-item">
+            <span class="meta-label">Requested delivery</span>
+            <span class="meta-value">{{ message.requestedDeliveryMode ?? 'Not recorded' }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Resolved delivery</span>
+            <span class="meta-value">{{ message.resolvedDeliveryMode ?? 'Not recorded' }}</span>
+          </div>
         </div>
       </div>
 
@@ -307,7 +328,10 @@ async function copyContent() {
 
             <!-- Stack Trace -->
             <div v-if="hasStackTrace" class="stack-trace-section mb-4">
-              <div class="section-header stack-trace-header" @click="showStackTrace = !showStackTrace">
+              <div
+                class="section-header stack-trace-header"
+                @click="showStackTrace = !showStackTrace"
+              >
                 <v-icon size="small" class="mr-2" color="primary">mdi-code-braces</v-icon>
                 <span class="section-title">Stack Trace</span>
                 <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
@@ -349,7 +373,9 @@ async function copyContent() {
                 </div>
                 <div v-if="structured.innerException" class="info-item">
                   <span class="info-label">Inner Exception</span>
-                  <pre class="info-data">{{ JSON.stringify(structured.innerException, null, 2) }}</pre>
+                  <pre class="info-data">{{
+                    JSON.stringify(structured.innerException, null, 2)
+                  }}</pre>
                 </div>
               </div>
             </div>
@@ -362,11 +388,7 @@ async function copyContent() {
                 <v-chip size="x-small" color="warning" variant="tonal" class="ml-2">
                   {{ showRawData ? 'Collapse' : 'Expand' }}
                 </v-chip>
-                <v-icon
-                  size="small"
-                  class="ml-auto toggle-icon"
-                  :class="{ rotated: showRawData }"
-                >
+                <v-icon size="small" class="ml-auto toggle-icon" :class="{ rotated: showRawData }">
                   mdi-chevron-down
                 </v-icon>
               </div>

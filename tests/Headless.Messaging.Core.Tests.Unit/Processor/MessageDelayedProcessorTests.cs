@@ -136,7 +136,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(30),
             LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5),
         };

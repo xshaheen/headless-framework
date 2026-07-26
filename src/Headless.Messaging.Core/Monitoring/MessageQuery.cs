@@ -26,8 +26,8 @@ public class MessageQuery
     /// <summary>Gets or sets an optional status filter (e.g., <see cref="Monitoring.StatusName.Succeeded"/>, <see cref="Monitoring.StatusName.Failed"/>).</summary>
     public StatusName? StatusName { get; set; }
 
-    /// <summary>Gets or sets an optional delivery intent filter (<see cref="Headless.Messaging.IntentType.Bus"/> or <see cref="Headless.Messaging.IntentType.Queue"/>).</summary>
-    public IntentType? IntentType { get; set; }
+    /// <summary>Gets or sets an optional delivery lane filter.</summary>
+    public MessageLane? Lane { get; set; }
 
     /// <summary>Gets or sets the one-based page index for paginated results.</summary>
     public int CurrentPage { get; set; }

@@ -8,7 +8,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 ## Key Features
 
-- **Verb-Conveyed Lanes**: `IBus` / `IOutboxBus` select broadcast Bus semantics and `IQueue` / `IOutboxQueue` select point-to-point Queue semantics; contracts remain plain types
+- **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
 - **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
 - **Lane-Owned Consumer Management**: `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, lane-scoped assembly scanning, invocation, and per-dispatch lifecycle handling
@@ -71,10 +71,10 @@ using var app = builder.Build();
 await app.Services.GetRequiredService<IBootstrapper>()
     .BootstrapAsync(CancellationToken.None);
 
-await app.Services.GetRequiredService<IOutboxBus>()
+await app.Services.GetRequiredService<IBus>()
     .PublishAsync(
         new OrderPlaced("order-123"),
-        new PublishOptions { MessageName = "orders.placed" },
+        new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
         CancellationToken.None
     );
 
@@ -90,13 +90,13 @@ public sealed class OrderPlacedConsumer(ILogger<OrderPlacedConsumer> logger) : I
 }
 ```
 
-Publish through the outbox when durability matters:
+Request durable delivery when persistence matters:
 
 ```csharp
-await serviceProvider.GetRequiredService<IOutboxBus>()
+await serviceProvider.GetRequiredService<IBus>()
     .PublishAsync(
         new OrderPlaced("order-123"),
-        new PublishOptions { MessageName = "orders.placed" },
+        new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
         cancellationToken
     );
 ```
@@ -159,7 +159,7 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 - `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>()` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. Use callback overloads for `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
-- persisted published and received rows, transport headers, monitoring, and dashboard projections retain the `IntentType` compatibility name and stable `Bus = 0` / `Queue = 1` values until #350. Undefined values fail explicitly and never default to Bus. Retry pickup and received-message identity include the value, so the two lanes do not collapse into one row.
+- runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.
 - a persisted row whose `IntentType` value has no registered capability is marked terminal `Failed` with no next retry; the drainer logs the unsupported value and continues processing later rows.
 - direct publish, outbox publish, and runtime delegates emit OpenTelemetry spans and metrics natively (the former DiagnosticSource bridge was replaced; instrument, span, and attribute names are unchanged, and the EventCounter names used by the dashboard are preserved). See Observability below.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
@@ -182,25 +182,25 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 
 ## Publisher Options
 
-Core registers the generic publisher plumbing up front. Immutable provider descriptors then gate behavior: `IBus` / `IOutboxBus` require Bus transport (and storage for outbox), while `IQueue` / `IOutboxQueue` require the Queue equivalents. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
+Core registers `IBus` and `IQueue` up front. Immutable provider descriptors then gate transport-direct, durable, and delayed behavior per lane. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
 
 ### Bus Publishers
 
 Use bus publishers for broadcast publish/subscribe delivery:
 
-- `IBus` sends directly to an `IBusTransport`.
-- `IOutboxBus` stores first, then dispatches through an `IBusTransport`.
-- `PublishOptions.Delay` is honored by `IOutboxBus` and ignored by `IBus`.
-- Stored rows and consume contexts carry `IntentType.Bus`.
+- `IBus` always selects the Bus lane.
+- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
+- `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- Stored rows and consume contexts carry `MessageLane.Bus`.
 
 ### Queue Publishers
 
 Use queue publishers for point-to-point competing-worker delivery:
 
-- `IQueue` sends directly to an `IQueueTransport`.
-- `IOutboxQueue` stores first, then dispatches through an `IQueueTransport`.
-- `EnqueueOptions.Delay` is honored by `IOutboxQueue` and ignored by `IQueue`.
-- Stored rows and consume contexts carry `IntentType.Queue`.
+- `IQueue` always selects the Queue lane.
+- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
+- `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
 
@@ -216,7 +216,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-Durable publishes use `IOutboxBus` or `IOutboxQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay`.
+Durable publishes use `DeliveryMode.Durable` on `IBus` or `IQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 
@@ -366,7 +366,6 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
-    setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
     setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {
@@ -406,13 +405,12 @@ Top-level messaging timeouts that influence retry behavior:
 | --- | --- | --- | --- |
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
-| `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
 | `ShutdownTimeout` | `TimeSpan` | `30s` | End-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background. `> 0`, `<= 5m`. |
 | `DeadNodeReconcileInterval` | `TimeSpan` | `1m` | Cadence of the always-on dead-owner recovery reconcile backstop. `> 0` (no upper bound — the per-row `LockedUntil` floor owns correctness). Independent of `UseStorageLock`. |
 
 `NextRetryAt` remains application-scheduled through the injected `TimeProvider`, while lease ownership is store-authoritative for fresh dispatch and retry pickup. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, and InMemoryStorage uses its injected `TimeProvider`. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
 
-**Delivery semantics are at-least-once; consumers must be idempotent.** The framework never promises exactly-once: the commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
+**Delivery semantics are at-least-once; consumers must be idempotent.** After a durable row commits, the commit-edge drain only emits a nonblocking in-memory acceleration signal; the relay sweep remains the recovery authority when that signal is dropped. The accelerator and relay can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
 
 When a Coordination provider is registered, storage rows also stamp nullable `Owner` as `node@incarnation` when `LockedUntil` is written. An always-on `DeadOwnerRecoveryBridge` then reclaims rows owned by `Dead` incarnations — on a `NodeLeft` event and a periodic `DeadNodeReconcileInterval` reconcile — by moving `LockedUntil` back to now. Reclaim is dead-only (a `Suspected` owner is never reclaimed) and runs independently of `UseStorageLock`. `LockedUntil` remains the correctness floor; the bridge only reduces orphan recovery latency. Without Coordination, `Owner` stays `null` and the bridge is a no-op. See [Coordination Recovery](#coordination-recovery).
 
@@ -524,11 +522,11 @@ var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
-var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, or HalfOpen
+var isOpen = monitor.IsOpen(MessageLane.Bus, "payments");
+var state = monitor.GetState(MessageLane.Bus, "payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
+var wasReset = await monitor.ResetAsync(MessageLane.Bus, "payments"); // true if reset performed
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

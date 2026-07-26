@@ -41,7 +41,7 @@ On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh.
 
 Per-tier read skip on a factory-backed `GetOrAddAsync` (mirrors FusionCache's `SkipMemoryCacheRead` / `SkipDistributedCacheRead`): `CacheEntryOptions.SkipMemoryCacheRead` bypasses the L1 read so the value is served from — or refreshed against — L2, and `CacheEntryOptions.SkipDistributedCacheRead` bypasses the L2 read so a fresh L1 value serves without an L2 round-trip and an L1 miss falls straight through to the factory. A value read from L2 under `SkipMemoryCacheRead` is still promoted into L1 (promotion is a write, governed by `SkipMemoryCacheWrite`). Setting both is a miss, equivalent to the coarse `SkipCacheRead` (which itself skips the read on both tiers outright). Single-tier providers ignore all three flags — there is only one tier to read.
 
-Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
+Initial and replayed invalidations use `DeliveryMode.TransportDirect`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ## Installation
 
@@ -159,5 +159,5 @@ For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy on
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - `setup.AddNamed(name, i => i.UseHybrid(...))` registers a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
-- Publishes cache invalidation messages through the registered message bus.
+- Publishes cache invalidation messages directly through the registered message bus, bypassing durable capture.
 - Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.

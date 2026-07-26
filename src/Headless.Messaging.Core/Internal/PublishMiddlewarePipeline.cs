@@ -17,21 +17,19 @@ internal interface IPublishMiddlewarePipeline
     Task ExecuteAsync(
         object? content,
         Type declaredMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     );
 
     Task ExecuteAsync<T>(
         T? content,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     );
 }
@@ -68,11 +66,10 @@ internal sealed class PublishMiddlewarePipeline(
 
     public async Task ExecuteAsync<T>(
         T? content,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     )
     {
@@ -80,59 +77,34 @@ internal sealed class PublishMiddlewarePipeline(
 
         if (options?.MessageType is { } declaredMessageType && declaredMessageType != typeof(T))
         {
-            await ExecuteAsync(
-                    content,
-                    declaredMessageType,
-                    intentType,
-                    options,
-                    delayTime,
-                    innerPublish,
-                    isTransactional,
-                    cancellationToken
-                )
+            await ExecuteAsync(content, declaredMessageType, lane, options, decision, innerPublish, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
 
-        var context = new PublishContext<T>(
-            content,
-            intentType,
-            options,
-            delayTime,
-            isTransactional,
-            cancellationToken
-        );
+        var context = new PublishContext<T>(content, lane, options, decision, cancellationToken);
         await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
     }
 
     public async Task ExecuteAsync(
         object? content,
         Type declaredMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var context = _CreateContext(
-            content,
-            declaredMessageType,
-            intentType,
-            options,
-            delayTime,
-            isTransactional,
-            cancellationToken
-        );
+        var context = _CreateContext(content, declaredMessageType, lane, options, decision, cancellationToken);
         await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
     }
 
     private async Task _ExecuteAsync(
         PublishContext context,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish
+        Func<MessageOptions?, CancellationToken, Task> innerPublish
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -147,7 +119,7 @@ internal sealed class PublishMiddlewarePipeline(
 
         Func<ValueTask> next = async () =>
         {
-            await innerPublish(context.Options, context.DelayTime, context.CancellationToken).ConfigureAwait(false);
+            await innerPublish(context.Options, context.CancellationToken).ConfigureAwait(false);
             innerRingCompleted.Value = true;
             _MarkCompleted(context);
         };
@@ -165,10 +137,9 @@ internal sealed class PublishMiddlewarePipeline(
     private static PublishContext _CreateContext(
         object? content,
         Type declaredMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional,
+        DeliveryDecision decision,
         CancellationToken cancellationToken
     )
     {
@@ -189,10 +160,10 @@ internal sealed class PublishMiddlewarePipeline(
                 [
                     content,
                     content?.GetType() ?? declaredMessageType,
-                    intentType,
+                    lane,
                     options,
-                    delayTime,
-                    isTransactional,
+                    decision,
+                    true,
                     cancellationToken,
                 ],
                 culture: null
@@ -249,11 +220,7 @@ internal sealed class PublishMiddlewarePipeline(
 
         if (
             descriptorRegistry is not null
-            && descriptorRegistry.TryGetPublishDescriptors(
-                context.MessageType,
-                MessageLaneCompatibility.ToLane(context.IntentType),
-                out var descriptors
-            )
+            && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, context.Lane, out var descriptors)
         )
         {
             return

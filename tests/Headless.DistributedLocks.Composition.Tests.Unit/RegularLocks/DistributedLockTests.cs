@@ -15,7 +15,7 @@ public sealed class DistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedLockStorage _storage;
-    private readonly IOutboxBus _outboxBus = Substitute.For<IOutboxBus>();
+    private readonly IBus _bus = Substitute.For<IBus>();
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DistributedLockTests()
@@ -26,9 +26,9 @@ public sealed class DistributedLockTests : TestBase
     private DistributedLock _CreateProvider(
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
-        IOutboxBus? outboxBus = null,
+        IBus? bus = null,
         ILogger<DistributedLock>? logger = null,
-        bool useNullOutboxBus = false
+        bool useNullBus = false
     )
     {
         options ??= new DistributedLockOptions();
@@ -36,7 +36,7 @@ public sealed class DistributedLockTests : TestBase
 
         return new DistributedLock(
             storage ?? _storage,
-            useNullOutboxBus ? null : outboxBus ?? _outboxBus,
+            useNullBus ? null : bus ?? _bus,
             options,
             _guidGenerator,
             _timeProvider,
@@ -1081,7 +1081,7 @@ public sealed class DistributedLockTests : TestBase
 
         var provider = new DistributedLock(
             storage,
-            _outboxBus,
+            _bus,
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -1153,20 +1153,19 @@ public sealed class DistributedLockTests : TestBase
         await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
 
         // then
-        await _outboxBus
-            .Received(1)
+        await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LeaseId == acquiredLock.LeaseId),
-                Arg.Is<PublishOptions?>(options => options == null),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
                 Arg.Any<CancellationToken>()
             );
     }
 
     [Fact]
-    public async Task should_release_without_publishing_when_outbox_bus_is_absent()
+    public async Task should_release_without_publishing_when_bus_is_absent()
     {
         // given
-        var provider = _CreateProvider(useNullOutboxBus: true);
+        var provider = _CreateProvider(useNullBus: true);
         var resource = Faker.Random.AlphaNumeric(10);
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1180,16 +1179,15 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_lock_even_when_outbox_publish_fails()
+    public async Task should_release_lock_even_when_wakeup_publish_fails()
     {
-        // given — healthy storage, but the outbox bus dies when publishing the release notification.
+        // given — healthy storage, but the bus dies when publishing the release notification.
         // The publish is a best-effort wake-up for waiters; its failure must not fail the release
         // itself (waiters fall back to polling / TTL expiry).
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        _outboxBus
-            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("outbox down"));
+        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("bus down"));
 
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
         acquiredLock.Should().NotBeNull();
@@ -1207,7 +1205,7 @@ public sealed class DistributedLockTests : TestBase
     {
         // given — storage hangs forever on remove. DisposeTimeout bounds the release so application
         // shutdown is never blocked by sustained storage unavailability; on timeout the release
-        // returns without throwing, skips the outbox publish, and the record TTL is the fallback.
+        // returns without throwing, skips the wake-up publish, and the record TTL is the fallback.
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -1229,16 +1227,15 @@ public sealed class DistributedLockTests : TestBase
 
         // then — no throw and no publish (an unconfirmed release must not wake waiters early)
         await act.Should().NotThrowAsync();
-        await _outboxBus
-            .DidNotReceive()
+        await _bus.DidNotReceive()
             .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_acquire_waiting_lock_with_polling_when_outbox_bus_is_absent()
+    public async Task should_acquire_waiting_lock_with_polling_when_bus_is_absent()
     {
         // given
-        var provider = _CreateProvider(useNullOutboxBus: true);
+        var provider = _CreateProvider(useNullBus: true);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1265,7 +1262,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_log_warning_when_outbox_bus_is_absent()
+    public void should_log_warning_when_bus_is_absent()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLock>>();
@@ -1284,14 +1281,14 @@ public sealed class DistributedLockTests : TestBase
             .Do(call => captured.Add((call.Arg<LogLevel>(), call.Arg<EventId>().Id)));
 
         // when
-        _ = _CreateProvider(logger: logger, useNullOutboxBus: true);
+        _ = _CreateProvider(logger: logger, useNullBus: true);
 
         // then
         captured.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Id == 16);
     }
 
     [Fact]
-    public void should_not_log_warning_when_outbox_bus_is_present()
+    public void should_not_log_warning_when_bus_is_present()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLock>>();

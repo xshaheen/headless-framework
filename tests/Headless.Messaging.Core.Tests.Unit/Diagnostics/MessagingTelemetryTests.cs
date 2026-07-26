@@ -33,17 +33,26 @@ public sealed class MessagingTelemetryTests : TestBase
 
         // persist
         var persistMessage = _CreateMessage("orders.placed");
-        var persist = telemetry.PersistStart(persistMessage, persistMessage.Name, IntentType.Bus, 100);
+        persistMessage.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable);
+        persistMessage.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable);
+        var persist = telemetry.PersistStart(persistMessage, persistMessage.Name, MessageLane.Bus, 100);
         persist.Should().NotBeNull();
         persist!.OperationName.Should().Be("message.persist");
+        persist.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("durable");
+        persist.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("durable");
         MessagingTelemetry.PersistStop(persist, persistMessage.Name, 100, 150);
 
         // publish (with a tenant header so the tenant-id enricher tag is emitted)
         var publishMessage = _CreateTransportMessage(
             "orders.placed",
-            extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "tenant-7" }
+            extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.TenantId] = "tenant-7",
+                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+            }
         );
-        var publish = telemetry.PublishStart(publishMessage, IntentType.Bus, _Broker, 200);
+        var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);
         publish.Should().NotBeNull();
         publish!.OperationName.Should().Be("message.publish");
         _TagKeys(publish)
@@ -56,23 +65,27 @@ public sealed class MessagingTelemetryTests : TestBase
                 "messaging.destination.name",
                 "server.address",
                 "server.port",
-                MessagingTags.Intent,
+                MessagingTags.Lane,
                 MessagingTags.DestinationKind,
                 MessagingTags.TenantId,
+                MessagingTags.RequestedDeliveryMode,
+                MessagingTags.ResolvedDeliveryMode,
             ]);
-        publish.GetTagItem(MessagingTags.Intent).Should().Be("bus");
+        publish.GetTagItem(MessagingTags.Lane).Should().Be("bus");
         publish.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-7");
+        publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
+        publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("transport_direct");
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
 
         // consume
         var consumeMessage = _CreateTransportMessage("orders.placed");
-        var consume = telemetry.ConsumeStart(consumeMessage, IntentType.Queue, _Broker, 300);
+        var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, _Broker, 300);
         consume.Should().NotBeNull();
         consume!.OperationName.Should().Be("message.consume");
         _TagKeys(consume)
             .Should()
             .Contain(["messaging.operation.type", "messaging.client.id", "messaging.consumer.group.name"]);
-        consume.GetTagItem(MessagingTags.Intent).Should().Be("queue");
+        consume.GetTagItem(MessagingTags.Lane).Should().Be("queue");
         MessagingTelemetry.ConsumeStop(consume, consumeMessage, _Broker, 300, 330);
 
         // subscriber invoke (retryCount>0 so the retry-count enricher tag is emitted)
@@ -80,7 +93,7 @@ public sealed class MessagingTelemetryTests : TestBase
         var subscriber = telemetry.SubscriberInvokeStart(
             invokeMessage,
             invokeMessage.Name,
-            IntentType.Bus,
+            MessageLane.Bus,
             _Method,
             retryCount: 3,
             400
@@ -100,13 +113,20 @@ public sealed class MessagingTelemetryTests : TestBase
         using var listener = _StartMeterListener(measurements);
         var telemetry = MessagingTelemetry.Default;
 
-        var publishMessage = _CreateTransportMessage("orders.placed");
-        var publish = telemetry.PublishStart(publishMessage, IntentType.Bus, _Broker, 200);
+        var publishMessage = _CreateTransportMessage(
+            "orders.placed",
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+            }
+        );
+        var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
         MessagingTelemetry.PublishError(publish, publishMessage, _Broker, new InvalidOperationException("boom"));
 
         var consumeMessage = _CreateTransportMessage("orders.placed");
-        var consume = telemetry.ConsumeStart(consumeMessage, IntentType.Queue, _Broker, 300);
+        var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, _Broker, 300);
         MessagingTelemetry.ConsumeStop(consume, consumeMessage, _Broker, 300, 330);
         MessagingTelemetry.ConsumeError(consume, consumeMessage, _Broker, new InvalidOperationException("boom"));
 
@@ -114,7 +134,7 @@ public sealed class MessagingTelemetryTests : TestBase
         var subscriber = telemetry.SubscriberInvokeStart(
             invokeMessage,
             invokeMessage.Name,
-            IntentType.Bus,
+            MessageLane.Bus,
             _Method,
             0,
             400
@@ -147,7 +167,15 @@ public sealed class MessagingTelemetryTests : TestBase
         var (_, publishTagKeys) = measurements.First(m =>
             string.Equals(m.Name, "messaging.publish.messages", StringComparison.Ordinal)
         );
-        publishTagKeys.Should().Contain(["messaging.operation", "messaging.system"]);
+        publishTagKeys
+            .Should()
+            .Contain([
+                "messaging.operation",
+                "messaging.system",
+                MessagingTags.Lane,
+                MessagingTags.RequestedDeliveryMode,
+                MessagingTags.ResolvedDeliveryMode,
+            ]);
 
         var (_, consumeErrorTagKeys) = measurements.First(m =>
             string.Equals(m.Name, "messaging.consume.errors", StringComparison.Ordinal)
@@ -178,7 +206,7 @@ public sealed class MessagingTelemetryTests : TestBase
             );
 
             var message = _CreateTransportMessage("orders.placed");
-            var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+            var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
             publish.Should().NotBeNull();
 
             // The publish span injected a W3C traceparent into the outgoing headers.
@@ -192,7 +220,7 @@ public sealed class MessagingTelemetryTests : TestBase
             Baggage.Current = default;
 
             // A consumer reading those headers continues the publish trace with baggage intact.
-            var consume = telemetry.ConsumeStart(message, IntentType.Bus, _Broker, 200);
+            var consume = telemetry.ConsumeStart(message, MessageLane.Bus, _Broker, 200);
             consume.Should().NotBeNull();
             consume!.TraceId.Should().Be(publish.TraceId);
             consume.ParentSpanId.Should().Be(publish.SpanId);
@@ -213,7 +241,7 @@ public sealed class MessagingTelemetryTests : TestBase
         var telemetry = new MessagingTelemetry([new StubEnricher("app.custom", "value-1")]);
 
         var message = _CreateTransportMessage("orders.placed");
-        var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
         // The tag must already be attached before the span ends — a fire-and-forget async enricher would drop it.
         publish.Should().NotBeNull();
         publish!.GetTagItem("app.custom").Should().Be("value-1");
@@ -231,7 +259,7 @@ public sealed class MessagingTelemetryTests : TestBase
         Activity? publish = null;
         var act = () =>
         {
-            publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+            publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
             MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 110);
         };
 

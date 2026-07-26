@@ -88,8 +88,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             NullLogger<AmazonSqsConsumerClient>.Instance,
             lane switch
             {
-                MessageLane.Bus => IntentType.Bus,
-                MessageLane.Queue => IntentType.Queue,
+                MessageLane.Bus => MessageLane.Bus,
+                MessageLane.Queue => MessageLane.Queue,
                 _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
             }
         );

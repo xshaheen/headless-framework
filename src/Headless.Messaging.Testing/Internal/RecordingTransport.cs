@@ -25,7 +25,7 @@ internal sealed class RecordingBusTransport(
         }
 
         await RecordingTransportRecorder
-            .RecordPublishedAsync(result, message, IntentType.Bus, store, serializer, logger)
+            .RecordPublishedAsync(result, message, MessageLane.Bus, store, serializer, logger)
             .ConfigureAwait(false);
         return result;
     }
@@ -54,7 +54,7 @@ internal sealed class RecordingQueueTransport(
         }
 
         await RecordingTransportRecorder
-            .RecordPublishedAsync(result, message, IntentType.Queue, store, serializer, logger)
+            .RecordPublishedAsync(result, message, MessageLane.Queue, store, serializer, logger)
             .ConfigureAwait(false);
         return result;
     }
@@ -79,7 +79,7 @@ internal static class RecordingTransportRecorder
     public static async Task RecordPublishedAsync(
         OperateResult result,
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         MessageObservationStore store,
         ISerializer serializer,
         ILogger? logger
@@ -128,7 +128,7 @@ internal static class RecordingTransportRecorder
             }
         }
 
-        var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow(), intentType);
+        var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow(), lane);
         store.Record(recorded, MessageObservationType.Published);
     }
 

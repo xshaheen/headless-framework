@@ -15,20 +15,24 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     {
         // given
         var pipeline = _BuildPipeline(new ServiceCollection());
-        var callerOptions = new PublishOptions { TenantId = "caller", MessageName = "orders" };
+        var callerOptions = new PublishOptions
+        {
+            TenantId = "caller",
+            MessageName = "orders",
+            Delay = TimeSpan.FromSeconds(5),
+        };
         PublishOptions? observedOptions = null;
-        TimeSpan? observedDelay = null;
+        var decision = _ResolveDecision(callerOptions);
 
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             callerOptions,
-            TimeSpan.FromSeconds(5),
-            (options, delay, _) =>
+            decision,
+            (options, _) =>
             {
                 observedOptions = (PublishOptions?)options;
-                observedDelay = delay;
                 return Task.CompletedTask;
             },
             cancellationToken: AbortToken
@@ -36,7 +40,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
 
         // then
         observedOptions.Should().BeSameAs(callerOptions);
-        observedDelay.Should().Be(TimeSpan.FromSeconds(5));
+        decision.Delay.Should().Be(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
@@ -52,14 +56,15 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         PublishOptions? observedOptions = null;
 
         // when
+        var options = new PublishOptions { CorrelationId = "corr-1" };
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            new PublishOptions { CorrelationId = "corr-1" },
-            delayTime: null,
-            (options, _, _) =>
+            MessageLane.Bus,
+            options,
+            _ResolveDecision(options),
+            (middlewareOptions, _) =>
             {
-                observedOptions = (PublishOptions?)options;
+                observedOptions = (PublishOptions?)middlewareOptions;
                 return Task.CompletedTask;
             },
             cancellationToken: AbortToken
@@ -71,7 +76,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
-    public async Task should_thread_middleware_mutated_delay_through_to_inner_publish()
+    public async Task should_reject_middleware_delay_changes_before_inner_publish()
     {
         // given
         var services = new ServiceCollection();
@@ -80,24 +85,27 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
             DelayMultiplyingPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
-        TimeSpan? observedDelay = null;
+        var innerCalled = false;
+        var options = new PublishOptions { Delay = TimeSpan.FromSeconds(10) };
 
         // when
-        await pipeline.ExecuteAsync(
-            new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            options: null,
-            TimeSpan.FromSeconds(10),
-            (_, delay, _) =>
-            {
-                observedDelay = delay;
-                return Task.CompletedTask;
-            },
-            cancellationToken: AbortToken
-        );
+        var act = () =>
+            pipeline.ExecuteAsync(
+                new MigratedPublishMessage("order-1"),
+                MessageLane.Bus,
+                options,
+                _ResolveDecision(options),
+                (_, _) =>
+                {
+                    innerCalled = true;
+                    return Task.CompletedTask;
+                },
+                cancellationToken: AbortToken
+            );
 
         // then
-        observedDelay.Should().Be(TimeSpan.FromSeconds(20));
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot change*delivery delay*");
+        innerCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -113,14 +121,15 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         PublishOptions? observedOptions = new() { TenantId = "unset" };
 
         // when
+        var options = new PublishOptions { TenantId = "caller" };
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            new PublishOptions { TenantId = "caller" },
-            delayTime: null,
-            (options, _, _) =>
+            MessageLane.Bus,
+            options,
+            _ResolveDecision(options),
+            (middlewareOptions, _) =>
             {
-                observedOptions = (PublishOptions?)options;
+                observedOptions = (PublishOptions?)middlewareOptions;
                 return Task.CompletedTask;
             },
             cancellationToken: AbortToken
@@ -131,30 +140,33 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
-    public async Task should_drop_to_immediate_publish_when_middleware_nulls_delay_time()
+    public async Task should_reject_middleware_delay_removal_before_inner_publish()
     {
         // given
         var services = new ServiceCollection();
         services.AddScoped<IPublishMiddleware<PublishContext<MigratedPublishMessage>>, DelayNullingPublishMiddleware>();
         var pipeline = _BuildPipeline(services);
-        TimeSpan? observedDelay = TimeSpan.FromSeconds(1);
+        var innerCalled = false;
+        var options = new PublishOptions { Delay = TimeSpan.FromMinutes(5) };
 
         // when
-        await pipeline.ExecuteAsync(
-            new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            options: null,
-            TimeSpan.FromMinutes(5),
-            (_, delay, _) =>
-            {
-                observedDelay = delay;
-                return Task.CompletedTask;
-            },
-            cancellationToken: AbortToken
-        );
+        var act = () =>
+            pipeline.ExecuteAsync(
+                new MigratedPublishMessage("order-1"),
+                MessageLane.Bus,
+                options,
+                _ResolveDecision(options),
+                (_, _) =>
+                {
+                    innerCalled = true;
+                    return Task.CompletedTask;
+                },
+                cancellationToken: AbortToken
+            );
 
         // then
-        observedDelay.Should().BeNull();
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot change*delivery delay*");
+        innerCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -167,10 +179,10 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync<MigratedPublishMessage>(
                 content: null,
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
-                delayTime: null,
-                innerPublish: (_, _, _) => throw new InvalidOperationException("inner failed"),
+                _ResolveDecision(options: null),
+                innerPublish: (_, _) => throw new InvalidOperationException("inner failed"),
                 cancellationToken: AbortToken
             );
 
@@ -194,18 +206,18 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("first"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            (_, _, _) => Task.CompletedTask,
+            _ResolveDecision(options: null),
+            (_, _) => Task.CompletedTask,
             cancellationToken: AbortToken
         );
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("second"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            (_, _, _) => Task.CompletedTask,
+            _ResolveDecision(options: null),
+            (_, _) => Task.CompletedTask,
             cancellationToken: AbortToken
         );
 
@@ -231,10 +243,10 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            (_, _, _) =>
+            _ResolveDecision(options: null),
+            (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -262,10 +274,10 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherMigratedPublishMessage("other"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
-            delayTime: null,
-            (_, _, _) =>
+            _ResolveDecision(options: null),
+            (_, _) =>
             {
                 recorder.Record("inner");
                 return Task.CompletedTask;
@@ -280,6 +292,17 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     private static IPublishMiddlewarePipeline _BuildPipeline(ServiceCollection services)
     {
         return new PublishMiddlewarePipeline(services.BuildServiceProvider());
+    }
+
+    private static DeliveryDecision _ResolveDecision(MessageOptions? options)
+    {
+        return DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            options?.DeliveryMode ?? DeliveryMode.Auto,
+            options?.Delay,
+            DeliveryCoordination.None,
+            DateTimeOffset.UnixEpoch
+        );
     }
 
     private sealed record MigratedPublishMessage(string Id);

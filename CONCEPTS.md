@@ -105,10 +105,12 @@ the concrete response type remains payload metadata.
 ### Delivery mode
 The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Auto, the
 default, follows the framework transaction accessor (the only source of ambient durability —
-`Transaction.Current` alone does not count): recognized transaction present → outbox (row persisted
-in that transaction, dispatched post-commit); absent → direct to transport. Durable forces
-store-first regardless of transaction state. TransportDirect bypasses storage even inside a
-transaction — an explicit, diagnostically-logged escape from atomicity. `Delay` requires storage:
+`Transaction.Current` alone does not count): recognized compatible transaction present → outbox
+(row persisted in that transaction, dispatched post-commit); no coordination → direct to transport;
+an active incompatible boundary → reject before side effects. Durable forces
+store-first regardless of transaction state. TransportDirect bypasses storage and coordination
+compatibility checks even inside a transaction — an explicit, diagnostically-logged escape from
+atomicity. `Delay` requires storage:
 under Auto it upgrades the call to durable; with explicit TransportDirect it is an error; dispatch
 timing is best-effort (not-before semantics).
 

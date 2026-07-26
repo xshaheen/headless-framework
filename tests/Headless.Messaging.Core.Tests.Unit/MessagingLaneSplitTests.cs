@@ -17,21 +17,21 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class MessagingIntentSplitTests : TestBase
+public sealed class MessagingLaneSplitTests : TestBase
 {
     [Fact]
-    public void should_be_stable_when_intent_type_storage_values()
+    public void should_preserve_legacy_lane_storage_values()
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
-        ((int)IntentType.Bus)
+        ((int)MessageLane.Bus)
             .Should()
             .Be(0);
-        ((int)IntentType.Queue).Should().Be(1);
+        ((int)MessageLane.Queue).Should().Be(1);
     }
 
     [Fact]
-    public void should_stamp_bus_intent_when_for_message_on_bus()
+    public void should_stamp_bus_lane_when_for_message_on_bus()
     {
         var services = new ServiceCollection();
 
@@ -43,12 +43,12 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.MessageName.Should().Be("events.orders");
     }
 
     [Fact]
-    public void should_stamp_queue_intent_when_for_message_on_queue()
+    public void should_stamp_queue_lane_when_for_message_on_queue()
     {
         var services = new ServiceCollection();
 
@@ -60,12 +60,12 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
-        metadata.IntentType.Should().Be(IntentType.Queue);
+        metadata.Lane.Should().Be(MessageLane.Queue);
         metadata.MessageName.Should().Be("jobs.orders");
     }
 
     [Fact]
-    public void should_allow_same_topic_group_across_different_intents_when_consumer_registry()
+    public void should_allow_same_topic_group_across_different_lanes_when_consumer_registry()
     {
         var registry = new ConsumerRegistry();
 
@@ -76,7 +76,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
         registry.Register(
@@ -86,7 +86,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -105,7 +105,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -149,12 +149,12 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "events.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
 
         // Register only the high-level markers; no IBusTransport and no ITransport so the legacy
-        // adapter cannot kick in either. The bootstrapper must surface the per-intent friendly
+        // adapter cannot kick in either. The bootstrapper must surface the per-lane friendly
         // message naming ForMessage<...>.
         services.AddSingleton(new MessagingMarkerService("Messaging"));
         services.AddSingleton(new MessageQueueMarkerService("TestTransport"));
@@ -196,7 +196,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -207,7 +207,6 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddSingleton(registry);
         services.AddSingleton(Substitute.For<IQueueTransport>());
         services.AddSingleton(Substitute.For<IBus>());
-        services.AddSingleton(Substitute.For<IOutboxBus>());
         _AddCapabilityModel(
             services,
             MessagingProviderCapabilities.Transport(
@@ -237,9 +236,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddHeadlessMessaging(setup => setup.RegisterExtension(new QueueOnlyMessagingExtension()));
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
     }
 
     [Fact]
@@ -250,9 +247,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         services.AddHeadlessMessaging(setup => setup.RegisterExtension(new BusOnlyMessagingExtension()));
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
     }
 
     [Fact]
@@ -270,7 +265,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task should_request_bus_intent_from_factory_and_trace_prepared_intent_when_bus_publish()
+    public async Task should_request_bus_lane_from_factory_and_trace_prepared_lane_when_bus_publish()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -280,9 +275,9 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<TimeSpan?>(),
-                IntentType.Bus
+                MessageLane.Bus
             )
-            .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
+            .Returns(_CreatePreparedPublishMessage("events.prepared", MessageLane.Bus));
 
         await using var transport = new CapturingBusTransport();
         var activities = new ConcurrentBag<Activity>();
@@ -300,7 +295,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
-                IntentType.Bus
+                MessageLane.Bus
             );
         transport.LastMessage!.Value.Name.Should().Be("events.prepared");
         // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
@@ -309,7 +304,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
             && Equals(a.GetTagItem("messaging.destination.name"), "events.prepared")
         );
-        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
+        publishActivity.GetTagItem(MessagingTags.Lane).Should().Be("bus");
     }
 
     [Fact]
@@ -327,7 +322,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task should_request_queue_intent_from_factory_and_trace_prepared_intent_when_queue_enqueue()
+    public async Task should_request_queue_lane_from_factory_and_trace_prepared_lane_when_queue_enqueue()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -337,9 +332,9 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<TimeSpan?>(),
-                IntentType.Queue
+                MessageLane.Queue
             )
-            .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
+            .Returns(_CreatePreparedPublishMessage("jobs.prepared", MessageLane.Queue));
 
         await using var transport = new CapturingQueueTransport();
         var activities = new ConcurrentBag<Activity>();
@@ -357,7 +352,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
-                IntentType.Queue
+                MessageLane.Queue
             );
         transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
         // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
@@ -366,7 +361,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
             && Equals(a.GetTagItem("messaging.destination.name"), "jobs.prepared")
         );
-        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
+        publishActivity.GetTagItem(MessagingTags.Lane).Should().Be("queue");
     }
 
     private static IBus _CreateBus(IBusTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
@@ -405,7 +400,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         );
     }
 
-    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType)
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, MessageLane lane)
     {
         return new()
         {
@@ -419,7 +414,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 },
                 new TestMessage()
             ),
-            IntentType = intentType,
+            Lane = lane,
             DeclaredMessageType = typeof(TestMessage),
             ConcreteMessageType = typeof(TestMessage),
         };
@@ -442,7 +437,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var queueDescriptor = new ConsumerExecutorDescriptor
         {
@@ -450,7 +445,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Queue,
+            Lane = MessageLane.Queue,
         };
 
         comparer.Equals(busDescriptor, queueDescriptor).Should().BeFalse();
@@ -458,7 +453,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_same_topic_group_and_intent_as_equal_when_descriptor_comparer()
+    public void should_treat_same_topic_group_and_lane_as_equal_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
@@ -474,7 +469,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var second = new ConsumerExecutorDescriptor
         {
@@ -482,7 +477,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         comparer.Equals(first, second).Should().BeTrue();

@@ -42,9 +42,9 @@ public sealed class TenantPropagationPublishMiddleware(
 
             // Stamp TenantId on a concrete options record that matches the publish intent so
             // downstream middleware and the factory receive the correct derived type.
-            MessageOptions stamped = context.IntentType switch
+            MessageOptions stamped = context.Lane switch
             {
-                IntentType.Queue => (context.Options as EnqueueOptions ?? new EnqueueOptions()) with
+                MessageLane.Queue => (context.Options as EnqueueOptions ?? new EnqueueOptions()) with
                 {
                     TenantId = ambientTenantId,
                 },

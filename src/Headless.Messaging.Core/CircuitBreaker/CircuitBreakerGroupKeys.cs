@@ -12,11 +12,6 @@ internal static class CircuitBreakerGroupKeys
         return string.Create(CultureInfo.InvariantCulture, $"{(short)lane}:{groupName}");
     }
 
-    internal static string For(IntentType intentType, string groupName)
-    {
-        return For(MessageLaneCompatibility.ToLane(intentType), groupName);
-    }
-
     internal static string For(ConsumerMetadata metadata)
     {
         return For(metadata.Lane, metadata.Group!);

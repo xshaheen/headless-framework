@@ -15,12 +15,14 @@ internal static class DirectPublisherCore
 {
     internal static async Task SendAsync(
         Message message,
-        IntentType intentType,
+        MessageLane lane,
         ISerializer serializer,
         BrokerAddress brokerAddress,
         Func<TransportMessage, CancellationToken, Task<OperateResult>> sendTransport,
         Func<long> nowMs,
         MessagingTelemetry telemetry,
+        TimeSpan transportPublishTimeout,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -28,32 +30,36 @@ internal static class DirectPublisherCore
             .SerializeToTransportMessageAsync(message, cancellationToken)
             .ConfigureAwait(false);
 
-        var traceHandle = _TracingBeforeSend(transportMsg, intentType, brokerAddress, nowMs, telemetry);
+        using var timeoutCts = new CancellationTokenSource(transportPublishTimeout, timeProvider);
+        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        var traceHandle = _TracingBeforeSend(transportMsg, lane, brokerAddress, nowMs, telemetry);
         try
         {
-            var result = await sendTransport(transportMsg, cancellationToken).ConfigureAwait(false);
+            var result = await sendTransport(transportMsg, publishCts.Token).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {
                 var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-                _TracingErrorSend(traceHandle, transportMsg, brokerAddress, ex);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, ex);
                 throw ex;
             }
 
-            _TracingAfterSend(traceHandle, transportMsg, brokerAddress, nowMs);
+            _TracingAfterSend(traceHandle, transportMsg, lane, brokerAddress, nowMs);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            // Cancellation is not a send failure: stop (export) the span without an error status so the
-            // started activity never leaks into Activity.Current past this frame.
-            traceHandle.Activity?.Dispose();
+            // Cancellation can race transport acceptance. Diagnose the outcome as ambiguous while
+            // preserving the caller's original cancellation exception.
+            MessagingTelemetry.PublishAmbiguous(traceHandle.Activity, transportMsg, brokerAddress, ex, lane);
+
+            cancellationToken.ThrowIfCancellationRequested();
             throw;
         }
         catch (Exception e) when (e is not PublisherSentFailedException)
         {
             try
             {
-                _TracingErrorSend(traceHandle, transportMsg, brokerAddress, e);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, e);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -68,7 +74,7 @@ internal static class DirectPublisherCore
 
     private static MessagingTraceHandle _TracingBeforeSend(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress brokerAddress,
         Func<long> nowMs,
         MessagingTelemetry telemetry
@@ -82,7 +88,7 @@ internal static class DirectPublisherCore
         }
 
         var now = nowMs();
-        var activity = telemetry.PublishStart(message, intentType, brokerAddress, now);
+        var activity = telemetry.PublishStart(message, lane, brokerAddress, now);
 
         return new MessagingTraceHandle(activity, now);
     }
@@ -90,6 +96,7 @@ internal static class DirectPublisherCore
     private static void _TracingAfterSend(
         MessagingTraceHandle traceHandle,
         TransportMessage message,
+        MessageLane lane,
         BrokerAddress brokerAddress,
         Func<long> nowMs
     )
@@ -104,13 +111,15 @@ internal static class DirectPublisherCore
             message,
             brokerAddress,
             traceHandle.StartTimestampMs!.Value,
-            nowMs()
+            nowMs(),
+            lane
         );
     }
 
     private static void _TracingErrorSend(
         MessagingTraceHandle traceHandle,
         TransportMessage message,
+        MessageLane lane,
         BrokerAddress brokerAddress,
         Exception exception
     )
@@ -120,6 +129,6 @@ internal static class DirectPublisherCore
             return;
         }
 
-        MessagingTelemetry.PublishError(traceHandle.Activity, message, brokerAddress, exception);
+        MessagingTelemetry.PublishError(traceHandle.Activity, message, brokerAddress, exception, lane);
     }
 }

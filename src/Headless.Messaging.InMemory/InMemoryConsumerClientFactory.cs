@@ -25,12 +25,7 @@ internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsum
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client = new InMemoryConsumerClient(
-            queue,
-            groupName,
-            groupConcurrent,
-            MessageLaneCompatibility.ToIntentType(lane)
-        );
+        var client = new InMemoryConsumerClient(queue, groupName, groupConcurrent, lane);
         return Task.FromResult<IConsumerClient>(client);
     }
 }

@@ -17,7 +17,7 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// The default mutex (exclusive) distributed-lock provider. Implements <see cref="IDistributedLock"/>
 /// using a compare-and-set storage backend (<see cref="IDistributedLockStorage"/>) with exponential
-/// backoff and optional push-based wake-up via the outbox bus.
+/// backoff and optional push-based wake-up via the messaging bus.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,8 +25,8 @@ namespace Headless.DistributedLocks;
 /// receives an <see cref="IDistributedLease"/> handle that can be released explicitly or on dispose.
 /// </para>
 /// <para>
-/// Wake-up model: when <see cref="IOutboxBus"/> is available, a <see cref="DistributedLockReleased"/>
-/// message is published after each confirmed release; blocked acquirers are signalled immediately
+/// Wake-up model: when <see cref="IBus"/> is available, a best-effort <see cref="DistributedLockReleased"/>
+/// signal is sent directly after each confirmed release; blocked acquirers are signalled immediately
 /// instead of waiting for the next backoff interval. Without the bus, callers fall back to polling.
 /// </para>
 /// <para>
@@ -50,7 +50,7 @@ namespace Headless.DistributedLocks;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
-    IOutboxBus? outboxBus,
+    IBus? bus,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
@@ -58,7 +58,7 @@ public sealed class DistributedLock(
 ) : IDistributedLock, ICanReceiveLockReleased
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
+    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
@@ -570,7 +570,7 @@ public sealed class DistributedLock(
     /// The storage release runs under <see cref="CancellationToken.None"/> (bounded by
     /// <see cref="DistributedLockOptions.DisposeTimeout"/>), so caller cancellation cannot abandon a
     /// half-completed release and strand the lock until its TTL — matching the reader-writer provider.
-    /// The outbox publish uses <paramref name="cancellationToken"/>, but its failures (cancellation
+    /// The release-signal publish uses <paramref name="cancellationToken"/>, but its failures (cancellation
     /// included) are swallowed and waiters simply fall back to polling backoff. Consequently this
     /// method never surfaces <see cref="OperationCanceledException"/>.
     /// </remarks>
@@ -586,7 +586,7 @@ public sealed class DistributedLock(
         // If a transient exception fires AFTER storage has already deleted the row but BEFORE
         // we read the response, the retry's `RemoveIfEqualAsync` will return `false` (the
         // record is gone). Without latching `true`, the final attempt's `false` would suppress
-        // the outbox publish and force waiters to fall back to polling backoff. We track
+        // the wake-up publish and force waiters to fall back to polling backoff. We track
         // whether ANY attempt observed `true` and treat it as authoritative; the lambda mutates
         // `observedAttemptSucceeded` so success survives subsequent retries returning `false`.
         var observedAttemptSucceeded = false;
@@ -631,14 +631,14 @@ public sealed class DistributedLock(
         {
             logger.LogLockReleaseTimedOut(resource, leaseId, _disposeTimeout);
             // Background pipeline may still succeed and set observedAttemptSucceeded; treat the
-            // caller's release as not-yet-confirmed so we skip the outbox publish (waiters will
+            // caller's release as not-yet-confirmed so we skip the release signal (waiters will
             // fall back to polling, which is the same path as a never-published release).
             removed = false;
         }
 
         if (removed)
         {
-            // Deregister after confirmed storage removal but before publishing the outbox
+            // Deregister after confirmed storage removal but before publishing the release
             // message. If release fails or retries are still in progress, the monitor must
             // remain visible so lease-loss detection continues for the still-held lock.
             var monitor = _monitorRegistry.TryDeregister(resource, leaseId);
@@ -658,14 +658,17 @@ public sealed class DistributedLock(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _outboxBus is not null)
+        if (removed && _bus is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, leaseId);
 
             try
             {
-                await _outboxBus
-                    .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
+                await _bus.PublishAsync(
+                        distributedLockReleased,
+                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             catch (Exception ex)

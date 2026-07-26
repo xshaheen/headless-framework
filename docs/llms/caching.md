@@ -797,7 +797,7 @@ For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy on
 
 On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh. Promoting stale reserves on every read would amplify L1 writes and could overwrite a newer L1 reserve. Fail-safe activation and background success still write through the composite store intentionally. Cold set reads are the exception to promotion: an L1-miss `GetSetAsync` serves straight from L2 without seeding L1 — InMemory stores sets as per-member dictionaries (the `SetAddAsync` shape), so seeding the bare returned collection would poison the key for local set read-back, and a paged read returns one page, never the whole set; sets enter L1 only through the hybrid `SetAddAsync` write path (this also makes the cold set read a single L2 round-trip). Separately, when the configured L2 is a third-party `IRemoteCache` that does **not** implement `IFactoryCacheStore`, the non-framed cold-read fallback seeds L1 entries without `Tags`/`CreatedAt`: such entries cannot be invalidated by `RemoveByTagAsync` and serve until their physical TTL (key-based invalidation and `ClearAsync` still reach them). The shipped Redis L2 implements the framed contract, so this limitation applies only to custom remote providers — implement `IFactoryCacheStore` on a custom L2 to restore tag-reachable seeding.
 
-Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
+Initial and replayed invalidations use `DeliveryMode.TransportDirect`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ### Installation
 
@@ -905,7 +905,7 @@ Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - `setup.AddNamed(name, i => i.UseHybrid(...))` registers a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
-- Publishes cache invalidation messages through the registered message bus.
+- Publishes cache invalidation messages directly through the registered message bus, bypassing durable capture.
 - Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.
 
 ---

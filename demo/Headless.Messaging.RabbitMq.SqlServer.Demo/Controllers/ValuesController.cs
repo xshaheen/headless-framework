@@ -8,7 +8,7 @@ using NameGenerator.Generators;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxBus producer, IServiceProvider services) : Controller
+public class ValuesController(IBus producer, IServiceProvider services) : Controller
 {
     private const string _MessageName = "sample.rabbitmq.sqlserver";
 
@@ -33,7 +33,7 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
     {
         await producer.PublishAsync(
             new Person { Name = "Bar", Age = 42 },
-            new PublishOptions { MessageName = _MessageName }
+            new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable }
         );
 
         return Ok();
@@ -44,7 +44,12 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
     {
         await producer.PublishAsync(
             new Person { Name = "Bar", Age = 42 },
-            new PublishOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new PublishOptions
+            {
+                MessageName = _MessageName,
+                Delay = TimeSpan.FromSeconds(delaySeconds),
+                DeliveryMode = DeliveryMode.Durable,
+            }
         );
 
         return Ok();
@@ -78,7 +83,11 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
                 )
             );
 
-            await producer.PublishAsync(person, new PublishOptions { MessageName = _MessageName }, ct);
+            await producer.PublishAsync(
+                person,
+                new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                ct
+            );
 
             await transaction.CommitAsync(ct); // the out-of-band diagnostic observer drains the publish on commit
         }
@@ -100,7 +109,11 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
                 ((AppDbContext)ctx).Persons.Add(person);
                 await ctx.SaveChangesAsync(ct);
 
-                await producer.PublishAsync(person, new PublishOptions { MessageName = _MessageName }, ct);
+                await producer.PublishAsync(
+                    person,
+                    new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    ct
+                );
             },
             services,
             cancellationToken: HttpContext.RequestAborted
@@ -125,7 +138,11 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
                     ((AppDbContext)ctx).Persons.Add(person);
                     await ctx.SaveChangesAsync(ct);
 
-                    await producer.PublishAsync(person, new PublishOptions { MessageName = _MessageName }, ct);
+                    await producer.PublishAsync(
+                        person,
+                        new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                        ct
+                    );
 
                     throw new InvalidOperationException("Simulated failure after the buffered publish.");
                 },
@@ -156,7 +173,12 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
 
                 await producer.PublishAsync(
                     person,
-                    new PublishOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
+                    new PublishOptions
+                    {
+                        MessageName = _MessageName,
+                        Delay = TimeSpan.FromSeconds(delaySeconds),
+                        DeliveryMode = DeliveryMode.Durable,
+                    },
                     ct
                 );
             },

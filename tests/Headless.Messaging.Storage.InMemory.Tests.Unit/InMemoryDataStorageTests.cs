@@ -115,7 +115,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     protected override Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
         IDataStorage storage,
         bool published,
-        short rawIntentType,
+        short rawLane,
         DateTimeOffset nextRetryAt,
         CancellationToken cancellationToken
     )
@@ -129,7 +129,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             StorageId = id,
             Origin = origin,
             Content = GetSerializer().Serialize(origin),
-            IntentType = (IntentType)rawIntentType,
+            Lane = (MessageLane)rawLane,
             Added = TimeProvider.GetUtcNow(),
             ExpiresAt = null,
             NextRetryAt = nextRetryAt,
@@ -172,7 +172,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 
         return Task.FromResult<PersistedPoisonRetryState?>(
             new PersistedPoisonRetryState(
-                (short)message!.IntentType,
+                (short)message!.Lane,
                 message.StatusName.ToString("G"),
                 message.ExpiresAt,
                 message.NextRetryAt,
@@ -190,6 +190,254 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 
         _EnsureInitialized();
         await _initializer!.InitializeAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_project_delivery_metadata_for_published_and_received_messages()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var explicitlyDirect = CreateMessage();
+        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
+        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
+
+        var published = await storage.StoreMessageAsync(
+            "delivery-metadata-published",
+            explicitlyDirect,
+            cancellationToken: AbortToken
+        );
+        var received = await storage.StoreReceivedMessageAsync(
+            "delivery-metadata-received",
+            "delivery-metadata-group",
+            CreateMessage(),
+            AbortToken
+        );
+        var monitoring = storage.GetMonitoringApi();
+
+        var publishedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        var receivedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Subscribe,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        var publishedView = publishedPage.Items.Single(x => x.StorageId == published.StorageId);
+        publishedView.RequestedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        publishedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+
+        var receivedView = receivedPage.Items.Single(x => x.StorageId == received.StorageId);
+        receivedView.RequestedDeliveryMode.Should().BeNull();
+        receivedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+    }
+
+    [Fact]
+    public async Task should_return_bounded_deterministic_unknown_lane_pages_without_content()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var added = TimeProvider.GetUtcNow();
+        var last = _AddUnknownRow(
+            storage.PublishedMessages,
+            92,
+            added.AddSeconds(1),
+            Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+        );
+        var first = _AddUnknownRow(
+            storage.PublishedMessages,
+            90,
+            added,
+            Guid.Parse("00000000-0000-0000-0000-000000000001")
+        );
+        var second = _AddUnknownRow(
+            storage.PublishedMessages,
+            91,
+            added,
+            Guid.Parse("00000000-0000-0000-0000-000000000002")
+        );
+
+        var monitoring = storage.GetMonitoringApi();
+        var firstPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 2,
+            },
+            AbortToken
+        );
+        var secondPage = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 2,
+                PageSize = 2,
+            },
+            AbortToken
+        );
+
+        firstPage.Index.Should().Be(0);
+        firstPage.Size.Should().Be(2);
+        firstPage.TotalItems.Should().Be(3);
+        firstPage.Items.Select(message => message.StorageId).Should().Equal(first.StorageId, second.StorageId);
+        secondPage.Items.Should().ContainSingle().Which.StorageId.Should().Be(last.StorageId);
+    }
+
+    [Fact]
+    public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var unknown = _AddUnknownRow(storage.PublishedMessages, 99, TimeProvider.GetUtcNow(), Guid.NewGuid());
+        unknown.Content = "not-a-message-envelope";
+        var monitoring = storage.GetMonitoringApi();
+
+        (await monitoring.GetPublishedMessageAsync(unknown.StorageId, AbortToken)).Should().BeNull();
+        (await monitoring.GetPublishedMessagesAsync([unknown.StorageId], AbortToken)).Should().BeEmpty();
+        (
+            await monitoring.GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    CurrentPage = 0,
+                    PageSize = 10,
+                },
+                AbortToken
+            )
+        ).Items.Should().BeEmpty();
+        (await monitoring.GetPublishedFailedCountAsync(AbortToken)).Should().Be(0);
+        (await monitoring.GetStatisticsAsync(AbortToken)).PublishedFailed.Should().Be(0);
+
+        var diagnostics = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        diagnostics.Items.Should().ContainSingle().Which.StorageId.Should().Be(unknown.StorageId);
+    }
+
+    [Fact]
+    public async Task should_reject_undefined_message_type_when_querying_unknown_lanes()
+    {
+        _EnsureInitialized();
+
+        var act = async () =>
+            await _storage!
+                .GetMonitoringApi()
+                .GetUnknownLaneMessagesAsync(new UnknownLaneMessageQuery { MessageType = (MessageType)99 }, AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task should_not_delete_or_claim_unknown_lane_rows_during_automatic_maintenance()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var now = TimeProvider.GetUtcNow();
+        var published = _AddUnknownRow(storage.PublishedMessages, 97, now.AddHours(-2), Guid.NewGuid());
+        published.StatusName = StatusName.Failed;
+        published.ExpiresAt = now.AddHours(-1);
+        published.NextRetryAt = null;
+        published.LockedUntil = null;
+        published.Owner = "unknown-published-owner";
+
+        var received = _AddUnknownRow(storage.ReceivedMessages, 98, now.AddHours(-2), Guid.NewGuid());
+        received.StatusName = StatusName.Failed;
+        received.ExpiresAt = now.AddHours(-1);
+        received.NextRetryAt = null;
+        received.LockedUntil = null;
+        received.Owner = "unknown-received-owner";
+
+        (await storage.DeleteExpiresAsync(nameof(storage.PublishedMessages), now, cancellationToken: AbortToken))
+            .Should()
+            .Be(0);
+        (await storage.DeleteExpiresAsync(nameof(storage.ReceivedMessages), now, cancellationToken: AbortToken))
+            .Should()
+            .Be(0);
+        storage.PublishedMessages.Should().ContainKey(published.StorageId);
+        storage.ReceivedMessages.Should().ContainKey(received.StorageId);
+
+        published.NextRetryAt = now.AddMinutes(-1);
+        published.LockedUntil = now.AddMinutes(5);
+        received.NextRetryAt = now.AddMinutes(-1);
+        received.LockedUntil = now.AddMinutes(5);
+        (await storage.ReclaimDeadPublishedOwnersAsync(["unknown-published-owner"], AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadReceivedOwnersAsync(["unknown-received-owner"], AbortToken)).Should().Be(0);
+        published.LockedUntil.Should().Be(now.AddMinutes(5));
+        received.LockedUntil.Should().Be(now.AddMinutes(5));
+
+        published.StatusName = StatusName.Delayed;
+        published.ExpiresAt = now.AddMinutes(-1);
+        var stateBeforeClaim = (
+            published.StatusName,
+            published.ExpiresAt,
+            published.NextRetryAt,
+            published.LockedUntil,
+            published.Owner
+        );
+
+        await storage.ChangePublishStateToDelayedAsync([published.StorageId], AbortToken);
+        (await storage.ClaimDelayedMessagesAsync(AbortToken)).Should().BeEmpty();
+        (published.StatusName, published.ExpiresAt, published.NextRetryAt, published.LockedUntil, published.Owner)
+            .Should()
+            .Be(stateBeforeClaim);
+
+        var scheduled = new List<MediumMessage>();
+        await storage.ScheduleMessagesOfDelayedAsync(
+            (_, messages) =>
+            {
+                scheduled.AddRange(messages);
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+        scheduled.Should().BeEmpty();
+    }
+
+    private MemoryMessage _AddUnknownRow(
+        IDictionary<Guid, MemoryMessage> target,
+        short rawLane,
+        DateTimeOffset added,
+        Guid storageId
+    )
+    {
+        var origin = CreateMessage($"unknown-lane-{storageId:N}");
+        var message = new MemoryMessage
+        {
+            StorageId = storageId,
+            Origin = origin,
+            Content = _serializer!.Serialize(origin),
+            Lane = (MessageLane)rawLane,
+            Added = added,
+            ExpiresAt = null,
+            NextRetryAt = added.AddMinutes(-1),
+            LockedUntil = added.AddMinutes(-1),
+            Owner = "unknown-lane-owner",
+            Retries = 0,
+            InlineAttempts = 0,
+            Name = $"unknown-lane-{rawLane}",
+            Group = "unknown-lane-group",
+            StatusName = StatusName.Failed,
+            Version = "v1",
+        };
+        target.Add(storageId, message);
+        return message;
     }
 
     private void _EnsureInitialized()
@@ -249,6 +497,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_store_published_message()
     {
         return base.should_store_published_message();
+    }
+
+    [Fact]
+    public override Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        return base.should_store_scheduled_message_with_atomic_not_before_state();
     }
 
     [Fact]
@@ -330,15 +584,15 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_published_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+        return base.should_preserve_unsupported_lane_without_starving_published_retry();
     }
 
     [Fact]
-    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    public override Task should_preserve_unsupported_lane_without_starving_received_retry()
     {
-        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
+        return base.should_preserve_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]
@@ -453,7 +707,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                     ExpiresAt = expiresAt,
                 },
                 cancellationToken: AbortToken

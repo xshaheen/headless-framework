@@ -185,7 +185,7 @@ public sealed class ConsumeContextAccessorTests
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
             MessageName = "test",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

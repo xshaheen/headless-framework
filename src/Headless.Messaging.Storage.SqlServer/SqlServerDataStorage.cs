@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -31,7 +32,7 @@ internal sealed partial class SqlServerDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<SqlServerDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage
+) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -63,6 +64,37 @@ internal sealed partial class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
+
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    {
+        if (coordinator.State is not CommitCoordinatorState.Active)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+
+        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        }
+
+        if (relational.Transaction is not SqlTransaction transaction || transaction.Connection is not { } connection)
+        {
+            return relational.Transaction is null
+                ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction)
+                : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+        }
+
+        using var configuredConnection = new SqlConnection(options.Value.ConnectionString);
+        if (
+            !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(configuredConnection.Database, connection.Database, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
+        }
+
+        return DeliveryCoordination.Compatible(coordinator, transaction);
+    }
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
@@ -350,20 +382,47 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        return await _StoreMessageAsync(name, message, publishAt: null, transaction, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _StoreMessageAsync(name, message, publishAt, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
         var sql =
             $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
+        var statusName =
+            publishAt is null ? StatusName.Scheduled
+            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
+            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
-            ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            ExpiresAt = publishAt,
+            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -375,7 +434,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@Id", stored.StorageId),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", stored.Content),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)stored.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(stored.Lane),
+            },
             new SqlParameter("@Retries", stored.Retries),
             new SqlParameter("@InlineAttempts", stored.InlineAttempts),
             new SqlParameter("@Added", stored.Added),
@@ -392,7 +454,7 @@ internal sealed partial class SqlServerDataStorage(
                 Value = stored.LockedUntil.ToUtcParameterValue(),
             },
             _OwnerParameter("@Owner", stored.LockedUntil),
-            new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new SqlParameter("@StatusName", statusName.ToString("G")),
             new SqlParameter("@MessageId", message.Origin.Id),
         ];
 
@@ -449,7 +511,7 @@ internal sealed partial class SqlServerDataStorage(
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             transaction,
             cancellationToken
@@ -479,7 +541,7 @@ internal sealed partial class SqlServerDataStorage(
                     StorageId = Guid.Empty,
                     Origin = origin,
                     Content = content,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                 },
                 exceptionInfo,
                 cancellationToken
@@ -510,7 +572,10 @@ internal sealed partial class SqlServerDataStorage(
                 "@Content",
                 string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
             ),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)message.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(message.Lane),
+            },
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@Added", timeProvider.GetUtcNow()),
@@ -552,7 +617,7 @@ internal sealed partial class SqlServerDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -568,7 +633,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter("@Content", mediumMessage.Content),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)mediumMessage.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(mediumMessage.Lane),
+            },
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
             new SqlParameter("@Added", mediumMessage.Added),
@@ -623,7 +691,7 @@ internal sealed partial class SqlServerDataStorage(
                 StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );
@@ -648,12 +716,14 @@ internal sealed partial class SqlServerDataStorage(
             .ExecuteNonQueryAsync(
                 $"""
                 DELETE FROM {table}
-                 WHERE Id IN (
+                 WHERE IntentType IN (0, 1)
+                 AND Id IN (
                      SELECT TOP (@batchCount) Id
                      FROM {table} WITH (READPAST)
                      WHERE ExpiresAt < @timeout
                      AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                      AND NextRetryAt IS NULL
+                     AND IntentType IN (0, 1)
                  );
                 """,
                 transaction: null,
@@ -1159,16 +1229,11 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-        var intentValue = checked((short)intentType);
-        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
-        var invalidLaneDiagnosticAssignment = isReceivedTable
-            ? ", ExceptionInfo=CONCAT(@InvalidLaneDiagnostic, target.IntentType)"
-            : string.Empty;
-        // Transactional poison handling and claim-and-return: one command terminalizes a bounded
-        // set of eligible invalid-lane rows, then UPDATE TOP (N) ... OUTPUT inserted.* atomically
-        // leases and returns healthy rows in the requested lane. This replaces the previous
-        // two-step SELECT-UPDLOCK-then-Lease pattern, which committed the SELECT transaction
+        var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
+        // Atomic claim-and-return: an ordered TOP (N) candidate CTE followed by UPDATE ... OUTPUT
+        // atomically leases and returns rows in the requested recognized lane. Unknown lanes are
+        // excluded inside the candidate selection, so they neither consume capacity nor get mutated.
+        // This replaces the previous two-step SELECT-UPDLOCK-then-Lease pattern, which committed the SELECT transaction
         // before _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the
         // same "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
         //
@@ -1185,22 +1250,6 @@ internal sealed partial class SqlServerDataStorage(
             SET NOCOUNT ON;
             DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
 
-            UPDATE TOP (@BatchSize) target WITH (UPDLOCK, READPAST, ROWLOCK)
-            SET StatusName=@FailedStatus,
-                NextRetryAt=NULL,
-                LockedUntil=NULL,
-                Owner=NULL,
-                ExpiresAt=@ExpiresAt
-                {invalidLaneDiagnosticAssignment}
-            OUTPUT inserted.Id, inserted.IntentType
-            FROM {tableName} AS target
-            WHERE Retries <= @Retries
-              AND Version = @Version
-              AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
-              AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
-              AND {_TerminalRowGuardSimple}
-              AND IntentType NOT IN (0, 1);
-
             WITH Candidates AS (
                 SELECT TOP (@BatchSize) Id
                 FROM {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
@@ -1216,7 +1265,8 @@ internal sealed partial class SqlServerDataStorage(
             SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)), Owner = @Owner
             OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.InlineAttempts, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil, inserted.Owner
             FROM {tableName} AS target
-            INNER JOIN Candidates ON target.Id = Candidates.Id;
+            INNER JOIN Candidates ON target.Id = Candidates.Id
+            WHERE target.IntentType = @IntentType;
             """;
 
         var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(
@@ -1230,15 +1280,6 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },
             new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
-            new SqlParameter("@FailedStatus", nameof(StatusName.Failed)),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
-            {
-                Value = timeProvider.GetUtcNow().AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
-            },
-            new SqlParameter(
-                "@InvalidLaneDiagnostic",
-                "Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType="
-            ),
             new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
             new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             _OwnerParameter("@Owner", hasLease: true),
@@ -1257,25 +1298,9 @@ internal sealed partial class SqlServerDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        RetryPickupLog.UnsupportedPersistedLaneTerminalized(
-                            logger,
-                            reader.GetGuid(0),
-                            reader.GetInt16(1),
-                            tableName
-                        );
-                    }
-
-                    if (!await reader.NextResultAsync(ct).ConfigureAwait(false))
-                    {
-                        return messages;
-                    }
-
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
                         var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
-                        var persistedIntentType = (IntentType)reader.GetInt16(2);
-                        var persistedLane = MessageLaneCompatibility.ToLane(persistedIntentType);
+                        var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
                         if (persistedLane != lane)
                         {
                             throw new InvalidOperationException(
@@ -1291,7 +1316,7 @@ internal sealed partial class SqlServerDataStorage(
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = persistedIntentType,
+                                Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
@@ -1462,6 +1487,7 @@ internal sealed partial class SqlServerDataStorage(
             WHERE target.Owner IS NOT NULL
               AND target.Owner IN (SELECT [Owner] FROM @DeadOwners)
               AND target.LockedUntil > @ReclaimNow
+              AND target.IntentType IN (0, 1)
               AND {_TerminalRowGuardSimple};
             """;
 
@@ -1520,22 +1546,6 @@ internal sealed partial class SqlServerDataStorage(
     private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
     {
         return new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
-    }
-
-    private static partial class RetryPickupLog
-    {
-        [LoggerMessage(
-            EventId = 5,
-            EventName = "UnsupportedPersistedLaneTerminalized",
-            Level = LogLevel.Warning,
-            Message = "Terminalized message {StorageId} in {Table} because persisted IntentType {IntentType} is not a supported messaging lane."
-        )]
-        public static partial void UnsupportedPersistedLaneTerminalized(
-            ILogger logger,
-            Guid storageId,
-            short intentType,
-            string table
-        );
     }
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);

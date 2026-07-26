@@ -209,8 +209,8 @@ services.AddHeadlessMessaging(setup =>
 - **Library-owned consumers can register out of order**: Core-owned internal immutable contributions may be added before or after `AddHeadlessMessaging(...)`. Bootstrap drains them through the same lane-scoped registration pipeline; no public service-collection registration or contributor alternate root exists.
 - **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection when the provider supports independent physical lane topology. NATS and RabbitMQ reject that same-name dual-lane combination until #359.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
-- **The publisher verb selects the lane**: Use `IBus` / `IOutboxBus` for broadcast Bus delivery and `IQueue` / `IOutboxQueue` for point-to-point Queue delivery.
-- **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
+- **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
+- **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **The lane discriminator remains wire-compatible**: storage rows and headers retain `IntentType` values while retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
@@ -319,6 +319,7 @@ Defines shared messaging contracts and envelope types used by all bus, queue, co
 
 - `IConsume<TMessage>` consumer contract.
 - `MessageOptions` base options, including headers, correlation, delay, message id, message type, and tenant id.
+- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. `Durable` always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -365,7 +366,8 @@ Defines bus publishing contracts without requiring a concrete messaging host or 
 ### Key Features
 
 - `IBus.PublishAsync(...)`.
-- `IOutboxBus` for durable/outbox-aware bus publishing.
+- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `TransportDirect` bypasses storage and any ambient coordination boundary; it cannot be combined with `Delay`.
 - `PublishOptions` with value-equality and `with` support.
 
 ### Installation
@@ -401,7 +403,8 @@ Defines point-to-point queue publishing contracts independently from concrete pr
 ### Key Features
 
 - `IQueue.EnqueueAsync(...)`.
-- `IOutboxQueue` for durable/outbox-aware queue publishing.
+- `IQueue` is the only queue publisher; `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `TransportDirect` bypasses storage and any ambient coordination boundary; it cannot be combined with `Delay`.
 - Queue options align with `MessageOptions`.
 
 ### Installation
@@ -446,6 +449,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
+- TransportDirect publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
 
 ### Design Notes
 

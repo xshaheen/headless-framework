@@ -691,15 +691,15 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 85,
-        EventName = "StoredMessageUnsupportedIntent",
+        EventName = "StoredMessageMissingLaneTransport",
         Level = LogLevel.Error,
-        Message = "Stored published message {StorageId} cannot be dispatched because its intent '{IntentType}' has no supported transport. Marked terminal Failed."
+        Message = "Stored published message {StorageId} cannot be dispatched because its lane '{Lane}' has no supported transport. Marked terminal Failed."
     )]
-    public static partial void StoredMessageUnsupportedIntent(
+    public static partial void StoredMessageMissingLaneTransport(
         this ILogger logger,
         Exception exception,
         Guid storageId,
-        string intentType
+        string lane
     );
 
     [LoggerMessage(
@@ -714,6 +714,14 @@ internal static partial class LoggerExtensions
         string wireIntent,
         string consumerIntent
     );
+
+    [LoggerMessage(
+        EventId = 89,
+        EventName = "UnsupportedMessageLaneHeader",
+        Level = LogLevel.Warning,
+        Message = "Message '{MessageName}' arrived with unsupported lane header '{WireLane}' and was rejected before routing."
+    )]
+    public static partial void UnsupportedMessageLaneHeader(this ILogger logger, string messageName, string wireLane);
 
     [LoggerMessage(
         EventId = 87,

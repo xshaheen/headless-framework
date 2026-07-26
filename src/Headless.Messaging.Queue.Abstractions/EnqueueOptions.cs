@@ -3,14 +3,13 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a point-to-point (queue) enqueue operation with explicit message name, correlation, custom
-/// header, and (for outbox-backed enqueues) delivery-delay overrides.
+/// Configures a point-to-point (queue) enqueue operation with delivery behavior, explicit message name,
+/// correlation, custom headers, and an optional delivery delay.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Accepted by <see cref="IQueue.EnqueueAsync{T}"/> and <see cref="IOutboxQueue.EnqueueAsync{T}"/>.
-/// <see cref="Delay"/> is honored only when the enqueue is persisted through the outbox
-/// (<see cref="IOutboxQueue"/>); direct enqueuers (<see cref="IQueue"/>) ignore it.
+/// Accepted by <see cref="IQueue.EnqueueAsync{T}"/>. The invoked queue verb fixes the Queue lane;
+/// <see cref="MessageOptions.DeliveryMode"/> controls durability independently.
 /// </para>
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression
@@ -19,40 +18,4 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record EnqueueOptions : MessageOptions
-{
-    /// <summary>
-    /// Gets the delay applied before the persisted message is dispatched.
-    /// </summary>
-    /// <remarks>
-    /// Honored only by <see cref="IOutboxQueue"/>. Ignored by the fire-and-forget <see cref="IQueue"/>
-    /// interface (whose contract is immediate broker-side enqueue with no persistence).
-    /// </remarks>
-    public TimeSpan? Delay { get; init; }
-
-    /// <summary>
-    /// Determines whether the specified <see cref="EnqueueOptions"/> equals this instance using
-    /// value semantics across every scalar field plus structural comparison on
-    /// <see cref="MessageOptions.Headers"/>.
-    /// </summary>
-    public bool Equals(EnqueueOptions? other)
-    {
-        if (other is null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(this, other))
-        {
-            return true;
-        }
-
-        return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
-    }
-
-    /// <inheritdoc />
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(base.GetHashCode(), Delay);
-    }
-}
+public sealed record EnqueueOptions : MessageOptions;

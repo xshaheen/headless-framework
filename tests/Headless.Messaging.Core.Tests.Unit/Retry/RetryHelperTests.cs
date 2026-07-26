@@ -421,7 +421,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = Guid.Empty,
             RetryCount = 0,
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

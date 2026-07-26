@@ -335,7 +335,7 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when - unsubscribe the consumer
-        _queue.Unsubscribe(IntentType.Bus, "test-group", _consumerClient);
+        _queue.Unsubscribe(MessageLane.Bus, "test-group", _consumerClient);
 
         // then - the messageName binding is removed with the final client; send is a silent no-op
         var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));

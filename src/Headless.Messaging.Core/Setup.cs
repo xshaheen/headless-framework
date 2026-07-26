@@ -203,29 +203,36 @@ public static class SetupMessaging
 
         // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
         // only after the immutable capability gate accepts the individual call.
-        services.TryAddSingleton<IBus>(sp => new Bus(
-            sp.GetRequiredService<ISerializer>(),
-            sp,
-            sp.GetRequiredService<IMessagePublishRequestFactory>(),
-            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<IMessageCapabilityGate>(),
-            sp.GetService<MessagingTelemetry>()
-        ));
-        services.TryAddSingleton<IQueue>(sp => new Queue(
-            sp.GetRequiredService<ISerializer>(),
-            sp,
-            sp.GetRequiredService<IMessagePublishRequestFactory>(),
-            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<IMessageCapabilityGate>(),
-            sp.GetService<MessagingTelemetry>()
-        ));
-        services.TryAddSingleton<IOutboxBus>(sp => new OutboxBus(sp, sp.GetRequiredService<IMessageCapabilityGate>()));
-        services.TryAddSingleton<IOutboxQueue>(sp => new OutboxQueue(
-            sp,
-            sp.GetRequiredService<IMessageCapabilityGate>()
-        ));
+        services.TryAddSingleton(sp =>
+        {
+            ITransport ResolveTransport(MessageLane lane) =>
+                lane switch
+                {
+                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>(),
+                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>(),
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(lane),
+                        lane,
+                        "A defined messaging lane is required."
+                    ),
+                };
+
+            return new MessagePublisher(
+                sp.GetRequiredService<ISerializer>(),
+                ResolveTransport,
+                sp.GetRequiredService<IMessagePublishRequestFactory>(),
+                sp.GetRequiredService<IPublishMiddlewarePipeline>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<IMessageCapabilityGate>(),
+                sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
+                () => sp.GetService<IDeliveryCoordinationResolver>(),
+                () => sp.GetService<OutboxMessageWriter>(),
+                sp.GetService<MessagingTelemetry>(),
+                options.TransportPublishTimeout
+            );
+        });
+        services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
+        services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
@@ -382,7 +389,7 @@ public static class SetupMessaging
                     consumer.Group,
                     consumer.Concurrency,
                     consumer.HandlerId,
-                    MessageLaneCompatibility.ToIntentType(registration.Lane)
+                    registration.Lane
                 ) with
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
@@ -391,7 +398,7 @@ public static class SetupMessaging
                 var key = new ConsumerRegistrationKey(
                     resolved.MessageName,
                     resolved.Group,
-                    resolved.IntentType,
+                    resolved.Lane,
                     resolved.ConsumerType
                 );
 
@@ -413,7 +420,7 @@ public static class SetupMessaging
                         throw new InvalidOperationException(
                             $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
                                 + $"more than once for message name '{resolved.MessageName}' "
-                                + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                + $"(group '{resolved.Group}', intent {resolved.Lane}) with conflicting settings. "
                                 + "Register the consumer once, or make every registration identical."
                         );
                     }
@@ -447,7 +454,7 @@ public static class SetupMessaging
     private readonly record struct ConsumerRegistrationKey(
         string MessageName,
         string? Group,
-        IntentType IntentType,
+        MessageLane Lane,
         Type ConsumerType
     )
     {
@@ -455,7 +462,7 @@ public static class SetupMessaging
         // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
         public bool Equals(ConsumerRegistrationKey other)
         {
-            return IntentType == other.IntentType
+            return Lane == other.Lane
                 && ConsumerType == other.ConsumerType
                 && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(Group, other.Group, StringComparison.Ordinal);
@@ -466,7 +473,7 @@ public static class SetupMessaging
             return HashCode.Combine(
                 StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
                 Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
-                IntentType,
+                Lane,
                 ConsumerType
             );
         }

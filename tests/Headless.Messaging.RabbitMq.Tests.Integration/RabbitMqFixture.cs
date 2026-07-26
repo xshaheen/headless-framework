@@ -121,14 +121,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             rabbitOptions
         );
         var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool);
-        var consumer = new RabbitMqConsumerClient(
-            group,
-            1,
-            pool,
-            rabbitOptions,
-            services,
-            intentType: _ToIntentType(lane)
-        );
+        var consumer = new RabbitMqConsumerClient(group, 1, pool, rabbitOptions, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
 
         try
@@ -167,11 +160,11 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         }
     }
 
-    private static IntentType _ToIntentType(MessageLane lane) =>
+    private static MessageLane _ToMessageLane(MessageLane lane) =>
         lane switch
         {
-            MessageLane.Bus => IntentType.Bus,
-            MessageLane.Queue => IntentType.Queue,
+            MessageLane.Bus => MessageLane.Bus,
+            MessageLane.Queue => MessageLane.Queue,
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
         };
 

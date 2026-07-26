@@ -190,7 +190,7 @@ public sealed class NamedHybridCacheTests : TestBase
         await consumer.ConsumeAsync(
             new ConsumeContext<CacheInvalidationMessage>
             {
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 Message = new CacheInvalidationMessage
                 {
                     InstanceId = "node-a",

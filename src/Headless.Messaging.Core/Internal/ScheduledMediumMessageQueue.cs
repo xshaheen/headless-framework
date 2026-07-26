@@ -25,10 +25,13 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
 
     public bool TryEnqueue(MediumMessage message, long sendTime)
     {
-        bool shouldSignal;
-
         lock (_lock)
         {
+            if (_isDisposed)
+            {
+                return false;
+            }
+
             if (_queue.Contains((sendTime, message)))
             {
                 return true;
@@ -46,12 +49,12 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
                 return false;
             }
 
-            shouldSignal = previousEarliest is null || sendTime < previousEarliest.Value;
-        }
-
-        if (shouldSignal)
-        {
-            _changedSignal.Release();
+            if (previousEarliest is null || sendTime < previousEarliest.Value)
+            {
+                // Keep signal release under the same lock as disposal. A committed acceleration can
+                // race shutdown, and releasing a disposed SemaphoreSlim must remain a benign drop.
+                _changedSignal.Release();
+            }
         }
 
         return true;
@@ -110,17 +113,20 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
 
     private void _Dispose(bool disposing)
     {
-        if (_isDisposed)
+        lock (_lock)
         {
-            return;
-        }
+            if (_isDisposed)
+            {
+                return;
+            }
 
-        if (disposing)
-        {
-            _changedSignal.Dispose();
-        }
+            _isDisposed = true;
 
-        _isDisposed = true;
+            if (disposing)
+            {
+                _changedSignal.Dispose();
+            }
+        }
     }
 
 #pragma warning disable MA0055 // Dispose methods should call SuppressFinalize

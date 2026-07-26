@@ -36,10 +36,16 @@ public readonly struct MessagingEnrichmentContext
     public string? MessageName { get; init; }
 
     /// <summary>
-    /// Delivery intent associated with the span. <see cref="IntentType.Bus"/> means broadcast
-    /// pub/sub; <see cref="IntentType.Queue"/> means point-to-point work-queue delivery.
+    /// Delivery lane associated with the span. <see cref="MessageLane.Bus"/> means broadcast
+    /// pub/sub; <see cref="MessageLane.Queue"/> means point-to-point work-queue delivery.
     /// </summary>
-    public IntentType IntentType { get; init; }
+    public MessageLane Lane { get; init; }
+
+    /// <summary>Delivery mode requested by the caller, or <see langword="null"/> for legacy/unreadable metadata.</summary>
+    public DeliveryMode? RequestedDeliveryMode { get; init; }
+
+    /// <summary>Delivery mode resolved by the framework, or <see langword="null"/> for unreadable metadata.</summary>
+    public DeliveryMode? ResolvedDeliveryMode { get; init; }
 
     /// <summary>
     /// Tenant ID extracted from the <c>headless-tenant-id</c> wire header, or

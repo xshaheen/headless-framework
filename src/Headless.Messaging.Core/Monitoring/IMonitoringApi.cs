@@ -70,6 +70,17 @@ public interface IMonitoringApi
     );
 
     /// <summary>
+    /// Returns a bounded, deterministic page of rows whose persisted lane value is not recognized.
+    /// The query never deserializes message content and does not mutate the returned rows.
+    /// </summary>
+    /// <param name="query">The table direction and one-based pagination parameters.</param>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(
+        UnknownLaneMessageQuery query,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Returns the total number of published message rows in a failed state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>

@@ -12,7 +12,7 @@ namespace Headless.EntityFramework;
 /// Invoked after entities persist but before the EF transaction commits, and may be retried by the EF
 /// execution strategy. The save pipeline opens a <b>commit-coordinated</b> transaction before invoking this,
 /// so the commit coordinator is already ambient: publish each event through the messaging outbox
-/// (<c>IOutboxBus</c>) and its outbox rows enlist on that transaction automatically — dispatched post-commit
+/// (<c>IBus</c> with durable delivery) and its outbox rows enlist on that transaction automatically — dispatched post-commit
 /// and discarded on rollback. Implementations MUST NOT perform non-transactional external broker publishes
 /// from these methods. (A custom implementation that needs the raw transaction handle can read
 /// <c>DbContext.Database.CurrentTransaction</c>.) The real implementation ships in the

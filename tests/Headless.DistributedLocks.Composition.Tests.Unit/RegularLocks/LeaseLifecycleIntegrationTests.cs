@@ -390,7 +390,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
 
-        // when - direct release of the same leaseId; this triggers the outbox path and would
+        // when - direct release of the same leaseId; this triggers the wake-up path and would
         // historically nudge the still-alive monitor for that resource.
         await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
@@ -432,13 +432,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task should_signal_lease_loss_via_polling_when_outbox_publisher_is_null()
+    public async Task should_signal_lease_loss_via_polling_when_bus_is_null()
     {
-        // AC8 — without an outbox publisher, the only way the monitor can learn of loss is
+        // AC8 — without a bus publisher, the only way the monitor can learn of loss is
         // via its own cadence-driven probe. Confirm that polling alone (no nudge) eventually
         // surfaces LostToken when storage is mutated by another party.
         var options = new DistributedLockOptions();
-        var provider = _CreateProvider(options, outboxBus: null);
+        var provider = _CreateProvider(options, bus: null);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
@@ -475,16 +475,16 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
     private DistributedLock _CreateProvider(DistributedLockOptions? options = null)
     {
-        return _CreateProvider(options, Substitute.For<IOutboxBus>());
+        return _CreateProvider(options, Substitute.For<IBus>());
     }
 
-    private DistributedLock _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
+    private DistributedLock _CreateProvider(DistributedLockOptions? options, IBus? bus)
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedLock(
             _storage,
-            outboxBus,
+            bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

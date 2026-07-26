@@ -14,7 +14,7 @@ internal sealed class PulsarConsumerClient(
     PulsarClient client,
     string groupName,
     byte groupConcurrent,
-    IntentType intentType = IntentType.Bus,
+    MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
@@ -56,7 +56,7 @@ internal sealed class PulsarConsumerClient(
         var subscribeTask = client
             .NewConsumer()
             .Topics(topics)
-            .SubscriptionName(GetSubscriptionName(groupName, intentType))
+            .SubscriptionName(GetSubscriptionName(groupName, lane))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
             .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay)
@@ -102,9 +102,9 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    internal static string GetSubscriptionName(string groupName, IntentType intentType)
+    internal static string GetSubscriptionName(string groupName, MessageLane lane)
     {
-        return intentType == IntentType.Queue ? "headless-queue" : groupName;
+        return lane == MessageLane.Queue ? "headless-queue" : groupName;
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
