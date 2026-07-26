@@ -46,6 +46,7 @@ internal sealed class DistributedSemaphoreProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
+    private static readonly PublishOptions _DurablePublishOptions = new() { DeliveryMode = DeliveryMode.Durable };
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
         timeProvider,
@@ -384,7 +385,7 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 await _bus.PublishAsync(
                         new DistributedLockReleased(resource, leaseId),
-                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                        _DurablePublishOptions,
                         cancellationToken
                     )
                     .ConfigureAwait(false);

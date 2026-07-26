@@ -18,40 +18,4 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record EnqueueOptions : MessageOptions
-{
-    /// <summary>
-    /// Gets the relative delay applied before the durably captured message is dispatched.
-    /// </summary>
-    /// <remarks>
-    /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
-    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
-    /// </remarks>
-    public TimeSpan? Delay { get; init; }
-
-    /// <summary>
-    /// Determines whether the specified <see cref="EnqueueOptions"/> equals this instance using
-    /// value semantics across every scalar field plus structural comparison on
-    /// <see cref="MessageOptions.Headers"/>.
-    /// </summary>
-    public bool Equals(EnqueueOptions? other)
-    {
-        if (other is null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(this, other))
-        {
-            return true;
-        }
-
-        return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
-    }
-
-    /// <inheritdoc />
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(base.GetHashCode(), Delay);
-    }
-}
+public sealed record EnqueueOptions : MessageOptions;

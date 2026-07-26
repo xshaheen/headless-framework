@@ -30,8 +30,7 @@ internal sealed class Bus : IBus
     {
         _publisher = new MessagePublisher(
             serializer,
-            _ => transport.BrokerAddress,
-            (_, message, cancellationToken) => transport.SendAsync(message, cancellationToken),
+            _ => transport,
             publishRequestFactory,
             publishPipeline,
             timeProvider,
@@ -49,6 +48,6 @@ internal sealed class Bus : IBus
         CancellationToken cancellationToken = default
     )
     {
-        return _publisher.PublishAsync(MessageLane.Bus, contentObj, options, options?.Delay, cancellationToken);
+        return _publisher.PublishAsync(MessageLane.Bus, contentObj, options, cancellationToken);
     }
 }

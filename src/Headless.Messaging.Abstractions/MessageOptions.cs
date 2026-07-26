@@ -34,6 +34,13 @@ public abstract record MessageOptions
     /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Auto"/>.</summary>
     public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Auto;
 
+    /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
+    /// <remarks>
+    /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
+    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
+    /// </remarks>
+    public TimeSpan? Delay { get; init; }
+
     /// <summary>
     /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
@@ -116,6 +123,7 @@ public abstract record MessageOptions
         }
 
         return DeliveryMode == other.DeliveryMode
+            && Nullable.Equals(Delay, other.Delay)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
@@ -134,6 +142,7 @@ public abstract record MessageOptions
     {
         var hash = new HashCode();
         hash.Add(DeliveryMode);
+        hash.Add(Delay);
         hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);

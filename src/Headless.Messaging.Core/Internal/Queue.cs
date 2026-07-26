@@ -30,8 +30,7 @@ internal sealed class Queue : IQueue
     {
         _publisher = new MessagePublisher(
             serializer,
-            _ => transport.BrokerAddress,
-            (_, message, cancellationToken) => transport.SendAsync(message, cancellationToken),
+            _ => transport,
             publishRequestFactory,
             publishPipeline,
             timeProvider,
@@ -49,6 +48,6 @@ internal sealed class Queue : IQueue
         CancellationToken cancellationToken = default
     )
     {
-        return _publisher.PublishAsync(MessageLane.Queue, contentObj, options, options?.Delay, cancellationToken);
+        return _publisher.PublishAsync(MessageLane.Queue, contentObj, options, cancellationToken);
     }
 }

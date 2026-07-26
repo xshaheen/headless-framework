@@ -243,7 +243,6 @@ internal sealed class PublishMiddlewarePipeline(
     )
     {
         return new DeliveryDecision(
-            lane,
             options?.DeliveryMode ?? DeliveryMode.Auto,
             isTransactional ? DeliveryMode.Durable : DeliveryMode.TransportDirect,
             isTransactional ? DeliveryPath.DurableCoordinated : DeliveryPath.TransportDirect,

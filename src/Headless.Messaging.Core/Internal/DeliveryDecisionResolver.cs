@@ -12,7 +12,6 @@ internal enum DeliveryPath
 }
 
 internal readonly record struct DeliveryDecision(
-    MessageLane Lane,
     DeliveryMode RequestedMode,
     DeliveryMode ResolvedMode,
     DeliveryPath Path,
@@ -110,6 +109,6 @@ internal static class DeliveryDecisionResolver
             _ => throw new UnreachableException(),
         };
 
-        return new DeliveryDecision(lane, requestedMode, resolvedMode, path, delay, publishAt, coordination);
+        return new DeliveryDecision(requestedMode, resolvedMode, path, delay, publishAt, coordination);
     }
 }

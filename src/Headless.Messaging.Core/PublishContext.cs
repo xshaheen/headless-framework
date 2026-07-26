@@ -209,7 +209,6 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         };
 
         return new DeliveryDecision(
-            lane,
             requestedMode,
             resolvedMode,
             path,

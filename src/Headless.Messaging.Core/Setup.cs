@@ -203,39 +203,33 @@ public static class SetupMessaging
 
         // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
         // only after the immutable capability gate accepts the individual call.
-        services.TryAddSingleton(sp => new MessagePublisher(
-            sp.GetRequiredService<ISerializer>(),
-            lane =>
+        services.TryAddSingleton(sp =>
+        {
+            ITransport ResolveTransport(MessageLane lane) =>
                 lane switch
                 {
-                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>().BrokerAddress,
-                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>().BrokerAddress,
+                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>(),
+                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>(),
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(lane),
                         lane,
                         "A defined messaging lane is required."
                     ),
-                },
-            (lane, message, cancellationToken) =>
-                lane switch
-                {
-                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>().SendAsync(message, cancellationToken),
-                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>().SendAsync(message, cancellationToken),
-                    _ => throw new ArgumentOutOfRangeException(
-                        nameof(lane),
-                        lane,
-                        "A defined messaging lane is required."
-                    ),
-                },
-            sp.GetRequiredService<IMessagePublishRequestFactory>(),
-            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<IMessageCapabilityGate>(),
-            sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
-            () => sp.GetService<IDeliveryCoordinationResolver>(),
-            () => sp.GetService<OutboxMessageWriter>(),
-            sp.GetService<MessagingTelemetry>()
-        ));
+                };
+
+            return new MessagePublisher(
+                sp.GetRequiredService<ISerializer>(),
+                ResolveTransport,
+                sp.GetRequiredService<IMessagePublishRequestFactory>(),
+                sp.GetRequiredService<IPublishMiddlewarePipeline>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<IMessageCapabilityGate>(),
+                sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
+                () => sp.GetService<IDeliveryCoordinationResolver>(),
+                () => sp.GetService<OutboxMessageWriter>(),
+                sp.GetService<MessagingTelemetry>()
+            );
+        });
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
         services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
 

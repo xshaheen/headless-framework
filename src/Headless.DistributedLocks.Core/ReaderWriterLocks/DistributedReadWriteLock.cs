@@ -37,6 +37,7 @@ internal sealed class DistributedReadWriteLock(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
+    private static readonly PublishOptions _DurablePublishOptions = new() { DeliveryMode = DeliveryMode.Durable };
 
     private readonly ScopedDistributedReadWriteLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
@@ -445,12 +446,7 @@ internal sealed class DistributedReadWriteLock(
 
             try
             {
-                await _bus.PublishAsync(
-                        released,
-                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                await _bus.PublishAsync(released, _DurablePublishOptions, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception)
             {

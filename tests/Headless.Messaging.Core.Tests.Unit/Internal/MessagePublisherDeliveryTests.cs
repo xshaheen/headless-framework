@@ -25,13 +25,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         await using var harness = _CreateHarness();
 
-        await harness.Publisher.PublishAsync(
-            MessageLane.Bus,
-            new DeliveryMessage("direct"),
-            options: null,
-            delay: null,
-            AbortToken
-        );
+        await harness.Publisher.PublishAsync(MessageLane.Bus, new DeliveryMessage("direct"), options: null, AbortToken);
 
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
         var sent = harness.TransportMessages.Should().ContainSingle().Which;
@@ -70,7 +64,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Queue,
             new DeliveryMessage("durable"),
             new EnqueueOptions { DeliveryMode = DeliveryMode.Durable },
-            delay: null,
             AbortToken
         );
 
@@ -91,8 +84,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             harness.Publisher.PublishAsync(
                 MessageLane.Bus,
                 new DeliveryMessage("invalid"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
-                TimeSpan.FromMinutes(1),
+                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, Delay = TimeSpan.FromMinutes(1) },
                 AbortToken
             );
 
@@ -134,8 +126,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("delayed"),
-            new PublishOptions(),
-            TimeSpan.FromMinutes(5),
+            new PublishOptions { Delay = TimeSpan.FromMinutes(5) },
             AbortToken
         );
 
@@ -198,15 +189,14 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         ]);
         var transportLanes = new List<MessageLane>();
         var transportMessages = new List<TransportMessage>();
+        var transports = new Dictionary<MessageLane, ITransport>
+        {
+            [MessageLane.Bus] = new RecordingTransport(MessageLane.Bus, transportLanes, transportMessages),
+            [MessageLane.Queue] = new RecordingTransport(MessageLane.Queue, transportLanes, transportMessages),
+        };
         var publisher = new MessagePublisher(
             new JsonUtf8Serializer(options),
-            _ => new BrokerAddress("Test", "localhost"),
-            (lane, message, _) =>
-            {
-                transportLanes.Add(lane);
-                transportMessages.Add(message);
-                return Task.FromResult(OperateResult.Success);
-            },
+            lane => transports[lane],
             requestFactory,
             pipeline,
             timeProvider,
@@ -220,6 +210,24 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     private sealed record DeliveryMessage(string Value);
+
+    private sealed class RecordingTransport(MessageLane lane, List<MessageLane> lanes, List<TransportMessage> messages)
+        : ITransport
+    {
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            lanes.Add(lane);
+            messages.Add(message);
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed record MessagePublisherHarness(
         MessagePublisher Publisher,

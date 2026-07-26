@@ -8,8 +8,7 @@ namespace Headless.Messaging.Internal;
 
 internal sealed class MessagePublisher(
     ISerializer serializer,
-    Func<MessageLane, BrokerAddress> brokerAddressResolver,
-    Func<MessageLane, TransportMessage, CancellationToken, Task<OperateResult>> transportSender,
+    Func<MessageLane, ITransport> transportResolver,
     IMessagePublishRequestFactory publishRequestFactory,
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider,
@@ -26,7 +25,6 @@ internal sealed class MessagePublisher(
         MessageLane lane,
         T? content,
         MessageOptions? options,
-        TimeSpan? delay,
         CancellationToken cancellationToken
     )
     {
@@ -36,7 +34,7 @@ internal sealed class MessagePublisher(
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
             options?.DeliveryMode ?? DeliveryMode.Auto,
-            delay,
+            options?.Delay,
             coordination,
             timeProvider.GetUtcNow()
         );
@@ -69,16 +67,16 @@ internal sealed class MessagePublisher(
                     )
                     : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
 
-                DeliveryMetadata.Stamp(request.Message.Headers, decision);
-
                 if (decision.Path is DeliveryPath.TransportDirect)
                 {
+                    DeliveryMetadata.Stamp(request.Message.Headers, decision);
+                    var transport = transportResolver(lane);
                     return DirectPublisherCore.SendAsync(
                         request.Message,
                         request.Lane,
                         serializer,
-                        brokerAddressResolver(lane),
-                        (message, token) => transportSender(lane, message, token),
+                        transport.BrokerAddress,
+                        transport.SendAsync,
                         _NowUnixTimeMilliseconds,
                         _telemetry,
                         ct

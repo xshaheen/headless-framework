@@ -57,6 +57,7 @@ public sealed class DistributedLock(
     ILogger<DistributedLock> logger
 ) : IDistributedLock, ICanReceiveLockReleased
 {
+    private static readonly PublishOptions _DurablePublishOptions = new() { DeliveryMode = DeliveryMode.Durable };
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
@@ -664,11 +665,7 @@ public sealed class DistributedLock(
 
             try
             {
-                await _bus.PublishAsync(
-                        distributedLockReleased,
-                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                        cancellationToken
-                    )
+                await _bus.PublishAsync(distributedLockReleased, _DurablePublishOptions, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)

@@ -68,7 +68,6 @@ public sealed class DeliveryDecisionResolverTests : TestBase
 
         var decision = DeliveryDecisionResolver.Resolve(MessageLane.Bus, requestedMode, delay, coordination, _Now);
 
-        decision.Lane.Should().Be(MessageLane.Bus);
         decision.RequestedMode.Should().Be(requestedMode);
         decision.ResolvedMode.Should().Be(resolvedMode);
         decision.Path.Should().Be((DeliveryPath)path);
