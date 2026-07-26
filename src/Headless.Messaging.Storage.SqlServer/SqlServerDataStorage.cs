@@ -382,11 +382,38 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        return await _StoreMessageAsync(name, message, publishAt: null, transaction, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _StoreMessageAsync(name, message, publishAt, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
         var sql =
             $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
+        var statusName =
+            publishAt is null ? StatusName.Scheduled
+            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
+            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -394,8 +421,8 @@ internal sealed partial class SqlServerDataStorage(
             Content = serializer.Serialize(message.Origin),
             Lane = message.Lane,
             Added = added,
-            ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            ExpiresAt = publishAt,
+            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -427,7 +454,7 @@ internal sealed partial class SqlServerDataStorage(
                 Value = stored.LockedUntil.ToUtcParameterValue(),
             },
             _OwnerParameter("@Owner", stored.LockedUntil),
-            new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new SqlParameter("@StatusName", statusName.ToString("G")),
             new SqlParameter("@MessageId", message.Origin.Id),
         ];
 

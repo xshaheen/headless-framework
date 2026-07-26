@@ -295,6 +295,43 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var unknown = _AddUnknownRow(storage.PublishedMessages, 99, TimeProvider.GetUtcNow(), Guid.NewGuid());
+        unknown.Content = "not-a-message-envelope";
+        var monitoring = storage.GetMonitoringApi();
+
+        (await monitoring.GetPublishedMessageAsync(unknown.StorageId, AbortToken)).Should().BeNull();
+        (await monitoring.GetPublishedMessagesAsync([unknown.StorageId], AbortToken)).Should().BeEmpty();
+        (
+            await monitoring.GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    CurrentPage = 0,
+                    PageSize = 10,
+                },
+                AbortToken
+            )
+        ).Items.Should().BeEmpty();
+        (await monitoring.GetPublishedFailedCountAsync(AbortToken)).Should().Be(0);
+        (await monitoring.GetStatisticsAsync(AbortToken)).PublishedFailed.Should().Be(0);
+
+        var diagnostics = await monitoring.GetUnknownLaneMessagesAsync(
+            new UnknownLaneMessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        diagnostics.Items.Should().ContainSingle().Which.StorageId.Should().Be(unknown.StorageId);
+    }
+
+    [Fact]
     public async Task should_reject_undefined_message_type_when_querying_unknown_lanes()
     {
         _EnsureInitialized();
@@ -460,6 +497,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_store_published_message()
     {
         return base.should_store_published_message();
+    }
+
+    [Fact]
+    public override Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        return base.should_store_scheduled_message_with_atomic_not_before_state();
     }
 
     [Fact]

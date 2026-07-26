@@ -316,6 +316,12 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
+    public override Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        return base.should_store_scheduled_message_with_atomic_not_before_state();
+    }
+
+    [Fact]
     public override Task should_store_published_message_with_non_numeric_message_id()
     {
         return base.should_store_published_message_with_non_numeric_message_id();

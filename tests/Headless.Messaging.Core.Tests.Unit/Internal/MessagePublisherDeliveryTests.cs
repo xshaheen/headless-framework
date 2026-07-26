@@ -7,12 +7,12 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Registration;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -72,7 +72,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         stored!.Lane.Should().Be(MessageLane.Queue);
         stored.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
-        await harness.Dispatcher.Received(1).EnqueueToPublish(stored, Arg.Any<CancellationToken>());
+        harness.Dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
+        harness.Dispatcher.PublishCalls.Should().Be(0);
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<CancellationToken>()
             );
-        await harness.Dispatcher.DidNotReceiveWithAnyArgs().EnqueueToScheduler(default!, default, default, default);
+        harness.Dispatcher.SchedulerCalls.Should().Be(0);
     }
 
     [Fact]
@@ -115,10 +116,11 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             Lane = MessageLane.Bus,
         };
         harness
-            .Storage.StoreMessageAsync(
+            .Storage.StoreScheduledMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
+                now.AddMinutes(5),
+                transaction: null,
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(stored));
@@ -131,27 +133,68 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         );
 
         harness.TransportLanes.Should().BeEmpty();
-        await harness
-            .Dispatcher.Received(1)
-            .EnqueueToScheduler(stored, now.AddMinutes(5), transaction: null, Arg.Any<CancellationToken>());
+        harness.Dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
+        harness.Dispatcher.SchedulerCalls.Should().Be(0);
     }
 
-    private static MessagePublisherHarness _CreateHarness(TimeProvider? timeProvider = null)
+    [Fact]
+    public async Task should_cancel_direct_transport_when_publish_timeout_elapses()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var transport = new BlockingTransport();
+        var timeout = TimeSpan.FromSeconds(5);
+        await using var harness = _CreateHarness(timeProvider, timeout, transport);
+
+        // when
+        var publishTask = harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("timeout"),
+            options: null,
+            AbortToken
+        );
+        await transport.Started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout);
+        var act = async () => await publishTask;
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_preserve_caller_token_when_direct_transport_is_canceled_by_caller()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var transport = new BlockingTransport();
+        await using var harness = _CreateHarness(timeProvider, TimeSpan.FromHours(1), transport);
+        using var callerCts = new CancellationTokenSource();
+
+        // when
+        var publishTask = harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("caller-canceled"),
+            options: null,
+            callerCts.Token
+        );
+        await transport.Started.Task.WaitAsync(AbortToken);
+        await callerCts.CancelAsync();
+        var act = async () => await publishTask;
+
+        // then
+        var exception = await act.Should().ThrowAsync<OperationCanceledException>();
+        exception.Which.CancellationToken.Should().Be(callerCts.Token);
+    }
+
+    private static MessagePublisherHarness _CreateHarness(
+        TimeProvider? timeProvider = null,
+        TimeSpan? transportPublishTimeout = null,
+        ITransport? busTransport = null
+    )
     {
         timeProvider ??= TimeProvider.System;
         var storage = Substitute.For<IDataStorage>();
-        var dispatcher = Substitute.For<IDispatcher>();
-        dispatcher
-            .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.CompletedTask);
-        dispatcher
-            .EnqueueToScheduler(
-                Arg.Any<MediumMessage>(),
-                Arg.Any<DateTimeOffset>(),
-                Arg.Any<System.Data.Common.DbTransaction?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(Task.CompletedTask);
+        var dispatcher = new RecordingCommittedDispatcher();
 
         var options = Options.Create(new MessagingOptions());
         var registry = new ConsumerRegistry();
@@ -165,13 +208,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         );
         var services = new ServiceCollection().BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(services);
-        var writer = new OutboxMessageWriter(
-            storage,
-            dispatcher,
-            timeProvider,
-            options,
-            NullLogger<MessageOutboxBuffer>.Instance
-        );
+        var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);
         var capabilities = MessagingCapabilityModel.Compose([
             MessagingProviderCapabilities.Transport(
                 "TestTransport",
@@ -188,7 +225,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var transportMessages = new List<TransportMessage>();
         var transports = new Dictionary<MessageLane, ITransport>
         {
-            [MessageLane.Bus] = new RecordingTransport(MessageLane.Bus, transportLanes, transportMessages),
+            [MessageLane.Bus] =
+                busTransport ?? new RecordingTransport(MessageLane.Bus, transportLanes, transportMessages),
             [MessageLane.Queue] = new RecordingTransport(MessageLane.Queue, transportLanes, transportMessages),
         };
         var publisher = new MessagePublisher(
@@ -200,7 +238,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             capabilities,
             new MessagingNullCommitCoordinator(),
             static () => null,
-            () => writer
+            () => writer,
+            telemetry: null,
+            transportPublishTimeout
         );
 
         return new MessagePublisherHarness(publisher, storage, dispatcher, transportLanes, transportMessages, services);
@@ -226,10 +266,92 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         }
     }
 
+    private sealed class BlockingTransport : ITransport
+    {
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public async Task<OperateResult> SendAsync(
+            TransportMessage message,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return OperateResult.Success;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingCommittedDispatcher
+        : IDispatcher,
+            ICommittedMessageDispatcher,
+            ICommittedDelayedMessageDispatcher
+    {
+        public List<MediumMessage> CommittedMessages { get; } = [];
+
+        public List<MediumMessage> CommittedDelayedMessages { get; } = [];
+
+        public int PublishCalls { get; private set; }
+
+        public int SchedulerCalls { get; private set; }
+
+        public void EnqueueCommittedMessage(MediumMessage message)
+        {
+            CommittedMessages.Add(message);
+        }
+
+        public void EnqueueCommittedDelayedMessage(MediumMessage message)
+        {
+            CommittedDelayedMessages.Add(message);
+        }
+
+        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
+        {
+            PublishCalls++;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask EnqueueToExecute(
+            MediumMessage message,
+            ConsumerExecutorDescriptor? descriptor = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public Task EnqueueToScheduler(
+            MediumMessage message,
+            DateTimeOffset publishTime,
+            System.Data.Common.DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            SchedulerCalls++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed record MessagePublisherHarness(
         MessagePublisher Publisher,
         IDataStorage Storage,
-        IDispatcher Dispatcher,
+        RecordingCommittedDispatcher Dispatcher,
         List<MessageLane> TransportLanes,
         List<TransportMessage> TransportMessages,
         ServiceProvider Services

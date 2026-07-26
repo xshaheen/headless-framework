@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 
 namespace Tests.ContextTypes;
@@ -134,6 +135,84 @@ public sealed class PublishContextTests : TestBase
         context.Headers.Should().ContainKey("x-feature");
         context.Headers["x-feature"].Should().Be("enabled");
         context.Headers.Should().NotContainKey("x-new");
+    }
+
+    [Fact]
+    public void should_reject_delivery_mode_change_after_resolution()
+    {
+        // given
+        var options = new PublishOptions { DeliveryMode = DeliveryMode.Auto };
+        var context = _CreateFrozenContext(options);
+
+        // when
+        var act = () => context.WithOptions(options with { DeliveryMode = DeliveryMode.Durable });
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*cannot change*delivery mode*");
+    }
+
+    [Theory]
+    [InlineData(null, 5)]
+    [InlineData(5, null)]
+    [InlineData(5, 10)]
+    public void should_reject_delay_change_through_same_mode_options_after_resolution(
+        int? initialDelaySeconds,
+        int? replacementDelaySeconds
+    )
+    {
+        // given
+        var options = new PublishOptions
+        {
+            DeliveryMode = DeliveryMode.Auto,
+            Delay = initialDelaySeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+        };
+        var context = _CreateFrozenContext(options);
+        var replacementDelay = replacementDelaySeconds is { } replacementSeconds
+            ? TimeSpan.FromSeconds(replacementSeconds)
+            : (TimeSpan?)null;
+
+        // when
+        var act = () => context.WithOptions(options with { Delay = replacementDelay });
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*cannot change*delivery delay*");
+    }
+
+    [Fact]
+    public void should_allow_non_delivery_options_to_change_after_resolution()
+    {
+        // given
+        var delay = TimeSpan.FromMinutes(2);
+        var options = new PublishOptions { DeliveryMode = DeliveryMode.Auto, Delay = delay };
+        var context = _CreateFrozenContext(options);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-test"] = "value" };
+
+        // when
+        context.WithOptions(options with { MessageName = "orders", Headers = headers });
+
+        // then
+        context.MessageName.Should().Be("orders");
+        context.Headers["x-test"].Should().Be("value");
+        context.DelayTime.Should().Be(delay);
+    }
+
+    private static PublishContext<OrderPlaced> _CreateFrozenContext(PublishOptions options)
+    {
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            options.DeliveryMode,
+            options.Delay,
+            DeliveryCoordination.None,
+            DateTimeOffset.UnixEpoch
+        );
+
+        return new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            MessageLane.Bus,
+            options,
+            decision,
+            CancellationToken.None
+        );
     }
 
     private sealed record OrderPlaced(string OrderId);

@@ -288,7 +288,20 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
 
         // when
-        var result = await storage.StoreMessageAsync("tx-test", msg, transaction, AbortToken);
+        var publishAt = TimeProvider.System.GetUtcNow().AddMinutes(30);
+        var result = await storage.StoreScheduledMessageAsync(
+            "tx-test",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = msg,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            publishAt,
+            transaction,
+            AbortToken
+        );
 
         // then — message is visible within the transaction
         result.Should().NotBeNull();
@@ -300,6 +313,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var monitoringApi = storage.GetMonitoringApi();
         var retrieved = await monitoringApi.GetPublishedMessageAsync(result.StorageId, AbortToken);
         retrieved.Should().NotBeNull();
+        retrieved!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        retrieved.NextRetryAt.Should().BeNull();
     }
 
     [Fact]
@@ -314,7 +329,19 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using var transaction = await connection.BeginTransactionAsync(AbortToken);
 
         // when — store then rollback
-        var result = await storage.StoreMessageAsync("rollback-test", msg, transaction, AbortToken);
+        var result = await storage.StoreScheduledMessageAsync(
+            "rollback-test",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = msg,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            TimeProvider.System.GetUtcNow().AddMinutes(30),
+            transaction,
+            AbortToken
+        );
         await transaction.RollbackAsync(AbortToken);
 
         // then — message should not be persisted
@@ -482,6 +509,75 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         )
             .Should()
             .Be(before);
+    }
+
+    [Theory]
+    [InlineData(MessageType.Publish, "published")]
+    [InlineData(MessageType.Subscribe, "received")]
+    public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var id = Guid.NewGuid();
+        var now = TimeProvider.System.GetUtcNow();
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            $"""
+            INSERT INTO messaging.{tableName}
+                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+            VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, NULL, NULL, 'Failed', @MessageId{receivedValues});
+            """,
+            new
+            {
+                Id = id,
+                Added = now,
+                MessageId = $"unknown-lane-{id:N}",
+            }
+        );
+
+        var monitoring = _storage!.GetMonitoringApi();
+        var single =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedMessageAsync(id, AbortToken)
+                : await monitoring.GetReceivedMessageAsync(id, AbortToken);
+        var multiple =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedMessagesAsync([id], AbortToken)
+                : await monitoring.GetReceivedMessagesAsync([id], AbortToken);
+        var count =
+            messageType == MessageType.Publish
+                ? await monitoring.GetPublishedFailedCountAsync(AbortToken)
+                : await monitoring.GetReceivedFailedCountAsync(AbortToken);
+        var page = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        single.Should().BeNull();
+        multiple.Should().BeEmpty();
+        count.Should().Be(0);
+        page.Items.Should().BeEmpty();
+        (
+            await monitoring.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = messageType,
+                    CurrentPage = 1,
+                    PageSize = 10,
+                },
+                AbortToken
+            )
+        ).Items.Should().ContainSingle().Which.StorageId.Should().Be(id);
     }
 
     [Fact]

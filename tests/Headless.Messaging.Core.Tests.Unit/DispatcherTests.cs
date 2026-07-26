@@ -7,6 +7,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -829,6 +830,59 @@ public sealed class DispatcherTests : TestBase
         // will catch it via Should().NotThrowAsync.
         await act.Should()
             .NotThrowAsync("post-dispose writes must unwind as cancellation, not InvalidOperationException");
+    }
+
+    [Fact]
+    public async Task should_accelerate_committed_message_without_waiting_for_public_dispatch_path()
+    {
+        var sender = new TestThreadSafeMessageSender();
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await using (dispatcher)
+        using (var cts = new CancellationTokenSource())
+        {
+            var message = _CreateTestMessage(_StorageGuid(1));
+            await dispatcher.StartAsync(cts.Token);
+
+            ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(message);
+
+            for (var attempt = 0; attempt < 100 && sender.Count != 1; attempt++)
+            {
+                await Task.Delay(10, AbortToken);
+            }
+            sender.ReceivedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
+            await cts.CancelAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_drop_committed_acceleration_after_shutdown_without_throwing()
+    {
+        var sender = new TestThreadSafeMessageSender();
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.DisposeAsync();
+
+        var act = () => ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(_CreateTestMessage());
+
+        act.Should().NotThrow("the committed row remains recoverable by the relay after shutdown");
+        sender.Count.Should().Be(0);
     }
 
     [Fact]

@@ -38,13 +38,13 @@ internal sealed class SqlServerMonitoringApi(
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
-                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND StatusName = N'Delayed') AS PublishedDelayed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE IntentType IN (0, 1) AND NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE IntentType IN (0, 1) AND NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -119,7 +119,7 @@ internal sealed class SqlServerMonitoringApi(
             query.MessageType == MessageType.Publish
                 ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
                 : "[Id],[MessageId],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
-        var where = string.Empty;
+        var where = " AND [IntentType] IN (0, 1)";
         if (query.StatusName is not null)
         {
             where += " AND [StatusName]=@StatusName";
@@ -384,7 +384,8 @@ internal sealed class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT_BIG(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
+        var sqlQuery =
+            $"SELECT COUNT_BIG(Id) FROM {tableName} WITH (NOLOCK) WHERE IntentType IN (0, 1) AND StatusName = @StatusName";
         await using var connection = new SqlConnection(_options.ConnectionString);
 
         return await connection
@@ -446,7 +447,7 @@ internal sealed class SqlServerMonitoringApi(
             SELECT CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2) AS [Key],
                 COUNT(Id) [Count]
             FROM  {tableName}
-            WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added < @MaxAdded
+            WHERE IntentType IN (0, 1) AND StatusName = @StatusName AND Added >= @MinAdded AND Added < @MaxAdded
             GROUP BY CONVERT(CHAR(10), SWITCHOFFSET(Added, 0), 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, SWITCHOFFSET(Added, 0)) AS VARCHAR(2)), 2)
             )
             SELECT [Key], [Count] FROM Aggr WITH (NOLOCK);
@@ -530,7 +531,7 @@ internal sealed class SqlServerMonitoringApi(
         };
 
         var sql =
-            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids)";
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids) AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -587,7 +588,7 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id";
+            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 

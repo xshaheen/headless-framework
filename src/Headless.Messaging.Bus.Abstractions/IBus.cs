@@ -8,11 +8,11 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IBus"/> contract is broadcast intent: every subscriber receives its own copy of
-/// each published message. <see cref="PublishOptions.DeliveryMode"/> selects automatic,
+/// each published message. The <c>DeliveryMode</c> on <see cref="PublishOptions"/> selects automatic,
 /// durable, or transport-direct delivery without changing the Bus lane.
 /// </para>
 /// <para>
-/// Delayed delivery is durable and cannot be combined with <see cref="DeliveryMode.TransportDirect"/>.
+/// Delayed delivery is durable and cannot be combined with <c>TransportDirect</c> delivery.
 /// </para>
 /// <para>
 /// At least one <see cref="IBusTransport"/> must be registered in DI for direct bus publishing.

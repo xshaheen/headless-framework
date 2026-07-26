@@ -116,6 +116,11 @@ public abstract class PublishContext
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
         }
 
+        if (DeliveryFrozen && options?.Delay != DelayTime)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery delay.");
+        }
+
         OptionsCore = options;
         RefreshOptionSnapshot(options);
     }

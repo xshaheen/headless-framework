@@ -399,11 +399,38 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        return await _StoreMessageAsync(name, message, publishAt: null, transaction, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _StoreMessageAsync(name, message, publishAt, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
         var sql =
             $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"Owner\",\"StatusName\",\"MessageId\")"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
+        var statusName =
+            publishAt is null ? StatusName.Scheduled
+            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
+            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -411,8 +438,8 @@ internal sealed partial class PostgreSqlDataStorage(
             Content = serializer.Serialize(message.Origin),
             Lane = message.Lane,
             Added = added,
-            ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            ExpiresAt = publishAt,
+            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -432,7 +459,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@NextRetryAt", stored.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
-            new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new NpgsqlParameter("@StatusName", statusName.ToString("G")),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
         ];
 

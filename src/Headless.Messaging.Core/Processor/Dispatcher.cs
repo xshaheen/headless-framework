@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher
+internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher, ICommittedMessageDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
@@ -200,6 +200,19 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
         // A full in-memory queue is safe here: the committed message remains durable as Delayed work.
         _ = _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
+    }
+
+    void ICommittedMessageDispatcher.EnqueueCommittedMessage(MediumMessage message)
+    {
+        if (_IsCancellationRequested())
+        {
+            _logger.MessagePersistButSystemStopped();
+            return;
+        }
+
+        // A full channel is not a publish failure: the row already committed, so the relay is the
+        // recovery authority. This path must never wait for channel capacity or broker progress.
+        _ = PublishedChannel.Writer.TryWrite(message);
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)

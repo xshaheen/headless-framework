@@ -13,7 +13,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            storage.PublishedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.PublishedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane)
+                ? (MediumMessage?)message
+                : null
         );
     }
 
@@ -27,7 +29,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var id in storageIds)
         {
-            if (storage.PublishedMessages.TryGetValue(id, out var message))
+            if (storage.PublishedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane))
             {
                 result.Add(message);
             }
@@ -40,7 +42,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            storage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.ReceivedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane)
+                ? (MediumMessage?)message
+                : null
         );
     }
 
@@ -54,7 +58,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var id in storageIds)
         {
-            if (storage.ReceivedMessages.TryGetValue(id, out var message))
+            if (storage.ReceivedMessages.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane))
             {
                 result.Add(message);
             }
@@ -76,6 +80,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         // dictionary up to 4× per side; this collapses it to 1×.
         foreach (var msg in storage.PublishedMessages.Values)
         {
+            if (!_IsRecognizedLane(msg.Lane))
+            {
+                continue;
+            }
+
             switch (msg.StatusName)
             {
                 case StatusName.Succeeded:
@@ -101,6 +110,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var msg in storage.ReceivedMessages.Values)
         {
+            if (!_IsRecognizedLane(msg.Lane))
+            {
+                continue;
+            }
+
             switch (msg.StatusName)
             {
                 case StatusName.Succeeded:
@@ -158,7 +172,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         if (query.MessageType == MessageType.Publish)
         {
-            var expression = storage.PublishedMessages.Values.Where(x => true);
+            var expression = storage.PublishedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
 
             if (query.StatusName is not null)
             {
@@ -218,7 +232,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
         else
         {
-            var expression = storage.ReceivedMessages.Values.Where(x => true);
+            var expression = storage.ReceivedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
 
             if (query.StatusName is not null)
             {
@@ -332,25 +346,37 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
+        return new ValueTask<long>(
+            storage.PublishedMessages.Values.Count(x => _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Failed)
+        );
     }
 
     public ValueTask<long> GetPublishedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
+        return new ValueTask<long>(
+            storage.PublishedMessages.Values.Count(x =>
+                _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Succeeded
+            )
+        );
     }
 
     public ValueTask<long> GetReceivedFailedCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
+        return new ValueTask<long>(
+            storage.ReceivedMessages.Values.Count(x => _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Failed)
+        );
     }
 
     public ValueTask<long> GetReceivedSucceededCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
+        return new ValueTask<long>(
+            storage.ReceivedMessages.Values.Count(x =>
+                _IsRecognizedLane(x.Lane) && x.StatusName == StatusName.Succeeded
+            )
+        );
     }
 
     private ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> _GetHourlyTimelineStats(
@@ -374,7 +400,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         foreach (var message in messages)
         {
-            if (message.StatusName != statusName)
+            if (!_IsRecognizedLane(message.Lane) || message.StatusName != statusName)
             {
                 continue;
             }
@@ -388,5 +414,10 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
 
         return ValueTask.FromResult<IReadOnlyDictionary<DateTimeOffset, int>>(result);
+    }
+
+    private static bool _IsRecognizedLane(MessageLane lane)
+    {
+        return lane is MessageLane.Bus or MessageLane.Queue;
     }
 }

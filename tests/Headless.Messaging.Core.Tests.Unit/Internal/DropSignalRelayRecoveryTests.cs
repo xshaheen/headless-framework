@@ -49,13 +49,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         var stack = new CommitScopeStack();
         var dispatcher = Substitute.For<IDispatcher>();
 
-        var writer = new OutboxMessageWriter(
-            storage,
-            dispatcher,
-            TimeProvider.System,
-            Options.Create(new MessagingOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
-        );
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
 
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -126,33 +120,6 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline
     {
-        public Task ExecuteAsync(
-            object? contentObj,
-            Type declaredMessageType,
-            MessageLane lane,
-            MessageOptions? messageOptions,
-            TimeSpan? delayTime,
-            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-            bool isTransactional = false,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return innerPublish(messageOptions, delayTime, cancellationToken);
-        }
-
-        public Task ExecuteAsync<T>(
-            T? contentObj,
-            MessageLane lane,
-            MessageOptions? messageOptions,
-            TimeSpan? delayTime,
-            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-            bool isTransactional = false,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return innerPublish(messageOptions, delayTime, cancellationToken);
-        }
-
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,

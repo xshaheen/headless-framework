@@ -19,27 +19,6 @@ internal interface IPublishMiddlewarePipeline
         Type declaredMessageType,
         MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
-        CancellationToken cancellationToken = default
-    );
-
-    Task ExecuteAsync<T>(
-        T? content,
-        MessageLane lane,
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
-        CancellationToken cancellationToken = default
-    );
-
-    Task ExecuteAsync(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
         DeliveryDecision decision,
         Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
@@ -84,50 +63,6 @@ internal sealed class PublishMiddlewarePipeline(
     // zero-middleware publish path. A null probe (non-conforming container) always takes the slow path.
     private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
     private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
-
-    public Task ExecuteAsync<T>(
-        T? content,
-        MessageLane lane,
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var decision = _CreateLegacyDecision(lane, options, delayTime, isTransactional);
-        return ExecuteAsync(
-            content,
-            lane,
-            options,
-            decision,
-            (middlewareOptions, ct) => innerPublish(middlewareOptions, delayTime, ct),
-            cancellationToken
-        );
-    }
-
-    public Task ExecuteAsync(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var decision = _CreateLegacyDecision(lane, options, delayTime, isTransactional);
-        return ExecuteAsync(
-            content,
-            declaredMessageType,
-            lane,
-            options,
-            decision,
-            (middlewareOptions, ct) => innerPublish(middlewareOptions, delayTime, ct),
-            cancellationToken
-        );
-    }
 
     public async Task ExecuteAsync<T>(
         T? content,
@@ -233,23 +168,6 @@ internal sealed class PublishMiddlewarePipeline(
                 ],
                 culture: null
             )!;
-    }
-
-    private static DeliveryDecision _CreateLegacyDecision(
-        MessageLane lane,
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional
-    )
-    {
-        return new DeliveryDecision(
-            options?.DeliveryMode ?? DeliveryMode.Auto,
-            isTransactional ? DeliveryMode.Durable : DeliveryMode.TransportDirect,
-            isTransactional ? DeliveryPath.DurableCoordinated : DeliveryPath.TransportDirect,
-            delayTime,
-            PublishAt: null,
-            DeliveryCoordination.None
-        );
     }
 
     private async ValueTask _InvokeAsync(

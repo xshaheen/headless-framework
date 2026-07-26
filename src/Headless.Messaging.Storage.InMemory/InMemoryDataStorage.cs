@@ -413,9 +413,34 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        return _StoreMessageAsync(name, message, publishAt: null, cancellationToken);
+    }
+
+    public ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _StoreMessageAsync(name, message, publishAt, cancellationToken);
+    }
+
+    private ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        CancellationToken cancellationToken
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var added = timeProvider.GetUtcNow();
+        var statusName =
+            publishAt is null ? StatusName.Scheduled
+            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
+            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
@@ -423,8 +448,8 @@ internal sealed partial class InMemoryDataStorage(
             Content = serializer.Serialize(message.Origin),
             Lane = message.Lane,
             Added = added,
-            ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            ExpiresAt = publishAt,
+            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -445,7 +470,7 @@ internal sealed partial class InMemoryDataStorage(
             NextRetryAt = stored.NextRetryAt,
             LockedUntil = stored.LockedUntil,
             Owner = stored.Owner,
-            StatusName = StatusName.Scheduled,
+            StatusName = statusName,
             Version = messagingOptions.Value.Version,
         };
 

@@ -43,3 +43,12 @@ internal interface ICommittedDelayedMessageDispatcher
 {
     void EnqueueCommittedDelayedMessage(MediumMessage message);
 }
+
+/// <summary>
+/// Internal non-blocking acceleration path for an immediate message whose durable row already committed.
+/// A rejected enqueue is safe because durable retry pickup remains the recovery authority.
+/// </summary>
+internal interface ICommittedMessageDispatcher
+{
+    void EnqueueCommittedMessage(MediumMessage message);
+}

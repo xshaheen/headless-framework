@@ -178,13 +178,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        var writer = new OutboxMessageWriter(
-            storage,
-            dispatcher,
-            TimeProvider.System,
-            Options.Create(new MessagingOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
-        );
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
         var transport = new SuccessfulTransport();
         var capabilities = MessagingCapabilityModel.Compose([
             MessagingProviderCapabilities.Transport(

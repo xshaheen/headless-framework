@@ -532,6 +532,58 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
     }
 
+    [Theory]
+    [InlineData(MessageType.Publish, "Published")]
+    [InlineData(MessageType.Subscribe, "Received")]
+    public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
+        MessageType messageType,
+        string tableName
+    )
+    {
+        var id = Guid.NewGuid();
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await _InsertDiagnosticRowAsync(connection, tableName, id, rawLane: 70, added: _timeProvider.GetUtcNow());
+
+        var single =
+            messageType == MessageType.Publish
+                ? await _monitoringApi.GetPublishedMessageAsync(id, AbortToken)
+                : await _monitoringApi.GetReceivedMessageAsync(id, AbortToken);
+        var multiple =
+            messageType == MessageType.Publish
+                ? await _monitoringApi.GetPublishedMessagesAsync([id], AbortToken)
+                : await _monitoringApi.GetReceivedMessagesAsync([id], AbortToken);
+        var count =
+            messageType == MessageType.Publish
+                ? await _monitoringApi.GetPublishedFailedCountAsync(AbortToken)
+                : await _monitoringApi.GetReceivedFailedCountAsync(AbortToken);
+        var page = await _monitoringApi.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        single.Should().BeNull();
+        multiple.Should().BeEmpty();
+        count.Should().Be(0);
+        page.Items.Should().BeEmpty();
+        (
+            await _monitoringApi.GetUnknownLaneMessagesAsync(
+                new UnknownLaneMessageQuery
+                {
+                    MessageType = messageType,
+                    CurrentPage = 1,
+                    PageSize = 10,
+                },
+                AbortToken
+            )
+        ).Items.Should().ContainSingle().Which.StorageId.Should().Be(id);
+    }
+
     [Fact]
     public async Task should_reject_unknown_message_type_for_unknown_lane_diagnostics()
     {

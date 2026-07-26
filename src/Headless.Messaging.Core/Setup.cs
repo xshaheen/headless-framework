@@ -227,7 +227,8 @@ public static class SetupMessaging
                 sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
                 () => sp.GetService<IDeliveryCoordinationResolver>(),
                 () => sp.GetService<OutboxMessageWriter>(),
-                sp.GetService<MessagingTelemetry>()
+                sp.GetService<MessagingTelemetry>(),
+                options.TransportPublishTimeout
             );
         });
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));

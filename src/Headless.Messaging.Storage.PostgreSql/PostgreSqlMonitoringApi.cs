@@ -76,25 +76,25 @@ internal sealed class PostgreSqlMonitoringApi(
         var sql = $"""
             SELECT
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Succeeded'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
             ) AS "PublishedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Succeeded'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
             ) AS "ReceivedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Failed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
             ) AS "PublishedFailed",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Failed'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
             ) AS "ReceivedFailed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Delayed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Delayed'
             ) AS "PublishedDelayed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "NextRetryAt" IS NOT NULL
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
             ) AS "PublishedPendingRetry",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "NextRetryAt" IS NOT NULL
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
             ) AS "ReceivedPendingRetry";
             """;
 
@@ -142,7 +142,7 @@ internal sealed class PostgreSqlMonitoringApi(
             query.MessageType == MessageType.Publish
                 ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
                 : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
-        var where = string.Empty;
+        var where = " AND \"IntentType\" IN (0, 1)";
 
         if (query.StatusName is not null)
         {
@@ -400,7 +400,8 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"StatusName\" = @State";
+        var sqlQuery =
+            $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" IN (0, 1) AND \"StatusName\" = @State";
 
         await using var connection = _options.CreateConnection();
 
@@ -464,7 +465,7 @@ internal sealed class PostgreSqlMonitoringApi(
                 SELECT to_char("Added" AT TIME ZONE 'UTC','yyyy-MM-dd-HH24') AS "Key",
                 COUNT("Id") AS "Count"
                 FROM {tableName}
-                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
+                    WHERE "IntentType" IN (0, 1) AND "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
                 GROUP BY to_char("Added" AT TIME ZONE 'UTC', 'yyyy-MM-dd-HH24')
             )
             SELECT "Key","Count" from Aggr;
@@ -523,7 +524,7 @@ internal sealed class PostgreSqlMonitoringApi(
             return [];
         }
 
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids)");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids) AND \"IntentType\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 
@@ -554,7 +555,7 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id AND \"IntentType\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 

@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Headless.Messaging.Serialization;
 
 namespace Headless.Messaging.Internal;
 
+[StructLayout(LayoutKind.Auto)]
 internal readonly record struct DeliveryMetadataValues(
     DeliveryMode? RequestedDeliveryMode,
     DeliveryMode? ResolvedDeliveryMode
@@ -50,11 +52,13 @@ internal static class DeliveryMetadata
             var envelope = serializer.Deserialize(content);
             return envelope is null ? default : ReadStoredHeaders(envelope.Headers);
         }
+#pragma warning disable ERP022 // Monitoring must treat unreadable legacy/corrupt envelopes as missing metadata.
         catch (Exception)
         {
             // Monitoring is best-effort: one unreadable legacy/corrupt envelope must not fail the containing page.
             return default;
         }
+#pragma warning restore ERP022
     }
 
     private static DeliveryMode? _Parse(string? value)

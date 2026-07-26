@@ -245,6 +245,21 @@ public interface IDataStorage
     );
 
     /// <summary>
+    /// Persists a delayed outbound message with its not-before state in the same write as the envelope.
+    /// </summary>
+    /// <remarks>
+    /// Implementations must commit the row's schedule atomically. Dispatch after this write is acceleration;
+    /// durable delayed-message pickup remains the recovery authority when the process stops before enqueueing it.
+    /// </remarks>
+    ValueTask<MediumMessage> StoreScheduledMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset publishAt,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Persists an outbound <see cref="Message"/> to the published table, wrapping it in a
     /// <c>MediumMessage</c> envelope before delegating to the primary overload.
     /// </summary>

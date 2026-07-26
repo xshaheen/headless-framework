@@ -19,6 +19,7 @@ public class PublishDispatchBenchmarks
     private PublishMiddlewarePipeline _pipeline = null!;
     private BenchmarkPayload _payload = null!;
     private PublishOptions _options = null!;
+    private DeliveryDecision _decision;
 
     [Params(0, 1, 5)]
     public int MiddlewareCount { get; set; }
@@ -40,14 +41,21 @@ public class PublishDispatchBenchmarks
         _pipeline = new PublishMiddlewarePipeline(_provider);
         _payload = new BenchmarkPayload("payload");
         _options = _CreateOptions(HeaderCount);
+        _decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            _options.DeliveryMode,
+            _options.Delay,
+            DeliveryCoordination.None,
+            DateTimeOffset.UnixEpoch
+        );
 
         _pipeline
             .ExecuteAsync(
                 _payload,
                 MessageLane.Bus,
                 _options,
-                delayTime: null,
-                static (_, _, _) => Task.CompletedTask,
+                _decision,
+                static (_, _) => Task.CompletedTask,
                 cancellationToken: CancellationToken.None
             )
             .GetAwaiter()
@@ -67,8 +75,8 @@ public class PublishDispatchBenchmarks
             _payload,
             MessageLane.Bus,
             _options,
-            delayTime: null,
-            static (_, _, _) => Task.CompletedTask,
+            _decision,
+            static (_, _) => Task.CompletedTask,
             cancellationToken: CancellationToken.None
         );
     }

@@ -202,6 +202,52 @@ public abstract class DataStorageTestsBase : TestBase
         result.Origin.Should().BeSameAs(message);
     }
 
+    public virtual async Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        if (!Capabilities.SupportsDelayedScheduling || !Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support delayed scheduling and monitoring roundtrip");
+        }
+
+        var storage = GetStorage();
+        var publishAt = TimeProvider.GetUtcNow().AddMinutes(30);
+        var envelope = new MediumMessage
+        {
+            StorageId = Guid.Empty,
+            Origin = CreateMessage(),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+        };
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-atomic-state",
+            envelope,
+            publishAt,
+            cancellationToken: AbortToken
+        );
+
+        stored.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromMilliseconds(1));
+        stored.NextRetryAt.Should().BeNull();
+
+        var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        roundTripped.Should().NotBeNull();
+        roundTripped!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        roundTripped.NextRetryAt.Should().BeNull();
+
+        var page = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    Name = "scheduled-atomic-state",
+                    PageSize = 20,
+                },
+                AbortToken
+            );
+        page.Items.Should().ContainSingle().Which.StatusName.Should().Be(StatusName.Delayed);
+    }
+
     public virtual async Task should_store_published_message_with_non_numeric_message_id()
     {
         // given

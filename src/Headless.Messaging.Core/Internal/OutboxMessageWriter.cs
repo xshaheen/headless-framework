@@ -2,14 +2,11 @@
 
 using System.Diagnostics;
 using Headless.CommitCoordination;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -17,8 +14,6 @@ internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
     TimeProvider timeProvider,
-    IOptions<MessagingOptions> messagingOptions,
-    ILogger<MessageOutboxBuffer> outboxBufferLogger,
     MessagingTelemetry? telemetry = null
 )
 {
@@ -49,66 +44,40 @@ internal sealed class OutboxMessageWriter(
                     ?? throw new InvalidOperationException(
                         "Coordinated delivery is missing its relational transaction."
                     );
-                var mediumMessage = await storage
-                    .StoreMessageAsync(
-                        publishRequest.MessageName,
-                        _CreateStorageEnvelope(publishRequest),
-                        transaction,
-                        cancellationToken
-                    )
+                var mediumMessage = await _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken)
                     .ConfigureAwait(false);
 
                 _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
-                var bufferState = new MessageOutboxBufferState(
-                    dispatcher,
-                    messagingOptions.Value.OutboxFlushTimeout,
-                    timeProvider,
-                    outboxBufferLogger
-                );
+                var bufferState = new MessageOutboxBufferState(dispatcher);
                 var buffer = coordinator.GetOrAdd(
                     bufferState,
-                    static (coordinator, state) =>
-                        new MessageOutboxBuffer(
-                            coordinator,
-                            state.Dispatcher,
-                            state.FlushTimeout,
-                            state.TimeProvider,
-                            state.Logger
-                        )
+                    static (coordinator, state) => new MessageOutboxBuffer(coordinator, state.Dispatcher)
                 );
                 buffer.Add(mediumMessage);
 
                 return;
             }
 
-            // No ambient coordinator (or no relational transaction on it): store immediately with no transaction
-            // and dispatch in-band. The message is persisted and enqueued in one shot — no atomic enlistment.
-            var immediateMessage = await storage
-                .StoreMessageAsync(
-                    publishRequest.MessageName,
-                    _CreateStorageEnvelope(publishRequest),
+            // No ambient coordinator (or no relational transaction on it): commit the durable row first.
+            // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
+            var immediateMessage = await _StoreMessageAsync(
+                    publishRequest,
+                    decision,
                     transaction: null,
-                    cancellationToken: cancellationToken
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
             _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
-            if (decision.PublishAt is { } publishAt)
+            if (decision.PublishAt is not null)
             {
-                await dispatcher
-                    .EnqueueToScheduler(
-                        immediateMessage,
-                        publishAt,
-                        transaction: null,
-                        cancellationToken: cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                (dispatcher as ICommittedDelayedMessageDispatcher)?.EnqueueCommittedDelayedMessage(immediateMessage);
             }
             else
             {
-                await dispatcher.EnqueueToPublish(immediateMessage, cancellationToken).ConfigureAwait(false);
+                (dispatcher as ICommittedMessageDispatcher)?.EnqueueCommittedMessage(immediateMessage);
             }
         }
         catch (OperationCanceledException)
@@ -126,12 +95,26 @@ internal sealed class OutboxMessageWriter(
         }
     }
 
-    private readonly record struct MessageOutboxBufferState(
-        IDispatcher Dispatcher,
-        TimeSpan FlushTimeout,
-        TimeProvider TimeProvider,
-        ILogger<MessageOutboxBuffer> Logger
-    );
+    private readonly record struct MessageOutboxBufferState(IDispatcher Dispatcher);
+
+    private ValueTask<MediumMessage> _StoreMessageAsync(
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        System.Data.Common.DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        var envelope = _CreateStorageEnvelope(publishRequest);
+        return decision.PublishAt is { } publishAt
+            ? storage.StoreScheduledMessageAsync(
+                publishRequest.MessageName,
+                envelope,
+                publishAt,
+                transaction,
+                cancellationToken
+            )
+            : storage.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
+    }
 
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)
     {

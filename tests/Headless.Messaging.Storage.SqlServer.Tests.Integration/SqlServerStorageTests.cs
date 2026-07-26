@@ -289,6 +289,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_store_scheduled_message_with_atomic_not_before_state()
+    {
+        return base.should_store_scheduled_message_with_atomic_not_before_state();
+    }
+
+    [Fact]
     public override Task should_store_published_message_with_non_numeric_message_id()
     {
         return base.should_store_published_message_with_non_numeric_message_id();
@@ -448,6 +454,63 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_store_message_with_transaction()
     {
         return base.should_store_message_with_transaction();
+    }
+
+    [Fact]
+    public async Task should_commit_scheduled_message_and_not_before_state_in_one_transaction()
+    {
+        var storage = GetStorage();
+        var publishAt = TimeProvider.System.GetUtcNow().AddMinutes(30);
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-transaction-commit",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            publishAt,
+            transaction,
+            AbortToken
+        );
+        await transaction.CommitAsync(AbortToken);
+
+        var retrieved = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        retrieved.Should().NotBeNull();
+        retrieved!.ExpiresAt.Should().BeCloseTo(publishAt, TimeSpan.FromSeconds(1));
+        retrieved.NextRetryAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_rollback_scheduled_message_and_not_before_state_together()
+    {
+        var storage = GetStorage();
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        var stored = await storage.StoreScheduledMessageAsync(
+            "scheduled-transaction-rollback",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            TimeProvider.System.GetUtcNow().AddMinutes(30),
+            transaction,
+            AbortToken
+        );
+        await transaction.RollbackAsync(AbortToken);
+
+        var retrieved = await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        retrieved.Should().BeNull();
     }
 
     [Fact]

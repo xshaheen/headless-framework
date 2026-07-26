@@ -366,7 +366,6 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
-    setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
     setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {
@@ -406,13 +405,12 @@ Top-level messaging timeouts that influence retry behavior:
 | --- | --- | --- | --- |
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
-| `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
 | `ShutdownTimeout` | `TimeSpan` | `30s` | End-to-end messaging shutdown bound shared by the consumer-register listener drain, concurrent consumer-client disposal, provider-specific in-flight drains, and the dispatcher loop drain. Cleanup still running when the deadline expires continues fault-observed in the background. `> 0`, `<= 5m`. |
 | `DeadNodeReconcileInterval` | `TimeSpan` | `1m` | Cadence of the always-on dead-owner recovery reconcile backstop. `> 0` (no upper bound — the per-row `LockedUntil` floor owns correctness). Independent of `UseStorageLock`. |
 
 `NextRetryAt` remains application-scheduled through the injected `TimeProvider`, while lease ownership is store-authoritative for fresh dispatch and retry pickup. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, and InMemoryStorage uses its injected `TimeProvider`. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
 
-**Delivery semantics are at-least-once; consumers must be idempotent.** The framework never promises exactly-once: the commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
+**Delivery semantics are at-least-once; consumers must be idempotent.** After a durable row commits, the commit-edge drain only emits a nonblocking in-memory acceleration signal; the relay sweep remains the recovery authority when that signal is dropped. The accelerator and relay can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
 
 When a Coordination provider is registered, storage rows also stamp nullable `Owner` as `node@incarnation` when `LockedUntil` is written. An always-on `DeadOwnerRecoveryBridge` then reclaims rows owned by `Dead` incarnations — on a `NodeLeft` event and a periodic `DeadNodeReconcileInterval` reconcile — by moving `LockedUntil` back to now. Reclaim is dead-only (a `Suspected` owner is never reclaimed) and runs independently of `UseStorageLock`. `LockedUntil` remains the correctness floor; the bridge only reduces orphan recovery latency. Without Coordination, `Owner` stays `null` and the bridge is a no-op. See [Coordination Recovery](#coordination-recovery).
 
