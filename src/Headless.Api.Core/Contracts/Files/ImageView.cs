@@ -49,7 +49,7 @@ public sealed class ImageView : FileView
             Url = operand.Url,
             Length = operand.Length,
             ContentType = operand.ContentType,
-            DateUploaded = operand.DateUploaded,
+            UploadedAt = operand.UploadedAt,
             Caption = operand.Caption,
             Width = operand.Width,
             Height = operand.Height,

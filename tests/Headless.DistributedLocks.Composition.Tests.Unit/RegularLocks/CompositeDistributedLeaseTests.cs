@@ -23,7 +23,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         sut.LeaseId.Should().NotBe(first.LeaseId).And.NotBe(second.LeaseId);
         Guid.TryParseExact(sut.LeaseId, "N", out _).Should().BeTrue();
         sut.FencingToken.Should().BeNull();
-        sut.DateAcquired.Should().Be(_AcquiredAt);
+        sut.AcquiredAt.Should().Be(_AcquiredAt);
         sut.TimeWaitedForLock.Should().Be(_Waited);
         sut.RenewalCount.Should().Be(2);
         sut.CanObserveLoss.Should().BeFalse();
@@ -470,7 +470,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
 
         public int RenewalCount { get; set; }
 
-        public DateTimeOffset DateAcquired { get; init; } = _AcquiredAt;
+        public DateTimeOffset AcquiredAt { get; init; } = _AcquiredAt;
 
         public TimeSpan TimeWaitedForLock { get; init; }
 

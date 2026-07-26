@@ -54,10 +54,10 @@ public sealed class AuditLogOptions
         new(StringComparer.Ordinal)
         {
             "ConcurrencyStamp",
-            "DateCreated",
-            "DateUpdated",
-            "DateDeleted",
-            "DateSuspended",
+            "CreatedAt",
+            "UpdatedAt",
+            "DeletedAt",
+            "SuspendedAt",
             "CreatedById",
             "UpdatedById",
             "DeletedById",

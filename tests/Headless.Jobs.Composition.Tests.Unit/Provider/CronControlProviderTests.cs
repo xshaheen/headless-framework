@@ -49,8 +49,8 @@ public sealed class CronControlProviderTests : TestBase
         foreach (var pending in occurrences.Where(x => x.Id == idle.Id || x.Id == queued.Id))
         {
             pending.Status.Should().Be(JobStatus.Skipped);
-            pending.DateExecuted.Should().Be(_Now);
-            pending.DateUpdated.Should().Be(_Now);
+            pending.ExecutedAt.Should().Be((DateTimeOffset)_Now);
+            pending.UpdatedAt.Should().Be((DateTimeOffset)_Now);
             pending.SkippedReason.Should().Be("Cron definition paused");
             pending.OwnerId.Should().BeNull();
             pending.LockedUntil.Should().BeNull();
@@ -58,7 +58,7 @@ public sealed class CronControlProviderTests : TestBase
 
         var running = occurrences.Single(x => x.Id == inProgress.Id);
         running.Status.Should().Be(JobStatus.InProgress);
-        running.DateExecuted.Should().BeNull();
+        running.ExecutedAt.Should().BeNull();
         running.OwnerId.Should().Be(_Owner);
         running.LockedUntil.Should().Be(lockedUntil);
     }
@@ -224,8 +224,8 @@ public sealed class CronControlProviderTests : TestBase
             Expression = expression,
             IsPaused = isPaused,
             ScheduleRevision = revision,
-            DateCreated = _Now.AddHours(-1),
-            DateUpdated = _Now.AddMinutes(-1),
+            CreatedAt = (DateTimeOffset)_Now.AddHours(-1),
+            UpdatedAt = (DateTimeOffset)_Now.AddMinutes(-1),
             CustomValue = "custom-state",
         };
 
@@ -244,8 +244,8 @@ public sealed class CronControlProviderTests : TestBase
             OwnerId = owner,
             LockedUntil = lockedUntil,
             ExecutionTime = executionTime ?? _Now.AddMinutes(1),
-            DateCreated = _Now.AddMinutes(-5),
-            DateUpdated = _Now.AddMinutes(-2),
+            CreatedAt = (DateTimeOffset)_Now.AddMinutes(-5),
+            UpdatedAt = (DateTimeOffset)_Now.AddMinutes(-2),
         };
 
     private static JobManagerDispatchContext _Dispatch(FakeCronJob definition, long revision) =>

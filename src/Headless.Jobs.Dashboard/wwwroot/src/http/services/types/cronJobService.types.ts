@@ -9,8 +9,8 @@ export class GetCronJobResponse {
     retryIntervals!:string[];
     description!:string;
     requestType!:string;
-    dateCreated!:string;
-    dateUpdated!:string;
+    createdAt!:string;
+    updatedAt!:string;
     retries!:number;
     actions:string|undefined = undefined;
 }

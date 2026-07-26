@@ -34,7 +34,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // Metadata
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
-            blobMetadata.DateCreated = _timeProvider.GetUtcNow();
+            blobMetadata.CreatedAt = _timeProvider.GetUtcNow();
             // tusdotnet passes -1 for Upload-Defer-Length uploads (same contract as TusDiskStore, which
             // skips persisting it). Storing -1 would make GetUploadLengthAsync report a real length, so
             // HEAD would emit "Upload-Length: -1" instead of "Upload-Defer-Length: 1" and the

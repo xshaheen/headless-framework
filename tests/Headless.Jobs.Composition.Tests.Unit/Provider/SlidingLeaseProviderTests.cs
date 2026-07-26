@@ -172,7 +172,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var stored = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
         await foreach (
             var _ in provider.QueueTimeJobsAsync(
-                [new TimeJobEntity { Id = job.Id, DateUpdated = stored!.DateUpdated }],
+                [new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt }],
                 AbortToken
             )
         ) { }
@@ -539,7 +539,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
             FunctionName = "fn",
             Expression = "* * * * *",
             OnNodeDeath = NodeDeathPolicy.Skip, // policy changed on the def since the occurrence was created
-            NextCronOccurrence = new NextCronOccurrence(occId, _Now),
+            NextCronOccurrence = new NextCronOccurrence(occId, (DateTimeOffset)_Now),
         };
 
         var yielded = new List<CronJobOccurrenceEntity<FakeCronJob>>();

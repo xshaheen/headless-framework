@@ -57,8 +57,8 @@ CREATE TABLE features."FeatureValues" (
                                           "Value" character varying(128) NOT NULL,
                                           "ProviderName" character varying(64) NOT NULL,
                                           "ProviderKey" character varying(64),
-                                          "DateCreated" timestamp with time zone NOT NULL,
-                                          "DateUpdated" timestamp with time zone,
+                                          "CreatedAt" timestamp with time zone NOT NULL,
+                                          "UpdatedAt" timestamp with time zone,
                                           CONSTRAINT "PK_FeatureValues" PRIMARY KEY ("Id")
 );
 END IF;
@@ -106,9 +106,9 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260708000000_AddFeatureValueAuditColumns') THEN
-        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "DateCreated" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
-        ALTER TABLE features."FeatureValues" ALTER COLUMN "DateCreated" DROP DEFAULT;
-        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "DateUpdated" timestamp with time zone;
+        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
+        ALTER TABLE features."FeatureValues" ALTER COLUMN "CreatedAt" DROP DEFAULT;
+        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
 END IF;
 END $EF$;
 

@@ -42,7 +42,7 @@ public sealed class OrderService(IRequestContext context)
                 {
                     UserId = userId,
                     TenantId = tenantId,
-                    CreatedAt = context.DateStarted,
+                    CreatedAt = context.StartedAt,
                 },
                 ct
             )

@@ -20,7 +20,7 @@ namespace Headless.DistributedLocks;
 /// <param name="fencingToken">Optional monotonic fencing token issued for this exclusive acquisition; <see langword="null"/> for shared locks or when no <see cref="IFencingTokenSource"/> is registered.</param>
 /// <param name="timeWaitedForLock">How long the acquire loop waited before succeeding.</param>
 /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> calls <see cref="ReleaseAsync"/> automatically.</param>
-/// <param name="timeProvider">Clock used to stamp <see cref="DateAcquired"/>.</param>
+/// <param name="timeProvider">Clock used to stamp <see cref="AcquiredAt"/>.</param>
 /// <param name="release">Callback invoked by <see cref="ReleaseAsync"/> to release the lock in the backing store.</param>
 /// <param name="logger">Logger used to emit release-failure diagnostics.</param>
 internal sealed class ConnectionScopedDistributedLockHandle(
@@ -55,7 +55,7 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     public int RenewalCount { get; }
 
     /// <inheritdoc/>
-    public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+    public DateTimeOffset AcquiredAt { get; } = timeProvider.GetUtcNow();
 
     /// <inheritdoc/>
     public TimeSpan TimeWaitedForLock { get; } = timeWaitedForLock;

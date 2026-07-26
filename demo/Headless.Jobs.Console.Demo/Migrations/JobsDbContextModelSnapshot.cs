@@ -27,10 +27,10 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DateUpdated")
+                    b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -98,13 +98,13 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<Guid>("CronJobId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("DateExecuted")
+                    b.Property<DateTimeOffset?>("ExecutedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DateUpdated")
+                    b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("ElapsedTime")
@@ -174,13 +174,13 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
-                    b.Property<DateTime>("DateCreated")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("DateExecuted")
+                    b.Property<DateTimeOffset?>("ExecutedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DateUpdated")
+                    b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")

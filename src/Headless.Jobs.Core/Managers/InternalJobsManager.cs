@@ -237,7 +237,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 }
             );
 
-            if (occurrence.DateCreated == occurrence.DateUpdated && notificationHubSender != null)
+            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
             {
                 await notificationHubSender
                     .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
@@ -354,7 +354,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
                 OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
-                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.DateCreated),
+                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
             };
 
             // If no in-memory occurrences or stored is earlier, return stored only
@@ -636,10 +636,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.DateExecuted, now)
+            .SetProperty(x => x.ExecutedAt, now)
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
@@ -697,7 +697,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         foreach (var resource in skippedResources)
         {
-            resource.DateExecuted = now;
+            resource.ExecutedAt = now;
             resource.Status = JobStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == JobType.TimeJob)

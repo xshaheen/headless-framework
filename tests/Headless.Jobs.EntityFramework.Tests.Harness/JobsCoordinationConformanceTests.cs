@@ -99,21 +99,21 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var idle = await persistence.GetTimeJobByIdAsync(idleId, ct);
             idle!.Status.Should().Be(JobStatus.Cancelled);
             idle.CancelRequested.Should().BeTrue();
-            idle.DateExecuted.Should().NotBeNull();
+            idle.ExecutedAt.Should().NotBeNull();
             idle.OwnerId.Should().BeNull();
             idle.LockedUntil.Should().BeNull();
 
             var queued = await persistence.GetTimeJobByIdAsync(queuedId, ct);
             queued!.Status.Should().Be(JobStatus.Queued);
             queued.CancelRequested.Should().BeTrue();
-            queued.DateExecuted.Should().BeNull();
+            queued.ExecutedAt.Should().BeNull();
             queued.OwnerId.Should().Be(owner);
             queued.LockedUntil.Should().NotBeNull();
 
             var inProgress = await persistence.GetTimeJobByIdAsync(inProgressId, ct);
             inProgress!.Status.Should().Be(JobStatus.InProgress);
             inProgress.CancelRequested.Should().BeTrue();
-            inProgress.DateExecuted.Should().BeNull();
+            inProgress.ExecutedAt.Should().BeNull();
             inProgress.OwnerId.Should().Be(owner);
             inProgress.LockedUntil.Should().NotBeNull();
 
@@ -122,7 +122,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             terminalAfter.CancelRequested.Should().BeFalse();
             terminalAfter.OwnerId.Should().Be(terminalBefore!.OwnerId);
             terminalAfter.LockedUntil.Should().Be(terminalBefore.LockedUntil);
-            terminalAfter.DateUpdated.Should().Be(terminalBefore.DateUpdated);
+            terminalAfter.UpdatedAt.Should().Be(terminalBefore.UpdatedAt);
         }
         finally
         {
@@ -181,11 +181,11 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var skipped = await persistence.GetTimeJobByIdAsync(rejected.Id, ct);
             skipped!.Status.Should().Be(JobStatus.Skipped);
-            skipped.DateExecuted.Should().NotBeNull();
+            skipped.ExecutedAt.Should().NotBeNull();
 
             var skippedDescendant = await persistence.GetTimeJobByIdAsync(rejectedGrandchild.Id, ct);
             skippedDescendant!.Status.Should().Be(JobStatus.Skipped);
-            skippedDescendant.DateExecuted.Should().NotBeNull();
+            skippedDescendant.ExecutedAt.Should().NotBeNull();
         }
         finally
         {
@@ -215,7 +215,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            // Fetch the row with its current DateUpdated (QueueTimeJobsAsync uses optimistic concurrency on it), then stamp.
+            // Fetch the row with its current UpdatedAt (QueueTimeJobsAsync uses optimistic concurrency on it), then stamp.
             var idle = await persistence.GetTimeJobsAsync(x => x.Id == jobId, ct);
             idle.Should().ContainSingle();
 
@@ -300,12 +300,13 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var (directLockedUntil, directDateUpdated) = await fixture.ReadTimeJobClaimTimestampsAsync(
+            var (directLockedUntil, directUpdatedAt) = await fixture.ReadTimeJobClaimTimestampsAsync(
                 directTimeJobId,
                 ct
             );
             directTimeClaim.LockedUntil.Should().Be(directLockedUntil);
-            directTimeClaim.DateUpdated.Should().Be(directDateUpdated);
+            directTimeClaim.UpdatedAt.Should().Be(directUpdatedAt);
+            directUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
             var fallbackTimeJob = new TimeJobEntity
             {
@@ -318,12 +319,13 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var (fallbackLockedUntil, fallbackDateUpdated) = await fixture.ReadTimeJobClaimTimestampsAsync(
+            var (fallbackLockedUntil, fallbackUpdatedAt) = await fixture.ReadTimeJobClaimTimestampsAsync(
                 fallbackTimeJob.Id,
                 ct
             );
             fallbackTimeClaim.LockedUntil.Should().Be(fallbackLockedUntil);
-            fallbackTimeClaim.DateUpdated.Should().Be(fallbackDateUpdated);
+            fallbackTimeClaim.UpdatedAt.Should().Be(fallbackUpdatedAt);
+            fallbackUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
             var executionTime = DateTime.UtcNow.AddMinutes(1);
             var newCronId1 = Guid.NewGuid();
@@ -340,7 +342,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             await fixture.SeedCronJobAsync(newCronId2, "PortableNewCron2", "* * * * *", NodeDeathPolicy.Retry, ct);
 
             var existingOccurrenceId = Guid.NewGuid();
-            var existingDateCreated = DateTime.UtcNow.AddMinutes(-5);
+            var existingCreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
             await fixture.SeedCronOccurrenceAsync(
                 existingOccurrenceId,
                 existingCronId,
@@ -359,7 +361,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 {
                     FunctionName = "PortableExistingCron",
                     Expression = "* * * * *",
-                    NextCronOccurrence = new NextCronOccurrence(existingOccurrenceId, existingDateCreated),
+                    NextCronOccurrence = new NextCronOccurrence(existingOccurrenceId, existingCreatedAt),
                 },
                 new(newCronId2) { FunctionName = "PortableNewCron2", Expression = "* * * * *" },
             ];
@@ -372,7 +374,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             {
                 var (lockedUntil, updatedAt) = await fixture.ReadCronOccurrenceClaimTimestampsAsync(claim.Id, ct);
                 claim.LockedUntil.Should().Be(lockedUntil);
-                claim.DateUpdated.Should().Be(updatedAt);
+                claim.UpdatedAt.Should().Be(updatedAt);
+                updatedAt.Offset.Should().Be(TimeSpan.Zero);
             }
 
             var fallbackCronId = Guid.NewGuid();
@@ -399,12 +402,15 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .ContainSingle()
                 .Which;
-            var (fallbackCronLockedUntil, fallbackCronDateUpdated) =
-                await fixture.ReadCronOccurrenceClaimTimestampsAsync(fallbackOccurrenceId, ct);
+            var (fallbackCronLockedUntil, fallbackCronUpdatedAt) = await fixture.ReadCronOccurrenceClaimTimestampsAsync(
+                fallbackOccurrenceId,
+                ct
+            );
             fallbackCronClaim.LockedUntil.Should().Be(fallbackCronLockedUntil);
-            fallbackCronClaim.DateUpdated.Should().Be(fallbackCronDateUpdated);
+            fallbackCronClaim.UpdatedAt.Should().Be(fallbackCronUpdatedAt);
+            fallbackCronUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
-            directTimeClaim.DateUpdated.Should().BeAfter(DateTime.UtcNow.AddMinutes(-1));
+            directTimeClaim.UpdatedAt.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
             directTimeClaim.LockedUntil.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
         }
         finally
@@ -462,7 +468,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 FunctionName = "DbClockCronEligibility",
                 Expression = "* * * * *",
                 OnNodeDeath = NodeDeathPolicy.Retry,
-                NextCronOccurrence = new NextCronOccurrence(occurrenceId, DateTime.UtcNow.AddMinutes(-2)),
+                NextCronOccurrence = new NextCronOccurrence(occurrenceId, DateTimeOffset.UtcNow.AddMinutes(-2)),
             };
             (await persistence.QueueCronJobOccurrencesAsync((executionTime, [cronContext]), ct).ToArrayAsync(ct))
                 .Should()
@@ -1557,7 +1563,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             {
                 pending.Status.Should().Be(JobStatus.Skipped);
                 // Persisted at the storage clock's granularity (PostgreSQL truncates to microseconds).
-                pending.DateExecuted.Should().BeCloseTo(operationTime, TimeSpan.FromMicroseconds(1));
+                pending.ExecutedAt.Should().BeCloseTo((DateTimeOffset)operationTime, TimeSpan.FromMicroseconds(1));
                 pending.SkippedReason.Should().Be("Cron definition paused");
                 pending.OwnerId.Should().BeNull();
                 pending.LockedUntil.Should().BeNull();
@@ -1818,8 +1824,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             TimeZoneId = timeZoneId,
             IsPaused = isPaused,
             ScheduleRevision = revision,
-            DateCreated = DateTime.UtcNow.AddHours(-1),
-            DateUpdated = DateTime.UtcNow.AddMinutes(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
         };
 
     private static CronJobOccurrenceEntity<CronJobEntity> _CronOccurrence(
@@ -1833,8 +1839,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             CronJobId = cronJobId,
             Status = status,
             ExecutionTime = executionTime,
-            DateCreated = DateTime.UtcNow.AddMinutes(-1),
-            DateUpdated = DateTime.UtcNow.AddMinutes(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
         };
 
     private static JobManagerDispatchContext _CronDispatch(CronJobEntity definition, long revision) =>

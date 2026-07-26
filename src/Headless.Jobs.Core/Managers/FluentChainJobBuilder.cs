@@ -32,12 +32,12 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     {
         _timeProvider = timeProvider;
         _serializationOptions = serializationOptions;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
 
         _rootTicker = new TTimeJob
         {
-            DateCreated = now,
-            DateUpdated = now,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = [],
         };
 
@@ -54,7 +54,7 @@ public sealed class FluentChainJobBuilder<TTimeJob>
     /// </summary>
     /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
     /// <param name="timeProvider">
-    /// Clock used to stamp <c>DateCreated</c>/<c>DateUpdated</c> on the root, child, and grandchild jobs.
+    /// Clock used to stamp <c>CreatedAt</c>/<c>UpdatedAt</c> on the root, child, and grandchild jobs.
     /// Defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.
     /// </param>
     /// <param name="serializationOptions">
@@ -188,24 +188,24 @@ public sealed class FluentChainJobBuilder<TTimeJob>
 
     private TTimeJob _CreateChild()
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         return new TTimeJob
         {
-            DateCreated = now,
-            DateUpdated = now,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = [],
         };
     }
 
     private TTimeJob _CreateGrandChild(TTimeJob parent)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         return new TTimeJob
         {
-            DateCreated = now,
-            DateUpdated = now,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = [],
         };
     }
@@ -1020,7 +1020,7 @@ public static class FluentChainJobBuilderExtensions
     /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
     /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
     /// <param name="timeProvider">
-    /// Clock used to stamp <c>DateCreated</c>/<c>DateUpdated</c> on the root, child, and grandchild jobs.
+    /// Clock used to stamp <c>CreatedAt</c>/<c>UpdatedAt</c> on the root, child, and grandchild jobs.
     /// Defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.
     /// </param>
     /// <param name="serializationOptions">

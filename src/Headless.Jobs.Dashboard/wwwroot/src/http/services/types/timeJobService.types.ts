@@ -12,9 +12,9 @@ export class GetTimeJobResponse {
     lockedAt!:string;
     executionTime!:string;
     executionTimeFormatted!:string;
-    dateCreated!:string;
-    dateUpdated!:string;
-    dateExecuted!:string;
+    createdAt!:string;
+    updatedAt!:string;
+    executedAt!:string;
     elapsedTime!:string|number;
     actions:string|undefined = undefined;
     exceptionMessage?:string;

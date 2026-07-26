@@ -33,7 +33,7 @@ internal sealed class CompositeTestLease(
 
     public int RenewalCount { get; private set; }
 
-    public DateTimeOffset DateAcquired { get; } = DateTimeOffset.UnixEpoch;
+    public DateTimeOffset AcquiredAt { get; } = DateTimeOffset.UnixEpoch;
 
     public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

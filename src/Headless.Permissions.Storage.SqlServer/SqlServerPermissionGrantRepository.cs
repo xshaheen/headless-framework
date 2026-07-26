@@ -23,7 +23,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     // 100 rows use 700 parameters, safely below SQL Server's 2,100-parameter ceiling.
     private const int _MaxRowsPerInsert = 100;
     private const string _GrantColumns =
-        "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated],[DateUpdated]";
+        "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt],[UpdatedAt]";
     private const string _TenantFilter = "(([TenantId] IS NULL AND @TenantId IS NULL) OR [TenantId]=@TenantId)";
 
     private readonly ConcurrentDictionary<int, string> _insertBatchSql = new();
@@ -101,7 +101,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@DateCreated);";
+            $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@CreatedAt);";
 
         return _ExecuteAsync(sql, cancellationToken, _Parameters(permissionGrant));
     }
@@ -270,7 +270,7 @@ internal sealed class SqlServerPermissionGrantRepository(
             _Param("ProviderKey", permissionGrant.ProviderKey),
             _Param("TenantId", permissionGrant.TenantId),
             _Param("IsGranted", permissionGrant.IsGranted),
-            _Param("DateCreated", _DateCreated(permissionGrant)),
+            _Param("CreatedAt", _CreatedAt(permissionGrant)),
         ];
     }
 
@@ -286,7 +286,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         parameters.Add(_Param(_ParameterName("ProviderKey", rowIndex), permissionGrant.ProviderKey));
         parameters.Add(_Param(_ParameterName("TenantId", rowIndex), permissionGrant.TenantId));
         parameters.Add(_Param(_ParameterName("IsGranted", rowIndex), permissionGrant.IsGranted));
-        parameters.Add(_Param(_ParameterName("DateCreated", rowIndex), _DateCreated(permissionGrant)));
+        parameters.Add(_Param(_ParameterName("CreatedAt", rowIndex), _CreatedAt(permissionGrant)));
     }
 
     private string _BuildInsertSql(int rowCount)
@@ -299,7 +299,7 @@ internal sealed class SqlServerPermissionGrantRepository(
                 storageOptions.Value.PermissionGrantsTableName
             )
         );
-        builder.Append(" ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[DateCreated]) VALUES ");
+        builder.Append(" ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt]) VALUES ");
 
         for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
         {
@@ -310,7 +310,7 @@ internal sealed class SqlServerPermissionGrantRepository(
 
             builder.Append(
                 CultureInfo.InvariantCulture,
-                $"(@Id_{rowIndex},@Name_{rowIndex},@ProviderName_{rowIndex},@ProviderKey_{rowIndex},@TenantId_{rowIndex},@IsGranted_{rowIndex},@DateCreated_{rowIndex})"
+                $"(@Id_{rowIndex},@Name_{rowIndex},@ProviderName_{rowIndex},@ProviderKey_{rowIndex},@TenantId_{rowIndex},@IsGranted_{rowIndex},@CreatedAt_{rowIndex})"
             );
         }
 
@@ -336,11 +336,11 @@ internal sealed class SqlServerPermissionGrantRepository(
         return records;
     }
 
-    private DateTimeOffset _DateCreated(PermissionGrantRecord permissionGrant)
+    private DateTimeOffset _CreatedAt(PermissionGrantRecord permissionGrant)
     {
-        // Preserve caller-supplied DateCreated when present; otherwise stamp from the TimeProvider.
-        // Grants are insert-only (revocation deletes then re-inserts), so DateUpdated is never written here.
-        return permissionGrant.DateCreated == default ? timeProvider.GetUtcNow() : permissionGrant.DateCreated;
+        // Preserve caller-supplied CreatedAt when present; otherwise stamp from the TimeProvider.
+        // Grants are insert-only (revocation deletes then re-inserts), so UpdatedAt is never written here.
+        return permissionGrant.CreatedAt == default ? timeProvider.GetUtcNow() : permissionGrant.CreatedAt;
     }
 
     private static string _ParameterName(string name, int rowIndex)

@@ -41,8 +41,8 @@ CREATE TABLE permissions."PermissionGrants" (
                                                 "ProviderName" character varying(64) NOT NULL,
                                                 "ProviderKey" character varying(64) NOT NULL,
                                                 "TenantId" character varying(41),
-                                                "DateCreated" timestamp with time zone NOT NULL,
-                                                "DateUpdated" timestamp with time zone,
+                                                "CreatedAt" timestamp with time zone NOT NULL,
+                                                "UpdatedAt" timestamp with time zone,
                                                 CONSTRAINT "PK_PermissionGrants" PRIMARY KEY ("Id")
 );
 END IF;
@@ -103,9 +103,9 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260708000000_AddPermissionGrantAuditColumns') THEN
-        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "DateCreated" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
-        ALTER TABLE permissions."PermissionGrants" ALTER COLUMN "DateCreated" DROP DEFAULT;
-        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "DateUpdated" timestamp with time zone;
+        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
+        ALTER TABLE permissions."PermissionGrants" ALTER COLUMN "CreatedAt" DROP DEFAULT;
+        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
 END IF;
 END $EF$;
 

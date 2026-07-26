@@ -118,6 +118,31 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     }
 
     [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_feature_value()
+    {
+        // given
+        await _DropSchemaAsync();
+        var id = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
+        using var host = _CreateHost();
+
+        // when
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var stored = await repository.FindAsync("Legacy.Feature", "Edition", "pro", AbortToken);
+
+        // then
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(id);
+        stored.CreatedAt.Should().Be(createdAt);
+        stored.UpdatedAt.Should().Be(updatedAt);
+        (await _ColumnExistsAsync("FeatureValues", "DateCreated")).Should().BeFalse();
+        (await _ColumnExistsAsync("FeatureValues", "DateUpdated")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_delete_feature_values_in_chunks_when_count_exceeds_sql_server_parameter_limit()
     {
         // given
@@ -253,6 +278,51 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 
+    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            """
+            SELECT CASE WHEN COL_LENGTH(@qualifiedTable, @column) IS NOT NULL
+                THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
+        command.Parameters.AddWithValue("@column", columnName);
+
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
+    }
+
+    private async Task _CreateLegacyValueTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            $"""
+            EXEC(N'CREATE SCHEMA [{_Schema}]');
+            CREATE TABLE [{_Schema}].[FeatureValues] (
+                [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [Name] nvarchar(128) NOT NULL,
+                [Value] nvarchar(128) NOT NULL,
+                [ProviderName] nvarchar(64) NOT NULL,
+                [ProviderKey] nvarchar(64) NULL,
+                [DateCreated] datetimeoffset NOT NULL,
+                [DateUpdated] datetimeoffset NULL
+            );
+            INSERT INTO [{_Schema}].[FeatureValues]
+                ([Id], [Name], [Value], [ProviderName], [ProviderKey], [DateCreated], [DateUpdated])
+            VALUES (@id, N'Legacy.Feature', N'true', N'Edition', N'pro', @createdAt, @updatedAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@createdAt", createdAt);
+        command.Parameters.AddWithValue("@updatedAt", updatedAt);
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
     private async Task _BulkInsertFeatureValuesAsync(int totalRows)
     {
         using var table = new DataTable();
@@ -261,13 +331,13 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         table.Columns.Add("Value", typeof(string));
         table.Columns.Add("ProviderName", typeof(string));
         table.Columns.Add("ProviderKey", typeof(string));
-        table.Columns.Add("DateCreated", typeof(DateTimeOffset));
+        table.Columns.Add("CreatedAt", typeof(DateTimeOffset));
 
-        var dateCreated = TimeProvider.System.GetUtcNow();
+        var createdAt = TimeProvider.System.GetUtcNow();
 
         for (var i = 0; i < totalRows; i++)
         {
-            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk", dateCreated);
+            table.Rows.Add(Guid.NewGuid(), $"Feature_{i:D4}", "true", "Edition", "bulk", createdAt);
         }
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -279,7 +349,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         bulkCopy.ColumnMappings.Add("Value", "Value");
         bulkCopy.ColumnMappings.Add("ProviderName", "ProviderName");
         bulkCopy.ColumnMappings.Add("ProviderKey", "ProviderKey");
-        bulkCopy.ColumnMappings.Add("DateCreated", "DateCreated");
+        bulkCopy.ColumnMappings.Add("CreatedAt", "CreatedAt");
 
         await bulkCopy.WriteToServerAsync(table, AbortToken);
     }

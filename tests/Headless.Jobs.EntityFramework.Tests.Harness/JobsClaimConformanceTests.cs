@@ -162,7 +162,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     FunctionName = policy.ToString(),
                     Expression = "* * * * *",
                     OnNodeDeath = policy,
-                    NextCronOccurrence = new NextCronOccurrence(occurrenceId, DateTime.UtcNow.AddMinutes(-5)),
+                    NextCronOccurrence = new NextCronOccurrence(
+                        occurrenceId,
+                        (DateTimeOffset)DateTime.UtcNow.AddMinutes(-5)
+                    ),
                 };
                 results[policy] = await persistence
                     .QueueCronJobOccurrencesAsync((executionTime.AddSeconds((int)policy), [context]), ct)
@@ -300,7 +303,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                         FunctionName = testCase.Function,
                         Expression = "* * * * *",
                         OnNodeDeath = testCase.Policy,
-                        NextCronOccurrence = new NextCronOccurrence(occurrenceId, now.AddMinutes(-5)),
+                        NextCronOccurrence = new NextCronOccurrence(occurrenceId, (DateTimeOffset)now.AddMinutes(-5)),
                     }
                 );
 
@@ -676,7 +679,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claimed.Should().ContainSingle();
             claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
-            claimed[0].LockedUntil.Should().Be(claimed[0].DateUpdated.Add(leaseDuration));
+            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.UtcDateTime.Add(leaseDuration));
 
             var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
             lockedUntil.Should().Be(claimed[0].LockedUntil);

@@ -74,6 +74,28 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             .BeTrue();
     }
 
+    [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_permission_grant()
+    {
+        await _DropSchemaAsync();
+        var id = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyGrantTableAsync(id, createdAt, updatedAt);
+        using var host = _CreateHost();
+
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var stored = await repository.FindAsync("Legacy.Permission", "Role", "admin", AbortToken);
+
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(id);
+        stored.CreatedAt.Should().Be(createdAt);
+        stored.UpdatedAt.Should().Be(updatedAt);
+        (await _ColumnExistsAsync("PermissionGrants", "DateCreated")).Should().BeFalse();
+        (await _ColumnExistsAsync("PermissionGrants", "DateUpdated")).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -330,6 +352,52 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             """,
             connection
         );
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            """
+            SELECT CASE WHEN COL_LENGTH(@qualifiedTable, @column) IS NOT NULL
+                THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
+        command.Parameters.AddWithValue("@column", columnName);
+
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
+    }
+
+    private async Task _CreateLegacyGrantTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            $"""
+            EXEC(N'CREATE SCHEMA [{_Schema}]');
+            CREATE TABLE [{_Schema}].[PermissionGrants] (
+                [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [Name] nvarchar(128) NOT NULL,
+                [ProviderName] nvarchar(64) NOT NULL,
+                [ProviderKey] nvarchar(64) NOT NULL,
+                [TenantId] nvarchar(41) NULL,
+                [IsGranted] bit NOT NULL,
+                [DateCreated] datetimeoffset NOT NULL,
+                [DateUpdated] datetimeoffset NULL
+            );
+            INSERT INTO [{_Schema}].[PermissionGrants]
+                ([Id], [Name], [ProviderName], [ProviderKey], [TenantId], [IsGranted], [DateCreated], [DateUpdated])
+            VALUES (@id, N'Legacy.Permission', N'Role', N'admin', NULL, 1, @createdAt, @updatedAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@createdAt", createdAt);
+        command.Parameters.AddWithValue("@updatedAt", updatedAt);
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

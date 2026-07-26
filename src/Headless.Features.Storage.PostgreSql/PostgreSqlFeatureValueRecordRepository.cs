@@ -20,7 +20,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
 {
     /// <summary>Comma-separated column list used in SELECT queries for feature value records.</summary>
     private const string _ValueColumns =
-        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""DateCreated"",""DateUpdated""";
+        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""CreatedAt"",""UpdatedAt""";
 
     /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
@@ -103,11 +103,11 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     public async Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","DateCreated") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@DateCreated);""";
+            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","CreatedAt") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
 
-        // Preserve caller-supplied DateCreated when present (mirrors the EF path); only stamp from
+        // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it at default.
-        var dateCreated = feature.DateCreated == default ? timeProvider.GetUtcNow() : feature.DateCreated;
+        var createdAt = feature.CreatedAt == default ? timeProvider.GetUtcNow() : feature.CreatedAt;
 
         await _ExecuteAsync(
                 sql,
@@ -117,7 +117,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
                 _Param("Value", feature.Value),
                 _Param("ProviderName", feature.ProviderName),
                 _Param("ProviderKey", feature.ProviderKey),
-                _Param("DateCreated", dateCreated)
+                _Param("CreatedAt", createdAt)
             )
             .ConfigureAwait(false);
     }
@@ -126,21 +126,21 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET "Value"=@Value,"DateUpdated"=@DateUpdated WHERE "Id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET "Value"=@Value,"UpdatedAt"=@UpdatedAt WHERE "Id"=@Id;""";
 
-        // Preserve caller-supplied DateUpdated when present (mirrors the EF path); only stamp from
+        // Preserve caller-supplied UpdatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it null/default.
-        var dateUpdated =
-            feature.DateUpdated is null || feature.DateUpdated == default(DateTimeOffset)
+        var updatedAt =
+            feature.UpdatedAt is null || feature.UpdatedAt == default(DateTimeOffset)
                 ? timeProvider.GetUtcNow()
-                : feature.DateUpdated.Value;
+                : feature.UpdatedAt.Value;
 
         await _ExecuteAsync(
                 sql,
                 cancellationToken,
                 _Param("Id", feature.Id),
                 _Param("Value", feature.Value),
-                _Param("DateUpdated", dateUpdated)
+                _Param("UpdatedAt", updatedAt)
             )
             .ConfigureAwait(false);
     }

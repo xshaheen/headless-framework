@@ -78,11 +78,11 @@ public static class HeadlessEntityConventionExtensions
             return;
         }
 
-        const string dateCreatedName = nameof(ICreateAudit.DateCreated);
+        const string createdAtName = nameof(ICreateAudit.CreatedAt);
         const string createdByIdName = nameof(ICreateAudit<>.CreatedById);
         const string createdByName = nameof(ICreateAudit<,>.CreatedBy);
 
-        builder.Property(dateCreatedName).IsRequired().HasColumnName(dateCreatedName);
+        builder.Property(createdAtName).IsRequired().HasColumnName(createdAtName);
 
         if (
             builder
@@ -139,11 +139,11 @@ public static class HeadlessEntityConventionExtensions
             return;
         }
 
-        const string dateUpdatedName = nameof(IUpdateAudit.DateUpdated);
+        const string updatedAtName = nameof(IUpdateAudit.UpdatedAt);
         const string updatedByIdName = nameof(IUpdateAudit<>.UpdatedById);
         const string updatedByName = nameof(IUpdateAudit<,>.UpdatedBy);
 
-        builder.Property(dateUpdatedName).IsRequired(false).HasColumnName(dateUpdatedName);
+        builder.Property(updatedAtName).IsRequired(false).HasColumnName(updatedAtName);
 
         if (
             builder
@@ -186,7 +186,7 @@ public static class HeadlessEntityConventionExtensions
     }
 
     /// <summary>
-    /// Configures <c>UpdatedById</c> and <c>DateUpdated</c> as optional, and wires the <c>UpdatedBy</c>
+    /// Configures <c>UpdatedById</c> and <c>UpdatedAt</c> as optional, and wires the <c>UpdatedBy</c>
     /// navigation with a restrict delete behavior.
     /// </summary>
     public static void ConfigureUpdateAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
@@ -195,7 +195,7 @@ public static class HeadlessEntityConventionExtensions
         where TCreator : class
     {
         builder.Property(x => x.UpdatedById).IsRequired(false);
-        builder.Property(x => x.DateUpdated).IsRequired(false);
+        builder.Property(x => x.UpdatedAt).IsRequired(false);
 
         builder
             .HasOne(x => x.UpdatedBy)
@@ -221,16 +221,16 @@ public static class HeadlessEntityConventionExtensions
         }
 
         const string isDeletedName = nameof(IDeleteAudit.IsDeleted);
-        const string dateDeletedName = nameof(IDeleteAudit.DateDeleted);
-        const string dateRestoredName = nameof(IDeleteAudit.DateRestored);
+        const string deletedAtName = nameof(IDeleteAudit.DeletedAt);
+        const string restoredAtName = nameof(IDeleteAudit.RestoredAt);
         const string deletedByIdName = nameof(IDeleteAudit<>.DeletedById);
         const string restoredByIdName = nameof(IDeleteAudit<>.RestoredById);
         const string deletedByName = nameof(IDeleteAudit<,>.DeletedBy);
         const string restoredByName = nameof(IDeleteAudit<,>.RestoredBy);
 
         builder.Property(isDeletedName).IsRequired().HasDefaultValue(value: false).HasColumnName(isDeletedName);
-        builder.Property(dateDeletedName).IsRequired(false).HasColumnName(dateDeletedName);
-        builder.Property(dateRestoredName).IsRequired(false).HasColumnName(dateRestoredName);
+        builder.Property(deletedAtName).IsRequired(false).HasColumnName(deletedAtName);
+        builder.Property(restoredAtName).IsRequired(false).HasColumnName(restoredAtName);
 
         if (
             builder
@@ -292,7 +292,7 @@ public static class HeadlessEntityConventionExtensions
     }
 
     /// <summary>
-    /// Configures <c>DeletedById</c> and <c>DateDeleted</c> as optional, and wires the <c>DeletedBy</c>
+    /// Configures <c>DeletedById</c> and <c>DeletedAt</c> as optional, and wires the <c>DeletedBy</c>
     /// navigation with a restrict delete behavior.
     /// </summary>
     public static void ConfigureDeleteAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
@@ -301,7 +301,7 @@ public static class HeadlessEntityConventionExtensions
         where TCreator : class
     {
         builder.Property(x => x.DeletedById).IsRequired(false);
-        builder.Property(x => x.DateDeleted).IsRequired(false);
+        builder.Property(x => x.DeletedAt).IsRequired(false);
 
         builder
             .HasOne(x => x.DeletedBy)
@@ -327,16 +327,16 @@ public static class HeadlessEntityConventionExtensions
         }
 
         const string isSuspended = nameof(ISuspendAudit.IsSuspended);
-        const string dateSuspendedName = nameof(ISuspendAudit.DateSuspended);
-        const string dateUnsuspendedName = nameof(ISuspendAudit.DateUnsuspended);
+        const string suspendedAtName = nameof(ISuspendAudit.SuspendedAt);
+        const string unsuspendedAtName = nameof(ISuspendAudit.UnsuspendedAt);
         const string suspendedByIdName = nameof(ISuspendAudit<>.SuspendedById);
         const string unsuspendedByIdName = nameof(ISuspendAudit<>.UnsuspendedById);
         const string suspendedByName = nameof(ISuspendAudit<,>.SuspendedBy);
         const string unsuspendedByName = nameof(ISuspendAudit<,>.UnsuspendedBy);
 
         builder.Property(isSuspended).IsRequired().HasDefaultValue(value: false).HasColumnName(isSuspended);
-        builder.Property(dateSuspendedName).IsRequired(false).HasColumnName(dateSuspendedName);
-        builder.Property(dateUnsuspendedName).IsRequired(false).HasColumnName(dateUnsuspendedName);
+        builder.Property(suspendedAtName).IsRequired(false).HasColumnName(suspendedAtName);
+        builder.Property(unsuspendedAtName).IsRequired(false).HasColumnName(unsuspendedAtName);
 
         if (
             builder

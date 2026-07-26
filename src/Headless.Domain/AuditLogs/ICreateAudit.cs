@@ -9,7 +9,7 @@ public interface ICreateAudit
 {
     /// <summary>Timestamp when this entity was created.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset DateCreated { get; }
+    DateTimeOffset CreatedAt { get; }
 }
 
 /// <summary>Extends <c>ICreateAudit</c> with the identifier of the account that created the entity.</summary>

@@ -24,8 +24,8 @@ internal static class CronJobOccurrenceFactory
             ExecutionTime = executionTime,
             Status = JobStatus.Idle,
             OnNodeDeath = definition.OnNodeDeath,
-            DateCreated = now,
-            DateUpdated = now,
+            CreatedAt = (DateTimeOffset)now,
+            UpdatedAt = (DateTimeOffset)now,
         };
     }
 }

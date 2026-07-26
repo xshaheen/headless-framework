@@ -127,7 +127,7 @@ public sealed class NullDistributedReadWriteLock(
 
         public int RenewalCount => Volatile.Read(ref _renewalCount);
 
-        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+        public DateTimeOffset AcquiredAt { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

@@ -46,12 +46,12 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         (await _TableExistsAsync("SettingDefinitions")).Should().BeTrue();
         stored.Should().NotBeNull();
         stored!.Value.Should().Be("Dark");
-        stored.DateCreated.Should().NotBe(default);
-        stored.DateUpdated.Should().BeNull();
+        stored.CreatedAt.Should().NotBe(default);
+        stored.UpdatedAt.Should().BeNull();
         updated.Should().NotBeNull();
         updated!.Value.Should().Be("Light");
-        updated.DateCreated.Should().NotBe(default);
-        updated.DateUpdated.Should().NotBeNull();
+        updated.CreatedAt.Should().NotBe(default);
+        updated.UpdatedAt.Should().NotBeNull();
     }
 
     [Fact]
@@ -70,6 +70,31 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
             .Should()
             .BeTrue();
         (await _IndexExistsAsync("SettingValues", "IX_SettingValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_setting_value()
+    {
+        // given
+        await _DropSchemaAsync();
+        var id = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
+        using var host = _CreateHost();
+
+        // when
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var stored = await repository.FindAsync("Legacy.Theme", "Global", null, AbortToken);
+
+        // then
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(id);
+        stored.CreatedAt.Should().Be(createdAt);
+        stored.UpdatedAt.Should().Be(updatedAt);
+        (await _ColumnExistsAsync("SettingValues", "DateCreated")).Should().BeFalse();
+        (await _ColumnExistsAsync("SettingValues", "DateUpdated")).Should().BeFalse();
     }
 
     [Fact]
@@ -188,6 +213,51 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
+    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            """
+            SELECT CASE WHEN COL_LENGTH(@qualifiedTable, @column) IS NOT NULL
+                THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@qualifiedTable", $"{_Schema}.{tableName}");
+        command.Parameters.AddWithValue("@column", columnName);
+
+        return (bool)await command.ExecuteScalarAsync(AbortToken);
+    }
+
+    private async Task _CreateLegacyValueTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            $"""
+            EXEC(N'CREATE SCHEMA [{_Schema}]');
+            CREATE TABLE [{_Schema}].[SettingValues] (
+                [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [Name] nvarchar(128) NOT NULL,
+                [Value] nvarchar(2000) NOT NULL,
+                [ProviderName] nvarchar(64) NOT NULL,
+                [ProviderKey] nvarchar(64) NULL,
+                [DateCreated] datetimeoffset NOT NULL,
+                [DateUpdated] datetimeoffset NULL
+            );
+            INSERT INTO [{_Schema}].[SettingValues]
+                ([Id], [Name], [Value], [ProviderName], [ProviderKey], [DateCreated], [DateUpdated])
+            VALUES (@id, N'Legacy.Theme', N'Dark', N'Global', NULL, @createdAt, @updatedAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@createdAt", createdAt);
+        command.Parameters.AddWithValue("@updatedAt", updatedAt);
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -216,8 +286,8 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
                 [Value] nvarchar(2000) NOT NULL,
                 [ProviderName] nvarchar(64) NOT NULL,
                 [ProviderKey] nvarchar(64) NULL,
-                [DateCreated] datetimeoffset NOT NULL,
-                [DateUpdated] datetimeoffset NULL,
+                [CreatedAt] datetimeoffset NOT NULL,
+                [UpdatedAt] datetimeoffset NULL,
                 CONSTRAINT [PK_SettingValues] PRIMARY KEY CLUSTERED ([Id] ASC)
             );
             """,
@@ -234,7 +304,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         table.Columns.Add("Value", typeof(string));
         table.Columns.Add("ProviderName", typeof(string));
         table.Columns.Add("ProviderKey", typeof(string));
-        table.Columns.Add("DateCreated", typeof(DateTimeOffset));
+        table.Columns.Add("CreatedAt", typeof(DateTimeOffset));
 
         for (var i = 0; i < totalRows; i++)
         {
@@ -251,7 +321,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         bulkCopy.ColumnMappings.Add("Value", "Value");
         bulkCopy.ColumnMappings.Add("ProviderName", "ProviderName");
         bulkCopy.ColumnMappings.Add("ProviderKey", "ProviderKey");
-        bulkCopy.ColumnMappings.Add("DateCreated", "DateCreated");
+        bulkCopy.ColumnMappings.Add("CreatedAt", "CreatedAt");
 
         await bulkCopy.WriteToServerAsync(table, AbortToken);
     }

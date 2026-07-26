@@ -49,7 +49,7 @@ public sealed class DistributedLeaseTests
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired => DateTimeOffset.UnixEpoch;
+        public DateTimeOffset AcquiredAt => DateTimeOffset.UnixEpoch;
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

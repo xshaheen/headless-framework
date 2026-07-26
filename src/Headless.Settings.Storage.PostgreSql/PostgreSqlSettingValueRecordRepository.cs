@@ -20,7 +20,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
 {
     /// <summary>Comma-separated column list used in SELECT queries for setting value records.</summary>
     private const string _ValueColumns =
-        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""DateCreated"",""DateUpdated""";
+        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""CreatedAt"",""UpdatedAt""";
 
     /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
@@ -118,13 +118,13 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     public async Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","DateCreated") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@DateCreated);""";
+            $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","CreatedAt") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
 
-        // Preserve caller-supplied DateCreated when present (mirrors the EF path); only stamp from
-        // the TimeProvider when the caller left it at default. Tests that pin DateCreated for
+        // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
+        // the TimeProvider when the caller left it at default. Tests that pin CreatedAt for
         // deterministic assertions and audit-driven scenarios that backfill historical timestamps
         // both depend on this round-trip.
-        var dateCreated = setting.DateCreated == default ? timeProvider.GetUtcNow() : setting.DateCreated;
+        var createdAt = setting.CreatedAt == default ? timeProvider.GetUtcNow() : setting.CreatedAt;
 
         await _ExecuteAsync(
                 sql,
@@ -134,7 +134,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
                 _Param("Value", setting.Value),
                 _Param("ProviderName", setting.ProviderName),
                 _Param("ProviderKey", setting.ProviderKey),
-                _Param("DateCreated", dateCreated)
+                _Param("CreatedAt", createdAt)
             )
             .ConfigureAwait(false);
     }
@@ -143,21 +143,21 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET "Value"=@Value,"DateUpdated"=@DateUpdated WHERE "Id"=@Id;""";
+            $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET "Value"=@Value,"UpdatedAt"=@UpdatedAt WHERE "Id"=@Id;""";
 
-        // Preserve caller-supplied DateUpdated when present (mirrors the EF path); only stamp from
+        // Preserve caller-supplied UpdatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it null/default.
-        var dateUpdated =
-            setting.DateUpdated is null || setting.DateUpdated == default(DateTimeOffset)
+        var updatedAt =
+            setting.UpdatedAt is null || setting.UpdatedAt == default(DateTimeOffset)
                 ? timeProvider.GetUtcNow()
-                : setting.DateUpdated.Value;
+                : setting.UpdatedAt.Value;
 
         await _ExecuteAsync(
                 sql,
                 cancellationToken,
                 _Param("Id", setting.Id),
                 _Param("Value", setting.Value),
-                _Param("DateUpdated", dateUpdated)
+                _Param("UpdatedAt", updatedAt)
             )
             .ConfigureAwait(false);
     }
