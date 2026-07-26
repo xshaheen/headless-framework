@@ -266,8 +266,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ConfigureAwait(false);
 
         var context = dbContext.Set<TTimeJob>();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1);
+        var now = timeProvider.GetUtcNow();
+        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
         // nested projection).
@@ -338,8 +338,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1);
+        var now = timeProvider.GetUtcNow();
+        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -410,7 +410,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var executionTime = cronJobOccurrences.Key;
 
         await using var dbContext = await dbContextFactory
@@ -452,8 +452,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     CronJobId = item.Id,
                     LockedUntil = null,
                     OnNodeDeath = item.OnNodeDeath,
-                    CreatedAt = (DateTimeOffset)now,
-                    UpdatedAt = (DateTimeOffset)now,
+                    CreatedAt = now,
+                    UpdatedAt = now,
                 };
 
                 await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);

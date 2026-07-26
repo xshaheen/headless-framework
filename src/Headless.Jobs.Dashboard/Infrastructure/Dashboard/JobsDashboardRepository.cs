@@ -448,16 +448,16 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var onDemandOccurrence = new CronJobOccurrenceEntity<TCronJob>
         {
             Id = _guidGenerator.Create(),
             Status = JobStatus.Idle,
-            ExecutionTime = now,
+            ExecutionTime = now.UtcDateTime,
             LockedUntil = null,
             CronJobId = id,
-            CreatedAt = (DateTimeOffset)now,
-            UpdatedAt = (DateTimeOffset)now,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
 
         await _persistenceProvider

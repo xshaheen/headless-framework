@@ -18,18 +18,18 @@ public sealed class DurableCancellationProviderTests : TestBase
     private sealed class FakeCronJob : CronJobEntity;
 
     private const string _Owner = "node-a@incarnation";
-    private static readonly DateTime _Now = new(2026, 07, 15, 10, 30, 00, DateTimeKind.Utc);
+    private static readonly DateTimeOffset _Now = new(2026, 07, 15, 10, 30, 00, TimeSpan.Zero);
 
     [Fact]
     public async Task cancellation_uses_one_compare_and_swap_transition_for_each_supported_state()
     {
         var (provider, _) = _Create();
-        var lockedUntil = _Now.AddMinutes(5);
+        var lockedUntil = _Now.UtcDateTime.AddMinutes(5);
         var idle = _Job(JobStatus.Idle, _Owner, lockedUntil);
         var queued = _Job(JobStatus.Queued, _Owner, lockedUntil);
         var inProgress = _Job(JobStatus.InProgress, _Owner, lockedUntil);
         var terminal = _Job(JobStatus.Succeeded, _Owner, lockedUntil);
-        terminal.ExecutedAt = (DateTimeOffset)_Now.AddMinutes(-1);
+        terminal.ExecutedAt = _Now.AddMinutes(-1);
         var terminalUpdatedAt = terminal.UpdatedAt;
         await provider.AddTimeJobsAsync([idle, queued, inProgress, terminal], AbortToken);
 
@@ -51,8 +51,8 @@ public sealed class DurableCancellationProviderTests : TestBase
         var cancelledIdle = await provider.GetTimeJobByIdAsync(idle.Id, AbortToken);
         cancelledIdle!.Status.Should().Be(JobStatus.Cancelled);
         cancelledIdle.CancelRequested.Should().BeTrue();
-        cancelledIdle.ExecutedAt.Should().Be((DateTimeOffset)_Now);
-        cancelledIdle.UpdatedAt.Should().Be((DateTimeOffset)_Now);
+        cancelledIdle.ExecutedAt.Should().Be(_Now);
+        cancelledIdle.UpdatedAt.Should().Be(_Now);
         cancelledIdle.OwnerId.Should().BeNull();
         cancelledIdle.LockedUntil.Should().BeNull();
 
@@ -73,7 +73,7 @@ public sealed class DurableCancellationProviderTests : TestBase
         var rejectedTerminal = await provider.GetTimeJobByIdAsync(terminal.Id, AbortToken);
         rejectedTerminal!.Status.Should().Be(JobStatus.Succeeded);
         rejectedTerminal.CancelRequested.Should().BeFalse();
-        rejectedTerminal.ExecutedAt.Should().Be((DateTimeOffset)_Now.AddMinutes(-1));
+        rejectedTerminal.ExecutedAt.Should().Be(_Now.AddMinutes(-1));
         rejectedTerminal.UpdatedAt.Should().Be(terminalUpdatedAt);
         rejectedTerminal.OwnerId.Should().Be(_Owner);
         rejectedTerminal.LockedUntil.Should().Be(lockedUntil);
@@ -99,7 +99,7 @@ public sealed class DurableCancellationProviderTests : TestBase
         rejected.ExecutionTime = null;
         rejected.RunCondition = RunCondition.OnSuccess;
         rejected.Children = [rejectedGrandchild];
-        var root = _Job(JobStatus.Idle, owner: null, lockedUntil: null, executionTime: _Now.AddMinutes(10));
+        var root = _Job(JobStatus.Idle, owner: null, lockedUntil: null, executionTime: _Now.UtcDateTime.AddMinutes(10));
         root.Children = [eligible, eligibleOnFailure, eligibleAlways, rejected];
         await provider.AddTimeJobsAsync([root], AbortToken);
 
@@ -109,18 +109,18 @@ public sealed class DurableCancellationProviderTests : TestBase
         {
             var released = await provider.GetTimeJobByIdAsync(id, AbortToken);
             released!.Status.Should().Be(JobStatus.Idle);
-            released.ExecutionTime.Should().Be(_Now);
+            released.ExecutionTime.Should().Be(_Now.UtcDateTime);
             released.ExecutedAt.Should().BeNull();
         }
 
         var skipped = await provider.GetTimeJobByIdAsync(rejected.Id, AbortToken);
         skipped!.Status.Should().Be(JobStatus.Skipped);
-        skipped.ExecutedAt.Should().Be((DateTimeOffset)_Now);
+        skipped.ExecutedAt.Should().Be(_Now);
         skipped.SkippedReason.Should().Be("Parent cancellation did not satisfy the job run condition.");
 
         var skippedDescendant = await provider.GetTimeJobByIdAsync(rejectedGrandchild.Id, AbortToken);
         skippedDescendant!.Status.Should().Be(JobStatus.Skipped);
-        skippedDescendant.ExecutedAt.Should().Be((DateTimeOffset)_Now);
+        skippedDescendant.ExecutedAt.Should().Be(_Now);
         skippedDescendant.SkippedReason.Should().Be("Ancestor job was skipped after parent cancellation.");
     }
 
@@ -129,15 +129,12 @@ public sealed class DurableCancellationProviderTests : TestBase
     {
         var (provider, _) = _Create();
         var staleCandidate = _Job(JobStatus.Idle, owner: null, lockedUntil: null);
-        staleCandidate.UpdatedAt = (DateTimeOffset)_Now;
+        staleCandidate.UpdatedAt = _Now;
         await provider.AddTimeJobsAsync([staleCandidate], AbortToken);
 
         (await provider.RequestTimeJobCancellationAsync(staleCandidate.Id, AbortToken)).Should().BeTrue();
         var queued = await provider
-            .QueueTimeJobsAsync(
-                [new TimeJobEntity { Id = staleCandidate.Id, UpdatedAt = (DateTimeOffset)_Now }],
-                AbortToken
-            )
+            .QueueTimeJobsAsync([new TimeJobEntity { Id = staleCandidate.Id, UpdatedAt = _Now }], AbortToken)
             .ToArrayAsync(AbortToken);
 
         queued.Should().BeEmpty();
@@ -148,7 +145,7 @@ public sealed class DurableCancellationProviderTests : TestBase
 
     private static (JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider, FakeTimeProvider Time) _Create()
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var time = new FakeTimeProvider(_Now);
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(time);
         services.AddHeadlessGuidGenerator();
@@ -170,8 +167,8 @@ public sealed class DurableCancellationProviderTests : TestBase
             Status = status,
             OwnerId = owner,
             LockedUntil = lockedUntil,
-            ExecutionTime = executionTime ?? _Now.AddMinutes(1),
-            CreatedAt = (DateTimeOffset)_Now.AddMinutes(-5),
-            UpdatedAt = (DateTimeOffset)_Now.AddMinutes(-2),
+            ExecutionTime = executionTime ?? _Now.UtcDateTime.AddMinutes(1),
+            CreatedAt = _Now.AddMinutes(-5),
+            UpdatedAt = _Now.AddMinutes(-2),
         };
 }

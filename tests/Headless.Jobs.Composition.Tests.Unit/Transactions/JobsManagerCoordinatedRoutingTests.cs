@@ -339,7 +339,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         sut.Persistence.GetCronJobByIdAsync(current.Id, AbortToken).Returns(current);
         sut.Persistence.UpdateCronJobsAtomicallyAsync(
                 Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<DateTimeOffset>(),
                 AbortToken
             )
             .Returns([update]);

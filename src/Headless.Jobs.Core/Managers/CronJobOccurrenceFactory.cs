@@ -11,7 +11,7 @@ internal static class CronJobOccurrenceFactory
     public static CronJobOccurrenceEntity<TCronJob> Create<TCronJob>(
         TCronJob definition,
         DateTime executionTime,
-        DateTime now,
+        DateTimeOffset now,
         IGuidGenerator guidGenerator
     )
         where TCronJob : CronJobEntity
@@ -24,8 +24,8 @@ internal static class CronJobOccurrenceFactory
             ExecutionTime = executionTime,
             Status = JobStatus.Idle,
             OnNodeDeath = definition.OnNodeDeath,
-            CreatedAt = (DateTimeOffset)now,
-            UpdatedAt = (DateTimeOffset)now,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
     }
 }

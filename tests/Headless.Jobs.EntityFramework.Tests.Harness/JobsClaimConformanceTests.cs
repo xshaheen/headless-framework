@@ -164,7 +164,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     OnNodeDeath = policy,
                     NextCronOccurrence = new NextCronOccurrence(
                         occurrenceId,
-                        (DateTimeOffset)DateTime.UtcNow.AddMinutes(-5)
+                        TimeProvider.System.GetUtcNow().AddMinutes(-5)
                     ),
                 };
                 results[policy] = await persistence
@@ -194,10 +194,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var now = DateTime.UtcNow;
-            var executionTime = now.AddMinutes(1);
-            var expired = now.AddMinutes(-1);
-            var live = now.AddMinutes(5);
+            var now = TimeProvider.System.GetUtcNow();
+            var executionTime = now.UtcDateTime.AddMinutes(1);
+            var expired = now.UtcDateTime.AddMinutes(-1);
+            var live = now.UtcDateTime.AddMinutes(5);
             var ownerProbeCronId = Guid.NewGuid();
             await fixture.SeedCronJobAsync(ownerProbeCronId, "owner_probe", "* * * * *", NodeDeathPolicy.Retry, ct);
             var ownerProbe = await persistence
@@ -303,7 +303,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                         FunctionName = testCase.Function,
                         Expression = "* * * * *",
                         OnNodeDeath = testCase.Policy,
-                        NextCronOccurrence = new NextCronOccurrence(occurrenceId, (DateTimeOffset)now.AddMinutes(-5)),
+                        NextCronOccurrence = new NextCronOccurrence(occurrenceId, now.AddMinutes(-5)),
                     }
                 );
 
@@ -321,7 +321,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             foreach (var claim in claims)
             {
                 claim.OwnerId.Should().Be(currentOwner);
-                claim.LockedUntil.Should().BeAfter(now);
+                claim.LockedUntil.Should().BeAfter(now.UtcDateTime);
             }
         }
         finally

@@ -146,7 +146,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         foreach (var timeJob in timeJobs)
         {
@@ -160,17 +160,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
                     updatedTicker.OwnerId = _ownerId;
-                    updatedTicker.LockedUntil = now.Add(_leaseDuration);
-                    updatedTicker.UpdatedAt = (DateTimeOffset)now;
+                    updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+                    updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
                     if (_timeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
                     {
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(timeJob.Id, now);
-                        timeJob.UpdatedAt = (DateTimeOffset)now;
+                        timeJob.UpdatedAt = now;
                         timeJob.OwnerId = _ownerId;
-                        timeJob.LockedUntil = now.Add(_leaseDuration);
+                        timeJob.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                         timeJob.Status = JobStatus.Queued;
 
                         // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not
@@ -184,7 +184,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTime now)
+    private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTimeOffset now)
     {
         // R12/KTD2: lease the non-timed in-tree subtree down to MaxChainDepth (root is depth 1) and return the exact
         // set of claimed ids (root + descendants). A timed child is a boundary (not descended into, claimed
@@ -224,14 +224,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return claimed;
     }
 
-    private bool _ClaimIdleJob(Guid jobId, DateTime now)
+    private bool _ClaimIdleJob(Guid jobId, DateTimeOffset now)
     {
         while (_timeJobs.TryGetValue(jobId, out var existing) && existing.Status == JobStatus.Idle)
         {
             var claimed = _CloneTicker(existing);
             claimed.OwnerId = _ownerId;
-            claimed.LockedUntil = now.Add(_leaseDuration);
-            claimed.UpdatedAt = (DateTimeOffset)now;
+            claimed.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+            claimed.UpdatedAt = now;
 
             if (_timeJobs.TryUpdate(jobId, claimed, existing))
             {
@@ -247,8 +247,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
+        var now = _timeProvider.GetUtcNow();
+        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         // First, get the time jobs that need to be updated (matching EF query)
         // NOTE: we project to the raw job here and only build the full
@@ -281,8 +281,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 {
                     var updatedTicker = _CloneTicker(existingTicker);
                     updatedTicker.OwnerId = _ownerId;
-                    updatedTicker.LockedUntil = now.Add(_leaseDuration);
-                    updatedTicker.UpdatedAt = (DateTimeOffset)now;
+                    updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+                    updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
                     if (_timeJobs.TryUpdate(job.Id, updatedTicker, existingTicker))
@@ -304,7 +304,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var idsToRelease = timeJobIds.Length == 0 ? [.. _timeJobs.Keys] : timeJobIds;
 
         foreach (var id in idsToRelease)
@@ -318,7 +318,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     updatedTicker.OwnerId = null;
                     updatedTicker.LockedUntil = null;
                     updatedTicker.Status = JobStatus.Idle;
-                    updatedTicker.UpdatedAt = (DateTimeOffset)now;
+                    updatedTicker.UpdatedAt = now;
 
                     if (_timeJobs.TryUpdate(id, updatedTicker, job))
                     {
@@ -333,8 +333,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var oneSecondAgo = now.AddSeconds(-1);
+        var now = _timeProvider.GetUtcNow();
+        var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
         // Base query: same filter as EF provider, but over the snapshot. U5/KTD3: a timed descendant surfaces here as
         // its own candidate (excluded from the in-tree walk), so the parent gate keeps it out until its parent matched.
@@ -433,15 +433,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 return Task.FromResult(false);
             }
 
-            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var now = _timeProvider.GetUtcNow();
             var updated = _CloneTicker(job);
             updated.CancelRequested = true;
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
 
             if (job.Status == JobStatus.Idle)
             {
                 updated.Status = JobStatus.Cancelled;
-                updated.ExecutedAt = (DateTimeOffset)now;
+                updated.ExecutedAt = now;
                 updated.OwnerId = null;
                 updated.LockedUntil = null;
             }
@@ -478,7 +478,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult<bool?>(job.CancelRequested);
     }
 
-    private void _ApplyCancelledParentRunConditions(Guid parentId, DateTime now)
+    private void _ApplyCancelledParentRunConditions(Guid parentId, DateTimeOffset now)
     {
         foreach (var childId in _GetChildrenIds(parentId))
         {
@@ -492,10 +492,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (_RunsAfterCancelled(child.RunCondition))
                 {
                     var released = _CloneTicker(child);
-                    released.ExecutionTime = now;
+                    released.ExecutionTime = now.UtcDateTime;
                     released.OwnerId = null;
                     released.LockedUntil = null;
-                    released.UpdatedAt = (DateTimeOffset)now;
+                    released.UpdatedAt = now;
                     if (!_timeJobs.TryUpdate(childId, released, child))
                     {
                         continue;
@@ -525,7 +525,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     // cancellation path's non-timed filter); the cascade always skips regardless (a skipped node's whole tail dies).
     private int _SkipRejectedBranch(
         Guid jobId,
-        DateTime now,
+        DateTimeOffset now,
         string reason,
         string cascadeReason,
         bool requireUnscheduled = false
@@ -542,11 +542,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var skipped = _CloneTicker(job);
             skipped.Status = JobStatus.Skipped;
-            skipped.ExecutedAt = (DateTimeOffset)now;
+            skipped.ExecutedAt = now;
             skipped.OwnerId = null;
             skipped.LockedUntil = null;
             skipped.SkippedReason = reason;
-            skipped.UpdatedAt = (DateTimeOffset)now;
+            skipped.UpdatedAt = now;
             if (_timeJobs.TryUpdate(jobId, skipped, job))
             {
                 _SyncReconcileCandidate(skipped);
@@ -580,7 +580,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var (earliest, _) = _ReconcileTerminalTimedChildren(parentId, skipOnly: false, now);
 
         return Task.FromResult(earliest);
@@ -589,7 +589,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var (_, skipped) = _ReconcileTerminalTimedChildren(parentId: null, skipOnly: true, now);
 
         return Task.FromResult(skipped);
@@ -604,7 +604,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private (DateTime? Earliest, int Skipped) _ReconcileTerminalTimedChildren(
         Guid? parentId,
         bool skipOnly,
-        DateTime now
+        DateTimeOffset now
     )
     {
         DateTime? earliest = null;
@@ -671,7 +671,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     // own ExecutionTime. A future time is left untouched (it runs at its scheduled time); a past-due time is re-stamped
     // to now so the staleness-filtered main peek claims it promptly rather than the slow fallback. Returns the
     // effective (post-restamp) ExecutionTime so the scheduler can be woken for it.
-    private DateTime? _ReleaseMatchingTimedChild(Guid childId, DateTime now)
+    private DateTime? _ReleaseMatchingTimedChild(Guid childId, DateTimeOffset now)
     {
         while (_timeJobs.TryGetValue(childId, out var child))
         {
@@ -680,20 +680,20 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 return null;
             }
 
-            if (child.ExecutionTime.Value > now)
+            if (child.ExecutionTime.Value > now.UtcDateTime)
             {
                 return child.ExecutionTime.Value;
             }
 
             var released = _CloneTicker(child);
-            released.ExecutionTime = now;
+            released.ExecutionTime = now.UtcDateTime;
             released.OwnerId = null;
             released.LockedUntil = null;
-            released.UpdatedAt = (DateTimeOffset)now;
+            released.UpdatedAt = now;
             if (_timeJobs.TryUpdate(childId, released, child))
             {
                 _SyncReconcileCandidate(released);
-                return now;
+                return now.UtcDateTime;
             }
         }
 
@@ -747,7 +747,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return Task.FromResult(Array.Empty<TimeJobEntity>());
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var acquired = new List<TimeJobEntity>();
 
         foreach (var id in ids)
@@ -766,9 +766,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updatedTicker = _CloneTicker(job);
             updatedTicker.OwnerId = _ownerId;
-            updatedTicker.LockedUntil = now.Add(_leaseDuration);
+            updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             updatedTicker.Status = JobStatus.InProgress;
-            updatedTicker.UpdatedAt = (DateTimeOffset)now;
+            updatedTicker.UpdatedAt = now;
 
             if (_timeJobs.TryUpdate(id, updatedTicker, job))
             {
@@ -795,7 +795,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // #316 sliding lease (mirror EF RenewTimeJobLeaseAsync): slide LockedUntil forward, fenced on the #5
         // completion-fence shape (still owned + non-terminal). A lost/reclaimed/terminalized row returns 0 ->
         // cancel-on-loss (U2/KTD3).
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         if (_timeJobs.TryGetValue(jobId, out var job))
         {
@@ -809,8 +809,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updatedTicker = _CloneTicker(job);
-            updatedTicker.LockedUntil = now.Add(_leaseDuration);
-            updatedTicker.UpdatedAt = (DateTimeOffset)now;
+            updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+            updatedTicker.UpdatedAt = now;
 
             if (_timeJobs.TryUpdate(jobId, updatedTicker, job))
             {
@@ -827,7 +827,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // #316/U3 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
         // OnNodeDeath. Not owner-scoped — the trigger is a stalled lease, not a declared node death. A healthy
         // renewing job keeps a future LockedUntil and never matches.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
         bool tryApply(Guid id, Action<TTimeJob> mutate)
@@ -839,7 +839,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updated = _CloneTicker(current);
             mutate(updated);
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
             if (!_timeJobs.TryUpdate(id, updated, current))
             {
                 return false;
@@ -849,7 +849,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return true;
         }
 
-        var stalled = _timeJobs.Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now).ToArray();
+        var stalled = _timeJobs
+            .Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now.UtcDateTime)
+            .ToArray();
 
         foreach (var job in stalled)
         {
@@ -875,7 +877,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     ):
                     affected++;
@@ -888,7 +890,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
                             t.SkippedReason = "Lease lapsed while running!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     ):
                     affected++;
@@ -1231,7 +1233,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
         bool tryApply(Guid id, Action<TTimeJob> mutate)
@@ -1243,7 +1245,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updated = _CloneTicker(current);
             mutate(updated);
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
             if (!_timeJobs.TryUpdate(id, updated, current))
             {
                 return false;
@@ -1262,7 +1264,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         foreach (var job in owned)
         {
-            var inProgressLapsed = job.Status == JobStatus.InProgress && job.LockedUntil <= now;
+            var inProgressLapsed = job.Status == JobStatus.InProgress && job.LockedUntil <= now.UtcDateTime;
 
             var release =
                 job.Status is JobStatus.Idle or JobStatus.Queued
@@ -1295,7 +1297,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Node is not alive!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     )
                 )
@@ -1313,7 +1315,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
                             t.SkippedReason = "Node is not alive!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     )
                 )
@@ -1335,7 +1337,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         foreach (var (function, expression) in cronJobs)
         {
@@ -1358,7 +1360,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         var updated = _CloneCronJob(current);
                         updated.Expression = expression;
                         updated.ScheduleRevision++;
-                        updated.UpdatedAt = (DateTimeOffset)now;
+                        updated.UpdatedAt = now;
 
                         foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == id).ToArray())
                         {
@@ -1369,8 +1371,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                             var skipped = _CloneCronOccurrence(pair.Value);
                             skipped.Status = JobStatus.Skipped;
-                            skipped.ExecutedAt = (DateTimeOffset)now;
-                            skipped.UpdatedAt = (DateTimeOffset)now;
+                            skipped.ExecutedAt = now;
+                            skipped.UpdatedAt = now;
                             skipped.SkippedReason = "Cron definition updated";
                             skipped.OwnerId = null;
                             skipped.LockedUntil = null;
@@ -1390,8 +1392,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 Function = function,
                 Expression = expression,
                 InitIdentifier = $"MemoryTicker_Seeded_{function}",
-                CreatedAt = (DateTimeOffset)now,
-                UpdatedAt = (DateTimeOffset)now,
+                CreatedAt = now,
+                UpdatedAt = now,
                 Request = [],
             };
 
@@ -1417,7 +1419,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -1433,7 +1435,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.IsPaused = true;
             updated.ScheduleRevision++;
-            updated.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+            updated.UpdatedAt = operationTimeUtc;
 
             foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == cronJobId).ToArray())
             {
@@ -1444,8 +1446,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                 var skipped = _CloneCronOccurrence(pair.Value);
                 skipped.Status = JobStatus.Skipped;
-                skipped.ExecutedAt = (DateTimeOffset)operationTimeUtc;
-                skipped.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+                skipped.ExecutedAt = operationTimeUtc;
+                skipped.UpdatedAt = operationTimeUtc;
                 skipped.SkippedReason = "Cron definition paused";
                 skipped.OwnerId = null;
                 skipped.LockedUntil = null;
@@ -1461,7 +1463,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         Guid cronJobId,
         long expectedScheduleRevision,
         CronJobOccurrenceEntity<TCronJob> nextOccurrence,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -1483,7 +1485,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.IsPaused = false;
             updated.ScheduleRevision++;
-            updated.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+            updated.UpdatedAt = operationTimeUtc;
 
             var replacement = _CloneCronOccurrence(nextOccurrence);
             replacement.CronJob = updated;
@@ -1496,7 +1498,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
         CronJobAtomicUpdate<TCronJob>[] updates,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -1549,7 +1551,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 definition.IsPaused = current.IsPaused;
                 definition.ScheduleRevision = changed ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
-                definition.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+                definition.UpdatedAt = operationTimeUtc;
 
                 CronJobOccurrenceEntity<TCronJob>? replacement = null;
                 if (changed && !current.IsPaused)
@@ -1580,8 +1582,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
                         var skipped = _CloneCronOccurrence(pair.Value);
                         skipped.Status = JobStatus.Skipped;
-                        skipped.ExecutedAt = (DateTimeOffset)operationTimeUtc;
-                        skipped.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+                        skipped.ExecutedAt = operationTimeUtc;
+                        skipped.UpdatedAt = operationTimeUtc;
                         skipped.SkippedReason = "Cron definition updated";
                         skipped.OwnerId = null;
                         skipped.LockedUntil = null;
@@ -1709,8 +1711,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var mainSchedulerThreshold = now.AddSeconds(-1); // Main scheduler handles items within the 1-second window
+        var now = _timeProvider.GetUtcNow();
+        var mainSchedulerThreshold = now.UtcDateTime.AddSeconds(-1); // Main scheduler handles items within the 1-second window
 
         var query = _cronOccurrences.Values.AsEnumerable();
 
@@ -1738,7 +1740,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         foreach (var context in cronJobOccurrences.Items)
         {
@@ -1775,8 +1777,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     // Update existing occurrence (should be rare - only if re-queuing)
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
                     updatedOccurrence.OwnerId = _ownerId;
-                    updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
-                    updatedOccurrence.UpdatedAt = (DateTimeOffset)now;
+                    updatedOccurrence.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+                    updatedOccurrence.UpdatedAt = now;
                     updatedOccurrence.Status = JobStatus.Queued;
                     // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
                     updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
@@ -1796,14 +1798,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         ExecutionTime = cronJobOccurrences.Key,
                         Status = JobStatus.Queued,
                         OwnerId = _ownerId,
-                        LockedUntil = now.Add(_leaseDuration),
+                        LockedUntil = now.UtcDateTime.Add(_leaseDuration),
                         // Death policy comes from the JobManagerDispatchContext (canonical, sourced from the cron def via
                         // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
                         // Retry enum default when the cron row is absent from _cronJobs. Mirrors the EF QueueCronJobOccurrencesAsync
                         // projection, which always stamps item.OnNodeDeath.
                         OnNodeDeath = context.OnNodeDeath,
-                        CreatedAt = context.NextCronOccurrence?.CreatedAt ?? (DateTimeOffset)now,
-                        UpdatedAt = (DateTimeOffset)now,
+                        CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
+                        UpdatedAt = now,
                         RetryCount = 0,
                         CronJob = currentDefinition,
                     };
@@ -1822,8 +1824,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
+        var now = _timeProvider.GetUtcNow();
+        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _cronOccurrences
             .Values.Where(x => _CanFallbackClaim(x.Status, x.LockedUntil, now) && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
@@ -1845,8 +1847,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 {
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
                     updatedOccurrence.OwnerId = _ownerId;
-                    updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
-                    updatedOccurrence.UpdatedAt = (DateTimeOffset)now;
+                    updatedOccurrence.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+                    updatedOccurrence.UpdatedAt = now;
                     updatedOccurrence.Status = JobStatus.Queued;
 
                     if (_cronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, existingOccurrence))
@@ -1887,7 +1889,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task<int> RenewCronJobOccurrenceLeaseAsync(Guid occurrenceId, CancellationToken cancellationToken = default)
     {
         // #316 sliding lease (mirror EF RenewCronJobOccurrenceLeaseAsync). Lost/reclaimed/terminalized -> 0.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         if (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
@@ -1900,8 +1902,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updatedOccurrence = _CloneCronOccurrence(occurrence);
-            updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
-            updatedOccurrence.UpdatedAt = (DateTimeOffset)now;
+            updatedOccurrence.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
+            updatedOccurrence.UpdatedAt = now;
 
             if (_cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, occurrence))
             {
@@ -1915,7 +1917,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
         // #316/U3 — cron mirror of ReclaimStalledTimeJobsAsync.
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
         bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
@@ -1927,12 +1929,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updated = _CloneCronOccurrence(current);
             mutate(updated);
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
             return _cronOccurrences.TryUpdate(id, updated, current);
         }
 
         var stalled = _cronOccurrences
-            .Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now)
+            .Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now.UtcDateTime)
             .ToArray();
 
         foreach (var occurrence in stalled)
@@ -1959,7 +1961,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     ):
                     affected++;
@@ -1972,7 +1974,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
                             t.SkippedReason = "Lease lapsed while running!";
-                            t.ExecutedAt = (DateTimeOffset)now;
+                            t.ExecutedAt = now;
                         }
                     ):
                     affected++;
@@ -1988,7 +1990,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var idsToRelease = occurrenceIds.Length == 0 ? [.. _cronOccurrences.Keys] : occurrenceIds;
 
         foreach (var id in idsToRelease)
@@ -2001,7 +2003,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     updatedOccurrence.OwnerId = null;
                     updatedOccurrence.LockedUntil = null;
                     updatedOccurrence.Status = JobStatus.Idle;
-                    updatedOccurrence.UpdatedAt = (DateTimeOffset)now;
+                    updatedOccurrence.UpdatedAt = now;
 
                     _cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence);
                 }
@@ -2076,7 +2078,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
         bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
@@ -2088,7 +2090,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updated = _CloneCronOccurrence(current);
             mutate(updated);
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
             return _cronOccurrences.TryUpdate(id, updated, current);
         }
 
@@ -2101,7 +2103,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         foreach (var occurrence in owned)
         {
-            var inProgressLapsed = occurrence.Status == JobStatus.InProgress && occurrence.LockedUntil <= now;
+            var inProgressLapsed =
+                occurrence.Status == JobStatus.InProgress && occurrence.LockedUntil <= now.UtcDateTime;
 
             var release =
                 occurrence.Status is JobStatus.Idle or JobStatus.Queued
@@ -2134,7 +2137,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.Status = JobStatus.Failed;
                             o.LockedUntil = null;
                             o.ExceptionMessage = "Node is not alive!";
-                            o.ExecutedAt = (DateTimeOffset)now;
+                            o.ExecutedAt = now;
                         }
                     )
                 )
@@ -2152,7 +2155,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.Status = JobStatus.Skipped;
                             o.LockedUntil = null;
                             o.SkippedReason = "Node is not alive!";
-                            o.ExecutedAt = (DateTimeOffset)now;
+                            o.ExecutedAt = now;
                         }
                     )
                 )
@@ -2292,7 +2295,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return Task.FromResult(Array.Empty<CronJobOccurrenceEntity<TCronJob>>());
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var acquired = new List<CronJobOccurrenceEntity<TCronJob>>();
 
         foreach (var id in occurrenceIds)
@@ -2311,9 +2314,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             var updated = _CloneCronOccurrence(occurrence);
             updated.OwnerId = _ownerId;
-            updated.LockedUntil = now.Add(_leaseDuration);
+            updated.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             updated.Status = JobStatus.InProgress;
-            updated.UpdatedAt = (DateTimeOffset)now;
+            updated.UpdatedAt = now;
 
             if (_cronOccurrences.TryUpdate(id, updated, occurrence))
             {
@@ -2442,9 +2445,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         children.TryAdd(childId, 0);
     }
 
-    private static bool _CanFallbackClaim(JobStatus status, DateTime? lockedUntil, DateTime now)
+    private static bool _CanFallbackClaim(JobStatus status, DateTime? lockedUntil, DateTimeOffset now)
     {
-        return status == JobStatus.Idle || (status == JobStatus.Queued && (lockedUntil == null || lockedUntil <= now));
+        return status == JobStatus.Idle
+            || (status == JobStatus.Queued && (lockedUntil == null || lockedUntil <= now.UtcDateTime));
     }
 
     private void _RemoveChildIndex(Guid parentId, Guid childId)
@@ -2478,13 +2482,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
         // OnNodeDeath == Retry)). `now` comes from the injected TimeProvider (application clock, not a DB clock)
         // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (KTD5/#315).
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
             && (
                 string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
-                || (job.LockedUntil <= now && job.OnNodeDeath == NodeDeathPolicy.Retry)
+                || (job.LockedUntil <= now.UtcDateTime && job.OnNodeDeath == NodeDeathPolicy.Retry)
             );
     }
 
@@ -2492,7 +2496,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
         // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (KTD5/#315).
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
             && !definition.IsPaused
@@ -2500,7 +2504,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             && (
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
-                || (occurrence.LockedUntil <= now && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
+                || (occurrence.LockedUntil <= now.UtcDateTime && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
             );
     }
 

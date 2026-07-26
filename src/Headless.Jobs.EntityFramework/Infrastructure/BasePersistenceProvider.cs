@@ -103,7 +103,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         var baseQuery =
             timeJobIds.Length == 0
@@ -118,7 +118,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, _ => JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => (DateTimeOffset)now),
+                        .SetProperty(x => x.UpdatedAt, _ => now),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -143,7 +143,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => x.Id == functionContexts.JobId)
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
-                setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow().UtcDateTime),
+                setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow()),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -182,7 +182,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var affected = await rowsToUpdate
             .ExecuteUpdateAsync(
-                setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow().UtcDateTime),
+                setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow()),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -216,10 +216,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         // Define the window: ignore anything older than 1 second ago
-        var oneSecondAgo = now.AddSeconds(-1);
+        var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
         var baseQuery = dbContext
             .Set<TTimeJob>()
@@ -848,7 +848,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         // Acquire and mark InProgress in a single update.
         // LEASE-DEADLINE WRITE — must stay AUTOCOMMIT. Do not wrap in an explicit transaction: on PostgreSQL the
@@ -1058,7 +1058,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
 
         var functions = cronJobs.Select(x => x.Function).ToArray();
         var cronSet = dbContext.Set<TCronJob>();
@@ -1145,7 +1145,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     {
                         cron.Expression = expression;
                         cron.ScheduleRevision++;
-                        cron.UpdatedAt = (DateTimeOffset)now;
+                        cron.UpdatedAt = now;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
@@ -1161,8 +1161,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     Function = function,
                     Expression = expression,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
-                    CreatedAt = (DateTimeOffset)now,
-                    UpdatedAt = (DateTimeOffset)now,
+                    CreatedAt = now,
+                    UpdatedAt = now,
                     Request = [],
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -1185,8 +1185,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         setter =>
                             setter
                                 .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, (DateTimeOffset)now)
-                                .SetProperty(x => x.UpdatedAt, (DateTimeOffset)now)
+                                .SetProperty(x => x.ExecutedAt, now)
+                                .SetProperty(x => x.UpdatedAt, now)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
@@ -1557,7 +1557,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return;
         }
 
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        var now = TimeProvider.GetUtcNow();
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -1606,8 +1606,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return null!;
         }
 
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
-        var mainSchedulerThreshold = now.AddSeconds(-1);
+        var now = TimeProvider.GetUtcNow();
+        var mainSchedulerThreshold = now.UtcDateTime.AddSeconds(-1);
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);

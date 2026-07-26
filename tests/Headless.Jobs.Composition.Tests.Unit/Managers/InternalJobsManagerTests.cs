@@ -48,14 +48,14 @@ public sealed class InternalJobsManagerTests : TestBase
             IsPaused = true,
             ScheduleRevision = 4,
         };
-        provider.PauseCronJobAsync(definition.Id, now.UtcDateTime, AbortToken).Returns((FakeCronJob?)null);
+        provider.PauseCronJobAsync(definition.Id, now, AbortToken).Returns((FakeCronJob?)null);
         provider.GetCronJobByIdAsync(definition.Id, AbortToken).Returns(definition);
         provider
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
                 Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
-                now.UtcDateTime,
+                now,
                 AbortToken
             )
             .Returns(call =>
@@ -112,7 +112,7 @@ public sealed class InternalJobsManagerTests : TestBase
                 definition.Id,
                 definition.ScheduleRevision,
                 Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
-                resumeTime.UtcDateTime,
+                resumeTime,
                 AbortToken
             )
             .Returns(call =>

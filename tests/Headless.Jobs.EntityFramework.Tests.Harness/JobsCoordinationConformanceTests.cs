@@ -1539,13 +1539,13 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         try
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var operationTime = DateTime.UtcNow;
+            var operationTime = TimeProvider.System.GetUtcNow();
             var definition = _CronDefinition(isPaused: false, revision: 3, timeZoneId: "America/New_York");
-            var idle = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.AddMinutes(1));
-            var queued = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.AddMinutes(2));
-            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.AddMinutes(3));
+            var idle = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.UtcDateTime.AddMinutes(1));
+            var queued = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.UtcDateTime.AddMinutes(2));
+            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.UtcDateTime.AddMinutes(3));
             running.OwnerId = "worker-a@incarnation";
-            running.LockedUntil = operationTime.AddMinutes(10);
+            running.LockedUntil = operationTime.UtcDateTime.AddMinutes(10);
 
             (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
             (await persistence.InsertCronJobOccurrencesAsync([idle, queued, running], ct)).Should().Be(3);
@@ -1563,7 +1563,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             {
                 pending.Status.Should().Be(JobStatus.Skipped);
                 // Persisted at the storage clock's granularity (PostgreSQL truncates to microseconds).
-                pending.ExecutedAt.Should().BeCloseTo((DateTimeOffset)operationTime, TimeSpan.FromMicroseconds(1));
+                pending.ExecutedAt.Should().BeCloseTo(operationTime, TimeSpan.FromMicroseconds(1));
                 pending.SkippedReason.Should().Be("Cron definition paused");
                 pending.OwnerId.Should().BeNull();
                 pending.LockedUntil.Should().BeNull();
@@ -1572,11 +1572,13 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var preserved = occurrences.Single(x => x.Id == running.Id);
             preserved.Status.Should().Be(JobStatus.InProgress);
             preserved.OwnerId.Should().Be("worker-a@incarnation");
-            preserved.LockedUntil.Should().BeCloseTo(operationTime.AddMinutes(10), TimeSpan.FromMicroseconds(1));
+            preserved
+                .LockedUntil.Should()
+                .BeCloseTo(operationTime.UtcDateTime.AddMinutes(10), TimeSpan.FromMicroseconds(1));
 
             var staleProjection = _CronDispatch(definition, revision: 3);
             var staleResults = await persistence
-                .QueueCronJobOccurrencesAsync((operationTime.AddMinutes(4), [staleProjection]), ct)
+                .QueueCronJobOccurrencesAsync((operationTime.UtcDateTime.AddMinutes(4), [staleProjection]), ct)
                 .ToArrayAsync(ct);
             staleResults.Should().BeEmpty();
             (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
@@ -1606,8 +1608,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var second = secondHost.Services.GetRequiredService<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
             >();
-            var operationTime = DateTime.UtcNow;
-            var executionTime = operationTime.AddMinutes(15);
+            var operationTime = TimeProvider.System.GetUtcNow();
+            var executionTime = operationTime.UtcDateTime.AddMinutes(15);
             var definition = _CronDefinition(isPaused: true, revision: 7, timeZoneId: "America/New_York");
             (await first.InsertCronJobsAsync([definition], ct)).Should().Be(1);
 
@@ -1658,10 +1660,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         try
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var operationTime = DateTime.UtcNow;
+            var operationTime = TimeProvider.System.GetUtcNow();
             var definition = _CronDefinition(isPaused: false, revision: 2, timeZoneId: "America/New_York");
-            var pending = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.AddMinutes(1));
-            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.AddMinutes(2));
+            var pending = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.UtcDateTime.AddMinutes(1));
+            var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.UtcDateTime.AddMinutes(2));
             (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
             (await persistence.InsertCronJobOccurrencesAsync([pending, running], ct)).Should().Be(2);
 
@@ -1691,7 +1693,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var scheduleEdit = _CronDefinition(isPaused: false, revision: 999, timeZoneId: "Etc/UTC");
             scheduleEdit.Id = definition.Id;
             scheduleEdit.Expression = "0 */5 * * * *";
-            var replacement = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.AddMinutes(5));
+            var replacement = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.UtcDateTime.AddMinutes(5));
             var scheduleResult = await persistence.UpdateCronJobsAtomicallyAsync(
                 [new CronJobAtomicUpdate<CronJobEntity>(scheduleEdit, ExpectedScheduleRevision: 2, replacement)],
                 operationTime,
@@ -1767,7 +1769,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                     new CronJobAtomicUpdate<CronJobEntity>(first, ExpectedScheduleRevision: 0, NextOccurrence: null),
                     new CronJobAtomicUpdate<CronJobEntity>(second, ExpectedScheduleRevision: 0, NextOccurrence: null),
                 ],
-                DateTime.UtcNow,
+                TimeProvider.System.GetUtcNow(),
                 ct
             );
 

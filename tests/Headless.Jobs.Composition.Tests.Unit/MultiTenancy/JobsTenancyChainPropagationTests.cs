@@ -242,7 +242,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
             .DidNotReceive()
             .UpdateCronJobsAtomicallyAsync(
                 Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<DateTimeOffset>(),
                 Arg.Any<CancellationToken>()
             );
     }

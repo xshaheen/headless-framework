@@ -133,7 +133,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         TimeJobEntity[] claimed;
         ClaimResult claim;
         Guid[] leasedDescendantIds;
@@ -172,7 +172,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    _DateTimeParameter("fallbackThreshold", now.AddSeconds(-1)),
+                    _DateTimeParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)),
                     new SqlParameter("idle", nameof(JobStatus.Idle)),
                     new SqlParameter("queued", nameof(JobStatus.Queued)),
                     new SqlParameter("retry", nameof(NodeDeathPolicy.Retry))
@@ -251,8 +251,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
+        var now = timeProvider.GetUtcNow();
+        var lockedUntil = now.UtcDateTime.Add(_leaseDuration);
         var claimed = new List<CronJobOccurrenceEntity<TCronJob>>();
 
         await using (
@@ -380,8 +380,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var lockedUntil = now.Add(_leaseDuration);
+        var now = timeProvider.GetUtcNow();
+        var lockedUntil = now.UtcDateTime.Add(_leaseDuration);
         CronJobOccurrenceEntity<TCronJob>[] claimed;
         Guid[] wonIds;
 
@@ -479,7 +479,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         JobManagerDispatchContext item,
         DateTime executionTime,
         string owner,
-        DateTime now,
+        DateTimeOffset now,
         DateTime lockedUntil,
         CancellationToken cancellationToken
     )
@@ -511,7 +511,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
-        _AddLeaseDurationParameters(command, lockedUntil - now);
+        _AddLeaseDurationParameters(command, lockedUntil - now.UtcDateTime);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new SqlParameter("elapsedTime", SqlDbType.BigInt) { Value = 0L });
         command.Parameters.Add(new SqlParameter("retryCount", SqlDbType.Int) { Value = 0 });
@@ -535,8 +535,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 CronJobId = item.Id,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                CreatedAt = (DateTimeOffset)now,
-                UpdatedAt = (DateTimeOffset)now,
+                CreatedAt = now,
+                UpdatedAt = now,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -549,7 +549,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         JobManagerDispatchContext item,
         DateTime executionTime,
         string owner,
-        DateTime now,
+        DateTimeOffset now,
         DateTime lockedUntil,
         string readPastHints,
         CancellationToken cancellationToken
@@ -589,7 +589,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
-        _AddLeaseDurationParameters(command, lockedUntil - now);
+        _AddLeaseDurationParameters(command, lockedUntil - now.UtcDateTime);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return claimed is Guid
@@ -602,7 +602,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 OwnerId = owner,
                 LockedUntil = lockedUntil,
                 OnNodeDeath = item.OnNodeDeath,
-                UpdatedAt = (DateTimeOffset)now,
+                UpdatedAt = now,
                 CreatedAt = occurrence.CreatedAt,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
@@ -614,7 +614,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
         string owner,
-        DateTime now,
+        DateTimeOffset now,
         DateTime lockedUntil,
         string readPastHints,
         CancellationToken cancellationToken
@@ -646,12 +646,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INNER JOIN candidates ON occurrence.{mapping.Id} = candidates.{mapping.Id};
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(_DateTimeParameter("fallbackThreshold", now.AddSeconds(-1)));
+        command.Parameters.Add(_DateTimeParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)));
         command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new SqlParameter("owner", owner));
-        _AddLeaseDurationParameters(command, lockedUntil - now);
+        _AddLeaseDurationParameters(command, lockedUntil - now.UtcDateTime);
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

@@ -263,7 +263,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -282,7 +282,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                     setter
                         .SetProperty(x => x.IsPaused, valueExpression: true)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
-                        .SetProperty(x => x.UpdatedAt, (DateTimeOffset)operationTimeUtc),
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -299,8 +299,8 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 setter =>
                     setter
                         .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.ExecutedAt, (DateTimeOffset)operationTimeUtc)
-                        .SetProperty(x => x.UpdatedAt, (DateTimeOffset)operationTimeUtc)
+                        .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc)
                         .SetProperty(x => x.SkippedReason, "Cron definition paused")
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null),
@@ -323,7 +323,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         Guid cronJobId,
         long expectedScheduleRevision,
         CronJobOccurrenceEntity<TCronJob> nextOccurrence,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -347,7 +347,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                     setter
                         .SetProperty(x => x.IsPaused, valueExpression: false)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
-                        .SetProperty(x => x.UpdatedAt, (DateTimeOffset)operationTimeUtc),
+                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -374,7 +374,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
         CronJobAtomicUpdate<TCronJob>[] updates,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
@@ -439,7 +439,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                                 x => x.ScheduleRevision,
                                 scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
                             )
-                            .SetProperty(x => x.UpdatedAt, (DateTimeOffset)operationTimeUtc),
+                            .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -460,8 +460,8 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                         setter =>
                             setter
                                 .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, (DateTimeOffset)operationTimeUtc)
-                                .SetProperty(x => x.UpdatedAt, (DateTimeOffset)operationTimeUtc)
+                                .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                                .SetProperty(x => x.UpdatedAt, operationTimeUtc)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
@@ -484,7 +484,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             result.IsPaused = current.IsPaused;
             result.ScheduleRevision = scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
             result.CreatedAt = current.CreatedAt;
-            result.UpdatedAt = (DateTimeOffset)operationTimeUtc;
+            result.UpdatedAt = operationTimeUtc;
             results[inputIndex] = result;
         }
 
