@@ -60,6 +60,8 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
                 SendTransport,
                 nowMs: () => 100,
                 MessagingTelemetry.Default,
+                TimeSpan.FromSeconds(10),
+                TimeProvider.System,
                 AbortToken
             );
 

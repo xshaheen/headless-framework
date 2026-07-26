@@ -188,10 +188,43 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         exception.Which.CancellationToken.Should().Be(callerCts.Token);
     }
 
+    [Fact]
+    public async Task should_start_transport_timeout_only_after_serialization_completes()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var serializer = new BlockingTransportSerializer();
+        var transport = new BlockingTransport();
+        var timeout = TimeSpan.FromSeconds(5);
+        await using var harness = _CreateHarness(timeProvider, timeout, transport, serializer);
+
+        // when
+        var publishTask = harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("slow-serialization"),
+            options: null,
+            AbortToken
+        );
+        await serializer.Started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(timeout);
+
+        // then
+        publishTask.IsCompleted.Should().BeFalse("serialization uses only the caller cancellation token");
+
+        serializer.Release();
+        await transport.Started.Task.WaitAsync(AbortToken);
+        publishTask.IsCompleted.Should().BeFalse("the transport receives a fresh timeout budget");
+
+        timeProvider.Advance(timeout);
+        var act = async () => await publishTask;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private static MessagePublisherHarness _CreateHarness(
         TimeProvider? timeProvider = null,
         TimeSpan? transportPublishTimeout = null,
-        ITransport? busTransport = null
+        ITransport? busTransport = null,
+        ISerializer? serializer = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -232,7 +265,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             [MessageLane.Queue] = new RecordingTransport(MessageLane.Queue, transportLanes, transportMessages),
         };
         var publisher = new MessagePublisher(
-            new JsonUtf8Serializer(options),
+            serializer ?? new JsonUtf8Serializer(options),
             lane => transports[lane],
             requestFactory,
             pipeline,
@@ -287,6 +320,57 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         public ValueTask DisposeAsync()
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingTransportSerializer : ISerializer
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Serialize(Message message)
+        {
+            throw new NotSupportedException();
+        }
+
+        public async ValueTask<TransportMessage> SerializeToTransportMessageAsync(
+            Message message,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Started.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return new TransportMessage(message.Headers, body: null);
+        }
+
+        public Message? Deserialize(string json)
+        {
+            throw new NotSupportedException();
+        }
+
+        public ValueTask<Message> DeserializeAsync(
+            TransportMessage transportMessage,
+            Type? valueType,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException();
+        }
+
+        public object? Deserialize(object value, Type valueType)
+        {
+            throw new NotSupportedException();
+        }
+
+        public bool IsJsonType(object jsonObject)
+        {
+            return false;
+        }
+
+        internal void Release()
+        {
+            _release.TrySetResult();
         }
     }
 

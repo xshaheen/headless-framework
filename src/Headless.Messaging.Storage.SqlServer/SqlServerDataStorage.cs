@@ -1487,6 +1487,7 @@ internal sealed partial class SqlServerDataStorage(
             WHERE target.Owner IS NOT NULL
               AND target.Owner IN (SELECT [Owner] FROM @DeadOwners)
               AND target.LockedUntil > @ReclaimNow
+              AND target.IntentType IN (0, 1)
               AND {_TerminalRowGuardSimple};
             """;
 

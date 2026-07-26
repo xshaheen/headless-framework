@@ -193,6 +193,12 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
     void ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
     {
+        if (_IsCancellationRequested())
+        {
+            _logger.MessagePersistButSystemStopped();
+            return;
+        }
+
         if (message.ExpiresAt is not { } publishTime)
         {
             throw new InvalidOperationException("A committed delayed message must have an expiration time.");
@@ -496,9 +502,10 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         PublishedChannel = Channel.CreateBounded<MediumMessage>(
             new BoundedChannelOptions(_publishChannelSize)
             {
-                AllowSynchronousContinuations = true,
+                AllowSynchronousContinuations = false,
                 SingleReader = true,
-                SingleWriter = !_enableParallelSend,
+                // Public publishes, relay pickup, and post-commit acceleration can all write concurrently.
+                SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );

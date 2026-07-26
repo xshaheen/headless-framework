@@ -948,6 +948,34 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         repaired.Select(message => message.StorageId).Should().Equal(unknownId);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_not_reclaim_dead_owner_lease_on_unknown_lane_rows(bool published)
+    {
+        const string deadOwner = "stale-unsupported-lane-owner";
+        var storage = GetStorage();
+        var id = (
+            await SeedUnsupportedLaneRetryRowAsync(
+                storage,
+                published,
+                rawLane: 77,
+                nextRetryAt: TimeProvider.GetUtcNow().AddMinutes(5),
+                AbortToken
+            )
+        )!.Value;
+        var before = await GetPersistedPoisonRetryStateAsync(storage, published, id, AbortToken);
+
+        var reclaimed = published
+            ? await storage.ReclaimDeadPublishedOwnersAsync([deadOwner], AbortToken)
+            : await storage.ReclaimDeadReceivedOwnersAsync([deadOwner], AbortToken);
+
+        reclaimed.Should().Be(0);
+        (await GetPersistedPoisonRetryStateAsync(storage, published, id, AbortToken))
+            .Should()
+            .Be(before, "automatic reclaim must not mutate unknown lanes");
+    }
+
     [Fact]
     public async Task should_preserve_unknown_lanes_during_expiry_and_delayed_maintenance()
     {

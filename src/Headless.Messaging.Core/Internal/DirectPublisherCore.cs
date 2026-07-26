@@ -21,6 +21,8 @@ internal static class DirectPublisherCore
         Func<TransportMessage, CancellationToken, Task<OperateResult>> sendTransport,
         Func<long> nowMs,
         MessagingTelemetry telemetry,
+        TimeSpan transportPublishTimeout,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -28,10 +30,12 @@ internal static class DirectPublisherCore
             .SerializeToTransportMessageAsync(message, cancellationToken)
             .ConfigureAwait(false);
 
+        using var timeoutCts = new CancellationTokenSource(transportPublishTimeout, timeProvider);
+        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
         var traceHandle = _TracingBeforeSend(transportMsg, lane, brokerAddress, nowMs, telemetry);
         try
         {
-            var result = await sendTransport(transportMsg, cancellationToken).ConfigureAwait(false);
+            var result = await sendTransport(transportMsg, publishCts.Token).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {
@@ -47,6 +51,8 @@ internal static class DirectPublisherCore
             // Cancellation can race transport acceptance. Diagnose the outcome as ambiguous while
             // preserving the caller's original cancellation exception.
             MessagingTelemetry.PublishAmbiguous(traceHandle.Activity, transportMsg, brokerAddress, ex, lane);
+
+            cancellationToken.ThrowIfCancellationRequested();
             throw;
         }
         catch (Exception e) when (e is not PublisherSentFailedException)

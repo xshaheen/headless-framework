@@ -11,6 +11,17 @@ namespace Tests.Internal;
 public sealed class ScheduledMediumMessageQueueTests : TestBase
 {
     [Fact]
+    public void should_drop_enqueue_after_disposal_without_throwing()
+    {
+        var queue = new ScheduledMediumMessageQueue(TimeProvider.System);
+        queue.Dispose();
+
+        var act = () => queue.TryEnqueue(_CreateMediumMessage(1), DateTimeOffset.UtcNow.Ticks);
+
+        act.Should().NotThrow().Which.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_reject_overflow_until_a_due_item_is_consumed()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));

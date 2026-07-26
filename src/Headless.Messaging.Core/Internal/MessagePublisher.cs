@@ -2,7 +2,6 @@
 
 using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 
 namespace Headless.Messaging.Internal;
@@ -74,7 +73,18 @@ internal sealed class MessagePublisher(
                 {
                     DeliveryMetadata.Stamp(request.Message.Headers, decision);
                     var transport = transportResolver(lane);
-                    return _SendDirectAsync(request.Message, request.Lane, transport, ct);
+                    return DirectPublisherCore.SendAsync(
+                        request.Message,
+                        request.Lane,
+                        serializer,
+                        transport.BrokerAddress,
+                        transport.SendAsync,
+                        _NowUnixTimeMilliseconds,
+                        _telemetry,
+                        _transportPublishTimeout,
+                        timeProvider,
+                        ct
+                    );
                 }
 
                 var writer =
@@ -86,37 +96,6 @@ internal sealed class MessagePublisher(
             },
             cancellationToken
         );
-    }
-
-    private async Task _SendDirectAsync(
-        Message message,
-        MessageLane lane,
-        ITransport transport,
-        CancellationToken cancellationToken
-    )
-    {
-        using var timeoutCts = new CancellationTokenSource(_transportPublishTimeout, timeProvider);
-        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-        try
-        {
-            await DirectPublisherCore
-                .SendAsync(
-                    message,
-                    lane,
-                    serializer,
-                    transport.BrokerAddress,
-                    transport.SendAsync,
-                    _NowUnixTimeMilliseconds,
-                    _telemetry,
-                    publishCts.Token
-                )
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(cancellationToken);
-        }
     }
 
     private DeliveryCoordination _ResolveCoordination(ICommitCoordinator? coordinator)
