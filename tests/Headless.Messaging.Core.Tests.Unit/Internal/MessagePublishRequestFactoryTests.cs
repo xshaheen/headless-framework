@@ -43,6 +43,22 @@ public sealed class MessagePublishRequestFactoryTests
         prepared.Message.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
     }
 
+    [Theory]
+    [InlineData(Headers.RequestedDeliveryMode)]
+    [InlineData(Headers.ResolvedDeliveryMode)]
+    public void should_reject_custom_delivery_metadata_headers(string header)
+    {
+        var factory = _CreateFactory();
+        var options = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [header] = "Durable" },
+        };
+
+        var act = () => factory.Create(new CallbackResponse("accepted"), options);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{header}*reserved*");
+    }
+
     private static MessagePublishRequestFactory _CreateFactory()
     {
         var options = new MessagingOptions();

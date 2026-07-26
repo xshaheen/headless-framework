@@ -83,7 +83,14 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         return activity;
     }
 
-    public static void PersistStop(Activity? activity, string operation, long startTimestampMs, long endTimestampMs)
+    public static void PersistStop(
+        Activity? activity,
+        string operation,
+        long startTimestampMs,
+        long endTimestampMs,
+        MessageLane? lane = null,
+        DeliveryMetadataValues delivery = default
+    )
     {
         var elapsedMs = endTimestampMs - startTimestampMs;
 
@@ -95,7 +102,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordPersistence(operation, elapsedMs, isPublish: true);
+        MessagingMetrics.RecordPersistence(operation, elapsedMs, isPublish: true, lane, delivery);
 
         activity?.Stop();
     }
@@ -172,7 +179,8 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         TransportMessage message,
         BrokerAddress broker,
         long startTimestampMs,
-        long endTimestampMs
+        long endTimestampMs,
+        MessageLane lane = MessageLane.Bus
     )
     {
         var elapsedMs = endTimestampMs - startTimestampMs;
@@ -185,7 +193,8 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordPublish(message.Name, broker.Name, elapsedMs);
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublish(message.Name, broker.Name, lane, delivery, elapsedMs);
 
         activity?.Stop();
     }
@@ -194,10 +203,12 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         Activity? activity,
         TransportMessage message,
         BrokerAddress broker,
-        Exception exception
+        Exception exception,
+        MessageLane lane = MessageLane.Bus
     )
     {
-        MessagingMetrics.RecordPublishError(message.Name, broker.Name, exception.GetType().Name);
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublishError(message.Name, broker.Name, exception.GetType().Name, lane, delivery);
 
         if (activity is null)
         {
@@ -206,6 +217,29 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.AddException(exception);
+        activity.Stop();
+    }
+
+    public static void PublishAmbiguous(
+        Activity? activity,
+        TransportMessage message,
+        BrokerAddress broker,
+        Exception exception,
+        MessageLane lane = MessageLane.Bus
+    )
+    {
+        var delivery = DeliveryMetadata.Read(message.Headers);
+        MessagingMetrics.RecordPublishError(message.Name, broker.Name, "AmbiguousDelivery", lane, delivery);
+
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.SetTag(MessagingTags.DeliveryOutcome, "ambiguous");
+        activity.SetStatus(ActivityStatusCode.Error, "Transport acceptance is ambiguous.");
+        activity.AddException(exception);
+        activity.AddEvent(new ActivityEvent("message.publish.ambiguous"));
         activity.Stop();
     }
 
@@ -515,12 +549,15 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         int retryCount
     )
     {
+        var delivery = DeliveryMetadata.Read(headers);
         return new MessagingEnrichmentContext
         {
             Kind = kind,
             MessageId = messageId,
             MessageName = operation,
             Lane = lane,
+            RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+            ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
             TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
             CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
             RetryCount = retryCount,

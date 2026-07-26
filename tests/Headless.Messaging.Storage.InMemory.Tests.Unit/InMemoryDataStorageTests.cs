@@ -192,6 +192,56 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         await _initializer!.InitializeAsync(AbortToken);
     }
 
+    [Fact]
+    public async Task should_project_delivery_metadata_for_published_and_received_messages()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var explicitlyDirect = CreateMessage();
+        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
+        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
+
+        var published = await storage.StoreMessageAsync(
+            "delivery-metadata-published",
+            explicitlyDirect,
+            cancellationToken: AbortToken
+        );
+        var received = await storage.StoreReceivedMessageAsync(
+            "delivery-metadata-received",
+            "delivery-metadata-group",
+            CreateMessage(),
+            AbortToken
+        );
+        var monitoring = storage.GetMonitoringApi();
+
+        var publishedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        var receivedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Subscribe,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        var publishedView = publishedPage.Items.Single(x => x.StorageId == published.StorageId);
+        publishedView.RequestedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        publishedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+
+        var receivedView = receivedPage.Items.Single(x => x.StorageId == received.StorageId);
+        receivedView.RequestedDeliveryMode.Should().BeNull();
+        receivedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+    }
+
     private void _EnsureInitialized()
     {
         if (_initializer is not null)

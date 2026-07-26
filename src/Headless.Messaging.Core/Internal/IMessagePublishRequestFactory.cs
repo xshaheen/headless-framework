@@ -59,6 +59,8 @@ internal sealed class MessagePublishRequestFactory(
         Headers.SentTime,
         Headers.DelayTime,
         Headers.Intent,
+        Headers.RequestedDeliveryMode,
+        Headers.ResolvedDeliveryMode,
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)

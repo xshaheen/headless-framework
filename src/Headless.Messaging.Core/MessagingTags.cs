@@ -9,8 +9,17 @@ namespace Headless.Messaging;
 [PublicAPI]
 public static class MessagingTags
 {
-    /// <summary>Messaging delivery intent: <c>bus</c> for broadcast, <c>queue</c> for point-to-point.</summary>
-    public const string Intent = "headless.messaging.intent";
+    /// <summary>Messaging delivery lane: <c>bus</c> for broadcast, <c>queue</c> for point-to-point.</summary>
+    public const string Lane = "headless.messaging.lane";
+
+    /// <summary>Delivery mode requested by the caller: <c>auto</c>, <c>durable</c>, or <c>transport_direct</c>.</summary>
+    public const string RequestedDeliveryMode = "headless.messaging.delivery.requested";
+
+    /// <summary>Delivery mode resolved by the framework: <c>durable</c> or <c>transport_direct</c>.</summary>
+    public const string ResolvedDeliveryMode = "headless.messaging.delivery.resolved";
+
+    /// <summary>Finite delivery outcome diagnostic; currently <c>ambiguous</c> when transport acceptance is unknown.</summary>
+    public const string DeliveryOutcome = "headless.messaging.delivery.outcome";
 
     /// <summary>Messaging destination kind aligned with OpenTelemetry messaging conventions.</summary>
     public const string DestinationKind = "messaging.destination.kind";

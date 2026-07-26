@@ -220,42 +220,44 @@ internal sealed class PostgreSqlMonitoringApi(
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var index = 0;
-                        messages.Add(
-                            new MessageView
-                            {
-                                StorageId = reader.GetGuid(index++),
-                                MessageId = reader.GetString(index++),
-                                Version = reader.GetString(index++),
-                                Name = reader.GetString(index++),
-                                Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(index - 1),
-                                Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(index - 1),
-                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(index++)),
-                                Retries = reader.GetInt32(index++),
-                                Added = await reader
-                                    .GetFieldValueAsync<DateTimeOffset>(index++, token)
+                        var message = new MessageView
+                        {
+                            StorageId = reader.GetGuid(index++),
+                            MessageId = reader.GetString(index++),
+                            Version = reader.GetString(index++),
+                            Name = reader.GetString(index++),
+                            Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(index - 1),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(index++)),
+                            Retries = reader.GetInt32(index++),
+                            Added = await reader
+                                .GetFieldValueAsync<DateTimeOffset>(index++, token)
+                                .ConfigureAwait(false),
+                            ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
                                     .ConfigureAwait(false),
-                                ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                                StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
-                                NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                                LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
-                                        .ConfigureAwait(false),
-                            }
-                        );
+                            StatusName = Enum.Parse<StatusName>(reader.GetString(index++)),
+                            NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                    .ConfigureAwait(false),
+                            LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                ? null
+                                : await reader
+                                    .GetFieldValueAsync<DateTimeOffset>(index - 1, token)
+                                    .ConfigureAwait(false),
+                        };
+                        var delivery = DeliveryMetadata.ReadStoredEnvelope(serializer, message.Content);
+                        message.RequestedDeliveryMode = delivery.RequestedDeliveryMode;
+                        message.ResolvedDeliveryMode = delivery.ResolvedDeliveryMode;
+                        messages.Add(message);
                     }
                     return messages;
                 },

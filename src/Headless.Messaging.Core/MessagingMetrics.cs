@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Headless.Messaging.Internal;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -110,38 +111,43 @@ internal static class MessagingMetrics
 
     // --- Record helpers ---------------------------------------------------------------------------------------
 
-    internal static void RecordPublish(string operation, string brokerName, long? elapsedMs = null)
+    internal static void RecordPublish(
+        string operation,
+        string brokerName,
+        MessageLane lane,
+        in DeliveryMetadataValues delivery,
+        long? elapsedMs = null
+    )
     {
+        var tags = _CreateDeliveryTags(operation, brokerName, lane, delivery);
+
         if (_MessagesPublished.Enabled)
         {
-            _MessagesPublished.Add(1, new TagList { { TagOperation, operation }, { TagSystem, brokerName } });
+            _MessagesPublished.Add(1, tags);
         }
 
         if (elapsedMs.HasValue && _PublishDuration.Enabled)
         {
-            _PublishDuration.Record(
-                elapsedMs.Value,
-                new TagList { { TagOperation, operation }, { TagSystem, brokerName } }
-            );
+            _PublishDuration.Record(elapsedMs.Value, tags);
         }
     }
 
-    internal static void RecordPublishError(string operation, string brokerName, string errorType)
+    internal static void RecordPublishError(
+        string operation,
+        string brokerName,
+        string errorType,
+        MessageLane lane,
+        in DeliveryMetadataValues delivery
+    )
     {
         if (!_PublishErrors.Enabled)
         {
             return;
         }
 
-        _PublishErrors.Add(
-            1,
-            new TagList
-            {
-                { TagOperation, operation },
-                { TagSystem, brokerName },
-                { TagErrorType, errorType },
-            }
-        );
+        var tags = _CreateDeliveryTags(operation, brokerName, lane, delivery);
+        tags.Add(TagErrorType, errorType);
+        _PublishErrors.Add(1, tags);
     }
 
     internal static void RecordConsume(
@@ -241,17 +247,31 @@ internal static class MessagingMetrics
         );
     }
 
-    internal static void RecordPersistence(string operation, long elapsedMs, bool isPublish)
+    internal static void RecordPersistence(
+        string operation,
+        long elapsedMs,
+        bool isPublish,
+        MessageLane? lane = null,
+        DeliveryMetadataValues delivery = default
+    )
     {
         if (!_PersistenceDuration.Enabled)
         {
             return;
         }
 
-        _PersistenceDuration.Record(
-            elapsedMs,
-            new TagList { { TagOperation, operation }, { TagPersistenceType, isPublish ? "publish" : "consume" } }
-        );
+        var tags = new TagList
+        {
+            { TagOperation, operation },
+            { TagPersistenceType, isPublish ? "publish" : "consume" },
+        };
+        if (lane is { } definedLane)
+        {
+            tags.Add(MessagingTags.Lane, LaneTagEnricher.ToTagValues(definedLane).Lane);
+        }
+
+        _AddDeliveryTags(ref tags, delivery);
+        _PersistenceDuration.Record(elapsedMs, tags);
     }
 
     internal static void RecordMessageSize(long sizeBytes, string operation)
@@ -262,5 +282,35 @@ internal static class MessagingMetrics
         }
 
         _MessageSize.Record(sizeBytes, new TagList { { TagOperation, operation } });
+    }
+
+    private static TagList _CreateDeliveryTags(
+        string operation,
+        string brokerName,
+        MessageLane lane,
+        in DeliveryMetadataValues delivery
+    )
+    {
+        var tags = new TagList
+        {
+            { TagOperation, operation },
+            { TagSystem, brokerName },
+            { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+        };
+        _AddDeliveryTags(ref tags, delivery);
+        return tags;
+    }
+
+    private static void _AddDeliveryTags(ref TagList tags, in DeliveryMetadataValues delivery)
+    {
+        if (DeliveryModeTagEnricher.ToTagValue(delivery.RequestedDeliveryMode) is { } requested)
+        {
+            tags.Add(MessagingTags.RequestedDeliveryMode, requested);
+        }
+
+        if (DeliveryModeTagEnricher.ToTagValue(delivery.ResolvedDeliveryMode) is { } resolved)
+        {
+            tags.Add(MessagingTags.ResolvedDeliveryMode, resolved);
+        }
     }
 }

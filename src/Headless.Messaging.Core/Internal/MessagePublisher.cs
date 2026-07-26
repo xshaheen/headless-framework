@@ -69,6 +69,8 @@ internal sealed class MessagePublisher(
                     )
                     : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
 
+                DeliveryMetadata.Stamp(request.Message.Headers, decision);
+
                 if (decision.Path is DeliveryPath.TransportDirect)
                 {
                     return DirectPublisherCore.SendAsync(

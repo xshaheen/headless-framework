@@ -22,24 +22,24 @@ public sealed class MessagingInstrumentationTests : TestBase
     // --- Built-in enrichers ---------------------------------------------------------------------------------
 
     [Fact]
-    public void should_tag_bus_intent_when_intent_enricher()
+    public void should_tag_bus_lane_when_lane_enricher()
     {
         using var activity = new Activity("test");
 
-        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Bus });
+        new LaneTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Bus });
 
-        activity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
+        activity.GetTagItem(MessagingTags.Lane).Should().Be("bus");
         activity.GetTagItem(MessagingTags.DestinationKind).Should().Be("topic");
     }
 
     [Fact]
-    public void should_tag_queue_intent_when_intent_enricher()
+    public void should_tag_queue_lane_when_lane_enricher()
     {
         using var activity = new Activity("test");
 
-        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Queue });
+        new LaneTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Queue });
 
-        activity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
+        activity.GetTagItem(MessagingTags.Lane).Should().Be("queue");
         activity.GetTagItem(MessagingTags.DestinationKind).Should().Be("queue");
     }
 
@@ -67,6 +67,24 @@ public sealed class MessagingInstrumentationTests : TestBase
         noRetry.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
     }
 
+    [Fact]
+    public void should_tag_only_finite_requested_and_resolved_delivery_modes()
+    {
+        using var activity = new Activity("delivery");
+
+        new DeliveryModeTagEnricher().Enrich(
+            activity,
+            new MessagingEnrichmentContext
+            {
+                RequestedDeliveryMode = DeliveryMode.Auto,
+                ResolvedDeliveryMode = DeliveryMode.TransportDirect,
+            }
+        );
+
+        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
+        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("transport_direct");
+    }
+
     // --- Composition / suppression --------------------------------------------------------------------------
 
     [Fact]
@@ -78,7 +96,12 @@ public sealed class MessagingInstrumentationTests : TestBase
             .BuildEnrichers()
             .Select(e => e.GetType())
             .Should()
-            .Equal(typeof(TenantIdTagEnricher), typeof(IntentTagEnricher), typeof(RetryCountTagEnricher));
+            .Equal(
+                typeof(TenantIdTagEnricher),
+                typeof(LaneTagEnricher),
+                typeof(DeliveryModeTagEnricher),
+                typeof(RetryCountTagEnricher)
+            );
     }
 
     [Fact]
@@ -87,7 +110,8 @@ public sealed class MessagingInstrumentationTests : TestBase
         var options = new MessagingInstrumentationOptions
         {
             SuppressTenantIdTag = true,
-            SuppressIntentTags = true,
+            SuppressLaneTags = true,
+            SuppressDeliveryModeTags = true,
             SuppressRetryCountTag = true,
         };
 
@@ -105,7 +129,7 @@ public sealed class MessagingInstrumentationTests : TestBase
             .BuildEnrichers()
             .Select(e => e.GetType())
             .Should()
-            .Equal(typeof(IntentTagEnricher), typeof(StubEnricher));
+            .Equal(typeof(LaneTagEnricher), typeof(DeliveryModeTagEnricher), typeof(StubEnricher));
         options.BuildEnrichers()[^1].Should().BeSameAs(custom);
     }
 

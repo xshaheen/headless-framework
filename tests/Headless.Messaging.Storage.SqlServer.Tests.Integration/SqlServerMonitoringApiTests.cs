@@ -384,6 +384,84 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         result.Items.Single().Name.Should().Be("orders.created");
     }
 
+    [Fact]
+    public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
+    {
+        var explicitHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString("D"),
+            [Headers.RequestedDeliveryMode] = DeliveryMode.Auto.ToString("G"),
+            [Headers.ResolvedDeliveryMode] = DeliveryMode.Durable.ToString("G"),
+        };
+        var explicitPublished = await _storage.StoreMessageAsync(
+            "delivery-metadata-explicit",
+            new Message(explicitHeaders, null),
+            cancellationToken: AbortToken
+        );
+        var malformedPublished = await _storage.StoreMessageAsync(
+            "delivery-metadata-malformed",
+            new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString("D"),
+                },
+                null
+            ),
+            cancellationToken: AbortToken
+        );
+        var legacyReceived = await _storage.StoreReceivedMessageAsync(
+            "delivery-metadata-legacy",
+            "delivery-metadata-group",
+            new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString("D"),
+                },
+                null
+            ),
+            AbortToken
+        );
+
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.ExecuteAsync(
+                "UPDATE messaging.published SET Content = @Content WHERE Id = @Id",
+                new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
+            );
+        }
+
+        var publishedPage = await _monitoringApi.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        var receivedPage = await _monitoringApi.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Subscribe,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        var explicitView = publishedPage.Items.Single(x => x.StorageId == explicitPublished.StorageId);
+        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        explicitView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+
+        var malformedView = publishedPage.Items.Single(x => x.StorageId == malformedPublished.StorageId);
+        malformedView.RequestedDeliveryMode.Should().BeNull();
+        malformedView.ResolvedDeliveryMode.Should().BeNull();
+
+        var legacyView = receivedPage.Items.Single(x => x.StorageId == legacyReceived.StorageId);
+        legacyView.RequestedDeliveryMode.Should().BeNull();
+        legacyView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+    }
+
     #endregion
 
     #region Hourly Timeline Tests

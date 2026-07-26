@@ -3,6 +3,7 @@
 using Dapper;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -342,6 +343,71 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // then
         page.Items.Should().BeEmpty();
         page.TotalItems.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
+    {
+        var explicitMessage = _CreateMessage();
+        explicitMessage.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.Auto.ToString("G");
+        explicitMessage.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.Durable.ToString("G");
+
+        var explicitPublished = await _storage!.StoreMessageAsync(
+            "delivery-metadata-explicit",
+            explicitMessage,
+            cancellationToken: AbortToken
+        );
+        var malformedPublished = await _storage.StoreMessageAsync(
+            "delivery-metadata-malformed",
+            _CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        var legacyReceived = await _storage.StoreReceivedMessageAsync(
+            "delivery-metadata-legacy",
+            "delivery-metadata-group",
+            _CreateMessage(),
+            AbortToken
+        );
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.ExecuteAsync(
+                "UPDATE messaging.published SET \"Content\" = @Content WHERE \"Id\" = @Id",
+                new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
+            );
+        }
+
+        var monitoring = _storage.GetMonitoringApi();
+        var publishedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+        var receivedPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Subscribe,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
+            AbortToken
+        );
+
+        var explicitView = publishedPage.Items.Single(x => x.StorageId == explicitPublished.StorageId);
+        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        explicitView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+
+        var malformedView = publishedPage.Items.Single(x => x.StorageId == malformedPublished.StorageId);
+        malformedView.RequestedDeliveryMode.Should().BeNull();
+        malformedView.ResolvedDeliveryMode.Should().BeNull();
+
+        var legacyView = receivedPage.Items.Single(x => x.StorageId == legacyReceived.StorageId);
+        legacyView.RequestedDeliveryMode.Should().BeNull();
+        legacyView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
     }
 
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;

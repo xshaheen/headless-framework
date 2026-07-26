@@ -34,6 +34,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         );
 
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
+        var sent = harness.TransportMessages.Should().ContainSingle().Which;
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
+        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
         await harness
             .Storage.DidNotReceive()
             .StoreMessageAsync(
@@ -74,6 +77,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportLanes.Should().BeEmpty();
         stored.Should().NotBeNull();
         stored!.Lane.Should().Be(MessageLane.Queue);
+        stored.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        stored.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         await harness.Dispatcher.Received(1).EnqueueToPublish(stored, Arg.Any<CancellationToken>());
     }
 
@@ -192,12 +197,14 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             ),
         ]);
         var transportLanes = new List<MessageLane>();
+        var transportMessages = new List<TransportMessage>();
         var publisher = new MessagePublisher(
             new JsonUtf8Serializer(options),
             _ => new BrokerAddress("Test", "localhost"),
-            (lane, _, _) =>
+            (lane, message, _) =>
             {
                 transportLanes.Add(lane);
+                transportMessages.Add(message);
                 return Task.FromResult(OperateResult.Success);
             },
             requestFactory,
@@ -209,7 +216,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             () => writer
         );
 
-        return new MessagePublisherHarness(publisher, storage, dispatcher, transportLanes, services);
+        return new MessagePublisherHarness(publisher, storage, dispatcher, transportLanes, transportMessages, services);
     }
 
     private sealed record DeliveryMessage(string Value);
@@ -219,6 +226,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         IDataStorage Storage,
         IDispatcher Dispatcher,
         List<MessageLane> TransportLanes,
+        List<TransportMessage> TransportMessages,
         ServiceProvider Services
     ) : IAsyncDisposable
     {

@@ -38,11 +38,17 @@ public sealed class MessagingInstrumentationOptions
     public bool SuppressRetryCountTag { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/>, the built-in intent tag enricher is not registered, so
-    /// <c>headless.messaging.intent</c> and <c>messaging.destination.kind</c> are not written
+    /// When <see langword="true"/>, the built-in lane tag enricher is not registered, so
+    /// <c>headless.messaging.lane</c> and <c>messaging.destination.kind</c> are not written
     /// to messaging activity spans. Default: <see langword="false"/>.
     /// </summary>
-    public bool SuppressIntentTags { get; set; }
+    public bool SuppressLaneTags { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, requested/resolved delivery-mode tags are not written to messaging spans.
+    /// Default: <see langword="false"/>.
+    /// </summary>
+    public bool SuppressDeliveryModeTags { get; set; }
 
     /// <summary>
     /// Custom enrichers appended after the built-in enrichers. Enrichers are invoked in insertion
@@ -53,7 +59,8 @@ public sealed class MessagingInstrumentationOptions
     /// Built-in enrichers run first, in the following order:
     /// <list type="number">
     /// <item><description><c>TenantIdTagEnricher</c> (unless <see cref="SuppressTenantIdTag"/> is <see langword="true"/>).</description></item>
-    /// <item><description><c>IntentTagEnricher</c> (unless <see cref="SuppressIntentTags"/> is <see langword="true"/>).</description></item>
+    /// <item><description><c>LaneTagEnricher</c> (unless <see cref="SuppressLaneTags"/> is <see langword="true"/>).</description></item>
+    /// <item><description><c>DeliveryModeTagEnricher</c> (unless <see cref="SuppressDeliveryModeTags"/> is <see langword="true"/>).</description></item>
     /// <item><description><c>RetryCountTagEnricher</c> (unless <see cref="SuppressRetryCountTag"/> is <see langword="true"/>).</description></item>
     /// </list>
     /// Custom enrichers added via <see cref="AddEnricher"/> are appended after the built-ins, in
@@ -75,8 +82,8 @@ public sealed class MessagingInstrumentationOptions
 
     /// <summary>
     /// Builds the snapshot of enrichers to register for the current options state. Returns the built-in
-    /// enrichers (gated by <see cref="SuppressTenantIdTag"/>, <see cref="SuppressIntentTags"/>, and
-    /// <see cref="SuppressRetryCountTag"/>) followed by any custom enrichers added via
+    /// enrichers (gated by <see cref="SuppressTenantIdTag"/>, <see cref="SuppressLaneTags"/>,
+    /// <see cref="SuppressDeliveryModeTags"/>, and <see cref="SuppressRetryCountTag"/>) followed by any custom enrichers added via
     /// <see cref="AddEnricher"/>, in registration order.
     /// </summary>
     /// <remarks>
@@ -94,9 +101,14 @@ public sealed class MessagingInstrumentationOptions
             list.Add(new TenantIdTagEnricher());
         }
 
-        if (!SuppressIntentTags)
+        if (!SuppressLaneTags)
         {
-            list.Add(new IntentTagEnricher());
+            list.Add(new LaneTagEnricher());
+        }
+
+        if (!SuppressDeliveryModeTags)
+        {
+            list.Add(new DeliveryModeTagEnricher());
         }
 
         if (!SuppressRetryCountTag)

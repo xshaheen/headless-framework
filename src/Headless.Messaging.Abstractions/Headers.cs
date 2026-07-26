@@ -100,6 +100,20 @@ public static class Headers
     public const string DelayTime = "headless-delay-time";
 
     /// <summary>
+    /// Delivery mode requested by the caller before coordination resolution.
+    /// Values are stable <see cref="DeliveryMode"/> names. This header is framework-owned and cannot be overridden.
+    /// Value: "headless-delivery-requested"
+    /// </summary>
+    public const string RequestedDeliveryMode = "headless-delivery-requested";
+
+    /// <summary>
+    /// Delivery mode selected by the framework after coordination resolution.
+    /// Values are stable <see cref="DeliveryMode"/> names. This header is framework-owned and cannot be overridden.
+    /// Value: "headless-delivery-resolved"
+    /// </summary>
+    public const string ResolvedDeliveryMode = "headless-delivery-resolved";
+
+    /// <summary>
     /// Exception information if the message processing failed.
     /// Contains the exception type name and message formatted as "ExceptionTypeName-->ExceptionMessage".
     /// Value: "headless-exception"
@@ -116,8 +130,8 @@ public static class Headers
     /// <summary>
     /// The publish intent of the message, stamped by the framework at publish time.
     /// Value is the stable legacy wire representation of <see cref="MessageLane"/> (<c>"Bus"</c> or <c>"Queue"</c>).
-    /// On the consume side the framework warns when the wire value disagrees with the registered
-    /// consumer intent so misconfigured producers surface early.
+    /// On the consume side the framework rejects unknown values before dispatch and warns when a recognized
+    /// value disagrees with the registered consumer lane. The registration-owned lane remains authoritative.
     /// Value: "headless-intent"
     /// </summary>
     public const string Intent = "headless-intent";

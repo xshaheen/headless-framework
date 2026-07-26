@@ -7,6 +7,7 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -305,13 +306,17 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
+        var delivery = DeliveryMetadata.ReadStoredHeaders(message.Origin.Headers);
+
         return Results.Json(
             new
             {
                 StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
-                message.Lane,
+                Lane = message.Lane.ToString("G"),
+                RequestedDeliveryMode = delivery.RequestedDeliveryMode?.ToString("G"),
+                ResolvedDeliveryMode = delivery.ResolvedDeliveryMode?.ToString("G"),
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -331,6 +336,8 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
+        var delivery = DeliveryMetadata.ReadStoredHeaders(message.Origin.Headers);
+
         return Results.Json(
             new
             {
@@ -338,7 +345,9 @@ public static class MessagingDashboardEndpoints
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
                 Group = message.Origin.GetGroup(),
-                message.Lane,
+                Lane = message.Lane.ToString("G"),
+                RequestedDeliveryMode = delivery.RequestedDeliveryMode?.ToString("G"),
+                ResolvedDeliveryMode = delivery.ResolvedDeliveryMode?.ToString("G"),
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -615,7 +624,9 @@ public static class MessagingDashboardEndpoints
             message.MessageId,
             message.Group,
             message.Name,
-            message.Lane,
+            Lane = message.Lane.ToString("G"),
+            RequestedDeliveryMode = message.RequestedDeliveryMode?.ToString("G"),
+            ResolvedDeliveryMode = message.ResolvedDeliveryMode?.ToString("G"),
             message.Content,
             message.Added,
             message.ExpiresAt,

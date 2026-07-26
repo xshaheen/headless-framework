@@ -41,6 +41,12 @@ public readonly struct MessagingEnrichmentContext
     /// </summary>
     public MessageLane Lane { get; init; }
 
+    /// <summary>Delivery mode requested by the caller, or <see langword="null"/> for legacy/unreadable metadata.</summary>
+    public DeliveryMode? RequestedDeliveryMode { get; init; }
+
+    /// <summary>Delivery mode resolved by the framework, or <see langword="null"/> for unreadable metadata.</summary>
+    public DeliveryMode? ResolvedDeliveryMode { get; init; }
+
     /// <summary>
     /// Tenant ID extracted from the <c>headless-tenant-id</c> wire header, or
     /// <see langword="null"/> when the header is absent.

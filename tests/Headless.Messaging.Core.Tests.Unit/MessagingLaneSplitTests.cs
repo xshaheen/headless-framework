@@ -17,10 +17,10 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class MessagingIntentSplitTests : TestBase
+public sealed class MessagingLaneSplitTests : TestBase
 {
     [Fact]
-    public void should_be_stable_when_intent_type_storage_values()
+    public void should_preserve_legacy_lane_storage_values()
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
@@ -31,7 +31,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_stamp_bus_intent_when_for_message_on_bus()
+    public void should_stamp_bus_lane_when_for_message_on_bus()
     {
         var services = new ServiceCollection();
 
@@ -48,7 +48,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_stamp_queue_intent_when_for_message_on_queue()
+    public void should_stamp_queue_lane_when_for_message_on_queue()
     {
         var services = new ServiceCollection();
 
@@ -65,7 +65,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_allow_same_topic_group_across_different_intents_when_consumer_registry()
+    public void should_allow_same_topic_group_across_different_lanes_when_consumer_registry()
     {
         var registry = new ConsumerRegistry();
 
@@ -154,7 +154,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         );
 
         // Register only the high-level markers; no IBusTransport and no ITransport so the legacy
-        // adapter cannot kick in either. The bootstrapper must surface the per-intent friendly
+        // adapter cannot kick in either. The bootstrapper must surface the per-lane friendly
         // message naming ForMessage<...>.
         services.AddSingleton(new MessagingMarkerService("Messaging"));
         services.AddSingleton(new MessageQueueMarkerService("TestTransport"));
@@ -265,7 +265,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task should_request_bus_intent_from_factory_and_trace_prepared_intent_when_bus_publish()
+    public async Task should_request_bus_lane_from_factory_and_trace_prepared_lane_when_bus_publish()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -304,7 +304,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
             && Equals(a.GetTagItem("messaging.destination.name"), "events.prepared")
         );
-        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
+        publishActivity.GetTagItem(MessagingTags.Lane).Should().Be("bus");
     }
 
     [Fact]
@@ -322,7 +322,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public async Task should_request_queue_intent_from_factory_and_trace_prepared_intent_when_queue_enqueue()
+    public async Task should_request_queue_lane_from_factory_and_trace_prepared_lane_when_queue_enqueue()
     {
         // given
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
@@ -361,7 +361,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             string.Equals(a.OperationName, "message.publish", StringComparison.Ordinal)
             && Equals(a.GetTagItem("messaging.destination.name"), "jobs.prepared")
         );
-        publishActivity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
+        publishActivity.GetTagItem(MessagingTags.Lane).Should().Be("queue");
     }
 
     private static IBus _CreateBus(IBusTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
@@ -453,7 +453,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_same_topic_group_and_intent_as_equal_when_descriptor_comparer()
+    public void should_treat_same_topic_group_and_lane_as_equal_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();

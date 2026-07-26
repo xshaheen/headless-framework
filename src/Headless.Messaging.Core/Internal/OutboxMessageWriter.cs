@@ -127,6 +127,7 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
+        DeliveryMetadata.Stamp(publishRequest.Message.Headers, decision);
         MessagingTraceHandle traceHandle = default;
         try
         {
@@ -154,7 +155,7 @@ internal sealed class OutboxMessageWriter(
                     )
                     .ConfigureAwait(false);
 
-                _TracingAfter(traceHandle, publishRequest.Message);
+                _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
                 var bufferState = new MessageOutboxBufferState(
                     dispatcher,
@@ -189,7 +190,7 @@ internal sealed class OutboxMessageWriter(
                 )
                 .ConfigureAwait(false);
 
-            _TracingAfter(traceHandle, publishRequest.Message);
+            _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
             if (decision.PublishAt is { } publishAt)
             {
@@ -255,7 +256,7 @@ internal sealed class OutboxMessageWriter(
         return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(MessagingTraceHandle traceHandle, Message message)
+    private void _TracingAfter(MessagingTraceHandle traceHandle, Message message, MessageLane lane)
     {
         if (!traceHandle.IsRecording)
         {
@@ -263,7 +264,14 @@ internal sealed class OutboxMessageWriter(
         }
 
         var now = _NowUnixTimeMilliseconds();
-        MessagingTelemetry.PersistStop(traceHandle.Activity, message.Name, traceHandle.StartTimestampMs!.Value, now);
+        MessagingTelemetry.PersistStop(
+            traceHandle.Activity,
+            message.Name,
+            traceHandle.StartTimestampMs!.Value,
+            now,
+            lane,
+            DeliveryMetadata.Read(message.Headers)
+        );
     }
 
     private static void _TracingError(MessagingTraceHandle traceHandle, Exception ex)

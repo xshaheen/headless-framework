@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Primitives;
@@ -188,20 +189,26 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             var pageItems = filtered
                 .Skip(offset)
                 .Take(size)
-                .Select(x => new MessageView
+                .Select(x =>
                 {
-                    Added = x.Added,
-                    StorageId = x.StorageId,
-                    MessageId = x.Origin.Id,
-                    Version = "N/A",
-                    Content = x.Content,
-                    Lane = x.Lane,
-                    ExpiresAt = x.ExpiresAt,
-                    Name = x.Name,
-                    Retries = x.Retries,
-                    StatusName = x.StatusName,
-                    NextRetryAt = x.NextRetryAt,
-                    LockedUntil = x.LockedUntil,
+                    var delivery = DeliveryMetadata.ReadStoredHeaders(x.Origin.Headers);
+                    return new MessageView
+                    {
+                        Added = x.Added,
+                        StorageId = x.StorageId,
+                        MessageId = x.Origin.Id,
+                        Version = "N/A",
+                        Content = x.Content,
+                        Lane = x.Lane,
+                        RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+                        ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
+                        ExpiresAt = x.ExpiresAt,
+                        Name = x.Name,
+                        Retries = x.Retries,
+                        StatusName = x.StatusName,
+                        NextRetryAt = x.NextRetryAt,
+                        LockedUntil = x.LockedUntil,
+                    };
                 })
                 .ToList();
 
@@ -247,21 +254,27 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             var pageItems = filtered
                 .Skip(offset)
                 .Take(size)
-                .Select(x => new MessageView
+                .Select(x =>
                 {
-                    Added = x.Added,
-                    Group = x.Group,
-                    StorageId = x.StorageId,
-                    MessageId = x.Origin.Id,
-                    Version = "N/A",
-                    Content = x.Content,
-                    Lane = x.Lane,
-                    ExpiresAt = x.ExpiresAt,
-                    Name = x.Name,
-                    Retries = x.Retries,
-                    StatusName = x.StatusName,
-                    NextRetryAt = x.NextRetryAt,
-                    LockedUntil = x.LockedUntil,
+                    var delivery = DeliveryMetadata.ReadStoredHeaders(x.Origin.Headers);
+                    return new MessageView
+                    {
+                        Added = x.Added,
+                        Group = x.Group,
+                        StorageId = x.StorageId,
+                        MessageId = x.Origin.Id,
+                        Version = "N/A",
+                        Content = x.Content,
+                        Lane = x.Lane,
+                        RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+                        ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
+                        ExpiresAt = x.ExpiresAt,
+                        Name = x.Name,
+                        Retries = x.Retries,
+                        StatusName = x.StatusName,
+                        NextRetryAt = x.NextRetryAt,
+                        LockedUntil = x.LockedUntil,
+                    };
                 })
                 .ToList();
 

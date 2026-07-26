@@ -1403,7 +1403,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             {
                 Retries = 50,
                 Version = "v1",
-                Lane = (short)MessageLane.Queue,
+                IntentType = (short)MessageLane.Queue,
             },
             transaction: transaction
         );

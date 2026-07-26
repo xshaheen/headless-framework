@@ -57,11 +57,13 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(AbortToken);
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(AbortToken);
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
         payload.Should().ContainKey("lane");
-        ((JsonElement)payload["lane"]!).GetInt32().Should().Be((int)MessageLane.Bus);
+        payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
+        payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
+        payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
     }
 
     [Fact]
@@ -86,7 +88,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_bind_intent_filter_and_project_intent_with_pagination_metadata_when_published_list()
+    public async Task should_bind_lane_filter_and_project_delivery_metadata_with_pagination_when_published_list()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -98,6 +100,8 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Version = "v1",
                     Name = "orders.created",
                     Lane = MessageLane.Queue,
+                    RequestedDeliveryMode = DeliveryMode.Auto,
+                    ResolvedDeliveryMode = DeliveryMode.Durable,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
@@ -143,8 +147,9 @@ public sealed class PublishedMessageEndpointTests : TestBase
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
-        item.GetProperty("lane").GetInt32().Should().Be((int)MessageLane.Queue);
-
+        item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Auto));
+        item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Durable));
         await _monitoringApi
             .Received(1)
             .GetMessagesAsync(

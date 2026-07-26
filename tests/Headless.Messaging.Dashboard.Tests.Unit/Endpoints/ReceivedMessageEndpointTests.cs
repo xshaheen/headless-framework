@@ -58,13 +58,15 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(
             cancellationToken: AbortToken
         );
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
         payload.Should().ContainKey("lane");
-        ((JsonElement)payload["lane"]!).GetInt32().Should().Be((int)MessageLane.Bus);
+        payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
+        payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
+        payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_bind_intent_filter_and_project_intent_with_pagination_metadata_when_received_list()
+    public async Task should_bind_lane_filter_and_project_delivery_metadata_with_pagination_when_received_list()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -102,6 +104,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     Name = "orders.received",
                     Group = "workers",
                     Lane = MessageLane.Queue,
+                    RequestedDeliveryMode = DeliveryMode.TransportDirect,
+                    ResolvedDeliveryMode = DeliveryMode.TransportDirect,
                     Content = "{\"received\":\"data\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 11, 00, 00, TimeSpan.Zero),
                     Retries = 1,
@@ -145,7 +149,9 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111456");
         item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
         item.GetProperty("group").GetString().Should().Be("workers");
-        item.GetProperty("lane").GetInt32().Should().Be((int)MessageLane.Queue);
+        item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
+        item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
 
         await _monitoringApi
             .Received(1)

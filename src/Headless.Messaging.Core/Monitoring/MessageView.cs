@@ -26,6 +26,15 @@ public class MessageView
     /// <summary>Gets or sets the delivery lane that produced this row.</summary>
     public MessageLane Lane { get; set; }
 
+    /// <summary>Gets the caller-requested delivery mode, or <see langword="null"/> for legacy/unreadable metadata.</summary>
+    public DeliveryMode? RequestedDeliveryMode { get; set; }
+
+    /// <summary>
+    /// Gets the resolved delivery mode. Legacy readable stored envelopes resolve to <see cref="DeliveryMode.Durable"/>;
+    /// unreadable envelopes expose <see langword="null"/> without failing the containing page.
+    /// </summary>
+    public DeliveryMode? ResolvedDeliveryMode { get; set; }
+
     /// <summary>Gets or sets the serialized message body, or <see langword="null"/> when the content was not projected.</summary>
     public string? Content { get; set; }
 

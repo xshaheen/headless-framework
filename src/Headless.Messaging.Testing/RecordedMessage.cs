@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using MsgHeaders = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Testing;
@@ -51,8 +52,14 @@ public sealed record RecordedMessage
     /// <summary>The message name the message was published to or consumed from.</summary>
     public required string MessageName { get; init; }
 
-    /// <summary>The bus/queue intent that produced the observation.</summary>
+    /// <summary>The bus/queue lane that produced the observation.</summary>
     public required MessageLane Lane { get; init; }
+
+    /// <summary>The caller-requested delivery mode, or <see langword="null"/> for legacy/unreadable metadata.</summary>
+    public DeliveryMode? RequestedDeliveryMode { get; init; }
+
+    /// <summary>The framework-resolved delivery mode, or <see langword="null"/> for unreadable metadata.</summary>
+    public DeliveryMode? ResolvedDeliveryMode { get; init; }
 
     /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
@@ -81,6 +88,7 @@ public sealed record RecordedMessage
         var messageName = headers.TryGetValue(MsgHeaders.MessageName, out var name)
             ? name ?? string.Empty
             : string.Empty;
+        var delivery = DeliveryMetadata.Read(headers);
 
         return new RecordedMessage
         {
@@ -91,6 +99,8 @@ public sealed record RecordedMessage
             Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
             MessageName = messageName,
             Lane = lane,
+            RequestedDeliveryMode = delivery.RequestedDeliveryMode,
+            ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
             Timestamp = timestamp,
             Exception = exception,
         };

@@ -26,10 +26,13 @@
               size="x-small"
               variant="tonal"
               class="ml-1"
-            >{{ status.badgeCount }}</v-chip>
+              >{{ status.badgeCount }}</v-chip
+            >
             <v-tooltip v-if="status.tooltip" location="bottom" max-width="300">
               <template #activator="{ props: tp }">
-                <v-icon v-bind="tp" size="14" class="ml-1 status-info-icon">mdi-information-outline</v-icon>
+                <v-icon v-bind="tp" size="14" class="ml-1 status-info-icon"
+                  >mdi-information-outline</v-icon
+                >
               </template>
               {{ status.tooltip }}
             </v-tooltip>
@@ -39,6 +42,15 @@
 
       <!-- Filters -->
       <div class="filters-row mb-4">
+        <v-select
+          v-model="laneFilter"
+          :items="laneOptions"
+          label="Filter by lane"
+          prepend-inner-icon="mdi-directions-fork"
+          clearable
+          class="lane-filter"
+          @update:model-value="applyLaneFilter"
+        />
         <v-text-field
           v-model="nameFilter"
           label="Filter by name"
@@ -92,7 +104,7 @@
       </div>
 
       <!-- Table -->
-      <TableSkeleton v-if="isLoading" :rows="5" :columns="8" />
+      <TableSkeleton v-if="isLoading" :rows="5" :columns="11" />
 
       <v-card v-else class="messages-card">
         <v-table density="comfortable" class="messages-table">
@@ -110,6 +122,9 @@
               <th>Message ID</th>
               <th>Name</th>
               <th>Group</th>
+              <th>Lane</th>
+              <th>Requested</th>
+              <th>Resolved</th>
               <th>Added</th>
               <th>Expires At</th>
               <th>Retries</th>
@@ -117,7 +132,7 @@
           </thead>
           <tbody>
             <tr v-if="messages.length === 0">
-              <td colspan="8" class="text-center pa-6 text-medium-emphasis">No messages found</td>
+              <td colspan="11" class="text-center pa-6 text-medium-emphasis">No messages found</td>
             </tr>
             <tr v-for="msg in messages" :key="msg.storageId">
               <td>
@@ -134,6 +149,11 @@
               <td class="text-caption">{{ msg.messageId }}</td>
               <td>{{ msg.name }}</td>
               <td>{{ msg.group }}</td>
+              <td>
+                <v-chip size="x-small" color="info" variant="tonal">{{ msg.lane }}</v-chip>
+              </td>
+              <td class="text-caption">{{ msg.requestedDeliveryMode ?? '—' }}</td>
+              <td class="text-caption">{{ msg.resolvedDeliveryMode ?? '—' }}</td>
               <td class="text-caption">
                 <v-tooltip :text="timeAgo(msg.added)" location="top">
                   <template #activator="{ props: tp }">
@@ -193,7 +213,11 @@ import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
 import PaginationFooter from '@/components/common/PaginationFooter.vue'
-import MessageDetailDialog, { type MessageDetail } from '@/components/MessageDetailDialog.vue'
+import MessageDetailDialog, {
+  type DeliveryMode,
+  type MessageDetail,
+  type MessageLane,
+} from '@/components/MessageDetailDialog.vue'
 
 interface ReceivedMessage {
   storageId: string
@@ -204,6 +228,9 @@ interface ReceivedMessage {
   expiresAt: string
   retries: number
   statusName: string
+  lane: MessageLane
+  requestedDeliveryMode: DeliveryMode | null
+  resolvedDeliveryMode: DeliveryMode | null
 }
 
 const alertStore = useAlertStore()
@@ -223,7 +250,8 @@ const statusTabs = computed(() => [
     value: 'Failed',
     badgeCount: stats.value.receivedFailed,
     badgeColor: 'error',
-    tooltip: 'Messages whose consumer threw an exception after all retry attempts. Can be re-executed manually.',
+    tooltip:
+      'Messages whose consumer threw an exception after all retry attempts. Can be re-executed manually.',
   },
   {
     label: 'Delayed',
@@ -243,6 +271,8 @@ const statusTabs = computed(() => [
 ])
 
 const activeStatus = ref('Succeeded')
+const laneOptions: readonly MessageLane[] = ['Bus', 'Queue']
+const laneFilter = ref<MessageLane | null>(null)
 const nameFilter = ref('')
 const groupFilter = ref('')
 const contentFilter = ref('')
@@ -279,6 +309,7 @@ async function loadMessages(page?: number, pageSize?: number) {
       currentPage: String(p),
       perPage: String(ps),
     })
+    if (laneFilter.value) params.set('lane', laneFilter.value)
     if (nameFilter.value) params.set('name', nameFilter.value)
     if (groupFilter.value) params.set('group', groupFilter.value)
     if (contentFilter.value) params.set('content', contentFilter.value)
@@ -309,6 +340,11 @@ function debouncedLoad() {
     pagination.currentPage.value = 1
     loadMessages()
   }, 400)
+}
+
+function applyLaneFilter() {
+  pagination.currentPage.value = 1
+  loadMessages()
 }
 
 watch(activeStatus, () => {
@@ -455,6 +491,10 @@ loadMessages()
   flex: 1;
 }
 
+.lane-filter {
+  flex: 0 0 180px;
+}
+
 .batch-actions {
   display: flex;
   align-items: center;
@@ -486,6 +526,10 @@ loadMessages()
 
   .filters-row {
     flex-direction: column;
+  }
+
+  .lane-filter {
+    flex-basis: auto;
   }
 }
 </style>
