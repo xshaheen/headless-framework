@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -20,7 +21,7 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage, IDelayedMessageClaimStorage
+) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -43,6 +44,18 @@ internal sealed partial class InMemoryDataStorage(
     // rows for the same (Version, MessageId, Group) tuple. Renamed from _receivedExceptionUpsertLock
     // when the consume path adopted the same check-then-insert pattern in R3.
     private readonly Lock _receivedUpsertLock = new();
+
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    {
+        if (coordinator.State is not CommitCoordinatorState.Active)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+
+        return coordinator.TryGetCapability<IRelationalCommitContext>(out _)
+            ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
+            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+    }
 
     public void Clear()
     {

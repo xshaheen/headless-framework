@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -31,7 +32,7 @@ internal sealed partial class SqlServerDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<SqlServerDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage
+) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -63,6 +64,37 @@ internal sealed partial class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
+
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    {
+        if (coordinator.State is not CommitCoordinatorState.Active)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+
+        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        }
+
+        if (relational.Transaction is not SqlTransaction transaction || transaction.Connection is not { } connection)
+        {
+            return relational.Transaction is null
+                ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction)
+                : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+        }
+
+        using var configuredConnection = new SqlConnection(options.Value.ConnectionString);
+        if (
+            !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(configuredConnection.Database, connection.Database, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
+        }
+
+        return DeliveryCoordination.Compatible(coordinator, transaction);
+    }
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.

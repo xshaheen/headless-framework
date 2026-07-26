@@ -90,11 +90,10 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task should_fall_back_to_immediate_dispatch_when_relational_capability_has_null_transaction()
+    public async Task should_reject_active_coordination_with_null_transaction_before_side_effects()
     {
-        // Ambient coordinator present, relational capability present — but its Transaction is null (e.g. the EF
-        // context has no active transaction). _TryCaptureCoordinatedContext must NOT enlist; the publish drops to
-        // the immediate non-transactional path: stored with a null transaction and dispatched in-band.
+        // Ambient coordination is authoritative. A torn-down relational capability must reject instead of silently
+        // falling back to a non-transactional durable write.
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -104,60 +103,39 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         await using (scope)
         {
             var storage = Substitute.For<IDataStorage>();
-            MediumMessage? stored = null;
-            storage
-                .StoreMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                )
-                .Returns(call =>
-                {
-                    call[2].Should().BeNull("a null relational transaction must store non-transactionally");
-                    var mediumMessage = new MediumMessage
-                    {
-                        StorageId = Guid.NewGuid(),
-                        Origin = ((MediumMessage)call[1]).Origin,
-                        Content = "{}",
-                        IntentType = IntentType.Bus,
-                        Added = DateTimeOffset.UtcNow,
-                    };
-                    stored = mediumMessage;
-
-                    return ValueTask.FromResult(mediumMessage);
-                });
-
             var dispatcher = Substitute.For<IDispatcher>();
-            dispatcher
-                .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
-                .Returns(ValueTask.CompletedTask);
 
             var writer = new OutboxMessageWriter(
                 storage,
                 dispatcher,
                 _CreatePublishRequestFactory(),
                 stack,
-                new NoopPublishMiddlewarePipeline(expectTransactional: false),
+                new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
                 NullLogger<MessageOutboxBuffer>.Instance
             );
 
-            await writer.PublishAsync(
-                new CoordinatorMessage("value"),
-                options: null,
-                intentType: IntentType.Bus,
-                AbortToken
-            );
+            var act = () =>
+                writer.PublishAsync(
+                    new CoordinatorMessage("value"),
+                    options: null,
+                    intentType: IntentType.Bus,
+                    AbortToken
+                );
 
-            // Dispatched in-band, not buffered on the coordinator.
-            await dispatcher.Received(1).EnqueueToPublish(stored!, Arg.Any<CancellationToken>());
-
-            await scope.SignalAsync(CommitOutcome.Committed);
-
-            // Committing the scope must not re-dispatch — the message was never enlisted.
-            await dispatcher.Received(1).EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*coordination*MissingRelationalCapability*");
+            _ = storage
+                .DidNotReceive()
+                .StoreMessageAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<DbTransaction?>(),
+                    Arg.Any<CancellationToken>()
+                );
+            _ = dispatcher.DidNotReceiveWithAnyArgs().EnqueueToPublish(default!, default);
         }
     }
 
@@ -403,7 +381,6 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         )
         {
             isTransactional.Should().Be(expectTransactional);
-
             return innerPublish(messageOptions, delayTime, cancellationToken);
         }
 
@@ -418,8 +395,36 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         )
         {
             isTransactional.Should().Be(expectTransactional);
-
             return innerPublish(messageOptions, delayTime, cancellationToken);
+        }
+
+        public Task ExecuteAsync(
+            object? contentObj,
+            Type declaredMessageType,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
+            CancellationToken cancellationToken = default
+        )
+        {
+            decision.IsTransactional.Should().Be(expectTransactional);
+
+            return innerPublish(messageOptions, cancellationToken);
+        }
+
+        public Task ExecuteAsync<T>(
+            T? contentObj,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
+            CancellationToken cancellationToken = default
+        )
+        {
+            decision.IsTransactional.Should().Be(expectTransactional);
+
+            return innerPublish(messageOptions, cancellationToken);
         }
     }
 

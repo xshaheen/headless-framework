@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -32,7 +33,7 @@ internal sealed partial class PostgreSqlDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<PostgreSqlDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage
+) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -65,6 +66,37 @@ internal sealed partial class PostgreSqlDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
+
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    {
+        if (coordinator.State is not CommitCoordinatorState.Active)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+
+        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        }
+
+        if (relational.Transaction is not NpgsqlTransaction transaction || transaction.Connection is not { } connection)
+        {
+            return relational.Transaction is null
+                ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction)
+                : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+        }
+
+        using var configuredConnection = postgreSqlOptions.Value.CreateConnection();
+        if (
+            !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(configuredConnection.Database, connection.Database, StringComparison.Ordinal)
+        )
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
+        }
+
+        return DeliveryCoordination.Compatible(coordinator, transaction);
+    }
 
     /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.

@@ -16,6 +16,15 @@ internal interface IMessagePublishRequestFactory
     PreparedPublishMessage Create(
         object? contentObj,
         Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan delayTime,
+        DateTimeOffset publishAt,
+        IntentType intentType
+    );
+
+    PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
         MessageOptions? options = null,
         TimeSpan? delayTime = null,
         IntentType intentType = IntentType.Bus
@@ -79,6 +88,31 @@ internal sealed class MessagePublishRequestFactory(
         IntentType intentType = IntentType.Bus
     )
     {
+        var publishAt = _ResolvePublishAt(delayTime);
+        return _Create(contentObj, declaredMessageType, options, delayTime, publishAt, intentType);
+    }
+
+    public PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan delayTime,
+        DateTimeOffset publishAt,
+        IntentType intentType
+    )
+    {
+        return _Create(contentObj, declaredMessageType, options, delayTime, publishAt, intentType);
+    }
+
+    private PreparedPublishMessage _Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        DateTimeOffset publishAt,
+        IntentType intentType
+    )
+    {
         Argument.IsNotNull(declaredMessageType);
         var lane = MessageLaneCompatibility.ToLane(intentType);
 
@@ -99,8 +133,6 @@ internal sealed class MessagePublishRequestFactory(
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
             consumeContextAccessor?.Current?.CorrelationId
         );
-        var publishAt = _ResolvePublishAt(delayTime);
-
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

@@ -2,7 +2,7 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Serialization;
-using Microsoft.Extensions.DependencyInjection;
+using Headless.Messaging.Transactions;
 
 namespace Headless.Messaging.Internal;
 
@@ -12,32 +12,12 @@ internal sealed class Queue : IQueue
         MessagingProviderCapabilities.Transport("Direct", [MessageLane.Queue], supportsIndependentLaneTopology: true),
     ]);
 
-    private readonly Func<IQueueTransport> _transportResolver;
-    private readonly ISerializer _serializer;
-    private readonly IMessagePublishRequestFactory _publishRequestFactory;
-    private readonly IPublishMiddlewarePipeline _publishPipeline;
-    private readonly TimeProvider _timeProvider;
-    private readonly IMessageCapabilityGate _capabilities;
-    private readonly MessagingTelemetry _telemetry;
+    private readonly MessagePublisher _publisher;
 
-    internal Queue(
-        ISerializer serializer,
-        IServiceProvider serviceProvider,
-        IMessagePublishRequestFactory publishRequestFactory,
-        IPublishMiddlewarePipeline publishPipeline,
-        TimeProvider timeProvider,
-        IMessageCapabilityGate capabilities,
-        MessagingTelemetry? telemetry = null
-    )
-        : this(
-            serializer,
-            () => serviceProvider.GetRequiredService<IQueueTransport>(),
-            publishRequestFactory,
-            publishPipeline,
-            timeProvider,
-            capabilities,
-            telemetry
-        ) { }
+    internal Queue(MessagePublisher publisher)
+    {
+        _publisher = publisher;
+    }
 
     internal Queue(
         ISerializer serializer,
@@ -47,33 +27,20 @@ internal sealed class Queue : IQueue
         TimeProvider timeProvider,
         MessagingTelemetry? telemetry = null
     )
-        : this(
+    {
+        _publisher = new MessagePublisher(
             serializer,
-            () => transport,
+            _ => transport.BrokerAddress,
+            (_, message, cancellationToken) => transport.SendAsync(message, cancellationToken),
             publishRequestFactory,
             publishPipeline,
             timeProvider,
             _DirectConstructionCapabilities,
+            new MessagingNullCommitCoordinator(),
+            static () => null,
+            static () => null,
             telemetry
-        ) { }
-
-    private Queue(
-        ISerializer serializer,
-        Func<IQueueTransport> transportResolver,
-        IMessagePublishRequestFactory publishRequestFactory,
-        IPublishMiddlewarePipeline publishPipeline,
-        TimeProvider timeProvider,
-        IMessageCapabilityGate capabilities,
-        MessagingTelemetry? telemetry
-    )
-    {
-        _serializer = serializer;
-        _transportResolver = transportResolver;
-        _publishRequestFactory = publishRequestFactory;
-        _publishPipeline = publishPipeline;
-        _timeProvider = timeProvider;
-        _capabilities = capabilities;
-        _telemetry = telemetry ?? MessagingTelemetry.Default;
+        );
     }
 
     public Task EnqueueAsync<T>(
@@ -82,43 +49,6 @@ internal sealed class Queue : IQueue
         CancellationToken cancellationToken = default
     )
     {
-        _capabilities.EnsureDirectSupported(MessageLane.Queue);
-        var transport = _transportResolver();
-        var declaredMessageType = options?.MessageType ?? typeof(T);
-
-        return _publishPipeline.ExecuteAsync(
-            contentObj,
-            IntentType.Queue,
-            // Delay on EnqueueOptions is ignored by the direct publisher; delayTime=null ensures
-            // no scheduling side-effect regardless of what the caller set.
-            options,
-            delayTime: null,
-            innerPublish: (middlewareOptions, _, ct) =>
-            {
-                var publishRequest = _publishRequestFactory.Create(
-                    contentObj,
-                    declaredMessageType,
-                    middlewareOptions,
-                    intentType: IntentType.Queue
-                );
-                return DirectPublisherCore.SendAsync(
-                    publishRequest.Message,
-                    publishRequest.IntentType,
-                    _serializer,
-                    transport.BrokerAddress,
-                    transport.SendAsync,
-                    _NowUnixTimeMilliseconds,
-                    _telemetry,
-                    ct
-                );
-            },
-            isTransactional: false,
-            cancellationToken
-        );
-    }
-
-    private long _NowUnixTimeMilliseconds()
-    {
-        return _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        return _publisher.PublishAsync(MessageLane.Queue, contentObj, options, options?.Delay, cancellationToken);
     }
 }

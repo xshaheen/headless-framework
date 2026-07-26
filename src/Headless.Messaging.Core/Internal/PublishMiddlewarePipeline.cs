@@ -34,6 +34,25 @@ internal interface IPublishMiddlewarePipeline
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     );
+
+    Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
+
+    Task ExecuteAsync<T>(
+        T? content,
+        IntentType intentType,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class PublishMiddlewarePipeline(
@@ -66,13 +85,56 @@ internal sealed class PublishMiddlewarePipeline(
     private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
     private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
 
-    public async Task ExecuteAsync<T>(
+    public Task ExecuteAsync<T>(
         T? content,
         IntentType intentType,
         MessageOptions? options,
         TimeSpan? delayTime,
         Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
         bool isTransactional = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var decision = _CreateLegacyDecision(intentType, options, delayTime, isTransactional);
+        return ExecuteAsync(
+            content,
+            intentType,
+            options,
+            decision,
+            (middlewareOptions, ct) => innerPublish(middlewareOptions, delayTime, ct),
+            cancellationToken
+        );
+    }
+
+    public Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        bool isTransactional = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var decision = _CreateLegacyDecision(intentType, options, delayTime, isTransactional);
+        return ExecuteAsync(
+            content,
+            declaredMessageType,
+            intentType,
+            options,
+            decision,
+            (middlewareOptions, ct) => innerPublish(middlewareOptions, delayTime, ct),
+            cancellationToken
+        );
+    }
+
+    public async Task ExecuteAsync<T>(
+        T? content,
+        IntentType intentType,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     )
     {
@@ -85,23 +147,15 @@ internal sealed class PublishMiddlewarePipeline(
                     declaredMessageType,
                     intentType,
                     options,
-                    delayTime,
+                    decision,
                     innerPublish,
-                    isTransactional,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             return;
         }
 
-        var context = new PublishContext<T>(
-            content,
-            intentType,
-            options,
-            delayTime,
-            isTransactional,
-            cancellationToken
-        );
+        var context = new PublishContext<T>(content, intentType, options, decision, cancellationToken);
         await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
     }
 
@@ -110,29 +164,20 @@ internal sealed class PublishMiddlewarePipeline(
         Type declaredMessageType,
         IntentType intentType,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-        bool isTransactional = false,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var context = _CreateContext(
-            content,
-            declaredMessageType,
-            intentType,
-            options,
-            delayTime,
-            isTransactional,
-            cancellationToken
-        );
+        var context = _CreateContext(content, declaredMessageType, intentType, options, decision, cancellationToken);
         await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
     }
 
     private async Task _ExecuteAsync(
         PublishContext context,
-        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish
+        Func<MessageOptions?, CancellationToken, Task> innerPublish
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -147,7 +192,7 @@ internal sealed class PublishMiddlewarePipeline(
 
         Func<ValueTask> next = async () =>
         {
-            await innerPublish(context.Options, context.DelayTime, context.CancellationToken).ConfigureAwait(false);
+            await innerPublish(context.Options, context.CancellationToken).ConfigureAwait(false);
             innerRingCompleted.Value = true;
             _MarkCompleted(context);
         };
@@ -167,8 +212,7 @@ internal sealed class PublishMiddlewarePipeline(
         Type declaredMessageType,
         IntentType intentType,
         MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional,
+        DeliveryDecision decision,
         CancellationToken cancellationToken
     )
     {
@@ -191,12 +235,30 @@ internal sealed class PublishMiddlewarePipeline(
                     content?.GetType() ?? declaredMessageType,
                     intentType,
                     options,
-                    delayTime,
-                    isTransactional,
+                    decision,
+                    true,
                     cancellationToken,
                 ],
                 culture: null
             )!;
+    }
+
+    private static DeliveryDecision _CreateLegacyDecision(
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        bool isTransactional
+    )
+    {
+        return new DeliveryDecision(
+            MessageLaneCompatibility.ToLane(intentType),
+            options?.DeliveryMode ?? DeliveryMode.Auto,
+            isTransactional ? DeliveryMode.Durable : DeliveryMode.TransportDirect,
+            isTransactional ? DeliveryPath.DurableCoordinated : DeliveryPath.TransportDirect,
+            delayTime,
+            PublishAt: null,
+            DeliveryCoordination.None
+        );
     }
 
     private async ValueTask _InvokeAsync(

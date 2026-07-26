@@ -203,29 +203,43 @@ public static class SetupMessaging
 
         // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
         // only after the immutable capability gate accepts the individual call.
-        services.TryAddSingleton<IBus>(sp => new Bus(
+        services.TryAddSingleton(sp => new MessagePublisher(
             sp.GetRequiredService<ISerializer>(),
-            sp,
+            lane =>
+                lane switch
+                {
+                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>().BrokerAddress,
+                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>().BrokerAddress,
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(lane),
+                        lane,
+                        "A defined messaging lane is required."
+                    ),
+                },
+            (lane, message, cancellationToken) =>
+                lane switch
+                {
+                    MessageLane.Bus => sp.GetRequiredService<IBusTransport>().SendAsync(message, cancellationToken),
+                    MessageLane.Queue => sp.GetRequiredService<IQueueTransport>().SendAsync(message, cancellationToken),
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(lane),
+                        lane,
+                        "A defined messaging lane is required."
+                    ),
+                },
             sp.GetRequiredService<IMessagePublishRequestFactory>(),
             sp.GetRequiredService<IPublishMiddlewarePipeline>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<IMessageCapabilityGate>(),
+            sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
+            () => sp.GetService<IDeliveryCoordinationResolver>(),
+            () => sp.GetService<OutboxMessageWriter>(),
             sp.GetService<MessagingTelemetry>()
         ));
-        services.TryAddSingleton<IQueue>(sp => new Queue(
-            sp.GetRequiredService<ISerializer>(),
-            sp,
-            sp.GetRequiredService<IMessagePublishRequestFactory>(),
-            sp.GetRequiredService<IPublishMiddlewarePipeline>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<IMessageCapabilityGate>(),
-            sp.GetService<MessagingTelemetry>()
-        ));
-        services.TryAddSingleton<IOutboxBus>(sp => new OutboxBus(sp, sp.GetRequiredService<IMessageCapabilityGate>()));
-        services.TryAddSingleton<IOutboxQueue>(sp => new OutboxQueue(
-            sp,
-            sp.GetRequiredService<IMessageCapabilityGate>()
-        ));
+        services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
+        services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
+        services.TryAddSingleton<IOutboxBus>(sp => new OutboxBus(sp.GetRequiredService<IBus>()));
+        services.TryAddSingleton<IOutboxQueue>(sp => new OutboxQueue(sp.GetRequiredService<IQueue>()));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that

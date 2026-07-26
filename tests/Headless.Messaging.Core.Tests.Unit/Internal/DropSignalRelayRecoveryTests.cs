@@ -147,6 +147,31 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         {
             return innerPublish(messageOptions, delayTime, cancellationToken);
         }
+
+        public Task ExecuteAsync(
+            object? contentObj,
+            Type declaredMessageType,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return innerPublish(messageOptions, cancellationToken);
+        }
+
+        public Task ExecuteAsync<T>(
+            T? contentObj,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            DeliveryDecision decision,
+            Func<MessageOptions?, CancellationToken, Task> innerPublish,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return innerPublish(messageOptions, cancellationToken);
+        }
     }
 
     private sealed class TestDbTransaction : DbTransaction

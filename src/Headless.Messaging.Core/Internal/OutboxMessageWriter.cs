@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using System.Diagnostics;
 using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
@@ -41,26 +40,31 @@ internal sealed class OutboxMessageWriter(
         // pipeline await. Re-reading ICurrentCommitCoordinator.Current inside _PublishInternalAsync (after the
         // middleware await) could observe a torn-down scope and silently fall through to the non-transactional
         // immediate path — dispatching to the broker non-atomically with the transaction.
-        var coordinated = _TryCaptureCoordinatedContext();
+        var coordination = _TryCaptureCoordination();
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLaneCompatibility.ToLane(intentType),
+            DeliveryMode.Durable,
+            delay: null,
+            coordination,
+            timeProvider.GetUtcNow()
+        );
 
         return publishPipeline.ExecuteAsync(
             contentObj,
             intentType,
             options,
-            delayTime: null,
-            // DelayTime is undefined for the immediate publish path; ignored.
-            innerPublish: (middlewareOptions, _, ct) =>
-                _PublishInternalAsync(
+            decision,
+            innerPublish: (middlewareOptions, ct) =>
+                WriteAsync(
                     publishRequestFactory.Create(
                         contentObj,
                         declaredMessageType,
                         middlewareOptions,
                         intentType: intentType
                     ),
-                    coordinated,
+                    decision,
                     ct
                 ),
-            isTransactional: coordinated is not null,
             cancellationToken
         );
     }
@@ -74,39 +78,38 @@ internal sealed class OutboxMessageWriter(
     )
     {
         var declaredMessageType = options?.MessageType ?? typeof(T);
-        var coordinated = _TryCaptureCoordinatedContext();
+        var coordination = _TryCaptureCoordination();
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLaneCompatibility.ToLane(intentType),
+            DeliveryMode.Durable,
+            delayTime,
+            coordination,
+            timeProvider.GetUtcNow()
+        );
 
         return publishPipeline.ExecuteAsync(
             contentObj,
             intentType,
             options,
-            delayTime,
-            innerPublish: (middlewareOptions, middlewareDelay, ct) =>
-            {
-                // Middleware mutated DelayTime to null -> drop to immediate-publish path; otherwise use the
-                // middleware-mutated value, falling back to the caller-supplied delay if middleware left it untouched.
-                var request = middlewareDelay.HasValue
-                    ? publishRequestFactory.Create(
+            decision,
+            innerPublish: (middlewareOptions, ct) =>
+                WriteAsync(
+                    publishRequestFactory.Create(
                         contentObj,
                         declaredMessageType,
                         middlewareOptions,
-                        middlewareDelay.Value,
+                        delayTime,
+                        decision.PublishAt!.Value,
                         intentType
-                    )
-                    : publishRequestFactory.Create(
-                        contentObj,
-                        declaredMessageType,
-                        middlewareOptions,
-                        intentType: intentType
-                    );
-                return _PublishInternalAsync(request, coordinated, ct);
-            },
-            isTransactional: coordinated is not null,
+                    ),
+                    decision,
+                    ct
+                ),
             cancellationToken
         );
     }
 
-    private CoordinatedPublishContext? _TryCaptureCoordinatedContext()
+    private DeliveryCoordination _TryCaptureCoordination()
     {
         var coordinator = currentCommitCoordinator.Current;
 
@@ -115,15 +118,17 @@ internal sealed class OutboxMessageWriter(
             && relationalCommitContext.Transaction is { } transaction
         )
         {
-            return new CoordinatedPublishContext(coordinator, transaction);
+            return DeliveryCoordination.Compatible(coordinator, transaction);
         }
 
-        return null;
+        return coordinator is null
+            ? DeliveryCoordination.None
+            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
     }
 
-    private async Task _PublishInternalAsync(
+    internal async Task WriteAsync(
         PreparedPublishMessage publishRequest,
-        CoordinatedPublishContext? coordinated,
+        DeliveryDecision decision,
         CancellationToken cancellationToken
     )
     {
@@ -135,13 +140,21 @@ internal sealed class OutboxMessageWriter(
             // Use the coordinator/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
             // to the non-atomic immediate path.
-            if (coordinated is { } context)
+            if (decision.Path is DeliveryPath.DurableCoordinated)
             {
+                var coordinator =
+                    decision.Coordination.Coordinator
+                    ?? throw new InvalidOperationException("Coordinated delivery is missing its commit coordinator.");
+                var transaction =
+                    decision.Coordination.Transaction
+                    ?? throw new InvalidOperationException(
+                        "Coordinated delivery is missing its relational transaction."
+                    );
                 var mediumMessage = await storage
                     .StoreMessageAsync(
                         publishRequest.MessageName,
                         _CreateStorageEnvelope(publishRequest),
-                        context.Transaction,
+                        transaction,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -154,7 +167,7 @@ internal sealed class OutboxMessageWriter(
                     timeProvider,
                     outboxBufferLogger
                 );
-                var buffer = context.Coordinator.GetOrAdd(
+                var buffer = coordinator.GetOrAdd(
                     bufferState,
                     static (coordinator, state) =>
                         new MessageOutboxBuffer(
@@ -183,12 +196,12 @@ internal sealed class OutboxMessageWriter(
 
             _TracingAfter(traceHandle, publishRequest.Message);
 
-            if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
+            if (decision.PublishAt is { } publishAt)
             {
                 await dispatcher
                     .EnqueueToScheduler(
                         immediateMessage,
-                        publishRequest.PublishAt,
+                        publishAt,
                         transaction: null,
                         cancellationToken: cancellationToken
                     )
@@ -220,10 +233,6 @@ internal sealed class OutboxMessageWriter(
         TimeProvider TimeProvider,
         ILogger<MessageOutboxBuffer> Logger
     );
-
-    // The ambient coordinator + relational transaction captured once at publish time, carried through the pipeline so
-    // the inner publish never re-reads the AsyncLocal Current after an await.
-    private readonly record struct CoordinatedPublishContext(ICommitCoordinator Coordinator, DbTransaction Transaction);
 
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)
     {

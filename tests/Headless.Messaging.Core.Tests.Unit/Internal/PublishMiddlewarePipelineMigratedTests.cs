@@ -71,7 +71,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
-    public async Task should_thread_middleware_mutated_delay_through_to_inner_publish()
+    public async Task should_reject_middleware_delay_changes_before_inner_publish()
     {
         // given
         var services = new ServiceCollection();
@@ -80,24 +80,26 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
             DelayMultiplyingPublishMiddleware
         >();
         var pipeline = _BuildPipeline(services);
-        TimeSpan? observedDelay = null;
+        var innerCalled = false;
 
         // when
-        await pipeline.ExecuteAsync(
-            new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            options: null,
-            TimeSpan.FromSeconds(10),
-            (_, delay, _) =>
-            {
-                observedDelay = delay;
-                return Task.CompletedTask;
-            },
-            cancellationToken: AbortToken
-        );
+        var act = () =>
+            pipeline.ExecuteAsync(
+                new MigratedPublishMessage("order-1"),
+                IntentType.Bus,
+                options: null,
+                TimeSpan.FromSeconds(10),
+                (_, _, _) =>
+                {
+                    innerCalled = true;
+                    return Task.CompletedTask;
+                },
+                cancellationToken: AbortToken
+            );
 
         // then
-        observedDelay.Should().Be(TimeSpan.FromSeconds(20));
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot change*delivery delay*");
+        innerCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -131,30 +133,32 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
-    public async Task should_drop_to_immediate_publish_when_middleware_nulls_delay_time()
+    public async Task should_reject_middleware_delay_removal_before_inner_publish()
     {
         // given
         var services = new ServiceCollection();
         services.AddScoped<IPublishMiddleware<PublishContext<MigratedPublishMessage>>, DelayNullingPublishMiddleware>();
         var pipeline = _BuildPipeline(services);
-        TimeSpan? observedDelay = TimeSpan.FromSeconds(1);
+        var innerCalled = false;
 
         // when
-        await pipeline.ExecuteAsync(
-            new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
-            options: null,
-            TimeSpan.FromMinutes(5),
-            (_, delay, _) =>
-            {
-                observedDelay = delay;
-                return Task.CompletedTask;
-            },
-            cancellationToken: AbortToken
-        );
+        var act = () =>
+            pipeline.ExecuteAsync(
+                new MigratedPublishMessage("order-1"),
+                IntentType.Bus,
+                options: null,
+                TimeSpan.FromMinutes(5),
+                (_, _, _) =>
+                {
+                    innerCalled = true;
+                    return Task.CompletedTask;
+                },
+                cancellationToken: AbortToken
+            );
 
         // then
-        observedDelay.Should().BeNull();
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot change*delivery delay*");
+        innerCalled.Should().BeFalse();
     }
 
     [Fact]
