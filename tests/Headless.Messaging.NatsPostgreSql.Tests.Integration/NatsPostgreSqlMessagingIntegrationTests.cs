@@ -276,6 +276,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
                 MessageName = "test-message",
                 MessageId = publishMessageId,
                 CorrelationId = correlationId,
+                DeliveryMode = DeliveryMode.Durable,
             },
             AbortToken
         );
