@@ -19,5 +19,5 @@ internal sealed class NullWebClientInfoProvider : IWebClientInfoProvider
 
     public string? UserAgent => null;
 
-    public ValueTask<string?> GetDeviceInfoAsync(CancellationToken cancellationToken = default) => new((string?)null);
+    public string? DeviceInfo => null;
 }

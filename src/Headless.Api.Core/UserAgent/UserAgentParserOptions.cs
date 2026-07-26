@@ -4,10 +4,15 @@ using FluentValidation;
 
 namespace Headless.Api.UserAgent;
 
-/// <summary>Options for <see cref="Headless.Abstractions.IUserAgentParser"/>'s memoization in the host's <c>ICache</c>.</summary>
+/// <summary>Options for <see cref="Headless.Abstractions.IUserAgentParser"/>'s private in-process memoization.</summary>
 [PublicAPI]
 public sealed class UserAgentParserOptions
 {
+    /// <summary>
+    /// Maximum number of distinct User-Agent strings held in the parser's memo. Default <c>1000</c>.
+    /// </summary>
+    public int MaxEntries { get; set; } = 1000;
+
     /// <summary>
     /// Sliding lifetime of a memoized entry: each hit extends it, so hot agents stay cached while rare or rotated
     /// ones fall out. Default 6 hours. Must not exceed <see cref="Duration"/>.
@@ -29,6 +34,7 @@ internal sealed class UserAgentParserOptionsValidator : AbstractValidator<UserAg
 {
     public UserAgentParserOptionsValidator()
     {
+        RuleFor(x => x.MaxEntries).GreaterThan(0);
         RuleFor(x => x.SlidingExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.Duration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.SlidingExpiration)

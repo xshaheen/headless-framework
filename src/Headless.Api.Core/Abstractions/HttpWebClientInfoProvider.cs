@@ -12,6 +12,5 @@ internal sealed class HttpWebClientInfoProvider(IHttpContextAccessor accessor, I
 
     public string? UserAgent => accessor.HttpContext?.GetUserAgent();
 
-    public ValueTask<string?> GetDeviceInfoAsync(CancellationToken cancellationToken = default) =>
-        userAgentParser.GetDeviceInfoAsync(UserAgent, cancellationToken);
+    public string? DeviceInfo => userAgentParser.GetDeviceInfo(UserAgent);
 }

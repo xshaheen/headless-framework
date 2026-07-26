@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.UserAgent;
-using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 
@@ -12,25 +11,23 @@ public sealed class UserAgentParserTests : TestBase
     private const string _ChromeOnWindows =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    // --- parse correctness, exercised through the no-cache path (cache is optional and absent) ---
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task should_return_null_for_blank_user_agent(string? userAgent)
+    public void should_return_null_for_blank_user_agent(string? userAgent)
     {
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        (await sut.GetDeviceInfoAsync(userAgent, AbortToken)).Should().BeNull();
+        sut.GetDeviceInfo(userAgent).Should().BeNull();
     }
 
     [Fact]
-    public async Task should_parse_os_and_client_from_a_known_user_agent()
+    public void should_parse_os_and_client_from_a_known_user_agent()
     {
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        var result = await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken);
+        var result = sut.GetDeviceInfo(_ChromeOnWindows);
 
         result.Should().NotBeNullOrWhiteSpace();
         result.Should().Contain("Windows");
@@ -38,80 +35,97 @@ public sealed class UserAgentParserTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_null_for_an_unidentifiable_user_agent()
+    public void should_return_null_for_an_unidentifiable_user_agent()
     {
-        var sut = _CreateSut();
+        using var sut = _CreateSut();
 
-        (await sut.GetDeviceInfoAsync("!!!not-a-user-agent!!!", AbortToken)).Should().BeNull();
+        sut.GetDeviceInfo("!!!not-a-user-agent!!!").Should().BeNull();
     }
 
     [Fact]
-    public async Task should_parse_directly_when_no_cache_is_registered()
+    public void should_memoize_a_parse()
     {
-        // cache is null -> every call parses; correctness must not depend on a cache being present.
-        var sut = _CreateSut(cache: null);
+        var parseCalls = 0;
+        using var sut = _CreateSut(parser: _ =>
+        {
+            ++parseCalls;
+            return "Windows Chrome";
+        });
 
-        (await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken)).Should().Contain("Chrome");
-        (await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken)).Should().Contain("Chrome");
-    }
-
-    // --- caching behavior against a real Headless cache ---
-
-    [Fact]
-    public async Task should_memoize_a_parse_under_the_feature_namespaced_key()
-    {
-        using var cache = _CreateCache();
-        var sut = _CreateSut(cache: cache);
-
-        var result = await sut.GetDeviceInfoAsync(_ChromeOnWindows, AbortToken);
-
-        // The value the parser returned must be the value now sitting in the host cache, under api:user-agent:.
-        var cached = await cache.GetAsync<string?>("api:user-agent:" + _ChromeOnWindows, AbortToken);
-        cached.HasValue.Should().BeTrue();
-        cached.Value.Should().Be(result);
+        sut.GetDeviceInfo(_ChromeOnWindows).Should().Be("Windows Chrome");
+        sut.GetDeviceInfo(_ChromeOnWindows).Should().Be("Windows Chrome");
+        parseCalls.Should().Be(1);
     }
 
     [Fact]
-    public async Task should_cache_a_negative_result_so_garbage_is_parsed_at_most_once()
+    public void should_memoize_a_negative_result_for_subsequent_calls()
     {
-        using var cache = _CreateCache();
-        var sut = _CreateSut(cache: cache);
+        var parseCalls = 0;
+        using var sut = _CreateSut(parser: _ =>
+        {
+            ++parseCalls;
+            return null;
+        });
 
-        (await sut.GetDeviceInfoAsync("!!!not-a-user-agent!!!", AbortToken)).Should().BeNull();
-
-        // The null is memoized (HasValue true, Value null), not treated as a miss on the next read.
-        var cached = await cache.GetAsync<string?>("api:user-agent:!!!not-a-user-agent!!!", AbortToken);
-        cached.HasValue.Should().BeTrue();
-        cached.Value.Should().BeNull();
+        sut.GetDeviceInfo("!!!not-a-user-agent!!!").Should().BeNull();
+        sut.GetDeviceInfo("!!!not-a-user-agent!!!").Should().BeNull();
+        parseCalls.Should().Be(1);
     }
 
     [Fact]
-    public async Task should_collapse_user_agents_that_share_a_truncated_prefix()
+    public void should_collapse_user_agents_that_share_a_truncated_prefix()
     {
-        using var cache = _CreateCache();
-        var sut = _CreateSut(cache: cache, maxUserAgentLength: 64);
+        var parseCalls = 0;
+        using var sut = _CreateSut(
+            maxUserAgentLength: 64,
+            parser: userAgent =>
+            {
+                ++parseCalls;
+                return userAgent;
+            }
+        );
 
         var a = _ChromeOnWindows + new string('a', 200);
         var b = _ChromeOnWindows + new string('b', 200);
 
         // Both exceed the cap and are identical up to it, so they key the same memo entry.
-        (await sut.GetDeviceInfoAsync(a, AbortToken))
-            .Should()
-            .Be(await sut.GetDeviceInfoAsync(b, AbortToken));
-        (await cache.GetAsync<string?>("api:user-agent:" + _ChromeOnWindows[..64], AbortToken))
-            .HasValue.Should()
-            .BeTrue();
+        sut.GetDeviceInfo(a).Should().Be(sut.GetDeviceInfo(b));
+        parseCalls.Should().Be(1);
     }
 
-    private static UserAgentParser _CreateSut(ICache? cache = null, int maxUserAgentLength = 512)
+    [Fact]
+    public void should_not_cache_entries_beyond_the_configured_capacity()
     {
-        return new UserAgentParser(
-            Options.Create(new UserAgentParserOptions { MaxUserAgentLength = maxUserAgentLength }),
-            cache
+        var parseCalls = 0;
+        using var sut = _CreateSut(
+            maxEntries: 1,
+            parser: userAgent =>
+            {
+                ++parseCalls;
+                return userAgent;
+            }
         );
+
+        sut.GetDeviceInfo("first").Should().Be("first");
+        sut.GetDeviceInfo("first").Should().Be("first");
+        sut.GetDeviceInfo("second").Should().Be("second");
+        sut.GetDeviceInfo("second").Should().Be("second");
+
+        parseCalls.Should().Be(3);
     }
 
-    private static InMemoryCache _CreateCache() => new(TimeProvider.System, new InMemoryCacheOptions());
+    private static UserAgentParser _CreateSut(
+        int maxUserAgentLength = 512,
+        int maxEntries = 1_000,
+        Func<string, string?>? parser = null
+    )
+    {
+        var options = Options.Create(
+            new UserAgentParserOptions { MaxEntries = maxEntries, MaxUserAgentLength = maxUserAgentLength }
+        );
+
+        return parser is null ? new UserAgentParser(options) : new UserAgentParser(options, parser);
+    }
 }
 
 public sealed class UserAgentParserOptionsValidatorTests : TestBase
@@ -121,6 +135,18 @@ public sealed class UserAgentParserOptionsValidatorTests : TestBase
     {
         var result = new UserAgentParserOptionsValidator().Validate(
             new UserAgentParserOptions { SlidingExpiration = TimeSpan.Zero }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_non_positive_max_entries(int maxEntries)
+    {
+        var result = new UserAgentParserOptionsValidator().Validate(
+            new UserAgentParserOptions { MaxEntries = maxEntries }
         );
 
         result.IsValid.Should().BeFalse();
