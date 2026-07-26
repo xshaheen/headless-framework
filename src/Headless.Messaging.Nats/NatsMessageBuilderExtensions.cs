@@ -15,15 +15,32 @@ public static class NatsMessageBuilderExtensions
     /// Configures NATS JetStream options for <typeparamref name="TMessage"/> publish operations.
     /// </summary>
     /// <typeparam name="TMessage">The message type being registered.</typeparam>
-    /// <param name="builder">The message builder.</param>
+    /// <param name="builder">The bus message builder.</param>
     /// <param name="configure">A delegate that configures the NATS options.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
     /// <remarks>
-    /// Requires the framework-provided <see cref="IMessageBuilder{TMessage}"/> from
-    /// <c>setup.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
+    /// Requires the framework-provided <see cref="IBusMessageBuilder{TMessage}"/> from
+    /// <c>setup.Bus.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
     /// </remarks>
-    public static IMessageBuilder<TMessage> UseNats<TMessage>(
-        this IMessageBuilder<TMessage> builder,
+    public static IBusMessageBuilder<TMessage> UseNats<TMessage>(
+        this IBusMessageBuilder<TMessage> builder,
+        Action<NatsMessageConfigBuilder<TMessage>> configure
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        var configBuilder = new NatsMessageConfigBuilder<TMessage>();
+        configure(configBuilder);
+        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
+
+        return builder;
+    }
+
+    /// <summary>Configures NATS JetStream options for <typeparamref name="TMessage"/> queue publish operations.</summary>
+    public static IQueueMessageBuilder<TMessage> UseNats<TMessage>(
+        this IQueueMessageBuilder<TMessage> builder,
         Action<NatsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class

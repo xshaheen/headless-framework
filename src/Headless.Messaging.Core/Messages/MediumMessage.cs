@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
+
 namespace Headless.Messaging.Messages;
 
 /// <summary>
@@ -21,6 +23,9 @@ public class MediumMessage
     public required string Content { get; set; }
 
     public required IntentType IntentType { get; set; }
+
+    /// <summary>Gets the checked runtime lane represented by the persisted compatibility value.</summary>
+    internal MessageLane Lane => MessageLaneCompatibility.ToLane(IntentType);
 
     public DateTimeOffset Added { get; set; }
 

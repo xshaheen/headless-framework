@@ -44,4 +44,9 @@ internal sealed class ProcessingContext(
     {
         return _timeProvider.Delay(timeout, CancellationToken);
     }
+
+    public DateTimeOffset GetUtcNow()
+    {
+        return _timeProvider.GetUtcNow();
+    }
 }

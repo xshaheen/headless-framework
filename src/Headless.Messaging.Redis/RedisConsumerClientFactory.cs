@@ -12,31 +12,27 @@ internal sealed class RedisConsumerClientFactory(
     IOptions<MessagingOptions> messagingOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Queue, cancellationToken);
-    }
-
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (intentType == IntentType.Bus)
+        if (lane == MessageLane.Bus)
         {
             throw new NotSupportedException(
                 "Headless.Messaging.Redis is a queue transport provider and cannot create bus consumers."
             );
+        }
+
+        if (lane != MessageLane.Queue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null);
         }
 
         var client = new RedisConsumerClient(

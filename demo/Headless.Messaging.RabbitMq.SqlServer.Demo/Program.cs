@@ -40,7 +40,7 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
+    setup.Bus.ForConsumersFromAssembly(typeof(Program).Assembly);
     setup.UseEntityFramework<AppDbContext>();
     setup.UseRabbitMq("127.0.0.1");
     setup.UseDashboard(d => d.WithNoAuth());

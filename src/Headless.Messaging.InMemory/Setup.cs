@@ -43,6 +43,13 @@ public static class SetupInMemory
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("InMemory"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "InMemory",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: true
+                )
+            );
             services.AddSingleton<MemoryQueue>();
             services.AddSingleton<IConsumerClientFactory, InMemoryConsumerClientFactory>();
             services.AddSingleton<InMemoryBusTransport>();

@@ -231,6 +231,6 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         var logger = services.BuildServiceProvider().GetRequiredService<ILogger<AmazonSqsConsumerClient>>();
 
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
-        return await factory.CreateAsync(groupId, 0);
+        return await factory.CreateAsync(groupId, 0, MessageLane.Bus, AbortToken);
     }
 }

@@ -6,7 +6,6 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
@@ -21,17 +20,17 @@ public sealed class ForMessageRegistrationTests : TestBase
 
         // when
         services.AddHeadlessMessaging(setup =>
-            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>())
+            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>())
         );
         using var provider = services.BuildServiceProvider();
 
         // then
         var registration = provider.GetServices<MessageRegistration>().Single();
         registration.MessageType.Should().Be<OrderPlaced>();
+        registration.Lane.Should().Be(MessageLane.Bus);
         registration.MessageName.Should().BeNull();
         registration.Consumers.Should().ContainSingle();
         registration.Consumers[0].ConsumerType.Should().Be<OrderPlacedHandler>();
-        registration.Consumers[0].IntentType.Should().Be(IntentType.Bus);
     }
 
     [Fact]
@@ -43,10 +42,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<OrderPlaced>(message =>
+            setup.Bus.ForMessage<OrderPlaced>(message =>
             {
-                message.OnBus<OrderPlacedHandler>();
-                message.OnBus<OrderPlacedAnalyticsHandler>();
+                message.Consumer<OrderPlacedHandler>();
+                message.Consumer<OrderPlacedAnalyticsHandler>();
             });
         });
 
@@ -68,20 +67,24 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<OrderPlaced>(message =>
-            {
-                message.OnBus<OrderPlacedHandler>();
-                message.OnQueue<OrderPlacedHandler>();
-            });
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+            );
+            setup.Queue.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetServices<MessageRegistration>().Single().Consumers;
-        consumers.Should().HaveCount(2);
-        consumers.Should().Contain(consumer => consumer.IntentType == IntentType.Bus);
-        consumers.Should().Contain(consumer => consumer.IntentType == IntentType.Queue);
+        var registrations = provider.GetServices<MessageRegistration>().ToArray();
+        registrations.Should().HaveCount(2);
+        registrations.Should().ContainSingle(registration => registration.Lane == MessageLane.Bus);
+        registrations.Should().ContainSingle(registration => registration.Lane == MessageLane.Queue);
+        registrations
+            .Should()
+            .OnlyContain(registration => registration.Consumers.Single().ConsumerType == typeof(OrderPlacedHandler));
     }
 
     [Fact]
@@ -93,7 +96,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -103,7 +106,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         var registry = provider.GetDrainedConsumerRegistry();
         registry.GetAll().Should().BeEmpty();
-        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderPlaced), MessageLane.Bus, out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.placed");
     }
 
@@ -116,10 +119,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message =>
+            setup.Queue.ForMessage<OrderPlaced>(message =>
                 message
                     .MessageName("orders.placed")
-                    .OnQueue<OrderPlacedHandler>(consumer =>
+                    .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.Group("orders").Concurrency(3).HandlerId("handler-1")
                     )
             );
@@ -139,30 +142,50 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_drain_service_collection_for_message_registered_after_add_headless_messaging()
+    public void should_keep_names_and_provider_configuration_independent_across_lanes()
     {
         // given
         var services = new ServiceCollection();
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+            {
+                message.MessageName("orders.bus").Consumer<OrderPlacedHandler>(consumer => consumer.Group("bus"));
+                ((IMessageProviderConfigBuilder<OrderPlaced>)message).SetMessageProviderConfig(
+                    new LaneProviderConfig("bus")
+                );
+            });
+            setup.Queue.ForMessage<OrderPlaced>(message =>
+            {
+                message.MessageName("orders.queue").Consumer<OrderPlacedHandler>(consumer => consumer.Group("queue"));
+                ((IMessageProviderConfigBuilder<OrderPlaced>)message).SetMessageProviderConfig(
+                    new LaneProviderConfig("queue")
+                );
+            });
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
         // when
-        var act = () =>
-            services.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
-            );
-        act.Should().NotThrow();
-
         using var provider = services.BuildServiceProvider();
-        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        var registrations = provider.GetServices<MessageRegistration>().ToArray();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll();
 
         // then
-        metadata.MessageName.Should().Be("orders.placed");
-        metadata.ConsumerType.Should().Be<OrderPlacedHandler>();
-        metadata.Group.Should().Be("orders");
+        registrations
+            .Single(registration => registration.Lane == MessageLane.Bus)
+            .ProviderConfigs.Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .Be(new LaneProviderConfig("bus"));
+        registrations
+            .Single(registration => registration.Lane == MessageLane.Queue)
+            .ProviderConfigs.Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .Be(new LaneProviderConfig("queue"));
+        metadata.Should().ContainSingle(item => item.Lane == MessageLane.Bus && item.Group == "bus");
+        metadata.Should().ContainSingle(item => item.Lane == MessageLane.Queue && item.Group == "queue");
     }
 
     [Fact]
@@ -174,8 +197,8 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         var act = () =>
             services.AddHeadlessMessaging(setup =>
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.OnBus<OrderPlacedHandler>(consumer => consumer.Concurrency(0))
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer => consumer.Concurrency(0))
                 )
             );
 
@@ -187,14 +210,14 @@ public sealed class ForMessageRegistrationTests : TestBase
     public void should_build_default_scanned_consumer_as_bus_registration()
     {
         // given
-        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler), MessageLane.Bus);
 
         // when
         var registration = builder.Build();
 
         // then
         registration.ConsumerType.Should().Be<OrderPlacedHandler>();
-        registration.IntentType.Should().Be(IntentType.Bus);
+        registration.Lane.Should().Be(MessageLane.Bus);
         registration.IsAssemblyScan.Should().BeTrue();
         registration.Concurrency.Should().Be(1);
     }
@@ -203,15 +226,15 @@ public sealed class ForMessageRegistrationTests : TestBase
     public void should_build_configured_scanned_consumer_registration()
     {
         // given
-        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler), MessageLane.Queue);
 
         // when
-        builder.OnQueue().Group("orders").Concurrency(4).HandlerId("handler-1");
+        builder.Group("orders").Concurrency(4).HandlerId("handler-1");
         var registration = builder.Build();
 
         // then
         registration.ConsumerType.Should().Be<OrderPlacedHandler>();
-        registration.IntentType.Should().Be(IntentType.Queue);
+        registration.Lane.Should().Be(MessageLane.Queue);
         registration.Group.Should().Be("orders");
         registration.Concurrency.Should().Be(4);
         registration.HandlerId.Should().Be("handler-1");
@@ -221,7 +244,7 @@ public sealed class ForMessageRegistrationTests : TestBase
     public void should_reject_invalid_scanned_consumer_builder_values()
     {
         // given
-        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler), MessageLane.Bus);
 
         // then
         builder
@@ -238,7 +261,7 @@ public sealed class ForMessageRegistrationTests : TestBase
     public void should_mark_scanned_consumer_builder_as_skipped()
     {
         // given
-        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler), MessageLane.Bus);
 
         // when
         var returned = builder.Skip();
@@ -257,8 +280,12 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
-            setup.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedAnalyticsHandler>());
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+            );
+            setup.Queue.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedAnalyticsHandler>()
+            );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -272,24 +299,36 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_skip_duplicate_same_consumer_registration()
+    public void should_reject_duplicate_same_consumer_registration()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessMessaging(static setup =>
-        {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
-            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-        });
-
-        using var provider = services.BuildServiceProvider();
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                );
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
 
         // then
-        provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle();
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
+    }
+
+    [Fact]
+    public void should_reject_duplicate_registration_across_messaging_setup_calls()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup => setup.Queue.ForMessage<OrderPlaced>(_ => { }));
+
+        var act = () => services.AddHeadlessMessaging(static setup => setup.Queue.ForMessage<OrderPlaced>(_ => { }));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Queue*");
     }
 
     [Fact]
@@ -300,30 +339,24 @@ public sealed class ForMessageRegistrationTests : TestBase
 
         // when
         var act = () =>
-        {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.OnBus<OrderPlacedHandler>(consumer =>
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer =>
                         consumer.WithCircuitBreaker(options => options.FailureThreshold = 3)
                     )
                 );
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.OnBus<OrderPlacedHandler>(consumer =>
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer =>
                         consumer.WithCircuitBreaker(options => options.FailureThreshold = 5)
                     )
                 );
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
-            using var provider = services.BuildServiceProvider();
-            provider.GetDrainedConsumerRegistry().GetAll();
-        };
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*registered more than once*conflicting settings*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     [Fact]
@@ -334,26 +367,22 @@ public sealed class ForMessageRegistrationTests : TestBase
 
         // when
         var act = () =>
-        {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message
+                        .MessageName("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.Group("orders"))
                 );
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.OnBus<OrderPlacedAnalyticsHandler>(consumer => consumer.Group("orders"))
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedAnalyticsHandler>(consumer => consumer.Group("orders"))
                 );
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
-            using var provider = services.BuildServiceProvider();
-            provider.GetDrainedConsumerRegistry().GetAll();
-        };
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     [Fact]
@@ -369,13 +398,15 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessage<OrderPlaced>(message =>
-                    message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message
+                        .MessageName("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.Group("orders"))
                 );
-                setup.ForMessage<OtherOrderPlaced>(message =>
+                setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                     message
                         .MessageName("Orders.Placed")
-                        .OnBus<OtherOrderPlacedHandler>(consumer => consumer.Group("orders"))
+                        .Consumer<OtherOrderPlacedHandler>(consumer => consumer.Group("orders"))
                 );
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
@@ -391,27 +422,23 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_treat_case_variant_explicit_names_for_same_message_type_as_idempotent()
+    public void should_reject_case_variant_explicit_names_for_same_message_type()
     {
         // given — same type, names differ only by case: the same logical name, not a conflict.
         var services = new ServiceCollection();
 
         // when
         var act = () =>
-        {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.ForMessage<OrderPlaced>(message => message.MessageName("Orders.Placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("Orders.Placed"));
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
-            using var provider = services.BuildServiceProvider();
-            provider.GetDrainedConsumerRegistry().GetAll();
-        };
 
         // then
-        act.Should().NotThrow();
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     [Fact]
@@ -422,20 +449,16 @@ public sealed class ForMessageRegistrationTests : TestBase
 
         // when
         var act = () =>
-        {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
-            using var provider = services.BuildServiceProvider();
-            provider.GetDrainedConsumerRegistry().GetAll();
-        };
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     [Fact]
@@ -446,9 +469,11 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
-            setup.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName("orders.same").OnBus<OtherOrderPlacedHandler>()
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.same").Consumer<OrderPlacedHandler>()
+            );
+            setup.Bus.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName("orders.same").Consumer<OtherOrderPlacedHandler>()
             );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
@@ -475,9 +500,11 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
-            setup.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName("Orders.Same").OnBus<OtherOrderPlacedHandler>()
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.same").Consumer<OrderPlacedHandler>()
+            );
+            setup.Bus.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName("Orders.Same").Consumer<OtherOrderPlacedHandler>()
             );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
@@ -502,9 +529,9 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
-            setup.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName(nameof(OrderPlaced)).OnBus<OtherOrderPlacedHandler>()
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName(nameof(OrderPlaced)).Consumer<OtherOrderPlacedHandler>()
             );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
@@ -528,7 +555,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -550,12 +577,12 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue();
+                        consumer.Group("orders");
                     }
                 }
             );
@@ -572,6 +599,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
         metadata.IntentType.Should().Be(IntentType.Queue);
+        metadata.Group.Should().Be("orders");
     }
 
     [Fact]
@@ -584,7 +612,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, _) =>
                 {
                     var key = (ctx.ConsumerType, ctx.MessageType);
@@ -635,14 +663,18 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("orders");
+                        consumer.Group("orders");
                     }
-
+                }
+            );
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
                     if (ctx.ConsumerType == typeof(OrderPlacedAnalyticsHandler))
                     {
                         consumer.Group("analytics");
@@ -682,7 +714,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
@@ -719,12 +751,12 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("orders").Skip();
+                        consumer.Group("orders").Skip();
                     }
                 }
             );
@@ -753,7 +785,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
@@ -787,13 +819,13 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         noArgServices.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
         callbackServices.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(static (_, _) => { });
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(static (_, _) => { });
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -817,7 +849,7 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_not_scan_explicitly_registered_consumer_into_bus_lane()
+    public void should_suppress_only_the_same_lane_scan_when_consumer_is_explicit()
     {
         // given
         var services = new ServiceCollection();
@@ -825,8 +857,9 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedHandler>());
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -840,8 +873,9 @@ public sealed class ForMessageRegistrationTests : TestBase
             .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .ToList();
 
-        registrations.Should().ContainSingle();
-        registrations[0].IntentType.Should().Be(IntentType.Queue);
+        registrations.Should().HaveCount(2);
+        registrations.Should().ContainSingle(registration => registration.Lane == MessageLane.Bus);
+        registrations.Should().ContainSingle(registration => registration.Lane == MessageLane.Queue);
     }
 
     [Fact]
@@ -853,13 +887,13 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("ignored");
+                        consumer.Group("ignored");
                     }
                 }
             );
@@ -888,7 +922,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
-                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
@@ -912,7 +946,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
@@ -943,12 +977,12 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
+                        consumer.Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
                     }
                 }
             );
@@ -976,7 +1010,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
                         if (
@@ -1010,21 +1044,21 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("orders").Concurrency(2).HandlerId("handler-1");
+                        consumer.Group("orders").Concurrency(2).HandlerId("handler-1");
                     }
                 }
             );
-            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
-                        consumer.OnQueue().Group("orders").Concurrency(2).HandlerId("handler-1");
+                        consumer.Group("orders").Concurrency(2).HandlerId("handler-1");
                     }
                 }
             );
@@ -1054,21 +1088,21 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                         {
-                            consumer.OnQueue().Group("orders").Concurrency(2);
+                            consumer.Group("orders").Concurrency(2);
                         }
                     }
                 );
-                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                         {
-                            consumer.OnQueue().Group("orders").Concurrency(4);
+                            consumer.Group("orders").Concurrency(4);
                         }
                     }
                 );
@@ -1084,49 +1118,6 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_warn_when_for_message_called_after_provider_built()
-    {
-        // given — drain runs once at build time; a post-build ForMessage<T> call silently adds a
-        // descriptor that the already-frozen provider cannot see. The guard must emit a warning
-        // rather than letting the registration vanish without a trace.
-        var services = new ServiceCollection();
-        var capturedWarnings = new List<(LogLevel Level, string Message)>();
-
-        services.AddLogging(logging =>
-        {
-            logging.AddProvider(new CapturingLoggerProvider(capturedWarnings));
-            logging.SetMinimumLevel(LogLevel.Warning);
-        });
-
-        services.AddHeadlessMessaging(static setup =>
-        {
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-        });
-
-        using var provider = services.BuildServiceProvider();
-
-        // drain once so HasCompletedMessageRegistrationDrain == true
-        provider.GetDrainedConsumerRegistry();
-
-        // when — register after the provider is built; the descriptor lands in the collection
-        // but the frozen provider cannot resolve it
-        services.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
-
-        // trigger the drain short-circuit path
-        provider.GetDrainedConsumerRegistry();
-
-        // then
-        capturedWarnings
-            .Should()
-            .ContainSingle(entry =>
-                entry.Level == LogLevel.Warning
-                && entry.Message.Contains("ForMessage<T>")
-                && entry.Message.Contains('1')
-            );
-    }
-
-    [Fact]
     public void should_resolve_explicit_message_name_for_publish_before_consumer_drain()
     {
         // given — names are registered eagerly at ForMessage<T>(...) time, so a publish that races ahead
@@ -1136,7 +1127,9 @@ public sealed class ForMessageRegistrationTests : TestBase
         var services = new ServiceCollection();
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+            );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -1152,52 +1145,11 @@ public sealed class ForMessageRegistrationTests : TestBase
         provider.GetRequiredService<ConsumerRegistry>().HasCompletedMessageRegistrationDrain.Should().BeFalse();
     }
 
-    [Fact]
-    public void should_share_registry_for_seam_registered_before_add_headless_messaging()
-    {
-        // given — the service-collection seam runs BEFORE AddHeadlessMessaging. Find-or-create must hand
-        // both call sites the same ConsumerRegistry, so the seam's eager name is authoritative regardless
-        // of registration order.
-        var services = new ServiceCollection();
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
-
-        // when
-        services.AddHeadlessMessaging(static setup =>
-        {
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-        });
-
-        using var provider = services.BuildServiceProvider();
-
-        // then — name is resolvable eagerly, before any drain
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
-        messageName.Should().Be("orders.placed");
-        registry.HasCompletedMessageRegistrationDrain.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_reject_cross_entry_point_name_conflict_eagerly()
-    {
-        // given — a seam and the builder map the SAME message type to different names. Because both write
-        // to the shared registry eagerly, the conflict surfaces at registration time, not at startup.
-        var services = new ServiceCollection();
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(static setup =>
-                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"))
-            );
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
-    }
-
     private sealed record OrderPlaced;
 
     private sealed record OtherOrderPlaced;
+
+    private sealed record LaneProviderConfig(string Value);
 
     private sealed class OrderPlacedHandler : IConsume<OrderPlaced>
     {
@@ -1220,41 +1172,6 @@ public sealed class ForMessageRegistrationTests : TestBase
         public ValueTask ConsumeAsync(ConsumeContext<OtherOrderPlaced> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class CapturingLoggerProvider(List<(LogLevel Level, string Message)> sink) : ILoggerProvider
-    {
-        public void Dispose() { }
-
-        public ILogger CreateLogger(string categoryName)
-        {
-            return new CapturingLogger(sink);
-        }
-
-        private sealed class CapturingLogger(List<(LogLevel Level, string Message)> sink) : ILogger
-        {
-            public bool IsEnabled(LogLevel logLevel)
-            {
-                return true;
-            }
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull
-            {
-                return null;
-            }
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter
-            )
-            {
-                sink.Add((logLevel, formatter(state, exception)));
-            }
         }
     }
 }

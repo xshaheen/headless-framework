@@ -8,11 +8,16 @@ internal interface IMiddlewareDescriptorRegistry
 
     MiddlewareDescriptor AddOrGet(MiddlewareDescriptorInput input);
 
-    bool TryGetPublishDescriptors(Type messageType, out IReadOnlyList<MiddlewareDescriptor> descriptors);
+    bool TryGetPublishDescriptors(
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    );
 
     bool TryGetConsumeDescriptors(
         Type messageType,
         string? groupName,
+        MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     );
 }
@@ -53,6 +58,7 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
                 input.ContextType,
                 input.MessageType,
                 input.GroupName,
+                input.Lane,
                 _nextOrder++
             );
             _descriptors.Add(descriptor);
@@ -61,7 +67,11 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
         }
     }
 
-    public bool TryGetPublishDescriptors(Type messageType, out IReadOnlyList<MiddlewareDescriptor> descriptors)
+    public bool TryGetPublishDescriptors(
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    )
     {
         lock (_lock)
         {
@@ -72,6 +82,11 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
             foreach (var descriptor in _descriptors)
             {
                 if (descriptor.Direction != MiddlewareDirection.Publish)
+                {
+                    continue;
+                }
+
+                if (descriptor.Lane != lane)
                 {
                     continue;
                 }
@@ -97,6 +112,7 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
     public bool TryGetConsumeDescriptors(
         Type messageType,
         string? groupName,
+        MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     )
     {
@@ -109,6 +125,11 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
             foreach (var descriptor in _descriptors)
             {
                 if (descriptor.Direction != MiddlewareDirection.Consume)
+                {
+                    continue;
+                }
+
+                if (descriptor.Lane != lane)
                 {
                     continue;
                 }
@@ -151,6 +172,7 @@ internal sealed class MiddlewareDescriptor(
     Type contextType,
     Type? messageType,
     string? groupName,
+    MessageLane lane,
     long order
 )
 {
@@ -167,6 +189,8 @@ internal sealed class MiddlewareDescriptor(
     public Type? MessageType { get; } = messageType;
 
     public string? GroupName { get; } = groupName;
+
+    public MessageLane Lane { get; } = lane;
 
     public long Order { get; } = order;
 
@@ -185,6 +209,7 @@ internal sealed class MiddlewareDescriptor(
             && ServiceType == input.ServiceType
             && ContextType == input.ContextType
             && MessageType == input.MessageType
+            && Lane == input.Lane
             && string.Equals(GroupName, input.GroupName, StringComparison.Ordinal);
     }
 }
@@ -196,7 +221,8 @@ internal readonly record struct MiddlewareDescriptorInput(
     Type ServiceType,
     Type ContextType,
     Type? MessageType,
-    string? GroupName
+    string? GroupName,
+    MessageLane Lane
 );
 
 internal enum MiddlewareDirection

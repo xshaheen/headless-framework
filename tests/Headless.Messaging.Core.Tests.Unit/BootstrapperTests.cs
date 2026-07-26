@@ -238,13 +238,19 @@ public sealed class BootstrapperTests : TestBase
     public async Task should_fail_bootstrap_when_multiple_storage_providers_are_registered()
     {
         await using var provider = _CreateProvider(extraSetup: static services =>
-            services.AddSingleton(new MessageStorageMarkerService("OtherStorage"))
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Storage(
+                    "OtherStorage",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsDelayedScheduling: true
+                )
+            )
         );
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
         var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*exactly one storage provider*");
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*exactly one storage provider*");
         bootstrapper.IsStarted.Should().BeFalse();
     }
 

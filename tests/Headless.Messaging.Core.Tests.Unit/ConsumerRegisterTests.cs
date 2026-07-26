@@ -180,7 +180,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // so the exception propagates out of ExecuteAsync.
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
 
         typeof(ConsumerRegister)
@@ -258,7 +258,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
@@ -346,10 +346,10 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.ForMessage<BootstrapReadyMessage>(message =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
                 );
             },
             configureServices: services =>
@@ -400,10 +400,10 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.ForMessage<BootstrapReadyMessage>(message =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
                 );
             },
             configureServices: services =>
@@ -427,34 +427,19 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
-    public async Task start_fails_when_queue_consumer_uses_legacy_consumer_factory()
+    public void consumer_factory_contract_requires_explicit_lane()
     {
-        await using var provider = _CreateProvider(
-            configureMessaging: options =>
-            {
-                options.RegisterConsumer(
-                    typeof(QueueOnlyConsumer),
-                    typeof(QueueOnlyMessage),
-                    "queue-messageName",
-                    "queue-group",
-                    1,
-                    IntentType.Queue
-                );
-            },
-            configureServices: services =>
-            {
-                services.AddSingleton<IConsumerClientFactory>(new SequencedConsumerClientFactory());
-                services.AddSingleton<QueueOnlyConsumer>();
-            }
-        );
+        var parameters = typeof(IConsumerClientFactory)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Single(method =>
+                string.Equals(method.Name, nameof(IConsumerClientFactory.CreateAsync), StringComparison.Ordinal)
+            )
+            .GetParameters();
 
-        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
-
-        var act = async () => await register.StartAsync(AbortToken);
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*IIntentAwareConsumerClientFactory*queue consumers*");
+        parameters
+            .Select(parameter => parameter.ParameterType)
+            .Should()
+            .Equal(typeof(string), typeof(byte), typeof(MessageLane), typeof(CancellationToken));
     }
 
     [Fact]
@@ -537,7 +522,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Run service overrides AFTER AddHeadlessMessaging so test-supplied registrations (e.g. a fake
         // IConsumerClientFactory) win last-writer-wins over the InMemory transport's defaults. Consumer
-        // registration belongs in configureMessaging via setup.ForMessage, which runs inside the callback.
+        // registration belongs in configureMessaging via setup.Bus/Queue.ForMessage, which runs inside the callback.
         configureServices?.Invoke(services);
 
         if (circuitBreakerStateManager is not null)
@@ -585,10 +570,10 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.ForMessage<BootstrapReadyMessage>(message =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
                 );
             },
             configureServices: services =>
@@ -626,6 +611,7 @@ public sealed class ConsumerRegisterTests : TestBase
         public async Task<IConsumerClient> CreateAsync(
             string groupName,
             byte groupConcurrent,
+            MessageLane lane,
             CancellationToken cancellationToken = default
         )
         {
@@ -742,6 +728,7 @@ public sealed class ConsumerRegisterTests : TestBase
         public Task<IConsumerClient> CreateAsync(
             string groupName,
             byte groupConcurrent,
+            MessageLane lane,
             CancellationToken cancellationToken = default
         )
         {

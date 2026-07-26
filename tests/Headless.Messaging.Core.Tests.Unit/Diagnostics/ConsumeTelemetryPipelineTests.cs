@@ -59,8 +59,8 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<PipelineTestMessage>(message =>
-                message.MessageName("test.pipeline.messageName").OnBus<PipelineTestConsumer>()
+            setup.Bus.ForMessage<PipelineTestMessage>(message =>
+                message.MessageName("test.pipeline.messageName").Consumer<PipelineTestConsumer>()
             );
             setup.UseInMemory();
             setup.UseInMemoryStorage();

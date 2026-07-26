@@ -12,7 +12,7 @@ public sealed class AwsMessageBuilderExtensionsTests
     [Fact]
     public void should_store_message_group_id_header_contribution()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAws(aws => aws.MessageGroupId(static message => message.TenantId));
         var contribution = (
@@ -26,7 +26,7 @@ public sealed class AwsMessageBuilderExtensionsTests
     [Fact]
     public void should_reject_message_group_id_longer_than_sqs_limit()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
         builder.UseAws(aws => aws.MessageGroupId(static _ => new string('x', 129)));
         var contribution = (
             (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()

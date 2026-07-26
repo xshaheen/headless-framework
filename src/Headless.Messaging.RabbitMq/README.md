@@ -27,7 +27,7 @@ dotnet add package Headless.Messaging.RabbitMq
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMq(rmq =>
@@ -62,10 +62,10 @@ options.UseRabbitMq(rmq =>
     };
 });
 
-options.ForMessage<OrderEvent>(message =>
+options.Bus.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
-        .OnBus<OrderProjection>(consumer =>
+        .Consumer<OrderProjection>(consumer =>
             consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
         )
 );
@@ -74,12 +74,14 @@ options.ForMessage<OrderEvent>(message =>
 Consumer-side RabbitMQ knobs attach to the consumer registration:
 
 ```csharp
-options.ForMessage<OrderEvent>(message =>
-    message.OnBus<OrderProjection>(consumer =>
+options.Bus.ForMessage<OrderEvent>(message =>
+    message.Consumer<OrderProjection>(consumer =>
         consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
     )
 );
 ```
+
+RabbitMQ declares Bus and Queue capabilities, but its current exchange/queue topology cannot isolate the same contract and logical name on both lanes. That combination fails capability validation before readiness; use distinct logical names until #359 adds physical lane isolation.
 
 ### Security Best Practices
 

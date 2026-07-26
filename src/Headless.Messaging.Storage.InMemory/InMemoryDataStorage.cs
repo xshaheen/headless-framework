@@ -821,11 +821,12 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken)
+            _ClaimMessagesOfNeedRetry(PublishedMessages, lane, cancellationToken)
         );
     }
 
@@ -838,11 +839,12 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken)
+            _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, cancellationToken)
         );
     }
 
@@ -856,15 +858,56 @@ internal sealed partial class InMemoryDataStorage(
 
     private List<MediumMessage> _ClaimMessagesOfNeedRetry(
         ConcurrentDictionary<Guid, MemoryMessage> source,
+        MessageLane lane,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ = MessageLaneCompatibility.ToIntentType(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
+
+        // Unknown persisted values are poison data, not a reason to fail every subsequent poll.
+        // Terminalize a bounded batch under the same per-row lock used by normal claims, retain
+        // the raw value for diagnosis, then continue claiming healthy rows for the requested lane.
+        var terminalizedInvalidCount = 0;
+        foreach (var candidate in source.Values)
+        {
+            if (terminalizedInvalidCount >= retryBatchSize)
+            {
+                break;
+            }
+
+            if (
+                !string.Equals(candidate.Version, version, StringComparison.Ordinal)
+                || _IsSupportedIntentType(candidate.IntentType)
+            )
+            {
+                continue;
+            }
+
+            lock (candidate)
+            {
+                if (!_IsEligibleRetryCandidate(candidate, now, maxPersistedRetries))
+                {
+                    continue;
+                }
+
+                candidate.StatusName = StatusName.Failed;
+                candidate.NextRetryAt = null;
+                candidate.LockedUntil = null;
+                candidate.Owner = null;
+                candidate.ExpiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+                candidate.ExceptionInfo = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.IntentType}"
+                );
+                terminalizedInvalidCount++;
+            }
+        }
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
         // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
@@ -892,6 +935,16 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (candidate)
             {
+                if (!_IsSupportedIntentType(candidate.IntentType))
+                {
+                    continue;
+                }
+
+                if (MessageLaneCompatibility.ToLane(candidate.IntentType) != lane)
+                {
+                    continue;
+                }
+
                 if (candidate.Retries > maxPersistedRetries)
                 {
                     continue;
@@ -918,6 +971,24 @@ internal sealed partial class InMemoryDataStorage(
         }
 
         return claimed;
+    }
+
+    private static bool _IsSupportedIntentType(IntentType intentType)
+    {
+        return intentType is IntentType.Bus or IntentType.Queue;
+    }
+
+    private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
+    {
+        if ((candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null)
+        {
+            return false;
+        }
+
+        return candidate.Retries <= maxPersistedRetries
+            && candidate.NextRetryAt is not null
+            && candidate.NextRetryAt <= now
+            && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
     private static MediumMessage _ToSnapshot(MemoryMessage m)

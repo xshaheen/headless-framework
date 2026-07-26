@@ -13,7 +13,7 @@ public sealed class KafkaMessageBuilderExtensionsTests
     [Fact]
     public void should_store_partition_key_header_contribution()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseKafka(kafka => kafka.PartitionBy(static message => message.TenantId));
         var contribution = (
@@ -27,9 +27,9 @@ public sealed class KafkaMessageBuilderExtensionsTests
     [Fact]
     public void should_store_consumer_config_without_partition_surface()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new QueueMessageBuilder<TestMessage>(new ServiceCollection());
 
-        builder.OnQueue<TestConsumer>(consumer =>
+        builder.Consumer<TestConsumer>(consumer =>
             consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
         );
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();

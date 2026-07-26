@@ -169,11 +169,12 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     [Theory]
     [InlineData("Published", "IX_{schema}_Published_Version_NextRetryAt")]
     [InlineData("Received", "IX_{schema}_Received_Version_NextRetryAt")]
-    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string table, string indexNamePattern)
+    public async Task should_key_retry_pickup_index_on_version_lane_then_next_retry_at(
+        string table,
+        string indexNamePattern
+    )
     {
-        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
-        // seek predicate, not a residual filter. Regression here would silently fan the planner
-        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        // Pin every equality predicate before the NextRetryAt range so each lane gets an isolated seek.
         const string schema = "index_shape_test";
         var initializer = _CreateInitializer(schema, useStorageLock: false);
 
@@ -184,6 +185,81 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         var indexName = indexNamePattern.Replace("{schema}", schema, StringComparison.Ordinal);
 
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                DROP INDEX [{indexName}] ON [{schema}].[{table}];
+                CREATE NONCLUSTERED INDEX [{indexName}] ON [{schema}].[{table}] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+        await initializer.InitializeAsync(AbortToken);
+
+        await _AssertRetryIndexShapeAsync(connection, schema, table, indexName);
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
+    [Fact]
+    public async Task should_serialize_concurrent_retry_index_repairs()
+    {
+        const string schema = "concurrent_index_repair_test";
+        var initializer = _CreateInitializer(schema, useStorageLock: false);
+        await initializer.InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                DROP INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published];
+                CREATE NONCLUSTERED INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                DROP INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
+                CREATE NONCLUSTERED INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+
+        var initializationTasks = Enumerable
+            .Range(0, 8)
+            .Select(_ => _CreateInitializer(schema, useStorageLock: false).InitializeAsync(AbortToken))
+            .ToArray();
+
+        await Task.WhenAll(initializationTasks);
+
+        await _AssertRetryIndexShapeAsync(
+            connection,
+            schema,
+            "Published",
+            $"IX_{schema}_Published_Version_NextRetryAt"
+        );
+        await _AssertRetryIndexShapeAsync(connection, schema, "Received", $"IX_{schema}_Received_Version_NextRetryAt");
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
+    private static async Task _AssertRetryIndexShapeAsync(
+        SqlConnection connection,
+        string schema,
+        string table,
+        string indexName
+    )
+    {
         var keyColumns = (
             await connection.QueryAsync<string>(
                 new CommandDefinition(
@@ -211,10 +287,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         ).ToList();
 
-        keyColumns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+        keyColumns.Should().BeEquivalentTo(["Version", "IntentType", "NextRetryAt"], opts => opts.WithStrictOrdering());
 
-        // Filtered predicate must be `[NextRetryAt] IS NOT NULL` so terminal rows are physically
-        // excluded — keeps the index small even under high failed-message volume.
         var filter = await connection.QueryFirstOrDefaultAsync<string>(
             new CommandDefinition(
                 """
@@ -234,15 +308,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         );
 
-        filter.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
-
-        // cleanup
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
-                cancellationToken: AbortToken
-            )
-        );
+        filter.Should().Be("([NextRetryAt] IS NOT NULL)");
     }
 
     [Theory]

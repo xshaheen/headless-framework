@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Checks;
@@ -12,6 +13,14 @@ namespace Headless.Messaging.Internal;
 
 internal interface IMessagePublishRequestFactory
 {
+    PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options = null,
+        TimeSpan? delayTime = null,
+        IntentType intentType = IntentType.Bus
+    );
+
     PreparedPublishMessage Create<T>(
         T? contentObj,
         MessageOptions? options = null,
@@ -49,7 +58,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.TraceParent,
     };
 
-    private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
+    private readonly ConditionalWeakTable<Type, ConcurrentDictionary<MessageLane, string>> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;
 
     public PreparedPublishMessage Create<T>(
@@ -59,30 +68,40 @@ internal sealed class MessagePublishRequestFactory(
         IntentType intentType = IntentType.Bus
     )
     {
+        return Create(contentObj, options?.MessageType ?? typeof(T), options, delayTime, intentType);
+    }
+
+    public PreparedPublishMessage Create(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options = null,
+        TimeSpan? delayTime = null,
+        IntentType intentType = IntentType.Bus
+    )
+    {
+        Argument.IsNotNull(declaredMessageType);
+        var lane = MessageLaneCompatibility.ToLane(intentType);
+
         if (delayTime is { } requestedDelay)
         {
             Argument.IsPositive(requestedDelay);
         }
 
-        var publishType = typeof(T);
-        var explicitMessageType = options?.MessageType;
-        var metadataLookupType = contentObj?.GetType() ?? explicitMessageType ?? publishType;
+        var messageName = _ResolveMessageName(declaredMessageType, lane, options?.MessageName);
         MessageMetadata? metadata = null;
-        metadataRegistry?.TryGet(metadataLookupType, out metadata);
+        metadataRegistry?.TryGet(new MessageRouteKey(declaredMessageType, messageName, lane), out metadata);
 
-        var messageType = explicitMessageType ?? metadata?.MessageType ?? publishType;
-        var messageName = _ResolveMessageName(messageType, options?.MessageName);
         var headers = _CreateHeaders(
-            messageType,
+            declaredMessageType,
             messageName,
             options,
             delayTime,
-            _ResolveCorrelationFromSelector(metadata, contentObj, metadataLookupType),
+            _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
             consumeContextAccessor?.Current?.CorrelationId
         );
         var publishAt = _ResolvePublishAt(delayTime);
 
-        _ApplyProviderHeaderContributions(headers, metadata, contentObj, metadataLookupType);
+        _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         headers[Headers.Intent] = intentType.ToString();
@@ -100,6 +119,8 @@ internal sealed class MessagePublishRequestFactory(
             PublishAt = publishAt,
             Message = new Message(headers, contentObj),
             IntentType = intentType,
+            DeclaredMessageType = declaredMessageType,
+            ConcreteMessageType = contentObj?.GetType() ?? declaredMessageType,
         };
     }
 
@@ -467,7 +488,7 @@ internal sealed class MessagePublishRequestFactory(
         return publishAt;
     }
 
-    private string _ResolveMessageName(Type messageType, string? explicitMessageName)
+    private string _ResolveMessageName(Type messageType, MessageLane lane, string? explicitMessageName)
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
@@ -475,22 +496,23 @@ internal sealed class MessagePublishRequestFactory(
             return _options.ApplyMessageNamePrefix(explicitMessageName);
         }
 
-        if (_messageNameCache.TryGetValue(messageType, out var cachedName))
+        var namesByLane = _messageNameCache.GetValue(messageType, static _ => []);
+        if (namesByLane.TryGetValue(lane, out var cachedName))
         {
             return cachedName;
         }
 
-        if (consumerRegistry.TryGetRawMessageName(messageType, out var messageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, lane, out var messageName))
         {
             messageName = _options.ApplyMessageNamePrefix(messageName);
-            _messageNameCache.AddOrUpdate(messageType, messageName);
+            namesByLane[lane] = messageName;
             return messageName;
         }
 
         if (_options.Conventions?.GetMessageName(messageType) is { } conventionMessageName)
         {
             conventionMessageName = _options.ApplyMessageNamePrefix(conventionMessageName);
-            _messageNameCache.AddOrUpdate(messageType, conventionMessageName);
+            namesByLane[lane] = conventionMessageName;
             return conventionMessageName;
         }
 
@@ -511,4 +533,8 @@ internal sealed class PreparedPublishMessage
     public required Message Message { get; init; }
 
     public required IntentType IntentType { get; init; }
+
+    public required Type DeclaredMessageType { get; init; }
+
+    public required Type ConcreteMessageType { get; init; }
 }

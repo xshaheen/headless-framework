@@ -13,9 +13,9 @@ internal static class MessagingKeys
     /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
-    public static string PublishRetryResource(string version)
+    public static string PublishRetryResource(string version, MessageLane lane)
     {
-        return $"messaging.publish-retry-{version}";
+        return $"messaging.publish-retry-{_LaneSegment(lane)}-{version}";
     }
 
     /// <summary>
@@ -24,8 +24,20 @@ internal static class MessagingKeys
     /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
-    public static string ReceiveRetryResource(string version)
+    public static string ReceiveRetryResource(string version, MessageLane lane)
     {
-        return $"messaging.receive-retry-{version}";
+        return $"messaging.receive-retry-{_LaneSegment(lane)}-{version}";
+    }
+
+    private static string _LaneSegment(MessageLane lane)
+    {
+        return lane switch
+        {
+            MessageLane.Bus => "bus",
+            MessageLane.Queue => "queue",
+            _ => throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture, $"Unsupported messaging lane '{(short)lane}'.")
+            ),
+        };
     }
 }

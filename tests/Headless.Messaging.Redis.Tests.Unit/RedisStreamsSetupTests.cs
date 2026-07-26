@@ -95,7 +95,7 @@ public sealed class RedisStreamsSetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_route_consumer_clients_by_intent_when_streams_and_pubsub_are_configured()
+    public async Task should_route_consumer_clients_by_lane_when_streams_and_pubsub_are_configured()
     {
         // given
         var services = new ServiceCollection();
@@ -111,25 +111,18 @@ public sealed class RedisStreamsSetupTests : TestBase
         var factory = provider.GetRequiredService<IConsumerClientFactory>();
 
         // then
-        var intentAwareFactory = factory.Should().BeAssignableTo<IIntentAwareConsumerClientFactory>().Subject;
+        await using var queueClient = await factory.CreateAsync("queue-group", 1, MessageLane.Queue, AbortToken);
 
-        await using var queueClient = await intentAwareFactory.CreateAsync(
-            "queue-group",
-            1,
-            IntentType.Queue,
-            AbortToken
-        );
-
-        await using var busClient = await intentAwareFactory.CreateAsync("bus-group", 1, IntentType.Bus, AbortToken);
+        await using var busClient = await factory.CreateAsync("bus-group", 1, MessageLane.Bus, AbortToken);
 
         queueClient.Should().BeOfType<RedisConsumerClient>();
         busClient.Should().BeOfType<RedisPubSubConsumerClient>();
     }
 
     [Theory]
-    [InlineData(IntentType.Bus)]
-    [InlineData(IntentType.Queue)]
-    public async Task should_propagate_factory_cancellation_through_intent_selector(IntentType intentType)
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_propagate_factory_cancellation_through_lane_selector(MessageLane lane)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -139,14 +132,10 @@ public sealed class RedisStreamsSetupTests : TestBase
             opt.UseRedisPubSub();
         });
         await using var provider = services.BuildServiceProvider();
-        var factory = provider
-            .GetRequiredService<IConsumerClientFactory>()
-            .Should()
-            .BeAssignableTo<IIntentAwareConsumerClientFactory>()
-            .Subject;
+        var factory = provider.GetRequiredService<IConsumerClientFactory>();
         var cancellationToken = new CancellationToken(canceled: true);
 
-        var act = async () => await factory.CreateAsync("test-group", 1, intentType, cancellationToken);
+        var act = async () => await factory.CreateAsync("test-group", 1, lane, cancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

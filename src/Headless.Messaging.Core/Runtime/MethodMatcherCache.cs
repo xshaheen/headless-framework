@@ -18,11 +18,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         StringComparer.Ordinal
     );
 
-    private ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>> _intentEntries = new();
+    private ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>> _laneEntries = new();
 
     private ConcurrentDictionary<string, byte> _groupConcurrent = new(StringComparer.Ordinal);
 
-    private ConcurrentDictionary<ConsumerGroupKey, byte> _intentGroupConcurrent = new();
+    private ConcurrentDictionary<ConsumerGroupKey, byte> _laneGroupConcurrent = new();
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
@@ -40,10 +40,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     internal ConcurrentDictionary<
         ConsumerGroupKey,
         IReadOnlyList<ConsumerExecutorDescriptor>
-    > GetCandidatesMethodsOfIntentGroupNameGrouped()
+    > GetCandidatesMethodsOfLaneGroupNameGrouped()
     {
         _EnsureEntries();
-        return _intentEntries;
+        return _laneEntries;
     }
 
     private void _EnsureEntries()
@@ -65,9 +65,9 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             var entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
                 StringComparer.Ordinal
             );
-            var intentEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            var laneEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             var groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            var intentGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
+            var laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
             var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
 
             foreach (var item in groupedCandidates)
@@ -78,23 +78,20 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 groupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
-            var intentGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(
-                x.GroupName,
-                x.IntentType
-            ));
+            var laneGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(x.GroupName, x.Lane));
 
-            foreach (var item in intentGroupedCandidates)
+            foreach (var item in laneGroupedCandidates)
             {
                 var candidates = item.ToList();
-                intentEntries.TryAdd(item.Key, candidates);
+                laneEntries.TryAdd(item.Key, candidates);
                 var maxConcurrency = candidates.Max(c => c.Concurrency);
-                intentGroupConcurrent.TryAdd(item.Key, maxConcurrency);
+                laneGroupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
             _entries = entries;
-            _intentEntries = intentEntries;
+            _laneEntries = laneEntries;
             _groupConcurrent = groupConcurrent;
-            _intentGroupConcurrent = intentGroupConcurrent;
+            _laneGroupConcurrent = laneGroupConcurrent;
         }
     }
 
@@ -109,7 +106,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     internal byte GetGroupConcurrentLimit(ConsumerGroupKey group)
     {
         _EnsureEntries();
-        return _intentGroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
+        return _laneGroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
     /// <summary>Gets the message names of every registered consumer across all groups.</summary>
@@ -160,14 +157,14 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     internal bool TryGetMessageNameExecutor(
         string messageName,
         string groupName,
-        IntentType intentType,
+        MessageLane lane,
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
         matchMessageName = null;
         _EnsureEntries();
 
-        if (_intentEntries.TryGetValue(new ConsumerGroupKey(groupName, intentType), out var groupMatchMessageNames))
+        if (_laneEntries.TryGetValue(new ConsumerGroupKey(groupName, lane), out var groupMatchMessageNames))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
             return matchMessageName is not null;
@@ -184,13 +181,13 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             _entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
                 StringComparer.Ordinal
             );
-            _intentEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            _laneEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             _groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            _intentGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
+            _laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
         }
 
         selector.Invalidate();
     }
 }
 
-internal readonly record struct ConsumerGroupKey(string GroupName, IntentType IntentType);
+internal readonly record struct ConsumerGroupKey(string GroupName, MessageLane Lane);

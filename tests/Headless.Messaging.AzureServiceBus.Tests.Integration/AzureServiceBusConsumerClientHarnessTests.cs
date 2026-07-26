@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+
 namespace Tests;
 
 [Collection("AzureServiceBus")]
@@ -7,6 +10,11 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     : TransportConsumerConformanceTestsBase
 {
     protected override string ProviderName => "Azure Service Bus";
+
+    protected override void ConfigureTransport(MessagingSetupBuilder setup)
+    {
+        setup.UseAzureServiceBus(fixture.ConnectionString);
+    }
 
     protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         CancellationToken cancellationToken
@@ -19,6 +27,12 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     public override Task should_round_trip_queue_message_body_and_headers()
     {
         return base.should_round_trip_queue_message_body_and_headers();
+    }
+
+    [Fact]
+    public override Task should_match_production_runtime_capabilities()
+    {
+        return base.should_match_production_runtime_capabilities();
     }
 
     [Fact]

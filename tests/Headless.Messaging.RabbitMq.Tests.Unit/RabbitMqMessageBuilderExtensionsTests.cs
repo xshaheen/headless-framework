@@ -11,9 +11,9 @@ public sealed class RabbitMqMessageBuilderExtensionsTests
     [Fact]
     public void should_store_consumer_prefetch_config()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
-        builder.OnBus<TestConsumer>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
+        builder.Consumer<TestConsumer>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
 
         config.Should().BeEquivalentTo(new RabbitMqConsumerConfig(20));

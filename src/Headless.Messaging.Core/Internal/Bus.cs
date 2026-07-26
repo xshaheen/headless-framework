@@ -1,19 +1,80 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class Bus(
-    ISerializer serializer,
-    IBusTransport transport,
-    IMessagePublishRequestFactory publishRequestFactory,
-    IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider,
-    MessagingTelemetry? telemetry = null
-) : IBus
+internal sealed class Bus : IBus
 {
-    private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
+    private static readonly IMessageCapabilityGate _DirectConstructionCapabilities = MessagingCapabilityModel.Compose([
+        MessagingProviderCapabilities.Transport("Direct", [MessageLane.Bus], supportsIndependentLaneTopology: true),
+    ]);
+
+    private readonly Func<IBusTransport> _transportResolver;
+    private readonly ISerializer _serializer;
+    private readonly IMessagePublishRequestFactory _publishRequestFactory;
+    private readonly IPublishMiddlewarePipeline _publishPipeline;
+    private readonly TimeProvider _timeProvider;
+    private readonly IMessageCapabilityGate _capabilities;
+    private readonly MessagingTelemetry _telemetry;
+
+    internal Bus(
+        ISerializer serializer,
+        IServiceProvider serviceProvider,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        IMessageCapabilityGate capabilities,
+        MessagingTelemetry? telemetry = null
+    )
+        : this(
+            serializer,
+            () => serviceProvider.GetRequiredService<IBusTransport>(),
+            publishRequestFactory,
+            publishPipeline,
+            timeProvider,
+            capabilities,
+            telemetry
+        ) { }
+
+    internal Bus(
+        ISerializer serializer,
+        IBusTransport transport,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        MessagingTelemetry? telemetry = null
+    )
+        : this(
+            serializer,
+            () => transport,
+            publishRequestFactory,
+            publishPipeline,
+            timeProvider,
+            _DirectConstructionCapabilities,
+            telemetry
+        ) { }
+
+    private Bus(
+        ISerializer serializer,
+        Func<IBusTransport> transportResolver,
+        IMessagePublishRequestFactory publishRequestFactory,
+        IPublishMiddlewarePipeline publishPipeline,
+        TimeProvider timeProvider,
+        IMessageCapabilityGate capabilities,
+        MessagingTelemetry? telemetry
+    )
+    {
+        _serializer = serializer;
+        _transportResolver = transportResolver;
+        _publishRequestFactory = publishRequestFactory;
+        _publishPipeline = publishPipeline;
+        _timeProvider = timeProvider;
+        _capabilities = capabilities;
+        _telemetry = telemetry ?? MessagingTelemetry.Default;
+    }
 
     public Task PublishAsync<T>(
         T? contentObj,
@@ -21,7 +82,11 @@ internal sealed class Bus(
         CancellationToken cancellationToken = default
     )
     {
-        return publishPipeline.ExecuteAsync(
+        _capabilities.EnsureDirectSupported(MessageLane.Bus);
+        var transport = _transportResolver();
+        var declaredMessageType = options?.MessageType ?? typeof(T);
+
+        return _publishPipeline.ExecuteAsync(
             contentObj,
             IntentType.Bus,
             // Delay on PublishOptions is ignored by the direct publisher; the pipeline receives
@@ -30,15 +95,16 @@ internal sealed class Bus(
             delayTime: null,
             innerPublish: (middlewareOptions, _, ct) =>
             {
-                var publishRequest = publishRequestFactory.Create(
+                var publishRequest = _publishRequestFactory.Create(
                     contentObj,
+                    declaredMessageType,
                     middlewareOptions,
                     intentType: IntentType.Bus
                 );
                 return DirectPublisherCore.SendAsync(
                     publishRequest.Message,
                     publishRequest.IntentType,
-                    serializer,
+                    _serializer,
                     transport.BrokerAddress,
                     transport.SendAsync,
                     _NowUnixTimeMilliseconds,
@@ -53,6 +119,6 @@ internal sealed class Bus(
 
     private long _NowUnixTimeMilliseconds()
     {
-        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        return _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
     }
 }

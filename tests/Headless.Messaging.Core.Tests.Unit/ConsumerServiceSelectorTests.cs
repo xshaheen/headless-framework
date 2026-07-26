@@ -20,10 +20,10 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
                     .MessageName("test.messageName")
-                    .OnBus<SelectorTestConsumer>(consumer => consumer.Group("test-group"))
+                    .Consumer<SelectorTestConsumer>(consumer => consumer.Group("test-group"))
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -54,10 +54,10 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
                     .MessageName("test.messageName")
-                    .OnBus<SelectorTestConsumer>(consumer => consumer.Group("test-group"))
+                    .Consumer<SelectorTestConsumer>(consumer => consumer.Group("test-group"))
             );
             messaging.UseConventions(conventions =>
             {
@@ -85,8 +85,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<SelectorTestConsumer>()
             );
             messaging.UseConventions(conventions =>
             {
@@ -119,8 +119,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<SelectorTestConsumer>()
             );
             messaging.Options.MessageNamePrefix = "my-app";
             messaging.Options.DefaultGroupName = "default";
@@ -146,11 +146,11 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("orders.placed").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("orders.placed").Consumer<SelectorTestConsumer>()
             );
-            messaging.ForMessage<AnotherSelectorTestMessage>(message =>
-                message.MessageName("orders.cancelled").OnBus<AnotherSelectorConsumer>()
+            messaging.Bus.ForMessage<AnotherSelectorTestMessage>(message =>
+                message.MessageName("orders.cancelled").Consumer<AnotherSelectorConsumer>()
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -177,8 +177,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("orders.placed").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("orders.placed").Consumer<SelectorTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -210,7 +210,8 @@ public sealed class ConsumerServiceSelectorTests
                 typeof(SelectorTestMessage),
                 "orders.*",
                 group: null,
-                concurrency: 1
+                concurrency: 1,
+                lane: MessageLane.Bus
             );
         });
 
@@ -234,11 +235,11 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
             {
                 message.MessageName("orders.placed");
-                message.OnBus<SelectorTestConsumer>(consumer => consumer.Group("group1"));
-                message.OnBus<SecondSelectorConsumer>(consumer => consumer.Group("group2"));
+                message.Consumer<SelectorTestConsumer>(consumer => consumer.Group("group1"));
+                message.Consumer<SecondSelectorConsumer>(consumer => consumer.Group("group2"));
             });
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -266,8 +267,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<SelectorTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -319,8 +320,10 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<SelectorTestConsumer>(consumer => consumer.Concurrency(5))
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message
+                    .MessageName("test.messageName")
+                    .Consumer<SelectorTestConsumer>(consumer => consumer.Concurrency(5))
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -345,8 +348,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<SelectorTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<SelectorTestConsumer>()
+            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<SelectorTestConsumer>()
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";

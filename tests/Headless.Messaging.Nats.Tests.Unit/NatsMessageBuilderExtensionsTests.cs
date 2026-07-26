@@ -12,7 +12,7 @@ public sealed class NatsMessageBuilderExtensionsTests
     [Fact]
     public void should_store_subject_shard_header_contribution()
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseNats(nats => nats.SubjectShard(static message => message.TenantId));
         var contribution = (
@@ -33,7 +33,7 @@ public sealed class NatsMessageBuilderExtensionsTests
     [InlineData("tenant\t")]
     public void should_reject_invalid_subject_shard_tokens(string shard)
     {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
         builder.UseNats(nats => nats.SubjectShard(_ => shard));
         var contribution = (
             (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()

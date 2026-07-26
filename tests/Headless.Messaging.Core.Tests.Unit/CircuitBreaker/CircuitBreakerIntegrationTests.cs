@@ -117,11 +117,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
         dataStorage
-            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
@@ -369,6 +369,67 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         using var context2 = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
         await retryProcessor.ProcessAsync(context2);
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task same_logical_group_keeps_lane_timers_and_recovery_independent()
+    {
+        // given
+        const string group = "integration.group.shared";
+        var busKey = CircuitBreakerGroupKeys.For(IntentType.Bus, group);
+        var queueKey = CircuitBreakerGroupKeys.For(IntentType.Queue, group);
+        var busPaused = false;
+        var queuePaused = false;
+        var queueResumed = false;
+        var busResumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var sut = _CreateStateManager(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+
+        sut.RegisterKnownGroups([busKey, queueKey]);
+        sut.RegisterGroupCallbacks(
+            busKey,
+            onPause: () =>
+            {
+                busPaused = true;
+                return ValueTask.CompletedTask;
+            },
+            onResume: () =>
+            {
+                busResumed.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        sut.RegisterGroupCallbacks(
+            queueKey,
+            onPause: () =>
+            {
+                queuePaused = true;
+                return ValueTask.CompletedTask;
+            },
+            onResume: () =>
+            {
+                queueResumed = true;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // when
+        await sut.ReportFailureAsync(busKey, new TimeoutException("bus unavailable"), AbortToken);
+        await busResumed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        busPaused.Should().BeTrue();
+        sut.GetState(busKey).Should().Be(CircuitBreakerState.HalfOpen);
+        sut.GetState(queueKey).Should().Be(CircuitBreakerState.Closed);
+        queuePaused.Should().BeFalse();
+        queueResumed.Should().BeFalse();
+
+        // when
+        sut.TryAcquireHalfOpenProbe(busKey).Should().BeTrue();
+        await sut.ReportSuccessAsync(busKey, AbortToken);
+
+        // then
+        sut.GetState(busKey).Should().Be(CircuitBreakerState.Closed);
+        sut.GetState(queueKey).Should().Be(CircuitBreakerState.Closed);
     }
 
     private static async Task _ReportProbeSuccess(CircuitBreakerStateManager stateManager, string group)

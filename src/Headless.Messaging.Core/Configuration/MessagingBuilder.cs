@@ -122,7 +122,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             messageType: null,
-            groupName: null
+            groupName: null,
+            lane: MessageLane.Bus
         );
     }
 
@@ -144,15 +145,17 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             messageType: null,
-            groupName: null
+            groupName: null,
+            lane: MessageLane.Bus
         );
     }
 
     /// <summary>Registers publish middleware that intercepts publish operations for a specific message type.</summary>
     /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
     /// <typeparam name="TMessage">The message type whose publish pipeline this middleware targets.</typeparam>
+    /// <param name="lane">The message lane this middleware targets.</param>
     /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
-    public MiddlewareRegistration AddPublishMiddlewareFor<TMiddleware, TMessage>()
+    public MiddlewareRegistration AddPublishMiddlewareFor<TMiddleware, TMessage>(MessageLane lane)
         where TMiddleware : class, IPublishMiddleware<PublishContext<TMessage>>
     {
         var contextType = typeof(PublishContext<TMessage>);
@@ -164,7 +167,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             typeof(TMessage),
-            groupName: null
+            groupName: null,
+            lane
         );
     }
 
@@ -172,9 +176,10 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
     /// <typeparam name="TMessage">The message type whose consume pipeline this middleware targets.</typeparam>
     /// <param name="groupName">The consumer group name this middleware is scoped to. Must not be null or whitespace.</param>
+    /// <param name="lane">The message lane this middleware targets.</param>
     /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="groupName"/> is null or whitespace.</exception>
-    public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(string groupName)
+    public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(string groupName, MessageLane lane)
         where TMiddleware : class, IConsumeMiddleware<ConsumeContext<TMessage>>
         where TMessage : class
     {
@@ -190,7 +195,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             typeof(TMessage),
-            resolvedGroupName
+            resolvedGroupName,
+            lane
         );
     }
 
@@ -200,7 +206,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         Type serviceType,
         Type contextType,
         Type? messageType,
-        string? groupName
+        string? groupName,
+        MessageLane lane
     )
         where TMiddleware : class
     {
@@ -215,7 +222,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
                     serviceType,
                     contextType,
                     messageType,
-                    groupName
+                    groupName,
+                    lane
                 )
             );
 

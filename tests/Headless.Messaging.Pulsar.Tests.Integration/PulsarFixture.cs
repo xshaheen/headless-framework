@@ -19,7 +19,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
     {
         return CreateSessionAsync(
             ConnectionString,
-            IntentType.Queue,
+            MessageLane.Queue,
             cancellationToken,
             destination,
             group,
@@ -33,12 +33,12 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         string? destination = null
     )
     {
-        return CreateSessionAsync(ConnectionString, IntentType.Bus, cancellationToken, destination, group);
+        return CreateSessionAsync(ConnectionString, MessageLane.Bus, cancellationToken, destination, group);
     }
 
     internal static async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         string connectionString,
-        IntentType intent,
+        MessageLane lane,
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
@@ -63,12 +63,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         {
             var producer = serviceProvider.GetRequiredService<IQueueTransport>();
             var factory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await ((IIntentAwareConsumerClientFactory)factory).CreateAsync(
-                group,
-                2,
-                intent,
-                cancellationToken
-            );
+            var consumer = await factory.CreateAsync(group, 2, lane, cancellationToken);
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try
@@ -85,7 +80,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                         ? replacementToken =>
                             CreateSessionAsync(
                                 connectionString,
-                                intent,
+                                lane,
                                 replacementToken,
                                 destination,
                                 group,

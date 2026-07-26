@@ -106,6 +106,13 @@ public static class SetupPulsarMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Apache Pulsar"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Apache Pulsar",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: false
+                )
+            );
 
             configureOptions(services);
 

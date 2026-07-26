@@ -162,7 +162,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
     private static IEnumerable<ConsumerExecutorDescriptor> _FindConsumersFromControllerTypes()
     {
         // Controller-based consumers are no longer supported with IConsume<T> pattern
-        // Use setup.ForMessage<TMessage>(...) instead.
+        // Use setup.Bus/Queue.ForMessage<TMessage>(...) instead.
         return [];
     }
 
@@ -222,17 +222,17 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
     private static WildcardCacheKey _CreateWildcardCacheKey(IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor)
     {
         var group = executeDescriptor[0].GroupName;
-        var intentType = executeDescriptor[0].IntentType;
+        var lane = executeDescriptor[0].Lane;
 
         for (var i = 1; i < executeDescriptor.Count; i++)
         {
-            if (executeDescriptor[i].IntentType != intentType)
+            if (executeDescriptor[i].Lane != lane)
             {
-                return new WildcardCacheKey(group, IntentType: null);
+                return new WildcardCacheKey(group, Lane: null);
             }
         }
 
-        return new WildcardCacheKey(group, intentType);
+        return new WildcardCacheKey(group, lane);
     }
 
     private sealed class RegexExecuteDescriptor<T>
@@ -242,5 +242,5 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         public required T Descriptor { get; init; }
     }
 
-    private readonly record struct WildcardCacheKey(string GroupName, IntentType? IntentType);
+    private readonly record struct WildcardCacheKey(string GroupName, MessageLane? Lane);
 }

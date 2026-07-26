@@ -35,7 +35,7 @@ public sealed class PulsarBrokerFaultTests(PulsarFixture fixture) : BrokerFaultT
         await broker.StartAsync();
         await using var session = await PulsarFixture.CreateSessionAsync(
             broker.ConnectionString,
-            IntentType.Queue,
+            MessageLane.Queue,
             AbortToken
         );
         await session.StartAsync(cancellationToken: AbortToken);
@@ -70,7 +70,7 @@ public sealed class PulsarOutageTests : TestBase
         await broker.StartAsync();
         await using var session = await PulsarFixture.CreateSessionAsync(
             broker.ConnectionString,
-            IntentType.Queue,
+            MessageLane.Queue,
             AbortToken
         );
         await session.StartAsync(cancellationToken: AbortToken);

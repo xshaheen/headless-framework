@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
@@ -33,7 +34,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -48,7 +49,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
 
         // then
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -100,7 +101,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         // when
         try
         {
-            await factory.CreateAsync("test-group", 1, AbortToken);
+            await factory.CreateAsync("test-group", 1, MessageLane.Queue, AbortToken);
         }
         catch (BrokerConnectionException)
         {
@@ -120,7 +121,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
             .Returns(Task.FromCanceled<Pulsar.Client.Api.PulsarClient>(cancellationToken));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
-        var act = async () => await factory.CreateAsync("test-group", 1, cancellationToken);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await _connectionFactory.Received(1).RentClientAsync(cancellationToken);

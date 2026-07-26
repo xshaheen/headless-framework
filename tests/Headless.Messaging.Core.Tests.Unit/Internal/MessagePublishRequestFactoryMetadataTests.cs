@@ -20,7 +20,8 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         var factory = _CreateFactory(registry, typeof(IOrderEvent));
 
         // when
-        var prepared = factory.Create(new ConcreteOrderEvent("order-1"));
+        IOrderEvent message = new ConcreteOrderEvent("order-1");
+        var prepared = factory.Create(message);
 
         // then
         prepared.MessageName.Should().Be("orders.event");
@@ -57,10 +58,8 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         var factory = _CreateFactory(registry, typeof(IOrderEvent));
 
         // when
-        var prepared = factory.Create(
-            new ConcreteOrderEvent("order-1"),
-            new PublishOptions { MessageName = "orders.explicit" }
-        );
+        IOrderEvent message = new ConcreteOrderEvent("order-1");
+        var prepared = factory.Create(message, new PublishOptions { MessageName = "orders.explicit" });
 
         // then
         prepared.MessageName.Should().Be("orders.explicit");
@@ -72,7 +71,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
     {
         var registrations = new[]
         {
-            new MessageRegistration(metadataType, null, null, new Dictionary<Type, object>(), []),
+            new MessageRegistration(metadataType, MessageLane.Bus, null, null, new Dictionary<Type, object>(), []),
         };
 
         return new MessagePublishRequestFactory(
@@ -81,7 +80,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
             Options.Create(new MessagingOptions()),
             registry,
             new NullCurrentTenant(),
-            new MessageMetadataRegistry(registrations)
+            new MessageMetadataRegistry(registrations, registry)
         );
     }
 

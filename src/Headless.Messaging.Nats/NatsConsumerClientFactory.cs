@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -9,21 +10,12 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsConsumerClientFactory(
     IOptions<NatsMessagingOptions> natsOptions,
     IServiceProvider serviceProvider
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
-    }
-
     public async Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
@@ -32,7 +24,7 @@ internal sealed class NatsConsumerClientFactory(
             groupConcurrent,
             natsOptions,
             serviceProvider,
-            intentType: intentType
+            intentType: MessageLaneCompatibility.ToIntentType(lane)
         );
         try
         {

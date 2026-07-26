@@ -27,7 +27,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -46,7 +46,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client = await factory.CreateAsync("my-consumer-group", 5, AbortToken);
+        var client = await factory.CreateAsync("my-consumer-group", 5, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -68,7 +68,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client = await factory.CreateAsync("group-name", 0, AbortToken);
+        var client = await factory.CreateAsync("group-name", 0, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -88,15 +88,15 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 1, AbortToken);
-        var client2 = await factory.CreateAsync("group-2", 2, AbortToken);
+        var client1 = await factory.CreateAsync("group-1", 1, MessageLane.Queue, AbortToken);
+        var client2 = await factory.CreateAsync("group-2", 2, MessageLane.Queue, AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);
     }
 
     [Fact]
-    public async Task should_reject_bus_consumer_intent()
+    public async Task should_reject_bus_consumer_lane()
     {
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
@@ -109,7 +109,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var act = async () => await factory.CreateAsync("group-name", 1, IntentType.Bus);
+        var act = async () => await factory.CreateAsync("group-name", 1, MessageLane.Bus);
 
         // then
         await act.Should().ThrowAsync<NotSupportedException>();

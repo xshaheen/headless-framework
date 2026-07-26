@@ -190,7 +190,8 @@ public sealed class CorrelationPrecedenceTests
             [
                 new MessageRegistration(
                     typeof(TestMessage),
-                    null,
+                    MessageLane.Bus,
+                    "test.message",
                     message => selector((TestMessage)message),
                     new Dictionary<Type, object>(),
                     []

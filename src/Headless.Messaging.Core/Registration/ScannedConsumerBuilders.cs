@@ -33,14 +33,6 @@ public sealed record ScannedConsumerContext
 [PublicAPI]
 public interface IScannedConsumerBuilder
 {
-    /// <summary>Registers the scanned consumer for broadcast bus delivery.</summary>
-    /// <returns>The same builder instance for chaining.</returns>
-    IScannedConsumerBuilder OnBus();
-
-    /// <summary>Registers the scanned consumer for point-to-point queue delivery.</summary>
-    /// <returns>The same builder instance for chaining.</returns>
-    IScannedConsumerBuilder OnQueue();
-
     /// <summary>Sets the consumer group name for this scanned consumer registration.</summary>
     /// <param name="group">A non-whitespace group name (Kafka group.id or RabbitMQ queue name).</param>
     /// <returns>The same builder instance for chaining.</returns>
@@ -68,27 +60,11 @@ public interface IScannedConsumerBuilder
     IScannedConsumerBuilder Skip();
 }
 
-internal sealed class ScannedConsumerBuilder(Type consumerType) : IScannedConsumerBuilder
+internal sealed class ScannedConsumerBuilder(Type consumerType, MessageLane lane) : IScannedConsumerBuilder
 {
-    private readonly MessageConsumerRegistrationBuilder _registration = new(
-        consumerType,
-        IntentType.Bus,
-        isAssemblyScan: true
-    );
+    private readonly MessageConsumerRegistrationBuilder _registration = new(consumerType, lane, isAssemblyScan: true);
 
     public bool IsSkipped { get; private set; }
-
-    public IScannedConsumerBuilder OnBus()
-    {
-        _registration.IntentType = IntentType.Bus;
-        return this;
-    }
-
-    public IScannedConsumerBuilder OnQueue()
-    {
-        _registration.IntentType = IntentType.Queue;
-        return this;
-    }
 
     public IScannedConsumerBuilder Group(string group)
     {

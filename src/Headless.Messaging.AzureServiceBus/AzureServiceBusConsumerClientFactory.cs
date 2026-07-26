@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,24 +13,17 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     IOptions<AzureServiceBusMessagingOptions> asbOptions,
     IServiceProvider serviceProvider,
     IAzureServiceBusClientPool clientPool
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return CreateAsync(groupName, groupConcurrent, IntentType.Bus, cancellationToken);
-    }
-
     public async Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
+        var intentType = MessageLaneCompatibility.ToIntentType(lane);
+
         // Bus groups are Azure subscriptions. Queue groups are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
         if (intentType == IntentType.Bus)

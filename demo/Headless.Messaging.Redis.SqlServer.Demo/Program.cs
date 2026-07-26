@@ -12,7 +12,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessage<Person>(message => message.MessageName("test-message").OnQueue<PersonConsumer>());
+    setup.Queue.ForMessage<Person>(message => message.MessageName("test-message").Consumer<PersonConsumer>());
 
     setup.UseRedis(redis =>
     {

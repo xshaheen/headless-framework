@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging.Internal;
 
 namespace Headless.Messaging.Messages;
 
@@ -43,6 +44,9 @@ public sealed class ConsumerExecutorDescriptor
     /// Delivery intent used to subscribe this consumer.
     /// </summary>
     public required IntentType IntentType { get; init; }
+
+    /// <summary>Gets the checked runtime lane represented by <see cref="IntentType"/>.</summary>
+    internal MessageLane Lane => MessageLaneCompatibility.ToLane(IntentType);
 
     /// <summary>
     /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is

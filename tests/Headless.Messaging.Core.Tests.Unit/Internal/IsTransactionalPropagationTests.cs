@@ -35,7 +35,9 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>(
+            MessageLane.Bus
+        );
         var pipeline = _BuildPublishPipeline(services);
 
         await using var transport = new RecordingTransport();
@@ -68,7 +70,9 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>(
+            MessageLane.Bus
+        );
         var pipeline = _BuildPublishPipeline(services);
 
         await using var transaction = new TestDbTransaction();
@@ -103,7 +107,9 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>(
+            MessageLane.Bus
+        );
         var pipeline = _BuildPublishPipeline(services);
 
         var publisher = _BuildOutboxMessageWriter(pipeline, new MessagingNullCommitCoordinator());

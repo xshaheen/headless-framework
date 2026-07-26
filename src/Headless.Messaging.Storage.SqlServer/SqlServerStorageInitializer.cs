@@ -38,9 +38,9 @@ internal sealed class SqlServerStorageInitializer(
 
     /// <summary>
     /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
-    /// table-valued parameter type if they do not already exist. Each DDL block is guarded by
-    /// an <c>IF NOT EXISTS</c> check inside a <c>TRY/CATCH</c> that swallows only duplicate-object
-    /// (2714) and PK-violation (2627) errors so concurrent multi-replica startups converge safely.
+    /// table-valued parameter type if they do not already exist. Concurrent initializers are serialized
+    /// with a session-scoped <c>sp_getapplock</c>; each DDL block remains independently idempotent so a
+    /// later initialization can repair a partially completed schema.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -54,9 +54,8 @@ internal sealed class SqlServerStorageInitializer(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         // No wrapping transaction: each idempotent block in the script is already protected by
-        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH that swallows only the
-        // duplicate-object (2714) and PK-violation (2627) errors raised under a TOCTOU race
-        // between concurrent startups (multi-replica rollouts). A wrapping transaction would
+        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH. The session-scoped application lock
+        // serializes the full repair sequence across concurrent startups. A wrapping transaction would
         // interact poorly with sessions that have SET XACT_ABORT ON — statement-level errors
         // doom the transaction (XACT_STATE = -1), the inner CATCH swallows the error, but the
         // outer COMMIT then fails with 3930, masking the real cause. A mid-script abort
@@ -87,9 +86,15 @@ internal sealed class SqlServerStorageInitializer(
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
+        var lockResource = $"headless_messaging_init:{schema}";
         var batchSql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = N'{lockResource}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
+            IF @lockResult < 0 THROW 50000, N'Headless.Messaging: failed to acquire init lock on the messaging schema. Another initializer may be holding it.', 1;
+
+            BEGIN TRY
             BEGIN TRY
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')
                 BEGIN
@@ -199,9 +204,25 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            -- Repair the pre-lane retry index in place. Name-only existence checks would preserve
+            -- (Version, NextRetryAt), leaving IntentType as a residual predicate for every lane claim.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes i
+                WHERE i.name = N'IX_{receivedPrefix}_Version_NextRetryAt'
+                  AND i.object_id = OBJECT_ID(N'{GetReceivedTableName()}')
+                  AND (
+                      (SELECT COUNT(*) FROM sys.index_columns ic WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0) <> 3
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1 AND c.name = N'Version')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 2 AND c.name = N'IntentType')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 3 AND c.name = N'NextRetryAt')
+                  )
+            )
+                DROP INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()};
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -267,9 +288,24 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            -- Apply the same migration-safe shape repair to Published retry pickup.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes i
+                WHERE i.name = N'IX_{publishedPrefix}_Version_NextRetryAt'
+                  AND i.object_id = OBJECT_ID(N'{GetPublishedTableName()}')
+                  AND (
+                      (SELECT COUNT(*) FROM sys.index_columns ic WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0) <> 3
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1 AND c.name = N'Version')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 2 AND c.name = N'IntentType')
+                      OR NOT EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 3 AND c.name = N'NextRetryAt')
+                  )
+            )
+                DROP INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()};
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -281,6 +317,21 @@ internal sealed class SqlServerStorageInitializer(
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+                EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
+            END TRY
+            BEGIN CATCH
+                -- Keep release failures from replacing the original DDL exception. Closing the
+                -- connection remains a backstop for this session-scoped lock.
+                BEGIN TRY
+                    IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
+                        EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
+                END TRY
+                BEGIN CATCH
+                    -- intentional: preserve the original initializer failure
+                END CATCH;
+                THROW;
             END CATCH;
 
             """

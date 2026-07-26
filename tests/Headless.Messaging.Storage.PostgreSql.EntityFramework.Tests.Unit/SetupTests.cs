@@ -16,6 +16,16 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
+    public void should_preserve_postgresql_entity_framework_adapter_name_and_root()
+    {
+        typeof(SetupPostgreSqlEntityFrameworkMessaging).Name.Should().Be("SetupPostgreSqlEntityFrameworkMessaging");
+        typeof(SetupPostgreSqlEntityFrameworkMessaging)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Should()
+            .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);
+    }
+
+    [Fact]
     public async Task should_extract_dbcontext_configuration_when_using_entity_framework()
     {
         // given

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
@@ -37,7 +38,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
 
         // ConnectAsync must fail without depending on local port state.
-        var act = async () => await factory.CreateAsync("test-group", 1);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
 
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
         exception.Which.InnerException.Should().NotBeNull();
@@ -50,7 +51,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, cts.Token);
+        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

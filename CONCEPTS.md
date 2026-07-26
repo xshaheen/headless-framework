@@ -75,23 +75,32 @@ whether the message is captured durably or sent straight to transport.
 ### Message lane
 The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
 (point-to-point — competing consumers, one worker per message). The same CLR contract may use both
-lanes intentionally, but each lane has an independent registration, route, runtime key, storage
-discriminator, and physical topology. Use `MessageLane.Bus` / `MessageLane.Queue` in new APIs and
-writing; `IntentType` is the legacy name.
+lanes intentionally, but each lane has an independent registration, route, runtime key, and storage
+discriminator; physical topology is independent only when the provider declares that capability.
+Use `MessageLane.Bus` / `MessageLane.Queue` in new APIs and
+writing. Persisted columns, headers, wire values, monitoring, and dashboard projections retain the
+legacy `IntentType` name and numeric values until the #350 compatibility cutover. `Bus = 0` and
+`Queue = 1` are stable compatibility values; an undefined value fails explicitly and never falls
+back to Bus.
 
 ### Verb-conveyed lane model
 The decided messaging model (2026-07-13): the operation conveys semantics. Publishing through `IBus`
 uses the Bus lane; enqueueing through `IQueue` uses the Queue lane. Message contracts implement no
 framework classification marker. Consumer configuration is structurally lane-scoped through
 `setup.Bus.ForMessage<T>` / `setup.Queue.ForMessage<T>`, and registry identity is
-`(MessageType, MessageLane)`.
+`(MessageType, MessageName, MessageLane)`. The same contract and logical name may be registered on
+both lanes with independent consumers and runtime state when the selected transport can keep their
+physical topology separate.
 
-### Late-bound intent
-The current pre-redesign implementation chooses a lane with `OnBus`/`OnQueue` inside one shared
-`ForMessage<T>` builder. It permits correct semantics but does not carry the lane structurally through
-every registration key and provider topology, which enabled #344's cross-intent leak. The target
-verb-conveyed model keeps the flexibility while moving the lane to the builder root and every runtime
-identity.
+Provider support is declared by immutable transport, storage, and coordination capability
+descriptors. Startup and per-call gates reject unsupported lanes, scheduling, or dual-lane topology
+before readiness, middleware, storage writes, client creation, or transport I/O. NATS and RabbitMQ
+currently cannot isolate the same contract/name on both lanes; that physical topology migration is
+owned by #359.
+
+Callback responses always use the Bus delivery lane, even when the request arrived on Queue. Queue
+remains the request's origin metadata; the declared callback contract selects typed middleware while
+the concrete response type remains payload metadata.
 
 ### Delivery mode
 The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Auto, the

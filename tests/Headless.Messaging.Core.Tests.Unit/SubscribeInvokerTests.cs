@@ -19,8 +19,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -48,8 +48,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -78,8 +78,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -113,8 +113,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -155,8 +155,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -203,8 +203,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<CancellableConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<CancellableConsumer>()
             );
         });
 
@@ -234,8 +234,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -264,8 +264,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseHeaderConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseHeaderConsumer>()
             );
         });
 
@@ -297,8 +297,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseBodyConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
             );
         });
 
@@ -330,8 +330,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseHeaderConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseHeaderConsumer>()
             );
         });
 
@@ -363,8 +363,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseBodyConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
             );
         });
 
@@ -392,8 +392,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseBodyAndHeaderConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseBodyAndHeaderConsumer>()
             );
         });
 
@@ -426,8 +426,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<RewriteCallbackConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<RewriteCallbackConsumer>()
             );
         });
 
@@ -458,8 +458,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<RemoveCallbackConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<RemoveCallbackConsumer>()
             );
         });
 
@@ -490,8 +490,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<NextCallbackConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<NextCallbackConsumer>()
             );
         });
 
@@ -521,8 +521,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<ResponseBodyConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
             );
         });
 
@@ -552,8 +552,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -585,8 +585,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -617,8 +617,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 
@@ -650,8 +650,8 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
             );
         });
 

@@ -395,6 +395,7 @@ public interface IDataStorage
     /// </para>
     /// </remarks>
     ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     );
 
@@ -452,6 +453,7 @@ public interface IDataStorage
     /// </para>
     /// </remarks>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        MessageLane lane,
         CancellationToken cancellationToken = default
     );
 

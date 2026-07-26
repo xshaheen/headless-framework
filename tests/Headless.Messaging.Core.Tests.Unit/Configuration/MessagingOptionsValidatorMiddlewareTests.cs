@@ -22,7 +22,8 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IConsumeMiddleware<ConsumeContext<OrderPlaced>>),
                 typeof(ConsumeContext<OrderPlaced>),
                 MessageType: null,
-                GroupName: null
+                GroupName: null,
+                Lane: MessageLane.Bus
             )
         );
         var validator = new MessagingOptionsValidator(registry);
@@ -49,7 +50,8 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IPublishMiddleware<PublishContext<OrderPlaced>>),
                 typeof(PublishContext<OrderPlaced>),
                 MessageType: null,
-                GroupName: null
+                GroupName: null,
+                Lane: MessageLane.Bus
             )
         );
         var validator = new MessagingOptionsValidator(registry);
@@ -76,7 +78,8 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IConsumeMiddleware<ConsumeContext>),
                 typeof(ConsumeContext),
                 MessageType: null,
-                GroupName: null
+                GroupName: null,
+                Lane: MessageLane.Bus
             )
         );
         var validator = new MessagingOptionsValidator(registry);
@@ -101,7 +104,8 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IConsumeMiddleware<ConsumeContext<OrderPlaced>>),
                 typeof(ConsumeContext<OrderPlaced>),
                 typeof(OrderPlaced),
-                "checkout"
+                "checkout",
+                MessageLane.Bus
             )
         );
         var validator = new MessagingOptionsValidator(registry);

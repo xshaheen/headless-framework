@@ -502,7 +502,7 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
     [Fact]
     public void with_circuit_breaker_on_consumer_builder_registers_per_group()
     {
-        // Simulates: setup.ForMessage<Message>().OnBus<Handler>(c => c.WithCircuitBreaker(...))
+        // Simulates: setup.Bus.ForMessage<Message>().Consumer<Handler>(c => c.WithCircuitBreaker(...))
         var cbRegistry = new ConsumerCircuitBreakerRegistry();
         cbRegistry.Register("orders.group", new ConsumerCircuitBreakerOptions { FailureThreshold = 2 });
 

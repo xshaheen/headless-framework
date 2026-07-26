@@ -83,4 +83,10 @@ public interface IConsumerRegistry
         messageName = null;
         return false;
     }
+
+    /// <summary>Attempts to find the lane-specific raw message name, falling back to the global mapping.</summary>
+    bool TryGetRawMessageName(Type messageType, MessageLane lane, [NotNullWhen(true)] out string? messageName)
+    {
+        return TryGetRawMessageName(messageType, out messageName);
+    }
 }

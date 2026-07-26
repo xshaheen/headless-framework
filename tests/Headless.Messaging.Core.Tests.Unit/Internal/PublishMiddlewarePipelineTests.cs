@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -256,7 +257,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<
             MutatingAfterNextTypedPublishMiddleware,
             MiddlewarePayload
-        >();
+        >(MessageLane.Bus);
         var provider = services.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(
             provider,
@@ -281,6 +282,47 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         recorder.Calls.Should().Equal("A.before", "inner", "A.after");
     }
 
+    [Fact]
+    public async Task should_dispatch_concrete_subtype_through_declared_contract_middleware()
+    {
+        // given
+        var recorder = new DeclaredContractRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext<IDeclaredContract>>, DeclaredContractMiddleware>();
+        var pipeline = _BuildPipeline(services);
+        var payload = new ConcreteDeclaredContract("value");
+
+        // when
+        await _ExecuteWithDeclaredContractAsync(pipeline, payload, typeof(IDeclaredContract));
+
+        // then
+        recorder.Context.Should().NotBeNull();
+        recorder.Context!.MessageType.Should().Be<IDeclaredContract>();
+        _ConcreteType(recorder.Context).Should().Be<ConcreteDeclaredContract>();
+        recorder.Context.Content.Should().BeSameAs(payload);
+    }
+
+    [Fact]
+    public async Task should_dispatch_typed_null_through_declared_contract_middleware()
+    {
+        // given
+        var recorder = new DeclaredContractRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext<IDeclaredContract>>, DeclaredContractMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await _ExecuteWithDeclaredContractAsync(pipeline, content: null, typeof(IDeclaredContract));
+
+        // then
+        recorder.Context.Should().NotBeNull();
+        recorder.Context!.MessageType.Should().Be<IDeclaredContract>();
+        _ConcreteType(recorder.Context).Should().Be<IDeclaredContract>();
+        recorder.Context.Content.Should().BeNull();
+    }
+
     private static ServiceCollection _CreateServices(MiddlewareCallRecorder recorder)
     {
         var services = new ServiceCollection();
@@ -292,11 +334,84 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
     {
         return new PublishMiddlewarePipeline(services.BuildServiceProvider());
     }
+
+    private static Task _ExecuteWithDeclaredContractAsync(
+        IPublishMiddlewarePipeline pipeline,
+        object? content,
+        Type declaredContract
+    )
+    {
+        var overload = pipeline
+            .GetType()
+            .GetMethod(
+                nameof(IPublishMiddlewarePipeline.ExecuteAsync),
+                BindingFlags.Instance | BindingFlags.Public,
+                binder: null,
+                types:
+                [
+                    typeof(object),
+                    typeof(Type),
+                    typeof(IntentType),
+                    typeof(MessageOptions),
+                    typeof(TimeSpan?),
+                    typeof(Func<MessageOptions?, TimeSpan?, CancellationToken, Task>),
+                    typeof(bool),
+                    typeof(CancellationToken),
+                ],
+                modifiers: null
+            );
+
+        overload.Should().NotBeNull("the runtime must carry the declared contract separately from the payload");
+
+        return (Task)
+            overload!.Invoke(
+                pipeline,
+                [
+                    content,
+                    declaredContract,
+                    IntentType.Bus,
+                    null,
+                    null,
+                    (Func<MessageOptions?, TimeSpan?, CancellationToken, Task>)((_, _, _) => Task.CompletedTask),
+                    false,
+                    AbortToken,
+                ]
+            )!;
+    }
+
+    private static Type _ConcreteType(PublishContext context)
+    {
+        var property = typeof(PublishContext).GetProperty(
+            nameof(PublishContext.ConcreteMessageType),
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly
+        );
+        property.Should().NotBeNull("callback middleware requires the concrete response type separately");
+        return (Type)property!.GetValue(context)!;
+    }
 }
 
 internal sealed record MiddlewarePayload(string Value);
 
 internal sealed record OtherMiddlewarePayload(string Value);
+
+internal interface IDeclaredContract;
+
+internal sealed record ConcreteDeclaredContract(string Value) : IDeclaredContract;
+
+internal sealed class DeclaredContractRecorder
+{
+    public PublishContext<IDeclaredContract>? Context { get; set; }
+}
+
+internal sealed class DeclaredContractMiddleware(DeclaredContractRecorder recorder)
+    : IPublishMiddleware<PublishContext<IDeclaredContract>>
+{
+    public ValueTask InvokeAsync(PublishContext<IDeclaredContract> context, Func<ValueTask> next)
+    {
+        recorder.Context = context;
+        return next();
+    }
+}
 
 internal sealed class MiddlewareCallRecorder
 {

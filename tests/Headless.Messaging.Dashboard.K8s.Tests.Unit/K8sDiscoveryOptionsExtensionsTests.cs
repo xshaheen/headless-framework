@@ -71,6 +71,25 @@ public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
         extensions.Should().ContainSingle(x => x.GetType().Name == "K8sDiscoveryOptionsExtension");
     }
 
+    [Fact]
+    public void should_preserve_k8s_discovery_name_without_contributing_provider_capabilities()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseK8sDiscovery());
+
+        using var provider = services.BuildServiceProvider();
+
+        typeof(MessagingK8sDiscoveryOptionsExtensions)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Should()
+            .Contain(method => method.Name == "UseK8sDiscovery");
+        provider
+            .GetRequiredService<IMessagingCapabilityModel>()
+            .DeclaredCapabilities.Should()
+            .BeEmpty("node discovery is cross-cutting and is not a transport, storage, or coordination provider");
+    }
+
     private static MessagingSetupBuilder _CreateSetup()
     {
         return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());

@@ -7,7 +7,7 @@ namespace Headless.Messaging.Redis;
 internal sealed class RedisConsumerClientFactorySelector(
     IEnumerable<RedisConsumerClientFactory> queueFactories,
     IEnumerable<RedisPubSubConsumerClientFactory> busFactories
-) : IIntentAwareConsumerClientFactory
+) : IConsumerClientFactory
 {
     private readonly RedisConsumerClientFactory? _queueFactory = queueFactories.LastOrDefault();
     private readonly RedisPubSubConsumerClientFactory? _busFactory = busFactories.LastOrDefault();
@@ -15,49 +15,32 @@ internal sealed class RedisConsumerClientFactorySelector(
     public Task<IConsumerClient> CreateAsync(
         string groupName,
         byte groupConcurrent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (_busFactory is not null)
-        {
-            return _busFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
-        }
-
-        if (_queueFactory is not null)
-        {
-            return _queueFactory.CreateAsync(groupName, groupConcurrent, cancellationToken);
-        }
-
-        throw new InvalidOperationException("Headless.Messaging.Redis has no configured consumer client factory.");
-    }
-
-    public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
 #pragma warning disable CA2000 // The selected factory transfers IConsumerClient ownership to the caller.
-        return intentType switch
+        return lane switch
         {
-            IntentType.Bus when _busFactory is not null => _busFactory.CreateAsync(
+            MessageLane.Bus when _busFactory is not null => _busFactory.CreateAsync(
                 groupName,
                 groupConcurrent,
+                lane,
                 cancellationToken
             ),
-            IntentType.Queue when _queueFactory is not null => _queueFactory.CreateAsync(
+            MessageLane.Queue when _queueFactory is not null => _queueFactory.CreateAsync(
                 groupName,
                 groupConcurrent,
+                lane,
                 cancellationToken
             ),
-            IntentType.Bus => throw new InvalidOperationException(
+            MessageLane.Bus => throw new InvalidOperationException(
                 "Headless.Messaging.Redis was not configured for Redis Pub/Sub bus delivery. Call UseRedisPubSub(...)."
             ),
-            IntentType.Queue => throw new InvalidOperationException(
+            MessageLane.Queue => throw new InvalidOperationException(
                 "Headless.Messaging.Redis was not configured for Redis Streams queue delivery. Call UseRedis(...)."
             ),
-            _ => throw new ArgumentOutOfRangeException(nameof(intentType), intentType, message: null),
+            _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };
 #pragma warning restore CA2000
     }

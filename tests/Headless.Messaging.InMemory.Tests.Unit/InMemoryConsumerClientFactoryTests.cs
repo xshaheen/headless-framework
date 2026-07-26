@@ -24,7 +24,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     public async Task should_create_consumer_client()
     {
         // when
-        var client = await _factory.CreateAsync("test-group", 1, AbortToken);
+        var client = await _factory.CreateAsync("test-group", 1, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -38,7 +38,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await _factory.CreateAsync("test-group", 1, cts.Token);
+        var act = async () => await _factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -50,7 +50,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         const string groupName = "my-custom-group";
 
         // when
-        var client = await _factory.CreateAsync(groupName, 1, AbortToken);
+        var client = await _factory.CreateAsync(groupName, 1, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -65,7 +65,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         const byte concurrency = 4;
 
         // when
-        var client = await _factory.CreateAsync("test-group", concurrency, AbortToken);
+        var client = await _factory.CreateAsync("test-group", concurrency, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().NotBeNull();
@@ -79,7 +79,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         const byte concurrency = 0;
 
         // when
-        var client = await _factory.CreateAsync("test-group", concurrency, AbortToken);
+        var client = await _factory.CreateAsync("test-group", concurrency, MessageLane.Queue, AbortToken);
 
         // then - zero concurrency means sequential processing
         client.Should().NotBeNull();
@@ -90,7 +90,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     public async Task should_return_iconsumer_client_interface()
     {
         // when
-        var client = await _factory.CreateAsync("test-group", 1, AbortToken);
+        var client = await _factory.CreateAsync("test-group", 1, MessageLane.Queue, AbortToken);
 
         // then
         client.Should().BeAssignableTo<IConsumerClient>();
@@ -101,9 +101,9 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     public async Task should_create_multiple_clients_for_different_groups()
     {
         // when
-        var client1 = await _factory.CreateAsync("group-1", 1, AbortToken);
-        var client2 = await _factory.CreateAsync("group-2", 1, AbortToken);
-        var client3 = await _factory.CreateAsync("group-3", 1, AbortToken);
+        var client1 = await _factory.CreateAsync("group-1", 1, MessageLane.Queue, AbortToken);
+        var client2 = await _factory.CreateAsync("group-2", 1, MessageLane.Queue, AbortToken);
+        var client3 = await _factory.CreateAsync("group-3", 1, MessageLane.Queue, AbortToken);
 
         // then
         client1.Should().NotBeNull();
@@ -119,8 +119,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     public async Task should_create_client_that_shares_same_queue()
     {
         // given
-        var client1 = await _factory.CreateAsync("group-1", 1, AbortToken);
-        var client2 = await _factory.CreateAsync("group-2", 1, AbortToken);
+        var client1 = await _factory.CreateAsync("group-1", 1, MessageLane.Bus, AbortToken);
+        var client2 = await _factory.CreateAsync("group-2", 1, MessageLane.Bus, AbortToken);
 
         await client1.SubscribeAsync(["shared-messageName"], AbortToken);
         await client2.SubscribeAsync(["shared-messageName"], AbortToken);

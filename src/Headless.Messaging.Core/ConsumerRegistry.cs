@@ -25,6 +25,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<Type, string> _messageNameMappings = [];
+    private readonly Dictionary<(Type MessageType, MessageLane Lane), string> _laneMessageNameMappings = [];
     private List<ConsumerMetadata>? _consumers = [];
     private bool MessageRegistrationsDrained { get; set; }
 
@@ -97,6 +98,36 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             _messageNameMappings[messageType] = messageName;
+        }
+    }
+
+    internal void RegisterMessageName(Type messageType, MessageLane lane, string messageName)
+    {
+        Argument.IsNotNull(messageType);
+        MessagingOptions.ValidateMessageName(messageName);
+
+        lock (_lock)
+        {
+            if (_frozen != null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot register message-name mappings after the registry has been frozen. "
+                        + "Ensure all mappings are registered during configuration before the application starts."
+                );
+            }
+
+            var key = (messageType, lane);
+            if (
+                _laneMessageNameMappings.TryGetValue(key, out var existingMessageName)
+                && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Message type {messageType.Name} is already mapped on lane {lane} to messageName '{existingMessageName}'. Cannot map to '{messageName}'."
+                );
+            }
+
+            _laneMessageNameMappings[key] = messageName;
         }
     }
 
@@ -223,6 +254,23 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
     }
 
+    public bool TryGetRawMessageName(Type messageType, MessageLane lane, [NotNullWhen(true)] out string? messageName)
+    {
+        Argument.IsNotNull(messageType);
+
+        if (_frozen != null)
+        {
+            return _laneMessageNameMappings.TryGetValue((messageType, lane), out messageName)
+                || _messageNameMappings.TryGetValue(messageType, out messageName);
+        }
+
+        lock (_lock)
+        {
+            return _laneMessageNameMappings.TryGetValue((messageType, lane), out messageName)
+                || _messageNameMappings.TryGetValue(messageType, out messageName);
+        }
+    }
+
     internal IReadOnlyDictionary<Type, string> GetMessageNameMappings()
     {
         if (_frozen != null)
@@ -233,6 +281,19 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         lock (_lock)
         {
             return new Dictionary<Type, string>(_messageNameMappings);
+        }
+    }
+
+    internal IReadOnlyDictionary<(Type MessageType, MessageLane Lane), string> GetLaneMessageNameMappings()
+    {
+        if (_frozen != null)
+        {
+            return _laneMessageNameMappings;
+        }
+
+        lock (_lock)
+        {
+            return new Dictionary<(Type MessageType, MessageLane Lane), string>(_laneMessageNameMappings);
         }
     }
 

@@ -18,10 +18,10 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<OrderPlaced>(message =>
+            messaging.Bus.ForMessage<OrderPlaced>(message =>
                 message
                     .MessageName("orders.placed")
-                    .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("order-service"))
+                    .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("order-service"))
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -53,8 +53,8 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>()
+            messaging.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -94,11 +94,11 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<OrderPlaced>(message =>
+            messaging.Bus.ForMessage<OrderPlaced>(message =>
             {
                 message.MessageName("orders.placed");
-                message.OnBus<OrderPlacedConsumer>(consumer => consumer.Group("order-service"));
-                message.OnBus<OrderAnalyticsConsumer>(consumer => consumer.Group("analytics-service"));
+                message.Consumer<OrderPlacedConsumer>(consumer => consumer.Group("order-service"));
+                message.Consumer<OrderAnalyticsConsumer>(consumer => consumer.Group("analytics-service"));
             });
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -130,8 +130,8 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            messaging.Bus.ForConsumersFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
         });
 
@@ -159,7 +159,7 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.Bus.ForConsumersFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
         });
 
@@ -190,7 +190,9 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
 
         services.AddHeadlessMessaging(setup =>
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>())
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+            )
         );
 
         await using var provider = services.BuildServiceProvider();
@@ -212,9 +214,11 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>());
-            setup.ForMessage<OrderCancelled>(message =>
-                message.MessageName("orders.cancelled").OnBus<OrderCancelledConsumer>()
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+            );
+            setup.Bus.ForMessage<OrderCancelled>(message =>
+                message.MessageName("orders.cancelled").Consumer<OrderCancelledConsumer>()
             );
         });
 

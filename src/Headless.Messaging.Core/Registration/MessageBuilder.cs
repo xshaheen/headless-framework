@@ -6,60 +6,50 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Registration;
 
-/// <summary>
-/// Configures message-level metadata and consumer registrations for a message type.
-/// </summary>
+/// <summary>Configures message metadata and broadcast bus consumers for a message type.</summary>
 /// <typeparam name="TMessage">The message type being registered.</typeparam>
 [PublicAPI]
-public interface IMessageBuilder<TMessage>
+public interface IBusMessageBuilder<TMessage>
     where TMessage : class
 {
-    /// <summary>Overrides the convention-derived message name for publishing and consuming this message type.</summary>
-    IMessageBuilder<TMessage> MessageName(string messageName);
+    /// <summary>Overrides the convention-derived message name on the Bus lane.</summary>
+    IBusMessageBuilder<TMessage> MessageName(string messageName);
 
-    /// <summary>
-    /// Derives the correlation identifier from the outgoing message payload when no explicit correlation is supplied.
-    /// </summary>
-    /// <remarks>
-    /// Correlation resolution order (first non-empty value wins):
-    /// <list type="number">
-    ///   <item><description>Explicit value from <see cref="MessageOptions.CorrelationId"/>.</description></item>
-    ///   <item><description>Value returned by this <paramref name="selector"/>.</description></item>
-    ///   <item><description>Ambient correlation from the active <see cref="ConsumeContext{TMessage}"/> (propagation).</description></item>
-    ///   <item><description>The outgoing message identifier (fallback).</description></item>
-    /// </list>
-    /// Exceptions thrown by the selector are wrapped in <see cref="InvalidOperationException"/>
-    /// and include the message type name to aid diagnostics.
-    /// <para>
-    /// <strong>Broker length limits:</strong> some brokers cap the correlation-id field (for example,
-    /// RabbitMQ and NATS cap it at approximately 255 characters). The framework does <em>not</em>
-    /// truncate or validate the value returned by <paramref name="selector"/>; callers are responsible
-    /// for ensuring the value fits within their broker's limit.
-    /// </para>
-    /// </remarks>
-    /// <param name="selector">A delegate that extracts the correlation identifier from the message payload.</param>
-    IMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
+    /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
+    IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
 
-    /// <summary>Registers a broadcast bus consumer for this message type.</summary>
-    IMessageBuilder<TMessage> OnBus<TConsumer>()
+    /// <summary>Registers a Bus consumer.</summary>
+    IBusMessageBuilder<TMessage> Consumer<TConsumer>()
         where TConsumer : class, IConsume<TMessage>;
 
-    /// <summary>Registers and configures a broadcast bus consumer for this message type.</summary>
-    IMessageBuilder<TMessage> OnBus<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
-        where TConsumer : class, IConsume<TMessage>;
-
-    /// <summary>Registers a point-to-point queue consumer for this message type.</summary>
-    IMessageBuilder<TMessage> OnQueue<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>;
-
-    /// <summary>Registers and configures a point-to-point queue consumer for this message type.</summary>
-    IMessageBuilder<TMessage> OnQueue<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
+    /// <summary>Registers and configures a Bus consumer.</summary>
+    IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
 }
 
-internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
-    : IMessageBuilder<TMessage>,
-        IMessageProviderConfigBuilder<TMessage>
+/// <summary>Configures message metadata and point-to-point Queue consumers for a message type.</summary>
+/// <typeparam name="TMessage">The message type being registered.</typeparam>
+[PublicAPI]
+public interface IQueueMessageBuilder<TMessage>
+    where TMessage : class
+{
+    /// <summary>Overrides the convention-derived message name on the Queue lane.</summary>
+    IQueueMessageBuilder<TMessage> MessageName(string messageName);
+
+    /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
+    IQueueMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
+
+    /// <summary>Registers a Queue consumer.</summary>
+    IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
+        where TConsumer : class, IConsume<TMessage>;
+
+    /// <summary>Registers and configures a Queue consumer.</summary>
+    IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
+        where TConsumer : class, IConsume<TMessage>;
+}
+
+internal abstract class MessageBuilder<TMessage>(IServiceCollection services, MessageLane lane)
+    : IMessageProviderConfigBuilder<TMessage>
     where TMessage : class
 {
     private readonly List<MessageConsumerRegistrationBuilder> _consumers = [];
@@ -67,62 +57,13 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
     private string? _messageName;
     private Func<object, string?>? _correlationSelector;
 
-    public IMessageBuilder<TMessage> MessageName(string messageName)
-    {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-
-        _messageName = messageName;
-        return this;
-    }
-
-    public IMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
-    {
-        Argument.IsNotNull(selector);
-
-        _correlationSelector = message => selector((TMessage)message);
-        return this;
-    }
-
-    public IMessageBuilder<TMessage> OnBus<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>
-    {
-        return OnBus<TConsumer>(static _ => { });
-    }
-
-    public IMessageBuilder<TMessage> OnBus<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
-        where TConsumer : class, IConsume<TMessage>
-    {
-        Argument.IsNotNull(configure);
-
-        var registration = _AddConsumer<TConsumer>(IntentType.Bus);
-        configure(new BusConsumerBuilder<TConsumer>(registration));
-
-        return this;
-    }
-
-    public IMessageBuilder<TMessage> OnQueue<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>
-    {
-        return OnQueue<TConsumer>(static _ => { });
-    }
-
-    public IMessageBuilder<TMessage> OnQueue<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
-        where TConsumer : class, IConsume<TMessage>
-    {
-        Argument.IsNotNull(configure);
-
-        var registration = _AddConsumer<TConsumer>(IntentType.Queue);
-        configure(new QueueConsumerBuilder<TConsumer>(registration));
-
-        return this;
-    }
-
-    internal MessageRegistration Build()
+    protected MessageRegistration BuildRegistration()
     {
         var providerConfigs = _providerConfigs.Build();
 
         return new MessageRegistration(
             typeof(TMessage),
+            lane,
             _messageName,
             _correlationSelector,
             providerConfigs,
@@ -130,20 +71,91 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
         );
     }
 
-    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config)
+    protected void SetMessageName(string messageName)
     {
-        _providerConfigs.Set(config);
+        Argument.IsNotNullOrWhiteSpace(messageName);
+        _messageName = messageName;
     }
 
-    private MessageConsumerRegistrationBuilder _AddConsumer<TConsumer>(IntentType intentType)
+    protected void SetCorrelationFrom(Func<TMessage, string?> selector)
+    {
+        Argument.IsNotNull(selector);
+        _correlationSelector = message => selector((TMessage)message);
+    }
+
+    protected MessageConsumerRegistrationBuilder AddConsumer<TConsumer>()
         where TConsumer : class, IConsume<TMessage>
     {
         services.TryAddScoped<TConsumer>();
         services.TryAddScoped<IConsume<TMessage>>(sp => sp.GetRequiredService<TConsumer>());
 
-        var registration = new MessageConsumerRegistrationBuilder(typeof(TConsumer), intentType);
+        var registration = new MessageConsumerRegistrationBuilder(typeof(TConsumer), lane);
         _consumers.Add(registration);
-
         return registration;
     }
+
+    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config) =>
+        _providerConfigs.Set(config);
+}
+
+internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
+    : MessageBuilder<TMessage>(services, MessageLane.Bus),
+        IBusMessageBuilder<TMessage>
+    where TMessage : class
+{
+    public IBusMessageBuilder<TMessage> MessageName(string messageName)
+    {
+        SetMessageName(messageName);
+        return this;
+    }
+
+    public IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
+    {
+        SetCorrelationFrom(selector);
+        return this;
+    }
+
+    public IBusMessageBuilder<TMessage> Consumer<TConsumer>()
+        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
+
+    public IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
+        where TConsumer : class, IConsume<TMessage>
+    {
+        Argument.IsNotNull(configure);
+        configure(new BusConsumerBuilder<TConsumer>(AddConsumer<TConsumer>()));
+        return this;
+    }
+
+    internal MessageRegistration Build() => BuildRegistration();
+}
+
+internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
+    : MessageBuilder<TMessage>(services, MessageLane.Queue),
+        IQueueMessageBuilder<TMessage>
+    where TMessage : class
+{
+    public IQueueMessageBuilder<TMessage> MessageName(string messageName)
+    {
+        SetMessageName(messageName);
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
+    {
+        SetCorrelationFrom(selector);
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
+        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
+
+    public IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
+        where TConsumer : class, IConsume<TMessage>
+    {
+        Argument.IsNotNull(configure);
+        configure(new QueueConsumerBuilder<TConsumer>(AddConsumer<TConsumer>()));
+        return this;
+    }
+
+    internal MessageRegistration Build() => BuildRegistration();
 }

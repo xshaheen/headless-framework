@@ -30,40 +30,10 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
-    private readonly string _publishRetryResource;
-    private readonly string _receiveRetryResource;
-    private Task? _receivedRetryConsumeTask;
-    private Task? _publishedRetryConsumeTask;
-
-    // Threading contract:
-    // - AdjustPollingInterval is called only from ProcessAsync (sequential).
-    // - _currentIntervalTicks is mutated by both AdjustPollingInterval (sequential) and
-    //   ResetBackpressureAsync (callable from any thread). All mutations use CAS loops
-    //   (Interlocked.CompareExchange) to avoid non-atomic read-modify-write races.
-    // - _consecutiveHealthyCycles and _consecutiveCleanCycles are written by both ProcessAsync
-    //   (sequential) and ResetBackpressureAsync (callable from any thread). All increments use
-    //   Interlocked.Increment and all resets use Interlocked.Exchange to avoid non-atomic
-    //   read-modify-write races. Direct reads (comparisons) are safe for aligned int fields.
-    private long _currentIntervalTicks;
-    private int _consecutiveHealthyCycles;
-    private int _consecutiveCleanCycles;
-    private int _storagePickupFailureSinceLastAdaptiveAdjustment;
-
-    // Tracks consecutive storage-pickup failures per call site so adaptive polling backs off
-    // rather than accelerating from artificially "clean" cycles when work throws and returns
-    // an empty list.
-    private int _consecutivePublishedPickupFailures;
-    private int _consecutiveReceivedPickupFailures;
-    private int _consecutivePublishedLockAcquireFailures;
-    private int _consecutiveReceivedLockAcquireFailures;
+    private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
+    private readonly RetryQuadrantState[] _quadrantStates;
 
     private const int _StoragePickupErrorEscalationThreshold = 3;
-
-    private enum StoragePickupKind
-    {
-        Published,
-        Received,
-    }
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
@@ -78,7 +48,6 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         _logger = logger;
         _dispatcher = dispatcher;
         _baseInterval = retryOptions.Value.BaseInterval;
-        _currentIntervalTicks = _baseInterval.Ticks;
         LockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
 
@@ -86,17 +55,21 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         _maxInterval = retryOptions.Value.MaxPollingInterval;
         _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
 
-        // Cache the resource names once; MessagingOptions.Version is effectively immutable after
-        // bootstrap so per-tick string interpolation is wasted work.
-        _publishRetryResource = MessagingKeys.PublishRetryResource(options.Value.Version);
-        _receiveRetryResource = MessagingKeys.ReceiveRetryResource(options.Value.Version);
+        _quadrantStates =
+        [
+            _CreateState(MessageType.Publish, MessageLane.Bus),
+            _CreateState(MessageType.Publish, MessageLane.Queue),
+            _CreateState(MessageType.Subscribe, MessageLane.Bus),
+            _CreateState(MessageType.Subscribe, MessageLane.Queue),
+        ];
+        _quadrants = _quadrantStates.ToDictionary(state => state.Key);
     }
 
     /// <inheritdoc />
-    public TimeSpan CurrentPollingInterval => new(Interlocked.Read(ref _currentIntervalTicks));
+    public TimeSpan CurrentPollingInterval => _quadrantStates.Max(state => state.CurrentInterval);
 
     /// <inheritdoc />
-    public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
+    public bool IsBackedOff => _quadrantStates.Any(state => state.CurrentInterval > _baseInterval);
 
     /// <summary>The keyed-DI lock provider that was injected. Internal accessor — production code uses this; tests verify injection via InternalsVisibleTo.</summary>
     internal IDistributedLock LockProvider { get; }
@@ -104,7 +77,47 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// <summary>Sets the current polling interval. Exposed for testing via InternalsVisibleTo.</summary>
     internal void SetCurrentIntervalForTest(TimeSpan value)
     {
-        Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
+        SetCurrentIntervalForTest(MessageType.Subscribe, MessageLane.Bus, value);
+    }
+
+    internal void SetCurrentIntervalForTest(MessageType direction, MessageLane lane, TimeSpan value)
+    {
+        var state = _GetState(direction, lane);
+        Interlocked.Exchange(ref state._currentIntervalTicks, value.Ticks);
+    }
+
+    internal TimeSpan GetCurrentIntervalForTest(MessageType direction, MessageLane lane)
+    {
+        return _GetState(direction, lane).CurrentInterval;
+    }
+
+    internal int GetPickupFailureCountForTest(MessageType direction, MessageLane lane)
+    {
+        return Volatile.Read(ref _GetState(direction, lane)._consecutivePickupFailures);
+    }
+
+    internal async Task WaitForQuadrantIdleForTestAsync(MessageType direction, MessageLane lane)
+    {
+        var state = _GetState(direction, lane);
+        while (state.ActiveTask is { } task)
+        {
+            await task.ConfigureAwait(false);
+        }
+    }
+
+    internal void MarkQuadrantDueForTest(MessageType direction, MessageLane lane)
+    {
+        _GetState(direction, lane).MarkDue();
+    }
+
+    internal TimeSpan GetQuadrantDelayForTest(MessageType direction, MessageLane lane, DateTimeOffset now)
+    {
+        return _GetState(direction, lane).GetDelay(now);
+    }
+
+    internal void SetQuadrantActiveTaskForTest(MessageType direction, MessageLane lane, Task task)
+    {
+        _GetState(direction, lane).ActiveTask = task;
     }
 
     /// <summary>One-shot flag set after the startup jitter delay fires on the first poll.</summary>
@@ -120,14 +133,11 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// <inheritdoc />
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
     {
-        Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
-        Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
-        Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
-        Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
-        Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
-        Interlocked.Exchange(ref _consecutivePublishedLockAcquireFailures, 0);
-        Interlocked.Exchange(ref _consecutiveReceivedLockAcquireFailures, 0);
-        Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0);
+        foreach (var state in _quadrantStates)
+        {
+            state.Reset(_baseInterval);
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -143,148 +153,104 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
+        var startedThisTurn = new HashSet<RetryQuadrantKey>();
+        var now = context.GetUtcNow();
+        _StartDueQuadrants(storage, context, now, startedThisTurn);
 
-        // Mirror the received-retry guard below: skip spawning a new published-retry task while
-        // the previous one is still running under UseStorageLock to avoid concurrent lock attempts.
-        // Without UseStorageLock the guard is a no-op (multiple in-flight tasks are acceptable
-        // since the storage layer's own concurrency primitives serialize writes).
-        if (!_options.Value.UseStorageLock || _publishedRetryConsumeTask is not { IsCompleted: false })
+        var wait = _quadrantStates.Min(state => state.GetDelay(context.GetUtcNow()));
+        await context.WaitAsync(wait).ConfigureAwait(false);
+
+        // A caller can enter just before one or more quadrants become due. Start those lanes
+        // after the wait, but never start a second cycle for a quadrant already run this turn.
+        _StartDueQuadrants(storage, context, context.GetUtcNow(), startedThisTurn);
+    }
+
+    private void _StartDueQuadrants(
+        IDataStorage storage,
+        ProcessingContext context,
+        DateTimeOffset now,
+        ISet<RetryQuadrantKey> startedThisTurn
+    )
+    {
+        foreach (var state in _quadrantStates)
         {
-            _publishedRetryConsumeTask = Task
+            if (startedThisTurn.Contains(state.Key) || state.ActiveTask is { IsCompleted: false } || !state.IsDue(now))
+            {
+                continue;
+            }
+
+            startedThisTurn.Add(state.Key);
+            state.ScheduleNext(now);
+            var task = Task
                 .Factory.StartNew(
-                    () => _ProcessPublishedAsync(storage, context),
+                    () => _ProcessQuadrantAsync(state, storage, context),
                     CancellationToken.None,
                     TaskCreationOptions.DenyChildAttach,
                     TaskScheduler.Default
                 )
                 .Unwrap();
+            state.ActiveTask = task;
 
-            _ = _publishedRetryConsumeTask.ContinueWith(
-                t => _logger.PublishedRetryProcessingUnhandled(t.Exception),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted,
-                TaskScheduler.Default
-            );
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    if (completed.IsFaulted)
+                    {
+                        if (state.Key.Direction == MessageType.Publish)
+                        {
+                            _logger.PublishedRetryProcessingUnhandled(completed.Exception);
+                        }
+                        else
+                        {
+                            _logger.ReceivedRetryProcessingUnhandled(completed.Exception);
+                        }
+                    }
 
-            // VSTHRD003 false positive: we're not awaiting `t` here — Interlocked.CompareExchange
-            // performs an atomic reference comparison + swap. The lambda parameter happens to be
-            // a Task, but the call is a pure scalar CAS on the reference slot. Pattern matches the
-            // CAS loops at lines 553/576 that use the same primitive on int fields.
-#pragma warning disable VSTHRD003
-            _ = _publishedRetryConsumeTask.ContinueWith(
-                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, value: null, t),
+                    state.ClearActiveTask(completed);
+                },
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default
             );
-#pragma warning restore VSTHRD003
         }
-
-        if (_options.Value.UseStorageLock && _receivedRetryConsumeTask is { IsCompleted: false })
-        {
-            await context
-                .WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks)))
-                .ConfigureAwait(false);
-
-            return;
-        }
-
-        _receivedRetryConsumeTask = Task
-            .Factory.StartNew(
-                () => _ProcessReceivedAsync(storage, context),
-                CancellationToken.None,
-                TaskCreationOptions.DenyChildAttach,
-                TaskScheduler.Default
-            )
-            .Unwrap();
-
-        _ = _receivedRetryConsumeTask.ContinueWith(
-            t => _logger.ReceivedRetryProcessingUnhandled(t.Exception),
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default
-        );
-
-        // VSTHRD003 false positive: same scalar-CAS pattern as the published-path continuation above.
-        // Interlocked.CompareExchange atomically nulls the field only if it still points at `t`.
-#pragma warning disable VSTHRD003
-        _ = _receivedRetryConsumeTask.ContinueWith(
-            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, value: null, t),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-#pragma warning restore VSTHRD003
-
-        await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
     }
 
-    private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessQuadrantAsync(
+        RetryQuadrantState state,
+        IDataStorage connection,
+        ProcessingContext context
+    )
     {
         context.ThrowIfStopping();
 
         if (!_options.Value.UseStorageLock)
         {
-            await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
+            await _ExecuteWorkAsync(state, connection, context).ConfigureAwait(false);
             return;
         }
 
-        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Published, context)
-            .ConfigureAwait(false);
-        if (acquiredHandle is null)
+        await using var acquiredHandle = await _TryAcquireLockAsync(state, context).ConfigureAwait(false);
+        if (acquiredHandle is null || _IsLeaseAlreadyLost(state, acquiredHandle))
         {
             return;
         }
 
-        if (_IsLeaseAlreadyLost(StoragePickupKind.Published, acquiredHandle))
-        {
-            return;
-        }
-
-        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Published, acquiredHandle);
-
-        await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
+        await using var lossRegistration = _RegisterLeaseLossLogger(state, acquiredHandle);
+        await _ExecuteWorkAsync(state, connection, context).ConfigureAwait(false);
     }
 
-    private async Task _ProcessReceivedAsync(IDataStorage connection, ProcessingContext context)
-    {
-        context.ThrowIfStopping();
-
-        if (!_options.Value.UseStorageLock)
-        {
-            await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
-            return;
-        }
-
-        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Received, context)
-            .ConfigureAwait(false);
-        if (acquiredHandle is null)
-        {
-            return;
-        }
-
-        if (_IsLeaseAlreadyLost(StoragePickupKind.Received, acquiredHandle))
-        {
-            return;
-        }
-
-        await using var lossRegistration = _RegisterLeaseLossLogger(StoragePickupKind.Received, acquiredHandle);
-
-        await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
-    }
-
-    private bool _IsLeaseAlreadyLost(StoragePickupKind kind, IDistributedLease lease)
+    private bool _IsLeaseAlreadyLost(RetryQuadrantState state, IDistributedLease lease)
     {
         if (!lease.CanObserveLoss || !lease.LostToken.IsCancellationRequested)
         {
             return false;
         }
 
-        _logger.RetryLockLeaseLost(kind.ToString(), lease.Resource, lease.LeaseId);
+        _logger.RetryLockLeaseLost(state.DisplayName, lease.Resource, lease.LeaseId);
         return true;
     }
 
-    private CancellationTokenRegistration _RegisterLeaseLossLogger(StoragePickupKind kind, IDistributedLease lease)
+    private CancellationTokenRegistration _RegisterLeaseLossLogger(RetryQuadrantState state, IDistributedLease lease)
     {
         if (!lease.CanObserveLoss)
         {
@@ -303,7 +269,7 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
                     state!;
                 logger.RetryLockLeaseLost(retryKind, resource, leaseId);
             },
-            (_logger, kind.ToString(), lease.Resource, lease.LeaseId)
+            (_logger, state.DisplayName, lease.Resource, lease.LeaseId)
         );
     }
 
@@ -312,23 +278,16 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// <c>IDistributedLock.TryAcquireAsync</c> in a lock-specific per-kind escalation-counter pattern
     /// so adaptive polling backs off on lock-store outages rather than tight-looping.
     /// </summary>
-    private async Task<IDistributedLease?> _TryAcquireLockAsync(StoragePickupKind kind, ProcessingContext context)
+    private async Task<IDistributedLease?> _TryAcquireLockAsync(RetryQuadrantState state, ProcessingContext context)
     {
-        var resource = kind switch
-        {
-            StoragePickupKind.Published => _publishRetryResource,
-            StoragePickupKind.Received => _receiveRetryResource,
-            _ => throw new InvalidOperationException($"Unknown storage pickup kind: {kind}"),
-        };
-
         try
         {
             var lease = await LockProvider
                 .TryAcquireAsync(
-                    resource,
+                    state.LockResource,
                     new DistributedLockAcquireOptions
                     {
-                        TimeUntilExpires = CurrentPollingInterval,
+                        TimeUntilExpires = state.CurrentInterval,
                         AcquireTimeout = TimeSpan.Zero,
                         Monitoring = LockMonitoringMode.AutoExtend,
                     },
@@ -338,7 +297,7 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
 
             if (lease is not null)
             {
-                Interlocked.Exchange(ref _LockCounterRef(kind), 0);
+                Interlocked.Exchange(ref state._consecutiveLockAcquireFailures, 0);
             }
 
             return lease;
@@ -349,16 +308,30 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         }
         catch (Exception ex)
         {
-            _RecordLockAcquireFailure(kind, ex);
+            _RecordLockAcquireFailure(state, ex);
             return null;
         }
     }
 
-    private async Task _ExecutePublishedWorkAsync(IDataStorage connection, ProcessingContext context)
+    private Task _ExecuteWorkAsync(RetryQuadrantState state, IDataStorage connection, ProcessingContext context)
+    {
+        return state.Key.Direction switch
+        {
+            MessageType.Publish => _ExecutePublishedWorkAsync(state, connection, context),
+            MessageType.Subscribe => _ExecuteReceivedWorkAsync(state, connection, context),
+            _ => throw new InvalidOperationException($"Unsupported retry direction '{state.Key.Direction}'."),
+        };
+    }
+
+    private async Task _ExecutePublishedWorkAsync(
+        RetryQuadrantState state,
+        IDataStorage connection,
+        ProcessingContext context
+    )
     {
         var pickup = await _GetSafelyAsync(
-                connection.GetPublishedMessagesOfNeedRetryAsync,
-                StoragePickupKind.Published,
+                token => connection.GetPublishedMessagesOfNeedRetryAsync(state.Key.Lane, token),
+                state,
                 context.CancellationToken
             )
             .ConfigureAwait(false);
@@ -368,19 +341,38 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             return;
         }
 
+        var enqueued = 0;
         foreach (var message in pickup.Messages)
         {
             context.ThrowIfStopping();
 
+            var persistedLane = message.Lane;
+            if (persistedLane != state.Key.Lane)
+            {
+                throw new InvalidOperationException(
+                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                );
+            }
+
             await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
+            enqueued++;
+        }
+
+        if (_adaptivePolling)
+        {
+            _AdjustPollingInterval(state, enqueued, skippedCircuitOpen: 0);
         }
     }
 
-    private async Task _ExecuteReceivedWorkAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ExecuteReceivedWorkAsync(
+        RetryQuadrantState state,
+        IDataStorage connection,
+        ProcessingContext context
+    )
     {
         var pickup = await _GetSafelyAsync(
-                connection.GetReceivedMessagesOfNeedRetryAsync,
-                StoragePickupKind.Received,
+                token => connection.GetReceivedMessagesOfNeedRetryAsync(state.Key.Lane, token),
+                state,
                 context.CancellationToken
             )
             .ConfigureAwait(false);
@@ -399,7 +391,15 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             context.ThrowIfStopping();
 
             var group = message.Origin.GetGroup();
-            if (group is not null && _IsCircuitOpen(message.IntentType, group, circuitOpenCache))
+            var persistedLane = message.Lane;
+            if (persistedLane != state.Key.Lane)
+            {
+                throw new InvalidOperationException(
+                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                );
+            }
+
+            if (group is not null && _IsCircuitOpen(state.Key.Lane, group, circuitOpenCache))
             {
                 skippedCircuitOpen++;
                 var safeGroup = LogSanitizer.Sanitize(group);
@@ -416,24 +416,20 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
 
         if (_adaptivePolling)
         {
-            var hadPickupFailure = Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0) != 0;
-            if (!hadPickupFailure)
-            {
-                AdjustPollingInterval(enqueued, skippedCircuitOpen);
-            }
+            _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
     }
 
     private async Task<RetryPickupResult<T>> _GetSafelyAsync<T>(
         Func<CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
-        StoragePickupKind kind,
+        RetryQuadrantState state,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
             var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref _CounterRef(kind), 0);
+            Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
             return new RetryPickupResult<T>(result, Succeeded: true);
         }
         catch (OperationCanceledException)
@@ -445,11 +441,10 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             // Back off polling so a sustained storage outage isn't masked by artificially "clean"
             // cycles (empty list ≠ healthy). Escalate the log to Error after a small streak so
             // monitoring picks up persistent failures.
-            var failureCount = Interlocked.Increment(ref _CounterRef(kind));
-            Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 1);
-            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
-            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
-            _CompareExchangeDouble();
+            var failureCount = Interlocked.Increment(ref state._consecutivePickupFailures);
+            Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
+            Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
+            _CompareExchangeDouble(state);
 
             if (failureCount >= _StoragePickupErrorEscalationThreshold)
             {
@@ -466,48 +461,21 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
 
     private readonly record struct RetryPickupResult<T>(IEnumerable<T> Messages, bool Succeeded);
 
-    private ref int _CounterRef(StoragePickupKind kind)
-    {
-        switch (kind)
-        {
-            case StoragePickupKind.Published:
-                return ref _consecutivePublishedPickupFailures;
-            case StoragePickupKind.Received:
-                return ref _consecutiveReceivedPickupFailures;
-            default:
-                throw new InvalidOperationException($"Unknown storage pickup kind: {kind}");
-        }
-    }
-
-    private ref int _LockCounterRef(StoragePickupKind kind)
-    {
-        switch (kind)
-        {
-            case StoragePickupKind.Published:
-                return ref _consecutivePublishedLockAcquireFailures;
-            case StoragePickupKind.Received:
-                return ref _consecutiveReceivedLockAcquireFailures;
-            default:
-                throw new InvalidOperationException($"Unknown storage pickup kind: {kind}");
-        }
-    }
-
     /// <summary>
     /// Records a lock-acquire failure on a lock-specific per-kind counter so adaptive polling backs off
     /// rather than tight-looping a sick lock store. Escalates the log to Error after the same
     /// _StoragePickupErrorEscalationThreshold streak so monitoring sees persistent lock-store outages.
     /// </summary>
-    private void _RecordLockAcquireFailure(StoragePickupKind kind, Exception ex)
+    private void _RecordLockAcquireFailure(RetryQuadrantState state, Exception ex)
     {
-        var failureCount = Interlocked.Increment(ref _LockCounterRef(kind));
-        Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 1);
-        Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
-        Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
-        _CompareExchangeDouble();
+        var failureCount = Interlocked.Increment(ref state._consecutiveLockAcquireFailures);
+        Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
+        Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
+        _CompareExchangeDouble(state);
 
-        switch (kind)
+        switch (state.Key.Direction)
         {
-            case StoragePickupKind.Published:
+            case MessageType.Publish:
                 if (failureCount >= _StoragePickupErrorEscalationThreshold)
                 {
                     _logger.PublishedRetryLockAcquireFailureEscalated(ex, failureCount);
@@ -517,7 +485,7 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
                     _logger.PublishedRetryLockAcquireFailed(ex);
                 }
                 break;
-            case StoragePickupKind.Received:
+            case MessageType.Subscribe:
                 if (failureCount >= _StoragePickupErrorEscalationThreshold)
                 {
                     _logger.ReceivedRetryLockAcquireFailureEscalated(ex, failureCount);
@@ -528,7 +496,7 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
                 }
                 break;
             default:
-                throw new InvalidOperationException($"Unknown storage pickup kind: {kind}");
+                throw new InvalidOperationException($"Unsupported retry direction '{state.Key.Direction}'.");
         }
     }
 
@@ -547,6 +515,16 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// </summary>
     internal void AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {
+        AdjustPollingInterval(MessageType.Subscribe, MessageLane.Bus, enqueued, skippedCircuitOpen);
+    }
+
+    internal void AdjustPollingInterval(MessageType direction, MessageLane lane, int enqueued, int skippedCircuitOpen)
+    {
+        _AdjustPollingInterval(_GetState(direction, lane), enqueued, skippedCircuitOpen);
+    }
+
+    private void _AdjustPollingInterval(RetryQuadrantState state, int enqueued, int skippedCircuitOpen)
+    {
         var total = enqueued + skippedCircuitOpen;
 
         // No messages at all — clean cycle.
@@ -556,18 +534,18 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         // a full reset priority over gradual step-down when the system is completely idle.
         if (total == 0)
         {
-            Interlocked.Increment(ref _consecutiveCleanCycles);
-            Interlocked.Increment(ref _consecutiveHealthyCycles);
+            Interlocked.Increment(ref state._consecutiveCleanCycles);
+            Interlocked.Increment(ref state._consecutiveHealthyCycles);
 
-            if (_consecutiveCleanCycles >= 3)
+            if (state._consecutiveCleanCycles >= 3)
             {
-                Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
-                Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
-                Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+                Interlocked.Exchange(ref state._currentIntervalTicks, _baseInterval.Ticks);
+                Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
+                Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
             }
-            else if (_consecutiveHealthyCycles >= 2)
+            else if (state._consecutiveHealthyCycles >= 2)
             {
-                _CompareExchangeHalve();
+                _CompareExchangeHalve(state);
             }
 
             return;
@@ -578,28 +556,28 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         if (circuitOpenSkipRate > _circuitOpenRateThreshold)
         {
             // High circuit-open rate — back off
-            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
-            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+            Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
+            Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
 
-            _CompareExchangeDouble();
+            _CompareExchangeDouble(state);
         }
         else if (circuitOpenSkipRate <= _circuitOpenRateThreshold / 2.0)
         {
             // Healthy cycle — well below backoff threshold
-            Interlocked.Increment(ref _consecutiveHealthyCycles);
-            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+            Interlocked.Increment(ref state._consecutiveHealthyCycles);
+            Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
 
-            if (_consecutiveHealthyCycles >= 2)
+            if (state._consecutiveHealthyCycles >= 2)
             {
-                _CompareExchangeHalve();
-                Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+                _CompareExchangeHalve(state);
+                Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
             }
         }
         else
         {
             // Between backoff threshold and recovery threshold — hold steady
-            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
-            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+            Interlocked.Exchange(ref state._consecutiveHealthyCycles, 0);
+            Interlocked.Exchange(ref state._consecutiveCleanCycles, 0);
         }
     }
 
@@ -608,15 +586,15 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// If a concurrent ResetBackpressureAsync modifies the value between read and write,
     /// the loop retries with the fresh value. Logs after successful CAS.
     /// </summary>
-    private void _CompareExchangeDouble()
+    private void _CompareExchangeDouble(RetryQuadrantState state)
     {
         long snapshot;
         long desired;
         do
         {
-            snapshot = Interlocked.Read(ref _currentIntervalTicks);
+            snapshot = Interlocked.Read(ref state._currentIntervalTicks);
             desired = snapshot <= _maxInterval.Ticks / 2 ? snapshot * 2 : _maxInterval.Ticks;
-        } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
+        } while (Interlocked.CompareExchange(ref state._currentIntervalTicks, desired, snapshot) != snapshot);
 
         var increasedInterval = TimeSpan.FromTicks(desired);
         _logger.AdaptivePollingIntervalIncreased(increasedInterval);
@@ -626,28 +604,28 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     /// CAS loop: halves _currentIntervalTicks, floored at _baseInterval.
     /// No-op if already at base interval. Logs after successful CAS.
     /// </summary>
-    private void _CompareExchangeHalve()
+    private void _CompareExchangeHalve(RetryQuadrantState state)
     {
         long snapshot;
         long desired;
         do
         {
-            snapshot = Interlocked.Read(ref _currentIntervalTicks);
+            snapshot = Interlocked.Read(ref state._currentIntervalTicks);
             if (snapshot <= _baseInterval.Ticks)
             {
                 return; // already at base — nothing to halve
             }
 
             desired = Math.Max(snapshot / 2, _baseInterval.Ticks);
-        } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
+        } while (Interlocked.CompareExchange(ref state._currentIntervalTicks, desired, snapshot) != snapshot);
 
         var decreasedInterval = TimeSpan.FromTicks(desired);
         _logger.AdaptivePollingIntervalDecreased(decreasedInterval);
     }
 
-    private bool _IsCircuitOpen(IntentType intentType, string group, Dictionary<string, bool> cache)
+    private bool _IsCircuitOpen(MessageLane lane, string group, Dictionary<string, bool> cache)
     {
-        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(intentType, group);
+        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(lane, group);
 
         if (cache.TryGetValue(circuitBreakerGroup, out var isOpen))
         {
@@ -658,6 +636,100 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
+
+    private RetryQuadrantState _CreateState(MessageType direction, MessageLane lane)
+    {
+        var resource = direction switch
+        {
+            MessageType.Publish => MessagingKeys.PublishRetryResource(_options.Value.Version, lane),
+            MessageType.Subscribe => MessagingKeys.ReceiveRetryResource(_options.Value.Version, lane),
+            _ => throw new InvalidOperationException($"Unsupported retry direction '{direction}'."),
+        };
+
+        return new RetryQuadrantState(new RetryQuadrantKey(direction, lane), resource, _baseInterval);
+    }
+
+    private RetryQuadrantState _GetState(MessageType direction, MessageLane lane)
+    {
+        var key = new RetryQuadrantKey(direction, lane);
+        return _quadrants.TryGetValue(key, out var state)
+            ? state
+            : throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture, $"Unsupported retry quadrant '{direction}/{(short)lane}'.")
+            );
+    }
+
+    private sealed record RetryQuadrantKey(MessageType Direction, MessageLane Lane);
+
+#pragma warning disable IDE1006, IDE0032 // Atomic state fields follow the processor's private-field convention.
+    private sealed class RetryQuadrantState(RetryQuadrantKey key, string lockResource, TimeSpan baseInterval)
+    {
+        private long _nextPollUtcTicks;
+        private Task? _activeTask;
+
+        internal long _currentIntervalTicks = baseInterval.Ticks;
+        internal int _consecutiveHealthyCycles;
+        internal int _consecutiveCleanCycles;
+        internal int _consecutivePickupFailures;
+        internal int _consecutiveLockAcquireFailures;
+
+        public RetryQuadrantKey Key { get; } = key;
+        public string LockResource { get; } = lockResource;
+        public string DisplayName => $"{Key.Direction}-{Key.Lane}";
+        public TimeSpan CurrentInterval => TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks));
+
+        public Task? ActiveTask
+        {
+            get => Volatile.Read(ref _activeTask);
+            set => Volatile.Write(ref _activeTask, value);
+        }
+
+        public void ClearActiveTask(Task completed)
+        {
+            _ = Interlocked.CompareExchange(ref _activeTask, value: null, completed);
+        }
+
+        public bool IsDue(DateTimeOffset now)
+        {
+            var next = Interlocked.Read(ref _nextPollUtcTicks);
+            return next == 0 || now.UtcDateTime.Ticks >= next;
+        }
+
+        public void ScheduleNext(DateTimeOffset now)
+        {
+            var next = now.Add(CurrentInterval).UtcDateTime.Ticks;
+            Interlocked.Exchange(ref _nextPollUtcTicks, next);
+        }
+
+        public TimeSpan GetDelay(DateTimeOffset now)
+        {
+            var remaining = Interlocked.Read(ref _nextPollUtcTicks) - now.UtcDateTime.Ticks;
+            if (remaining > 0)
+            {
+                return TimeSpan.FromTicks(remaining);
+            }
+
+            // An in-flight pickup can outlive its scheduled cadence. Returning zero here would make
+            // InfiniteRetryProcessor re-enter this processor continuously until the task completes.
+            return ActiveTask is { IsCompleted: false } ? CurrentInterval : TimeSpan.Zero;
+        }
+
+        public void MarkDue()
+        {
+            Interlocked.Exchange(ref _nextPollUtcTicks, 0);
+        }
+
+        public void Reset(TimeSpan basePollingInterval)
+        {
+            Interlocked.Exchange(ref _currentIntervalTicks, basePollingInterval.Ticks);
+            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+            Interlocked.Exchange(ref _consecutivePickupFailures, 0);
+            Interlocked.Exchange(ref _consecutiveLockAcquireFailures, 0);
+            Interlocked.Exchange(ref _nextPollUtcTicks, 0);
+        }
+    }
+#pragma warning restore IDE1006, IDE0032
 
     private static double _GetRandomUnitDouble()
     {

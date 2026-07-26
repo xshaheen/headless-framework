@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -99,6 +100,74 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         );
     }
 
+    /// <inheritdoc />
+    protected override async Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
+        IDataStorage storage,
+        bool published,
+        short rawIntentType,
+        DateTimeOffset nextRetryAt,
+        CancellationToken cancellationToken
+    )
+    {
+        _EnsureInitialized();
+        var id = Guid.NewGuid();
+        var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
+        var tableName = published ? "Published" : "Received";
+        var groupColumns = published ? string.Empty : ", [Group], ExceptionInfo";
+        var groupValues = published ? string.Empty : ", 'unsupported-lane-group', NULL";
+        var sql = $"""
+            INSERT INTO messaging.{tableName}
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{groupColumns})
+            VALUES
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{groupValues});
+            """;
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    IntentType = rawIntentType,
+                    Added = TimeProvider.GetUtcNow(),
+                    NextRetryAt = nextRetryAt,
+                    LockedUntil = nextRetryAt,
+                    MessageId = $"unsupported-lane-{id:N}",
+                },
+                cancellationToken: cancellationToken
+            )
+        );
+
+        return id;
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedPoisonRetryState?> GetPersistedPoisonRetryStateAsync(
+        IDataStorage storage,
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        var tableName = published ? "Published" : "Received";
+        var exceptionInfo = published ? "CAST(NULL AS nvarchar(max))" : "ExceptionInfo";
+        var sql = $"""
+            SELECT IntentType AS RawIntentType, StatusName, ExpiresAt, NextRetryAt, LockedUntil, Owner,
+                   {exceptionInfo} AS ExceptionInfo
+            FROM messaging.{tableName}
+            WHERE Id=@Id;
+            """;
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.QuerySingleAsync<PersistedPoisonRetryState>(
+            new CommandDefinition(sql, new { Id = storageId }, cancellationToken: cancellationToken)
+        );
+    }
+
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
         return new SqlServerDataStorage(
@@ -111,6 +180,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             NodeMembership,
             NullLogger<SqlServerDataStorage>.Instance
         );
+    }
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageWithRetryBatchSize(int retryBatchSize)
+    {
+        return _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = retryBatchSize });
     }
 
     /// <inheritdoc />
@@ -220,6 +295,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_store_published_message_with_intent_type()
+    {
+        return base.should_store_published_message_with_intent_type();
+    }
+
+    [Fact]
     public override Task should_store_received_message()
     {
         return base.should_store_received_message();
@@ -271,6 +352,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_get_received_messages_of_need_retry()
     {
         return base.should_get_received_messages_of_need_retry();
+    }
+
+    [Fact]
+    public override Task should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_published_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
+    {
+        return base.should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]
@@ -448,7 +553,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         );
 
         var beforeClaim = DateTimeOffset.UtcNow;
-        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
             .Subject;
@@ -706,8 +811,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
         // when
         var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
-            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -772,8 +877,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         }
 
         var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
-            ? await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
 
@@ -949,7 +1054,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         }
 
         // when
-        var picked = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var picked = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
 
         // then
         picked.Select(message => message.StorageId).Should().BeEquivalentTo([oldestId, middleId]);
@@ -967,7 +1072,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Theory]
     [InlineData("Received", "IX_messaging_Received_Version_NextRetryAt")]
     [InlineData("Published", "IX_messaging_Published_Version_NextRetryAt")]
-    public async Task should_key_retry_pickup_filtered_index_on_version_then_next_retry_at(
+    public async Task should_key_retry_pickup_filtered_index_on_version_lane_then_next_retry_at(
         string tableName,
         string indexName
     )
@@ -975,8 +1080,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        // Key column order — Version must lead so it acts as a seek predicate, NextRetryAt
-        // follows so range scans against the time predicate stay cheap.
+        // Key column order — equality predicates lead; NextRetryAt remains the trailing range key.
         var columns = (
             await connection.QueryAsync<string>(
                 """
@@ -999,7 +1103,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         columns
             .Should()
             .BeEquivalentTo(
-                new[] { "Version", "NextRetryAt" },
+                new[] { "Version", "IntentType", "NextRetryAt" },
                 opts => opts.WithStrictOrdering(),
                 "filtered-index key order must match the pickup query's seek path"
             );

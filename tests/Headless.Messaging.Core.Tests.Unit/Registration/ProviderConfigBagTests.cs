@@ -13,7 +13,7 @@ public sealed class ProviderConfigBagTests
     public void should_store_message_scope_provider_config()
     {
         // given
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
         var config = new FakeProviderConfig("message");
 
         // when
@@ -29,7 +29,7 @@ public sealed class ProviderConfigBagTests
     public void should_replace_config_of_same_type_in_one_scope()
     {
         // given
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
         var first = new FakeProviderConfig("first");
         var second = new FakeProviderConfig("second");
 
@@ -48,13 +48,13 @@ public sealed class ProviderConfigBagTests
     {
         // given
         var services = new ServiceCollection();
-        var builder = new MessageBuilder<TestMessage>(services);
+        var builder = new BusMessageBuilder<TestMessage>(services);
         var messageConfig = new FakeProviderConfig("message");
         var consumerConfig = new FakeProviderConfig("consumer");
 
         // when
         ((IMessageProviderConfigBuilder<TestMessage>)builder).SetMessageProviderConfig(messageConfig);
-        builder.OnBus<TestConsumer>(consumer =>
+        builder.Consumer<TestConsumer>(consumer =>
             ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
         );
         var registration = builder.Build();
@@ -69,13 +69,13 @@ public sealed class ProviderConfigBagTests
     {
         // given
         var services = new ServiceCollection();
-        var builder = new MessageBuilder<TestMessage>(services);
+        var builder = new BusMessageBuilder<TestMessage>(services);
         var messageConfig = new FakeProviderConfig("message");
         var consumerConfig = new OtherProviderConfig("consumer");
 
         // when
         ((IMessageProviderConfigBuilder<TestMessage>)builder).SetMessageProviderConfig(messageConfig);
-        builder.OnBus<TestConsumer>(consumer =>
+        builder.Consumer<TestConsumer>(consumer =>
             ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
         );
         var registration = builder.Build();
@@ -91,8 +91,8 @@ public sealed class ProviderConfigBagTests
     public void should_build_empty_configs_when_unset()
     {
         // given
-        var first = new MessageBuilder<TestMessage>(new ServiceCollection());
-        var second = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var first = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var second = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         // when
         var firstRegistration = first.Build();
@@ -108,7 +108,7 @@ public sealed class ProviderConfigBagTests
     public void should_build_read_only_provider_config_snapshots()
     {
         // given
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
         var config = new FakeProviderConfig("message");
 
         // when
@@ -129,10 +129,10 @@ public sealed class ProviderConfigBagTests
 
         // when
         services.AddHeadlessMessaging(setup =>
-            setup.ForMessage<TestMessage>(message =>
+            setup.Bus.ForMessage<TestMessage>(message =>
             {
                 ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(messageConfig);
-                message.OnBus<TestConsumer>(consumer =>
+                message.Consumer<TestConsumer>(consumer =>
                     ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
                 );
             })
@@ -146,65 +146,58 @@ public sealed class ProviderConfigBagTests
     }
 
     [Fact]
-    public void should_reject_duplicate_consumer_registration_with_conflicting_provider_config()
+    public void should_reject_duplicate_message_registration_with_conflicting_provider_config()
     {
         // given
         var services = new ServiceCollection();
 
-        // when — the conflicting-config guard fires during the startup drain, so build + drain inside the act
         var action = () =>
-        {
             services.AddHeadlessMessaging(setup =>
             {
-                setup.ForMessage<TestMessage>(message =>
-                    message.OnBus<TestConsumer>(consumer =>
+                setup.Bus.ForMessage<TestMessage>(message =>
+                    message.Consumer<TestConsumer>(consumer =>
                         ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
                             new FakeProviderConfig("first")
                         )
                     )
                 );
-                setup.ForMessage<TestMessage>(message =>
-                    message.OnBus<TestConsumer>(consumer =>
+                setup.Bus.ForMessage<TestMessage>(message =>
+                    message.Consumer<TestConsumer>(consumer =>
                         ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
                             new FakeProviderConfig("second")
                         )
                     )
                 );
             });
-            using var provider = services.BuildServiceProvider();
-            provider.GetDrainedConsumerRegistry().GetAll();
-        };
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
+        action.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     [Fact]
-    public void should_allow_idempotent_re_registration_when_message_config_is_class_based()
+    public void should_reject_duplicate_registration_when_message_config_is_class_based()
     {
-        // given — class-based IProviderHeaderContributions configs hold a Func and have no
-        // value equality; two distinct instances of the same type for the same consumer must
-        // not be treated as a conflict during idempotent re-registration.
+        // given — provider config equality cannot make two same-lane message registrations valid.
         var services = new ServiceCollection();
 
-        // when — register the same message-level hatch config twice (simulates idempotent bootstrap)
+        // when
         var action = () =>
             services.AddHeadlessMessaging(setup =>
             {
-                setup.ForMessage<TestMessage>(message =>
+                setup.Bus.ForMessage<TestMessage>(message =>
                     ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(
                         new ClassBasedProviderConfig(static _ => "shard-1")
                     )
                 );
-                setup.ForMessage<TestMessage>(message =>
+                setup.Bus.ForMessage<TestMessage>(message =>
                     ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(
                         new ClassBasedProviderConfig(static _ => "shard-1")
                     )
                 );
             });
 
-        // then — no conflict raised
-        action.Should().NotThrow();
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
     }
 
     private sealed record TestMessage;

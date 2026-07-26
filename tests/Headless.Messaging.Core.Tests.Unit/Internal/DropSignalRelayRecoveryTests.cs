@@ -85,7 +85,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         // Correctness floor: the durable row (committed by the database in production — the in-memory
         // storage models the committed state) is claimed by the relay sweep and will be dispatched.
         time.Advance(TimeSpan.FromMinutes(5)); // jump past InitialDispatchGrace so the row is due
-        var recovered = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        var recovered = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
 
         recovered
             .Should()
@@ -121,6 +121,20 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline
     {
+        public Task ExecuteAsync(
+            object? contentObj,
+            Type declaredMessageType,
+            IntentType intentType,
+            MessageOptions? messageOptions,
+            TimeSpan? delayTime,
+            Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+            bool isTransactional = false,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return innerPublish(messageOptions, delayTime, cancellationToken);
+        }
+
         public Task ExecuteAsync<T>(
             T? contentObj,
             IntentType intentType,

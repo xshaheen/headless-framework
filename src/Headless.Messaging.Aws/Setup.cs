@@ -104,6 +104,13 @@ public static class SetupAwsMessaging
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Amazon SQS"));
+            services.AddMessagingProviderCapabilities(
+                MessagingProviderCapabilities.Transport(
+                    "Amazon SQS",
+                    [MessageLane.Bus, MessageLane.Queue],
+                    supportsIndependentLaneTopology: true
+                )
+            );
 
             configureOptions(services);
             services.AddSingleton<IBusTransport, AmazonSnsBusTransport>();

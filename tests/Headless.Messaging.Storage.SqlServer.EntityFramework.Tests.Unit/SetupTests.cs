@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Testing.Tests;
@@ -11,6 +12,16 @@ namespace Tests;
 
 public sealed class SetupTests : TestBase
 {
+    [Fact]
+    public void should_preserve_sqlserver_entity_framework_adapter_name_and_root()
+    {
+        typeof(SetupSqlServerEntityFrameworkMessaging).Name.Should().Be("SetupSqlServerEntityFrameworkMessaging");
+        typeof(SetupSqlServerEntityFrameworkMessaging)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Should()
+            .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);
+    }
+
     [Fact]
     public async Task should_enable_transactional_outbox_by_default_on_entity_framework_path()
     {

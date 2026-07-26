@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Checks;
@@ -13,6 +14,17 @@ namespace Headless.Messaging.Internal;
 
 internal interface IPublishMiddlewarePipeline
 {
+    Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        bool isTransactional = false,
+        CancellationToken cancellationToken = default
+    );
+
     Task ExecuteAsync<T>(
         T? content,
         IntentType intentType,
@@ -32,6 +44,8 @@ internal sealed class PublishMiddlewarePipeline(
 {
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, PublishMiddlewareInvoker> _TypedInvokers =
         new();
+
+    private static readonly ConditionalWeakTable<Type, PublishContextType> _ContextTypes = [];
 
     // Caches the IPublishMiddleware<TContext> closed service type per concrete PublishContext type, so the
     // resolution path avoids running MakeGenericType on every publish.
@@ -64,8 +78,22 @@ internal sealed class PublishMiddlewarePipeline(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await using var scope = _serviceProvider.CreateAsyncScope();
-        var provider = scope.ServiceProvider;
+        if (options?.MessageType is { } declaredMessageType && declaredMessageType != typeof(T))
+        {
+            await ExecuteAsync(
+                    content,
+                    declaredMessageType,
+                    intentType,
+                    options,
+                    delayTime,
+                    innerPublish,
+                    isTransactional,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return;
+        }
+
         var context = new PublishContext<T>(
             content,
             intentType,
@@ -74,7 +102,41 @@ internal sealed class PublishMiddlewarePipeline(
             isTransactional,
             cancellationToken
         );
-        var middleware = _ResolveMiddleware(provider, context);
+        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
+    }
+
+    public async Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        bool isTransactional = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var context = _CreateContext(
+            content,
+            declaredMessageType,
+            intentType,
+            options,
+            delayTime,
+            isTransactional,
+            cancellationToken
+        );
+        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
+    }
+
+    private async Task _ExecuteAsync(
+        PublishContext context,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish
+    )
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var middleware = _ResolveMiddleware(scope.ServiceProvider, context);
 
         // Inner-ring completion flag, hoisted into a single StrongBox so the per-middleware wiring below
         // captures one loop-invariant reference instead of allocating a fresh `() => innerRingCompleted`
@@ -87,7 +149,7 @@ internal sealed class PublishMiddlewarePipeline(
         {
             await innerPublish(context.Options, context.DelayTime, context.CancellationToken).ConfigureAwait(false);
             innerRingCompleted.Value = true;
-            context.MarkCompleted();
+            _MarkCompleted(context);
         };
 
         for (var i = middleware.Length - 1; i >= 0; i--)
@@ -98,6 +160,43 @@ internal sealed class PublishMiddlewarePipeline(
         }
 
         await next().ConfigureAwait(false);
+    }
+
+    private static PublishContext _CreateContext(
+        object? content,
+        Type declaredMessageType,
+        IntentType intentType,
+        MessageOptions? options,
+        TimeSpan? delayTime,
+        bool isTransactional,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(declaredMessageType);
+        var contextType = _ContextTypes
+            .GetValue(
+                declaredMessageType,
+                static type => new PublishContextType(typeof(PublishContext<>).MakeGenericType(type))
+            )
+            .Type;
+
+        return (PublishContext)
+            Activator.CreateInstance(
+                contextType,
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                args:
+                [
+                    content,
+                    content?.GetType() ?? declaredMessageType,
+                    intentType,
+                    options,
+                    delayTime,
+                    isTransactional,
+                    cancellationToken,
+                ],
+                culture: null
+            )!;
     }
 
     private async ValueTask _InvokeAsync(
@@ -150,7 +249,11 @@ internal sealed class PublishMiddlewarePipeline(
 
         if (
             descriptorRegistry is not null
-            && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, out var descriptors)
+            && descriptorRegistry.TryGetPublishDescriptors(
+                context.MessageType,
+                MessageLaneCompatibility.ToLane(context.IntentType),
+                out var descriptors
+            )
         )
         {
             return
@@ -284,4 +387,6 @@ internal sealed class PublishMiddlewarePipeline(
         PublishContext context,
         Func<ValueTask> next
     );
+
+    private sealed record PublishContextType(Type Type);
 }
