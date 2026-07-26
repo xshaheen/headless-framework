@@ -21,7 +21,7 @@ public sealed class CashInProfileUser
 
     [JsonPropertyName("date_joined")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
-    public DateTimeOffset JoinedAt { get; init; }
+    public DateTimeOffset DateJoined { get; init; }
 
     [JsonPropertyName("email")]
     public required string Email { get; init; }

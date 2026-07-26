@@ -213,7 +213,8 @@ override it.
 
 - **Names:** describe the event and suffix timestamp properties with `At` (`CreatedAt`, `UpdatedAt`,
   `DeletedAt`, `PublishedAt`). Reserve `On` for date-only values such as `EffectiveOn`; do not use
-  `DateCreated`-style prefixes.
+  `DateCreated`-style prefixes. This convention applies only to framework-owned contracts. Preserve
+  provider-owned CLR members, JSON fields, and protocol keys exactly as the third party defines them.
 - **Persisted instants and public API contracts use `DateTimeOffset`.** `DateTime` carries a `Kind` that
   is trivially lost — by EF materialization, by serializers, by provider SDKs — and a doc-comment is not
   a type-system guarantee. `DateTimeOffset` makes "this is an instant" unforgeable.
