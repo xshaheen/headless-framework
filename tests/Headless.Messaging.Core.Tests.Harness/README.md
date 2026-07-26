@@ -91,12 +91,12 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 | `StaleSettlement` | U | U | U | U | U | U | U | U |
 | `HandlerFailureRedelivery` | U | U | U | U | U | U | U | U |
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | U |
-| `BusSubscriberGroupFanOut` | U | U | U | N/A | U | U | U | U |
-| `BusReplicaCompetition` | U | U | U | N/A | U | U | U | U |
-| `QueueOwnership` | U | U | U | U | U | U | U | U |
-| `SameNameLaneIsolation` | U | U | U | N/A | U | U | U | U |
+| `BusSubscriberGroupFanOut` | U | U | S | N/A | U | U | U | U |
+| `BusReplicaCompetition` | U | U | S | N/A | U | U | U | U |
+| `QueueOwnership` | U | U | S | U | U | U | U | U |
+| `SameNameLaneIsolation` | U | U | S | N/A | U | U | U | U |
 | `StartupRejectionBeforeSideEffects` | U | U | U | U | U | U | U | U |
-| `MalformedEnvelopeTerminalSettlement` | U | U | U | U | U | U | U | U |
+| `MalformedEnvelopeTerminalSettlement` | U | U | S | U | U | U | U | U |
 | `LegacyCutoverRecovery` | U | U | U | N/A | U | N/A | N/A | U |
 
 Evidence anchors:
@@ -105,6 +105,7 @@ Evidence anchors:
 - Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
 - Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
 - NATS, RabbitMQ, and AWS Bus fan-out: their `TransportConsumerConformanceTestsBase` provider leaves; Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
+- AWS subscriber-group fan-out, replica competition, queue ownership, same-name lane isolation, and terminal malformed-envelope deletion: `AmazonSqsConsumerClientConformanceTests` and `MalformedMessageTests` against LocalStack.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities

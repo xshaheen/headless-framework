@@ -262,7 +262,7 @@ public static class TransportConformanceManifest
                     supportsQueue: true,
                     supportsIndependentLaneTopology: true
                 )
-                .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(35))
+                .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(5))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -275,6 +275,14 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                    ConformanceSupport.Supported
+                )
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")

@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using Amazon.Auth.AccessControlPolicy;
+using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
@@ -56,61 +57,77 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(messageNames);
 
-        if (lane == MessageLane.Queue)
+        try
         {
-            await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            var queueUrls = new List<string>();
-            foreach (var topic in messageNames)
+            if (lane == MessageLane.Queue)
             {
-                var queueResponse = await _sqsClient!
-                    .CreateQueueAsync(topic.ToSqsCreateQueueRequest(), cancellationToken)
+                await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
-                queueUrls.Add(queueResponse.QueueUrl);
+                var queueUrls = new List<string>();
+                foreach (var topic in messageNames)
+                {
+                    var queueName = AwsPhysicalAddress.QueueDestination(topic);
+                    var queueResponse = await _sqsClient!
+                        .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
+                        .ConfigureAwait(false);
+
+                    queueUrls.Add(queueResponse.QueueUrl);
+                }
+
+                _SetQueueUrls([.. queueUrls]);
+
+                return queueUrls;
             }
 
-            _SetQueueUrls([.. queueUrls]);
-
-            return queueUrls;
-        }
-
-        await _ConnectAsync(initSns: true, initSqs: false, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        var topicArns = new List<string>();
-        foreach (var topic in messageNames)
-        {
-            var createTopicRequest = topic.ToSnsCreateTopicRequest();
-
-            var createTopicResponse = await _snsClient!
-                .CreateTopicAsync(createTopicRequest, cancellationToken)
+            await _ConnectAsync(initSns: true, initSqs: false, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            topicArns.Add(createTopicResponse.TopicArn);
+            var topicArns = new List<string>();
+            foreach (var topic in messageNames)
+            {
+                var createTopicRequest = AwsPhysicalAddress.BusTopic(topic).ToSnsCreateTopicRequest();
+
+                var createTopicResponse = await _snsClient!
+                    .CreateTopicAsync(createTopicRequest, cancellationToken)
+                    .ConfigureAwait(false);
+
+                topicArns.Add(createTopicResponse.TopicArn);
+            }
+
+            await _GenerateSqsAccessPolicyAsync(topicArns, cancellationToken).ConfigureAwait(false);
+
+            return topicArns;
         }
-
-        await _GenerateSqsAccessPolicyAsync(topicArns, cancellationToken).ConfigureAwait(false);
-
-        return topicArns;
+        catch (AmazonServiceException exception)
+        {
+            throw _CreateProvisioningFailure("resolve destinations", exception);
+        }
     }
 
     public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
 
-        if (lane == MessageLane.Queue)
+        try
         {
-            await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            _SetQueueUrls([.. topics]);
-            _ready.TrySetResult();
-            return;
-        }
+            if (lane == MessageLane.Queue)
+            {
+                await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                _SetQueueUrls([.. topics]);
+                _ready.TrySetResult();
+                return;
+            }
 
-        await _ConnectAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        await _SubscribeToTopics(topics, cancellationToken).ConfigureAwait(false);
-        _ready.TrySetResult();
+            await _ConnectAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _SubscribeToTopics(topics, cancellationToken).ConfigureAwait(false);
+            _ready.TrySetResult();
+        }
+        catch (AmazonServiceException exception)
+        {
+            throw _CreateProvisioningFailure("subscribe destinations", exception);
+        }
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -263,6 +280,22 @@ internal sealed class AmazonSqsConsumerClient(
         return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 
+    private InvalidOperationException _CreateProvisioningFailure(string stage, AmazonServiceException exception)
+    {
+        var requiredActions =
+            lane == MessageLane.Bus
+                ? "sns:CreateTopic, sqs:CreateQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sns:Subscribe"
+                : "sqs:CreateQueue";
+        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode) ? "unknown" : exception.ErrorCode;
+
+        return new InvalidOperationException(
+            $"AWS_MESSAGING_PROVISIONING_DENIED: Failed to {stage} for the {lane} lane and logical group '{groupId}' "
+                + $"({errorCode}). Verify region/service endpoints and grant the runtime identity only the required actions: "
+                + $"{requiredActions}. Auto-provisioning never widens IAM policy automatically.",
+            exception
+        );
+    }
+
     private void _ObserveBackgroundHandler(Task task)
     {
         _ = task.ContinueWith(
@@ -385,7 +418,10 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     // Create or get existing queue URL asynchronously
                     var queueResponse = await _sqsClient
-                        .CreateQueueAsync(groupId.ToSqsCreateQueueRequest(), cancellationToken)
+                        .CreateQueueAsync(
+                            AwsPhysicalAddress.BusGroupQueue(groupId).ToSqsCreateQueueRequest(),
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
                     _queueUrl = queueResponse.QueueUrl;
                 }
@@ -419,14 +455,14 @@ internal sealed class AmazonSqsConsumerClient(
         catch (JsonException ex)
         {
             _logger.SqsMessageDeserializationFailed(ex);
-            await RejectAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
+            await CommitAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
             return (null, null);
         }
 
         if (messageObj?.MessageAttributes == null)
         {
             _logger.InvalidSqsMessageStructure();
-            await RejectAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
+            await CommitAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
             return (null, null);
         }
 
@@ -529,14 +565,14 @@ internal static partial class AmazonSqsConsumerClientLog
     [LoggerMessage(
         EventId = 4200,
         Level = LogLevel.Error,
-        Message = "Failed to deserialize SQS message. Releasing it for retry; configure an SQS redrive policy to move repeatedly failing messages to a dead-letter queue."
+        Message = "Failed to deserialize SQS message. The malformed transport envelope was terminally deleted."
     )]
     public static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4201,
         Level = LogLevel.Error,
-        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Releasing it for retry; configure an SQS redrive policy to move repeatedly failing messages to a dead-letter queue."
+        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. The malformed transport envelope was terminally deleted."
     )]
     public static partial void InvalidSqsMessageStructure(this ILogger logger);
 
