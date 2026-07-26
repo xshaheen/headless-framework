@@ -122,7 +122,7 @@ internal sealed partial class InMemoryDataStorage
     {
         if (removed.Origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
         {
-            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.IntentType), out _);
+            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.Lane), out _);
         }
     }
 

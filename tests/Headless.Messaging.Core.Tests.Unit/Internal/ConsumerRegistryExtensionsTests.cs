@@ -12,10 +12,10 @@ public sealed class ConsumerRegistryExtensionsTests
     {
         // given — consumer in the group has no provider config of the requested type
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", providerConfigs: []));
+        registry.Register(_Metadata("orders", MessageLane.Bus, "order.created", providerConfigs: []));
 
         // when
-        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         result.Should().BeNull();
@@ -30,14 +30,14 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.created",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
             )
         );
 
         // when
-        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         result.Should().Be(config);
@@ -53,7 +53,7 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.created",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
             )
@@ -61,14 +61,14 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.shipped",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
             )
         );
 
         // when
-        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         result.Should().Be(config);
@@ -82,7 +82,7 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.created",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-a") }
             )
@@ -90,14 +90,14 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.shipped",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-b") }
             )
         );
 
         // when
-        var act = () => registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var act = () => registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting*");
@@ -112,14 +112,14 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "logistics",
-                IntentType.Bus,
+                MessageLane.Bus,
                 "order.created",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
             )
         );
 
         // when
-        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         result.Should().BeNull();
@@ -134,14 +134,14 @@ public sealed class ConsumerRegistryExtensionsTests
         registry.Register(
             _Metadata(
                 "orders",
-                IntentType.Queue,
+                MessageLane.Queue,
                 "order.created",
                 new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
             )
         );
 
         // when
-        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
+        var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", MessageLane.Bus);
 
         // then
         result.Should().BeNull();
@@ -149,12 +149,12 @@ public sealed class ConsumerRegistryExtensionsTests
 
     private static ConsumerMetadata _Metadata(
         string group,
-        IntentType intentType,
+        MessageLane lane,
         string messageName,
         Dictionary<Type, object> providerConfigs
     )
     {
-        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, intentType)
+        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, lane)
         {
             ProviderConfigs = providerConfigs,
         };

@@ -409,7 +409,7 @@ internal sealed partial class PostgreSqlDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -424,7 +424,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Id", stored.StorageId),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Content", stored.Content),
-            new NpgsqlParameter("@IntentType", (short)stored.IntentType),
+            new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(stored.Lane)),
             new NpgsqlParameter("@Retries", stored.Retries),
             new NpgsqlParameter("@InlineAttempts", stored.InlineAttempts),
             new NpgsqlParameter("@Added", stored.Added),
@@ -489,7 +489,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             transaction,
             cancellationToken
@@ -519,7 +519,7 @@ internal sealed partial class PostgreSqlDataStorage(
                     StorageId = Guid.Empty,
                     Origin = origin,
                     Content = content,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                 },
                 exceptionInfo,
                 cancellationToken
@@ -550,7 +550,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 "@Content",
                 string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
             ),
-            new NpgsqlParameter("@IntentType", (short)message.IntentType),
+            new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(message.Lane)),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow()),
@@ -590,7 +590,7 @@ internal sealed partial class PostgreSqlDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -606,7 +606,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter("@Content", mediumMessage.Content),
-            new NpgsqlParameter("@IntentType", (short)mediumMessage.IntentType),
+            new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(mediumMessage.Lane)),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
             new NpgsqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
             new NpgsqlParameter("@Added", mediumMessage.Added),
@@ -651,7 +651,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );
@@ -1135,8 +1135,7 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-        var intentValue = checked((short)intentType);
+        var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var invalidLaneDiagnosticAssignment = isReceivedTable
             ? ", \"ExceptionInfo\" = @InvalidLaneDiagnostic || target.\"IntentType\"::text"
@@ -1264,8 +1263,7 @@ internal sealed partial class PostgreSqlDataStorage(
                     {
                         var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
-                        var persistedIntentType = (IntentType)reader.GetInt16(2);
-                        var persistedLane = MessageLaneCompatibility.ToLane(persistedIntentType);
+                        var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
                         if (persistedLane != lane)
                         {
                             throw new InvalidOperationException(
@@ -1281,7 +1279,7 @@ internal sealed partial class PostgreSqlDataStorage(
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = persistedIntentType,
+                                Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),

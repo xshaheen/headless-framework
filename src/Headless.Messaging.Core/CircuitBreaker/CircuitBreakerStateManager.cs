@@ -344,9 +344,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public bool IsOpen(IntentType intentType, string groupName)
+    public bool IsOpen(MessageLane lane, string groupName)
     {
-        return IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
+        return IsOpen(CircuitBreakerGroupKeys.For(lane, groupName));
     }
 
     /// <inheritdoc />
@@ -446,9 +446,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerState? GetState(IntentType intentType, string groupName)
+    public CircuitBreakerState? GetState(MessageLane lane, string groupName)
     {
-        return GetState(CircuitBreakerGroupKeys.For(intentType, groupName));
+        return GetState(CircuitBreakerGroupKeys.For(lane, groupName));
     }
 
     /// <inheritdoc />
@@ -521,9 +521,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName)
+    public CircuitBreakerSnapshot? GetSnapshot(MessageLane lane, string groupName)
     {
-        return GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
+        return GetSnapshot(CircuitBreakerGroupKeys.For(lane, groupName));
     }
 
     /// <inheritdoc />
@@ -585,13 +585,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ResetAsync(
-        IntentType intentType,
-        string groupName,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask<bool> ResetAsync(MessageLane lane, string groupName, CancellationToken cancellationToken = default)
     {
-        return ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+        return ResetAsync(CircuitBreakerGroupKeys.For(lane, groupName), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -672,12 +668,12 @@ internal sealed class CircuitBreakerStateManager(
 
     /// <inheritdoc />
     public ValueTask<bool> ForceOpenAsync(
-        IntentType intentType,
+        MessageLane lane,
         string groupName,
         CancellationToken cancellationToken = default
     )
     {
-        return ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName), cancellationToken);
+        return ForceOpenAsync(CircuitBreakerGroupKeys.For(lane, groupName), cancellationToken);
     }
 
     /// <summary>

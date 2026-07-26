@@ -115,7 +115,7 @@ public static class Headers
 
     /// <summary>
     /// The publish intent of the message, stamped by the framework at publish time.
-    /// Value is the string representation of <c>IntentType</c> (e.g., <c>"Bus"</c> or <c>"Queue"</c>).
+    /// Value is the stable legacy wire representation of <see cref="MessageLane"/> (<c>"Bus"</c> or <c>"Queue"</c>).
     /// On the consume side the framework warns when the wire value disagrees with the registered
     /// consumer intent so misconfigured producers surface early.
     /// Value: "headless-intent"

@@ -24,7 +24,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -51,7 +51,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -78,7 +78,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -107,7 +107,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -132,7 +132,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -157,7 +157,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -182,7 +182,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, ct) =>
@@ -212,7 +212,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) => Task.CompletedTask,
@@ -236,7 +236,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) => Task.CompletedTask,
@@ -267,7 +267,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherMiddlewarePayload("hi"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -351,7 +351,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
                 [
                     typeof(object),
                     typeof(Type),
-                    typeof(IntentType),
+                    typeof(MessageLane),
                     typeof(MessageOptions),
                     typeof(TimeSpan?),
                     typeof(Func<MessageOptions?, TimeSpan?, CancellationToken, Task>),
@@ -369,7 +369,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
                 [
                     content,
                     declaredContract,
-                    IntentType.Bus,
+                    MessageLane.Bus,
                     null,
                     null,
                     (Func<MessageOptions?, TimeSpan?, CancellationToken, Task>)((_, _, _) => Task.CompletedTask),

@@ -145,7 +145,7 @@ internal sealed class MessageSender : IMessageSender
 
         var transport = selected.Transport!;
         var brokerAddress = transport.BrokerAddress;
-        var traceHandle = _TracingBefore(transportMsg, message.IntentType, brokerAddress);
+        var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
@@ -197,24 +197,24 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
     {
-        if (!Enum.IsDefined(message.IntentType))
+        if (!Enum.IsDefined(message.Lane))
         {
             var ex = new InvalidOperationException(
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+                    $"Stored message {message.StorageId} has unsupported MessageLane value '{(short)message.Lane}'."
                 )
             );
-            await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+            await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));
         }
 
-        return message.IntentType switch
+        return message.Lane switch
         {
-            IntentType.Bus when _busTransport is not null => (_busTransport, null),
-            IntentType.Queue when _queueTransport is not null => (_queueTransport, null),
-            IntentType.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
-            IntentType.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
+            MessageLane.Bus when _busTransport is not null => (_busTransport, null),
+            MessageLane.Queue when _queueTransport is not null => (_queueTransport, null),
+            MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
+            MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
             _ => throw new UnreachableException(),
         };
     }
@@ -227,11 +227,11 @@ internal sealed class MessageSender : IMessageSender
         var ex = new InvalidOperationException(
             $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
         );
-        await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+        await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
         return (null, OperateResult.Failed(ex));
     }
 
-    private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
+    private async Task _MarkMissingLaneTransportFailedAsync(MediumMessage message, Exception ex)
     {
         var originalInlineAttempts = message.InlineAttempts;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
@@ -249,7 +249,7 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
 
-        _logger.StoredMessageUnsupportedIntent(ex, message.StorageId, message.IntentType.ToString("D"));
+        _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
     }
 
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
@@ -522,7 +522,7 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private MessagingTraceHandle _TracingBefore(TransportMessage message, IntentType intentType, BrokerAddress broker)
+    private MessagingTraceHandle _TracingBefore(TransportMessage message, MessageLane lane, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -532,7 +532,7 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.PublishStart(message, intentType, broker, now);
+        var activity = _telemetry.PublishStart(message, lane, broker, now);
 
         return new MessagingTraceHandle(activity, now);
     }

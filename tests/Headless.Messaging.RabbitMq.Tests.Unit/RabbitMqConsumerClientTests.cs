@@ -195,7 +195,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
-            intentType: IntentType.Queue
+            lane: MessageLane.Queue
         );
         using var cts = new CancellationTokenSource();
 
@@ -235,14 +235,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     [Fact]
     public void should_use_group_queue_for_bus_intent()
     {
-        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", IntentType.Bus).Should().Be("workers");
+        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", MessageLane.Bus).Should().Be("workers");
     }
 
     [Fact]
     public void should_use_topic_queue_for_queue_intent()
     {
         RabbitMqConsumerClient
-            .GetQueueName("workers", "orders.created", IntentType.Queue)
+            .GetQueueName("workers", "orders.created", MessageLane.Queue)
             .Should()
             .Be("orders.created");
     }

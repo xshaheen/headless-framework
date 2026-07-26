@@ -177,7 +177,7 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
                 null
             ),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

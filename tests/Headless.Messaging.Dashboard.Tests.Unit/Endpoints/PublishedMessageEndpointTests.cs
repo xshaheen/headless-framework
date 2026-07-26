@@ -32,7 +32,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         {
             StorageId = messageId,
             Content = "{\"key\":\"value\"}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -60,8 +60,8 @@ public sealed class PublishedMessageEndpointTests : TestBase
         var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>(AbortToken);
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
-        payload.Should().ContainKey("intentType");
-        ((JsonElement)payload["intentType"]!).GetInt32().Should().Be((int)IntentType.Bus);
+        payload.Should().ContainKey("lane");
+        ((JsonElement)payload["lane"]!).GetInt32().Should().Be((int)MessageLane.Bus);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     MessageId = "logical-pub-123",
                     Version = "v1",
                     Name = "orders.created",
-                    IntentType = IntentType.Queue,
+                    Lane = MessageLane.Queue,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
@@ -120,7 +120,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         // when
         var response = await client.GetAsync(
-            "/api/published/Succeeded?currentPage=2&perPage=20&intentType=Queue",
+            "/api/published/Succeeded?currentPage=2&perPage=20&lane=Queue",
             AbortToken
         );
 
@@ -143,7 +143,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
-        item.GetProperty("intentType").GetInt32().Should().Be((int)IntentType.Queue);
+        item.GetProperty("lane").GetInt32().Should().Be((int)MessageLane.Queue);
 
         await _monitoringApi
             .Received(1)
@@ -151,7 +151,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
                     && query.StatusName == StatusName.Succeeded
-                    && query.IntentType == IntentType.Queue
+                    && query.Lane == MessageLane.Queue
                     && query.CurrentPage == 1
                     && query.PageSize == 20
                 ),
@@ -174,7 +174,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
-        // when — intentType omitted from query string
+        // when — lane omitted from query string
         var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20", AbortToken);
 
         // then
@@ -186,7 +186,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
                     && query.StatusName == StatusName.Succeeded
-                    && query.IntentType == null
+                    && query.Lane == null
                     && query.CurrentPage == 1
                     && query.PageSize == 20
                 ),

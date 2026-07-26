@@ -22,10 +22,7 @@ public class MediumMessage
 
     public required string Content { get; set; }
 
-    public required IntentType IntentType { get; set; }
-
-    /// <summary>Gets the checked runtime lane represented by the persisted compatibility value.</summary>
-    internal MessageLane Lane => MessageLaneCompatibility.ToLane(IntentType);
+    public required MessageLane Lane { get; set; }
 
     public DateTimeOffset Added { get; set; }
 

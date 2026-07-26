@@ -17,7 +17,7 @@ internal sealed class AzureServiceBusConsumerClient(
     IOptions<AzureServiceBusMessagingOptions> options,
     IServiceProvider serviceProvider,
     IAzureServiceBusClientPool clientPool,
-    IntentType intentType = IntentType.Bus
+    MessageLane lane = MessageLane.Bus
 ) : IConsumerClient
 {
     // Headless must settle only after durable receive storage and handler outcome are known.
@@ -61,7 +61,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-        if (intentType == IntentType.Queue)
+        if (lane == MessageLane.Queue)
         {
             foreach (var messageName in messageNames)
             {
@@ -150,7 +150,7 @@ internal sealed class AzureServiceBusConsumerClient(
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<ServiceBusProcessorFacade> processors =
-            intentType == IntentType.Queue ? _queueProcessors : [_serviceBusProcessor!];
+            lane == MessageLane.Queue ? _queueProcessors : [_serviceBusProcessor!];
 
         foreach (var processor in processors)
         {
@@ -333,7 +333,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (_serviceBusProcessor != null || (intentType == IntentType.Queue && _serviceBusClient != null))
+        if (_serviceBusProcessor != null || (lane == MessageLane.Queue && _serviceBusClient != null))
         {
             return;
         }
@@ -343,7 +343,7 @@ internal sealed class AzureServiceBusConsumerClient(
         try
         {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-            if (_serviceBusProcessor == null && (intentType != IntentType.Queue || _serviceBusClient == null))
+            if (_serviceBusProcessor == null && (lane != MessageLane.Queue || _serviceBusClient == null))
 #pragma warning restore CA1508
             {
                 // Shared, pool-owned resources: processors created from this client multiplex the
@@ -355,7 +355,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     _administrationClient = clientPool.GetAdministrationClient();
                 }
 
-                if (intentType == IntentType.Bus && _asbOptions.AutoProvision)
+                if (lane == MessageLane.Bus && _asbOptions.AutoProvision)
                 {
                     var administrationClient = _administrationClient!;
                     var topicConfigs = _asbOptions
@@ -405,7 +405,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     }
                 }
 
-                if (intentType == IntentType.Queue)
+                if (lane == MessageLane.Queue)
                 {
                     return;
                 }

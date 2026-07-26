@@ -151,7 +151,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OrderPlaced("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -187,7 +187,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OrderPlaced("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -221,7 +221,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherOrderPlaced("order-2"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>

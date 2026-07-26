@@ -1229,7 +1229,7 @@ public sealed class DispatcherTests : TestBase
             StorageId = resolvedStorageId,
             Origin = message,
             Content = JsonSerializer.Serialize(message),
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

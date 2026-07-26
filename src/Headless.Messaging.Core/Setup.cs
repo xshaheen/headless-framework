@@ -394,7 +394,7 @@ public static class SetupMessaging
                     consumer.Group,
                     consumer.Concurrency,
                     consumer.HandlerId,
-                    MessageLaneCompatibility.ToIntentType(registration.Lane)
+                    registration.Lane
                 ) with
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
@@ -403,7 +403,7 @@ public static class SetupMessaging
                 var key = new ConsumerRegistrationKey(
                     resolved.MessageName,
                     resolved.Group,
-                    resolved.IntentType,
+                    resolved.Lane,
                     resolved.ConsumerType
                 );
 
@@ -425,7 +425,7 @@ public static class SetupMessaging
                         throw new InvalidOperationException(
                             $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
                                 + $"more than once for message name '{resolved.MessageName}' "
-                                + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                + $"(group '{resolved.Group}', intent {resolved.Lane}) with conflicting settings. "
                                 + "Register the consumer once, or make every registration identical."
                         );
                     }
@@ -459,7 +459,7 @@ public static class SetupMessaging
     private readonly record struct ConsumerRegistrationKey(
         string MessageName,
         string? Group,
-        IntentType IntentType,
+        MessageLane Lane,
         Type ConsumerType
     )
     {
@@ -467,7 +467,7 @@ public static class SetupMessaging
         // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
         public bool Equals(ConsumerRegistrationKey other)
         {
-            return IntentType == other.IntentType
+            return Lane == other.Lane
                 && ConsumerType == other.ConsumerType
                 && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(Group, other.Group, StringComparison.Ordinal);
@@ -478,7 +478,7 @@ public static class SetupMessaging
             return HashCode.Combine(
                 StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
                 Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
-                IntentType,
+                Lane,
                 ConsumerType
             );
         }

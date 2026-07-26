@@ -23,8 +23,8 @@ public class MessageView
     /// <summary>Gets or sets the message name (topic or queue name) resolved at publish time.</summary>
     public required string Name { get; set; }
 
-    /// <summary>Gets or sets the delivery intent that produced this row.</summary>
-    public IntentType IntentType { get; set; }
+    /// <summary>Gets or sets the delivery lane that produced this row.</summary>
+    public MessageLane Lane { get; set; }
 
     /// <summary>Gets or sets the serialized message body, or <see langword="null"/> when the content was not projected.</summary>
     public string? Content { get; set; }

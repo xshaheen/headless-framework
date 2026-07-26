@@ -539,7 +539,7 @@ internal sealed class SubscribeExecutor(
     )
     {
         var consumerContext = new ConsumerContext(descriptor, message);
-        var traceHandle = _TracingBefore(message.Origin, message.IntentType, descriptor.MethodInfo, message.Retries);
+        var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
         try
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
@@ -610,12 +610,7 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private MessagingTraceHandle _TracingBefore(
-        Message message,
-        IntentType intentType,
-        MethodInfo method,
-        int retryCount
-    )
+    private MessagingTraceHandle _TracingBefore(Message message, MessageLane lane, MethodInfo method, int retryCount)
     {
         if (!MessagingDiagnostics.IsEnabled)
         {
@@ -623,7 +618,7 @@ internal sealed class SubscribeExecutor(
         }
 
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.SubscriberInvokeStart(message, message.Name, intentType, method, retryCount, now);
+        var activity = _telemetry.SubscriberInvokeStart(message, message.Name, lane, method, retryCount, now);
 
         return new MessagingTraceHandle(activity, now);
     }

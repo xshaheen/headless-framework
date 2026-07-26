@@ -18,7 +18,7 @@ public abstract class PublishContext
         object? content,
         Type messageType,
         Type concreteMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
         DeliveryDecision decision,
         bool deliveryFrozen,
@@ -28,8 +28,7 @@ public abstract class PublishContext
         Content = content;
         MessageType = Argument.IsNotNull(messageType);
         ConcreteMessageType = Argument.IsNotNull(concreteMessageType);
-        IntentType = intentType;
-        Lane = decision.Lane;
+        Lane = lane;
         RequestedDeliveryMode = decision.RequestedMode;
         ResolvedDeliveryMode = decision.ResolvedMode;
         OptionsCore = options;
@@ -52,12 +51,8 @@ public abstract class PublishContext
     public Type ConcreteMessageType { get; internal set; }
 
     /// <summary>
-    /// Gets the publish intent for this operation (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).
-    /// Available to middleware to make intent-aware decisions without inspecting the concrete options type.
+    /// Gets the authoritative publish lane for this operation.
     /// </summary>
-    public IntentType IntentType { get; }
-
-    /// <summary>Gets the checked runtime lane for this publish operation.</summary>
     public MessageLane Lane { get; }
 
     /// <summary>Gets the delivery mode requested by the caller before resolution.</summary>
@@ -173,7 +168,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <summary>Initializes a publish context for direct construction by middleware tests and tooling.</summary>
     public PublishContext(
         TMessage? content,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
         TimeSpan? delayTime,
         bool isTransactional = false,
@@ -183,15 +178,15 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             content,
             typeof(TMessage),
             content?.GetType() ?? typeof(TMessage),
-            intentType,
+            lane,
             options,
-            _CreateLegacyDecision(intentType, options, delayTime, isTransactional),
+            _CreateLegacyDecision(lane, options, delayTime, isTransactional),
             deliveryFrozen: false,
             cancellationToken
         ) { }
 
     private static DeliveryDecision _CreateLegacyDecision(
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
         TimeSpan? delayTime,
         bool isTransactional
@@ -214,7 +209,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         };
 
         return new DeliveryDecision(
-            MessageLaneCompatibility.ToLane(intentType),
+            lane,
             requestedMode,
             resolvedMode,
             path,
@@ -226,7 +221,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
 
     internal PublishContext(
         TMessage? content,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
         DeliveryDecision decision,
         CancellationToken cancellationToken
@@ -234,7 +229,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         : this(
             content,
             content?.GetType() ?? typeof(TMessage),
-            intentType,
+            lane,
             options,
             decision,
             deliveryFrozen: true,
@@ -244,7 +239,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     internal PublishContext(
         TMessage? content,
         Type concreteMessageType,
-        IntentType intentType,
+        MessageLane lane,
         MessageOptions? options,
         DeliveryDecision decision,
         bool deliveryFrozen,
@@ -254,7 +249,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             content,
             typeof(TMessage),
             concreteMessageType,
-            intentType,
+            lane,
             options,
             decision,
             deliveryFrozen,

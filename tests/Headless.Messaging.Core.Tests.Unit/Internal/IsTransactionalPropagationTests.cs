@@ -90,7 +90,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             await publisher.PublishAsync(
                 new TestMessage("hi"),
                 options: null,
-                intentType: IntentType.Bus,
+                lane: MessageLane.Bus,
                 cancellationToken: AbortToken
             );
 
@@ -118,7 +118,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         await publisher.PublishAsync(
             new TestMessage("hi"),
             options: null,
-            intentType: IntentType.Bus,
+            lane: MessageLane.Bus,
             cancellationToken: AbortToken
         );
 
@@ -159,7 +159,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                         StorageId = Guid.NewGuid(),
                         Origin = content,
                         Content = "{}",
-                        IntentType = IntentType.Bus,
+                        Lane = MessageLane.Bus,
                         Added = DateTimeOffset.UtcNow,
                     }
                 );

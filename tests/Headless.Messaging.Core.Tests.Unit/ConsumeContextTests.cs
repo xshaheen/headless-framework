@@ -153,7 +153,7 @@ public sealed class ConsumeContextTests
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UnixEpoch,
             MessageName = "test.message",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
     }
 

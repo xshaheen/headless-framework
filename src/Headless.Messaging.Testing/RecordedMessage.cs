@@ -52,7 +52,7 @@ public sealed record RecordedMessage
     public required string MessageName { get; init; }
 
     /// <summary>The bus/queue intent that produced the observation.</summary>
-    public required IntentType IntentType { get; init; }
+    public required MessageLane Lane { get; init; }
 
     /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
@@ -69,7 +69,7 @@ public sealed record RecordedMessage
         object message,
         Type messageType,
         DateTimeOffset timestamp,
-        IntentType intentType = IntentType.Bus,
+        MessageLane lane = MessageLane.Bus,
         Exception? exception = null
     )
     {
@@ -90,7 +90,7 @@ public sealed record RecordedMessage
             CorrelationId = correlationId,
             Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
             MessageName = messageName,
-            IntentType = intentType,
+            Lane = lane,
             Timestamp = timestamp,
             Exception = exception,
         };

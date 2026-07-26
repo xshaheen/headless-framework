@@ -223,7 +223,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
             _options,
             _serviceProvider,
             pool,
-            IntentType.Queue
+            MessageLane.Queue
         );
         await client.ConnectAsync(AbortToken);
 

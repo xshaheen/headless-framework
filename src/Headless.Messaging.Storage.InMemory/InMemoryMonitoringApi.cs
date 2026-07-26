@@ -174,9 +174,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
-            if (query.IntentType is { } intentType)
+            if (query.Lane is { } lane)
             {
-                expression = expression.Where(x => x.IntentType == intentType);
+                expression = expression.Where(x => x.Lane == lane);
             }
 
             var offset = query.CurrentPage * query.PageSize;
@@ -195,7 +195,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
-                    IntentType = x.IntentType,
+                    Lane = x.Lane,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
@@ -235,9 +235,9 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
-            if (query.IntentType is { } intentType)
+            if (query.Lane is { } lane)
             {
-                expression = expression.Where(x => x.IntentType == intentType);
+                expression = expression.Where(x => x.Lane == lane);
             }
 
             var offset = query.CurrentPage * query.PageSize;
@@ -255,7 +255,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.Id,
                     Version = "N/A",
                     Content = x.Content,
-                    IntentType = x.IntentType,
+                    Lane = x.Lane,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,

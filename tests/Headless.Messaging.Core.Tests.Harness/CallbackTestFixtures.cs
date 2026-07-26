@@ -133,7 +133,7 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
                 break;
             case CallbackRequestMode.Remove:
                 context.Headers.RemoveCallback();
-                context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+                context.SetResponse(new CallbackResponse(context.Message.Id, context.Lane.ToString()));
                 break;
             case CallbackRequestMode.TypedNull:
                 context.SetResponse<CallbackResponse>(null!);
@@ -141,7 +141,7 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
             case CallbackRequestMode.HeadersOnly:
                 break;
             default:
-                context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+                context.SetResponse(new CallbackResponse(context.Message.Id, context.Lane.ToString()));
                 break;
         }
 
@@ -205,12 +205,12 @@ public sealed class CallbackQueueRequestConsumer : IConsume<CallbackQueueRequest
         if (context.Message.ReturnDeclaredContract)
         {
             context.SetResponse<ICallbackResponseContract>(
-                new ConcreteCallbackResponse(context.Message.Id, context.IntentType.ToString())
+                new ConcreteCallbackResponse(context.Message.Id, context.Lane.ToString())
             );
         }
         else
         {
-            context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+            context.SetResponse(new CallbackResponse(context.Message.Id, context.Lane.ToString()));
         }
 
         return ValueTask.CompletedTask;
@@ -221,7 +221,7 @@ public sealed record CallbackPublishSnapshot<TMessage>(
     Type DeclaredMessageType,
     Type ConcreteMessageType,
     TMessage? Content,
-    IntentType IntentType
+    MessageLane Lane
 );
 
 public sealed class CallbackPublishRecorder<TMessage>
@@ -237,7 +237,7 @@ public sealed class CallbackPublishRecorder<TMessage>
                 context.MessageType,
                 context.ConcreteMessageType,
                 context.Content,
-                context.IntentType
+                context.Lane
             )
         );
     }

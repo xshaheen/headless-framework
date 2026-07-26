@@ -44,7 +44,7 @@ public class PublishDispatchBenchmarks
         _pipeline
             .ExecuteAsync(
                 _payload,
-                IntentType.Bus,
+                MessageLane.Bus,
                 _options,
                 delayTime: null,
                 static (_, _, _) => Task.CompletedTask,
@@ -65,7 +65,7 @@ public class PublishDispatchBenchmarks
     {
         return _pipeline.ExecuteAsync(
             _payload,
-            IntentType.Bus,
+            MessageLane.Bus,
             _options,
             delayTime: null,
             static (_, _, _) => Task.CompletedTask,

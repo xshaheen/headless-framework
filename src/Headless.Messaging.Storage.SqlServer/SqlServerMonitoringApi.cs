@@ -3,6 +3,7 @@
 using System.Data;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -139,7 +140,7 @@ internal sealed class SqlServerMonitoringApi(
             where += " AND [Content] LIKE @Content ESCAPE '\\'";
         }
 
-        if (query.IntentType is { })
+        if (query.Lane is { })
         {
             where += " AND [IntentType]=@IntentType";
         }
@@ -157,7 +158,10 @@ internal sealed class SqlServerMonitoringApi(
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
+            },
         ];
 
         object[] pageSqlParams =
@@ -166,7 +170,10 @@ internal sealed class SqlServerMonitoringApi(
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
+            },
             new SqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new SqlParameter("@Limit", query.PageSize),
         ];
@@ -210,7 +217,7 @@ internal sealed class SqlServerMonitoringApi(
                                 Content = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(index - 1),
-                                IntentType = (IntentType)reader.GetInt16(index++),
+                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(index++)),
                                 Retries = reader.GetInt32(index++),
                                 Added = await reader
                                     .GetFieldValueAsync<DateTimeOffset>(index++, ct)
@@ -477,7 +484,7 @@ internal sealed class SqlServerMonitoringApi(
                                 StorageId = reader.GetGuid(0),
                                 Origin = serializer.Deserialize(reader.GetString(1))!,
                                 Content = reader.GetString(1),
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
                                 ExpiresAt = await reader.IsDBNullAsync(4, ct).ConfigureAwait(false)
                                     ? null
@@ -534,7 +541,7 @@ internal sealed class SqlServerMonitoringApi(
                             StorageId = reader.GetGuid(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
-                            IntentType = (IntentType)reader.GetInt16(2),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                             Added = await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false),
                             ExpiresAt = expiresAtIsNull
                                 ? null

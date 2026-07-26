@@ -24,7 +24,7 @@ public sealed class ConsumerMetadataTests : TestBase
             messageName,
             group,
             concurrency,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // then
@@ -45,7 +45,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "test.messageName",
             null,
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // then
@@ -62,7 +62,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "original.messageName",
             "group",
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // when
@@ -89,7 +89,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "original-group",
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // when
@@ -113,7 +113,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // when
@@ -136,7 +136,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -144,7 +144,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // then
@@ -162,7 +162,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -170,7 +170,7 @@ public sealed class ConsumerMetadataTests : TestBase
             "different-messageName",
             "group",
             5,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // then

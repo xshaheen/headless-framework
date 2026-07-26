@@ -131,7 +131,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -148,7 +148,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(PipelineTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(PipelineTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

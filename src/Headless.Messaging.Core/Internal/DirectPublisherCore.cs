@@ -15,7 +15,7 @@ internal static class DirectPublisherCore
 {
     internal static async Task SendAsync(
         Message message,
-        IntentType intentType,
+        MessageLane lane,
         ISerializer serializer,
         BrokerAddress brokerAddress,
         Func<TransportMessage, CancellationToken, Task<OperateResult>> sendTransport,
@@ -28,7 +28,7 @@ internal static class DirectPublisherCore
             .SerializeToTransportMessageAsync(message, cancellationToken)
             .ConfigureAwait(false);
 
-        var traceHandle = _TracingBeforeSend(transportMsg, intentType, brokerAddress, nowMs, telemetry);
+        var traceHandle = _TracingBeforeSend(transportMsg, lane, brokerAddress, nowMs, telemetry);
         try
         {
             var result = await sendTransport(transportMsg, cancellationToken).ConfigureAwait(false);
@@ -68,7 +68,7 @@ internal static class DirectPublisherCore
 
     private static MessagingTraceHandle _TracingBeforeSend(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress brokerAddress,
         Func<long> nowMs,
         MessagingTelemetry telemetry
@@ -82,7 +82,7 @@ internal static class DirectPublisherCore
         }
 
         var now = nowMs();
-        var activity = telemetry.PublishStart(message, intentType, brokerAddress, now);
+        var activity = telemetry.PublishStart(message, lane, brokerAddress, now);
 
         return new MessagingTraceHandle(activity, now);
     }

@@ -10,8 +10,8 @@ public sealed class MessageLaneTests : TestBase
     [Fact]
     public void should_preserve_legacy_numeric_values()
     {
-        ((short)MessageLane.Bus).Should().Be(0).And.Be((short)IntentType.Bus);
-        ((short)MessageLane.Queue).Should().Be(1).And.Be((short)IntentType.Queue);
+        ((short)MessageLane.Bus).Should().Be(0).And.Be((short)MessageLane.Bus);
+        ((short)MessageLane.Queue).Should().Be(1).And.Be((short)MessageLane.Queue);
     }
 
     [Fact]
@@ -22,11 +22,11 @@ public sealed class MessageLaneTests : TestBase
     }
 
     [Theory]
-    [InlineData(IntentType.Bus, "Bus")]
-    [InlineData(IntentType.Queue, "Queue")]
-    public void should_preserve_legacy_wire_names(IntentType intentType, string wireValue)
+    [InlineData(MessageLane.Bus, "Bus")]
+    [InlineData(MessageLane.Queue, "Queue")]
+    public void should_preserve_legacy_wire_names(MessageLane lane, string wireValue)
     {
         Headers.Intent.Should().Be("headless-intent");
-        intentType.ToString().Should().Be(wireValue);
+        lane.ToString().Should().Be(wireValue);
     }
 }

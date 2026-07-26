@@ -165,7 +165,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -185,7 +185,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
-            intentType: null,
+            lane: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -194,11 +194,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>
     /// Waits until a message of type <typeparamref name="T"/> is published for the given
-    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForPublished<T>(
-        IntentType intentType,
+        MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -206,7 +206,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
-            intentType,
+            lane,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -229,7 +229,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -249,7 +249,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
-            intentType: null,
+            lane: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -258,11 +258,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>
     /// Waits until a message of type <typeparamref name="T"/> is consumed for the given
-    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForConsumed<T>(
-        IntentType intentType,
+        MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -270,7 +270,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
-            intentType,
+            lane,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -293,7 +293,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -313,7 +313,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
-            intentType: null,
+            lane: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -322,11 +322,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>
     /// Waits until processing of a message of type <typeparamref name="T"/> faults for the given
-    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForFaulted<T>(
-        IntentType intentType,
+        MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -334,7 +334,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
-            intentType,
+            lane,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -358,7 +358,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
-            intentType: null,
+            lane: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -378,7 +378,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
-            intentType: null,
+            lane: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -387,11 +387,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>
     /// Waits until the retry budget for a message of type <typeparamref name="T"/> is exhausted
-    /// for the given <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// for the given <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForExhausted<T>(
-        IntentType intentType,
+        MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -399,7 +399,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
-            intentType,
+            lane,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -588,7 +588,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                         payload,
                         payload.GetType(),
                         store.GetUtcNow(),
-                        info.IntentType,
+                        info.Lane,
                         info.Exception
                     ),
                     MessageObservationType.Exhausted

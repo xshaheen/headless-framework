@@ -24,10 +24,10 @@ public sealed class MessagingIntentSplitTests : TestBase
     {
         // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
         // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
-        ((int)IntentType.Bus)
+        ((int)MessageLane.Bus)
             .Should()
             .Be(0);
-        ((int)IntentType.Queue).Should().Be(1);
+        ((int)MessageLane.Queue).Should().Be(1);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.MessageName.Should().Be("events.orders");
     }
 
@@ -60,7 +60,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
-        metadata.IntentType.Should().Be(IntentType.Queue);
+        metadata.Lane.Should().Be(MessageLane.Queue);
         metadata.MessageName.Should().Be("jobs.orders");
     }
 
@@ -76,7 +76,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
         registry.Register(
@@ -86,7 +86,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -105,7 +105,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -149,7 +149,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "events.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
 
@@ -196,7 +196,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                IntentType: IntentType.Queue
+                Lane: MessageLane.Queue
             )
         );
 
@@ -275,9 +275,9 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<TimeSpan?>(),
-                IntentType.Bus
+                MessageLane.Bus
             )
-            .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
+            .Returns(_CreatePreparedPublishMessage("events.prepared", MessageLane.Bus));
 
         await using var transport = new CapturingBusTransport();
         var activities = new ConcurrentBag<Activity>();
@@ -295,7 +295,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
-                IntentType.Bus
+                MessageLane.Bus
             );
         transport.LastMessage!.Value.Name.Should().Be("events.prepared");
         // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
@@ -332,9 +332,9 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<TimeSpan?>(),
-                IntentType.Queue
+                MessageLane.Queue
             )
-            .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
+            .Returns(_CreatePreparedPublishMessage("jobs.prepared", MessageLane.Queue));
 
         await using var transport = new CapturingQueueTransport();
         var activities = new ConcurrentBag<Activity>();
@@ -352,7 +352,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 typeof(TestMessage),
                 Arg.Any<PublishOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
-                IntentType.Queue
+                MessageLane.Queue
             );
         transport.LastMessage!.Value.Name.Should().Be("jobs.prepared");
         // Scope the match to THIS test's destination: the listener is process-global, so other parallel tests
@@ -400,7 +400,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         );
     }
 
-    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType)
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, MessageLane lane)
     {
         return new()
         {
@@ -414,7 +414,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 },
                 new TestMessage()
             ),
-            IntentType = intentType,
+            Lane = lane,
             DeclaredMessageType = typeof(TestMessage),
             ConcreteMessageType = typeof(TestMessage),
         };
@@ -437,7 +437,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var queueDescriptor = new ConsumerExecutorDescriptor
         {
@@ -445,7 +445,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Queue,
+            Lane = MessageLane.Queue,
         };
 
         comparer.Equals(busDescriptor, queueDescriptor).Should().BeFalse();
@@ -469,7 +469,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         var second = new ConsumerExecutorDescriptor
         {
@@ -477,7 +477,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
             GroupName = "workers",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
 
         comparer.Equals(first, second).Should().BeTrue();

@@ -163,7 +163,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public void should_include_group_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient
-            .BuildDurableName("payments", "orders.created", IntentType.Bus)
+            .BuildDurableName("payments", "orders.created", MessageLane.Bus)
             .Should()
             .Be("payments-orders_created");
     }
@@ -172,7 +172,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public void should_share_destination_for_queue_intent_when_build_durable_name()
     {
         NatsConsumerClient
-            .BuildDurableName("payments", "orders.created", IntentType.Queue)
+            .BuildDurableName("payments", "orders.created", MessageLane.Queue)
             .Should()
             .Be("queue-orders_created");
     }

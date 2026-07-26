@@ -159,7 +159,7 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 - `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>()` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. Use callback overloads for `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
-- persisted published and received rows, transport headers, monitoring, and dashboard projections retain the `IntentType` compatibility name and stable `Bus = 0` / `Queue = 1` values until #350. Undefined values fail explicitly and never default to Bus. Retry pickup and received-message identity include the value, so the two lanes do not collapse into one row.
+- runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.
 - a persisted row whose `IntentType` value has no registered capability is marked terminal `Failed` with no next retry; the drainer logs the unsupported value and continues processing later rows.
 - direct publish, outbox publish, and runtime delegates emit OpenTelemetry spans and metrics natively (the former DiagnosticSource bridge was replaced; instrument, span, and attribute names are unchanged, and the EventCounter names used by the dashboard are preserved). See Observability below.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
@@ -191,7 +191,7 @@ Use bus publishers for broadcast publish/subscribe delivery:
 - `IBus` always selects the Bus lane.
 - `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
 - `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
-- Stored rows and consume contexts carry `IntentType.Bus`.
+- Stored rows and consume contexts carry `MessageLane.Bus`.
 
 ### Queue Publishers
 
@@ -200,7 +200,7 @@ Use queue publishers for point-to-point competing-worker delivery:
 - `IQueue` always selects the Queue lane.
 - `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
 - `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
-- Stored rows and consume contexts carry `IntentType.Queue`.
+- Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
 
@@ -524,11 +524,11 @@ var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
-var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, or HalfOpen
+var isOpen = monitor.IsOpen(MessageLane.Bus, "payments");
+var state = monitor.GetState(MessageLane.Bus, "payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
+var wasReset = await monitor.ResetAsync(MessageLane.Bus, "payments"); // true if reset performed
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

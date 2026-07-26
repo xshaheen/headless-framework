@@ -269,7 +269,7 @@ public interface IDataStorage
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             transaction,
             cancellationToken
@@ -350,7 +350,7 @@ public interface IDataStorage
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );

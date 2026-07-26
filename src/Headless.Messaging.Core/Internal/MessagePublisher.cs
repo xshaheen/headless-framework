@@ -53,7 +53,7 @@ internal sealed class MessagePublisher(
         var declaredMessageType = options?.MessageType ?? typeof(T);
         return publishPipeline.ExecuteAsync(
             content,
-            MessageLaneCompatibility.ToIntentType(lane),
+            lane,
             options,
             decision,
             innerPublish: (middlewareOptions, ct) =>
@@ -65,20 +65,15 @@ internal sealed class MessagePublisher(
                         middlewareOptions,
                         decision.Delay!.Value,
                         publishAt,
-                        MessageLaneCompatibility.ToIntentType(lane)
+                        lane
                     )
-                    : publishRequestFactory.Create(
-                        content,
-                        declaredMessageType,
-                        middlewareOptions,
-                        intentType: MessageLaneCompatibility.ToIntentType(lane)
-                    );
+                    : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
 
                 if (decision.Path is DeliveryPath.TransportDirect)
                 {
                     return DirectPublisherCore.SendAsync(
                         request.Message,
-                        request.IntentType,
+                        request.Lane,
                         serializer,
                         brokerAddressResolver(lane),
                         (message, token) => transportSender(lane, message, token),

@@ -22,7 +22,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             callerOptions,
             TimeSpan.FromSeconds(5),
             (options, delay, _) =>
@@ -54,7 +54,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             new PublishOptions { CorrelationId = "corr-1" },
             delayTime: null,
             (options, _, _) =>
@@ -86,7 +86,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var act = () =>
             pipeline.ExecuteAsync(
                 new MigratedPublishMessage("order-1"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 TimeSpan.FromSeconds(10),
                 (_, _, _) =>
@@ -117,7 +117,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             new PublishOptions { TenantId = "caller" },
             delayTime: null,
             (options, _, _) =>
@@ -145,7 +145,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var act = () =>
             pipeline.ExecuteAsync(
                 new MigratedPublishMessage("order-1"),
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 TimeSpan.FromMinutes(5),
                 (_, _, _) =>
@@ -171,7 +171,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync<MigratedPublishMessage>(
                 content: null,
-                IntentType.Bus,
+                MessageLane.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => throw new InvalidOperationException("inner failed"),
@@ -198,7 +198,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("first"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             (_, _, _) => Task.CompletedTask,
@@ -206,7 +206,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         );
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("second"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             (_, _, _) => Task.CompletedTask,
@@ -235,7 +235,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MigratedPublishMessage("order-1"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             (_, _, _) =>
@@ -266,7 +266,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherMigratedPublishMessage("other"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null,
             (_, _, _) =>

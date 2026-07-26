@@ -62,7 +62,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
         // when
         var context = new DerivedConsumeContext
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = new OrderPlaced("order-1"),
             MessageId = "message-1",
             CorrelationId = null,
@@ -81,7 +81,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
     {
         return new ConsumeContext<OrderPlaced>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = "message-1",
             CorrelationId = "correlation-1",

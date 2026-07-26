@@ -8,7 +8,7 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The values intentionally match the persisted <see cref="IntentType"/> representation during the
+/// The values intentionally match the stable persisted lane representation during the
 /// vocabulary migration. New runtime decisions use this type; compatibility boundaries convert explicitly.
 /// </para>
 /// <para>

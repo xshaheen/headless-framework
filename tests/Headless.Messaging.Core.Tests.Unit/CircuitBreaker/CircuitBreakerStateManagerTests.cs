@@ -577,13 +577,13 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await sut.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
 
         // then
-        sut.IsOpen(IntentType.Queue, _Group).Should().BeTrue();
-        sut.GetState(IntentType.Queue, _Group).Should().Be(CircuitBreakerState.Open);
-        sut.GetSnapshot(IntentType.Queue, _Group).Should().NotBeNull();
+        sut.IsOpen(MessageLane.Queue, _Group).Should().BeTrue();
+        sut.GetState(MessageLane.Queue, _Group).Should().Be(CircuitBreakerState.Open);
+        sut.GetSnapshot(MessageLane.Queue, _Group).Should().NotBeNull();
 
-        var reset = await sut.ResetAsync(IntentType.Queue, _Group, AbortToken);
+        var reset = await sut.ResetAsync(MessageLane.Queue, _Group, AbortToken);
         reset.Should().BeTrue();
-        sut.IsOpen(IntentType.Queue, _Group).Should().BeFalse();
+        sut.IsOpen(MessageLane.Queue, _Group).Should().BeFalse();
     }
 
     [Fact]

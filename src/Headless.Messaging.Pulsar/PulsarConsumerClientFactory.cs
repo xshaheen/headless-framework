@@ -39,13 +39,7 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
         try
         {
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            var consumerClient = new PulsarConsumerClient(
-                _pulsarOptions,
-                client,
-                groupName,
-                groupConcurrent,
-                MessageLaneCompatibility.ToIntentType(lane)
-            );
+            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, groupName, groupConcurrent, lane);
             return consumerClient;
         }
         catch (Exception e) when (e is not OperationCanceledException)

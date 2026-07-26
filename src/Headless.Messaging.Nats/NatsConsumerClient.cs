@@ -21,7 +21,7 @@ internal sealed class NatsConsumerClient(
     IOptions<NatsMessagingOptions> options,
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
-    IntentType intentType = IntentType.Bus,
+    MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null,
     Func<NatsConnection, Task>? connect = null,
     Func<NatsConnection, ValueTask>? disposeConnection = null
@@ -160,9 +160,9 @@ internal sealed class NatsConsumerClient(
         return _BuildSubjects(messageNames, shardedMessageNames);
     }
 
-    internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
+    internal static string BuildDurableName(string groupName, string subject, MessageLane lane)
     {
-        return intentType == IntentType.Queue
+        return lane == MessageLane.Queue
             ? TransportNaming.Normalize("queue-" + subject)
             : TransportNaming.Normalize(groupName + "-" + subject);
     }
@@ -262,7 +262,7 @@ internal sealed class NatsConsumerClient(
 
             foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
-                var durableName = BuildDurableName(groupName, subject, intentType);
+                var durableName = BuildDurableName(groupName, subject, lane);
 
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
@@ -336,7 +336,7 @@ internal sealed class NatsConsumerClient(
             return [];
         }
 
-        var config = consumerRegistry.ResolveConsumerConfig<NatsConsumerConfig>(name, intentType);
+        var config = consumerRegistry.ResolveConsumerConfig<NatsConsumerConfig>(name, lane);
         if (config?.IsSharded != true)
         {
             return [];

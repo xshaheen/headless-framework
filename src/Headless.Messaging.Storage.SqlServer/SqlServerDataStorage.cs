@@ -392,7 +392,7 @@ internal sealed partial class SqlServerDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -407,7 +407,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@Id", stored.StorageId),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", stored.Content),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)stored.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(stored.Lane),
+            },
             new SqlParameter("@Retries", stored.Retries),
             new SqlParameter("@InlineAttempts", stored.InlineAttempts),
             new SqlParameter("@Added", stored.Added),
@@ -481,7 +484,7 @@ internal sealed partial class SqlServerDataStorage(
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             transaction,
             cancellationToken
@@ -511,7 +514,7 @@ internal sealed partial class SqlServerDataStorage(
                     StorageId = Guid.Empty,
                     Origin = origin,
                     Content = content,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                 },
                 exceptionInfo,
                 cancellationToken
@@ -542,7 +545,10 @@ internal sealed partial class SqlServerDataStorage(
                 "@Content",
                 string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
             ),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)message.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(message.Lane),
+            },
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@Added", timeProvider.GetUtcNow()),
@@ -584,7 +590,7 @@ internal sealed partial class SqlServerDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -600,7 +606,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter("@Content", mediumMessage.Content),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)mediumMessage.IntentType },
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(mediumMessage.Lane),
+            },
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
             new SqlParameter("@Added", mediumMessage.Added),
@@ -655,7 +664,7 @@ internal sealed partial class SqlServerDataStorage(
                 StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );
@@ -1191,8 +1200,7 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-        var intentValue = checked((short)intentType);
+        var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var invalidLaneDiagnosticAssignment = isReceivedTable
             ? ", ExceptionInfo=CONCAT(@InvalidLaneDiagnostic, target.IntentType)"
@@ -1306,8 +1314,7 @@ internal sealed partial class SqlServerDataStorage(
                     {
                         var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
-                        var persistedIntentType = (IntentType)reader.GetInt16(2);
-                        var persistedLane = MessageLaneCompatibility.ToLane(persistedIntentType);
+                        var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
                         if (persistedLane != lane)
                         {
                             throw new InvalidOperationException(
@@ -1323,7 +1330,7 @@ internal sealed partial class SqlServerDataStorage(
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = persistedIntentType,
+                                Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),

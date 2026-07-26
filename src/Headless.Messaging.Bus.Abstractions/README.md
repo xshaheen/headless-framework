@@ -11,7 +11,7 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 - `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
 - Durable delivery persists messages first, then drains them through the configured bus transport.
 - `PublishOptions.Delay` schedules durable bus delivery.
-- Every bus publish carries `IntentType.Bus` through storage, tracing, dashboard projections, and consume context.
+- Every bus publish carries `MessageLane.Bus` through storage, tracing, dashboard projections, and consume context.
 
 ## Installation
 

@@ -90,7 +90,7 @@ public sealed class ConsumerContextTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = methodInfo,
             ImplTypeInfo = typeof(ConsumerContextTestConsumer).GetTypeInfo(),
             MessageName = "test.messageName",
@@ -114,7 +114,7 @@ public sealed class ConsumerContextTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = message,
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }

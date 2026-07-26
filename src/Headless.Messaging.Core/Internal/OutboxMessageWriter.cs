@@ -30,7 +30,7 @@ internal sealed class OutboxMessageWriter(
     internal Task PublishAsync<T>(
         T? contentObj,
         MessageOptions? options,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken
     )
     {
@@ -42,7 +42,7 @@ internal sealed class OutboxMessageWriter(
         // immediate path — dispatching to the broker non-atomically with the transaction.
         var coordination = _TryCaptureCoordination();
         var decision = DeliveryDecisionResolver.Resolve(
-            MessageLaneCompatibility.ToLane(intentType),
+            lane,
             DeliveryMode.Durable,
             delay: null,
             coordination,
@@ -51,17 +51,12 @@ internal sealed class OutboxMessageWriter(
 
         return publishPipeline.ExecuteAsync(
             contentObj,
-            intentType,
+            lane,
             options,
             decision,
             innerPublish: (middlewareOptions, ct) =>
                 WriteAsync(
-                    publishRequestFactory.Create(
-                        contentObj,
-                        declaredMessageType,
-                        middlewareOptions,
-                        intentType: intentType
-                    ),
+                    publishRequestFactory.Create(contentObj, declaredMessageType, middlewareOptions, lane: lane),
                     decision,
                     ct
                 ),
@@ -73,14 +68,14 @@ internal sealed class OutboxMessageWriter(
         TimeSpan delayTime,
         T? contentObj,
         MessageOptions? options,
-        IntentType intentType,
+        MessageLane lane,
         CancellationToken cancellationToken
     )
     {
         var declaredMessageType = options?.MessageType ?? typeof(T);
         var coordination = _TryCaptureCoordination();
         var decision = DeliveryDecisionResolver.Resolve(
-            MessageLaneCompatibility.ToLane(intentType),
+            lane,
             DeliveryMode.Durable,
             delayTime,
             coordination,
@@ -89,7 +84,7 @@ internal sealed class OutboxMessageWriter(
 
         return publishPipeline.ExecuteAsync(
             contentObj,
-            intentType,
+            lane,
             options,
             decision,
             innerPublish: (middlewareOptions, ct) =>
@@ -100,7 +95,7 @@ internal sealed class OutboxMessageWriter(
                         middlewareOptions,
                         delayTime,
                         decision.PublishAt!.Value,
-                        intentType
+                        lane
                     ),
                     decision,
                     ct
@@ -135,7 +130,7 @@ internal sealed class OutboxMessageWriter(
         MessagingTraceHandle traceHandle = default;
         try
         {
-            traceHandle = _TracingBefore(publishRequest.Message, publishRequest.IntentType);
+            traceHandle = _TracingBefore(publishRequest.Message, publishRequest.Lane);
 
             // Use the coordinator/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
@@ -241,13 +236,13 @@ internal sealed class OutboxMessageWriter(
             StorageId = Guid.Empty,
             Origin = publishRequest.Message,
             Content = string.Empty,
-            IntentType = publishRequest.IntentType,
+            Lane = publishRequest.Lane,
         };
     }
 
     #region Tracing
 
-    private MessagingTraceHandle _TracingBefore(Message message, IntentType intentType)
+    private MessagingTraceHandle _TracingBefore(Message message, MessageLane lane)
     {
         if (!MessagingDiagnostics.IsEnabled)
         {
@@ -255,7 +250,7 @@ internal sealed class OutboxMessageWriter(
         }
 
         var now = _NowUnixTimeMilliseconds();
-        var activity = _telemetry.PersistStart(message, message.Name, intentType, now);
+        var activity = _telemetry.PersistStart(message, message.Name, lane, now);
 
         return new MessagingTraceHandle(activity, now);
     }

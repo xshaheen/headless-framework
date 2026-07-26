@@ -468,7 +468,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = expiresAt,
             },
             cancellationToken: AbortToken
@@ -1403,7 +1403,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             {
                 Retries = 50,
                 Version = "v1",
-                IntentType = (short)IntentType.Queue,
+                Lane = (short)MessageLane.Queue,
             },
             transaction: transaction
         );

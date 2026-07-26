@@ -38,7 +38,7 @@ public sealed class MessagingInstrumentationDiTests : TestBase
         var message = _CreateTransportMessage("orders.placed");
 
         // when
-        var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
 
         // then — the enricher captured at setup time reached the DI-resolved MessagingTelemetry instance.
         publish.Should().NotBeNull();
@@ -62,7 +62,7 @@ public sealed class MessagingInstrumentationDiTests : TestBase
         var message = _CreateTransportMessage("orders.placed");
 
         // when
-        var publish = telemetry.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
 
         // then
         publish.Should().NotBeNull();

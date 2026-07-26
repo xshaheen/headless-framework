@@ -52,13 +52,13 @@ public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<
 
 public sealed class IntentRecorder
 {
-    private readonly ConcurrentQueue<IntentType> _intents = [];
+    private readonly ConcurrentQueue<MessageLane> _intents = [];
 
-    public IReadOnlyCollection<IntentType> Intents => _intents.ToArray();
+    public IReadOnlyCollection<MessageLane> Intents => _intents.ToArray();
 
-    public void Record(IntentType intentType)
+    public void Record(MessageLane lane)
     {
-        _intents.Enqueue(intentType);
+        _intents.Enqueue(lane);
     }
 }
 
@@ -66,7 +66,7 @@ public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderC
 {
     public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
-        recorder.Record(context.IntentType);
+        recorder.Record(context.Lane);
         return ValueTask.CompletedTask;
     }
 }
@@ -75,7 +75,7 @@ public sealed class QueueIntentConsumer(IntentRecorder recorder) : IConsume<Orde
 {
     public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
-        recorder.Record(context.IntentType);
+        recorder.Record(context.Lane);
         return ValueTask.CompletedTask;
     }
 }
@@ -321,10 +321,10 @@ public sealed class EndToEndTests : TestBase
 
         registeredConsumers
             .Should()
-            .Contain(c => c.ConsumerType == typeof(BusIntentConsumer) && c.IntentType == IntentType.Bus);
+            .Contain(c => c.ConsumerType == typeof(BusIntentConsumer) && c.Lane == MessageLane.Bus);
         registeredConsumers
             .Should()
-            .Contain(c => c.ConsumerType == typeof(QueueIntentConsumer) && c.IntentType == IntentType.Queue);
+            .Contain(c => c.ConsumerType == typeof(QueueIntentConsumer) && c.Lane == MessageLane.Queue);
         _GetInnerTransportName(harness.GetRequiredService<IQueueTransport>()).Should().Be("InMemoryQueueTransport");
 
         // when
@@ -340,32 +340,32 @@ public sealed class EndToEndTests : TestBase
         );
 
         var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(
-            IntentType.Bus,
+            MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(
-            IntentType.Queue,
+            MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            IntentType.Bus,
+            MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
-            IntentType.Queue,
+            MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
 
         // then
-        busPublished.IntentType.Should().Be(IntentType.Bus);
-        queuePublished.IntentType.Should().Be(IntentType.Queue);
-        busConsumed.IntentType.Should().Be(IntentType.Bus);
-        queueConsumed.IntentType.Should().Be(IntentType.Queue);
-        recorder.Intents.Should().BeEquivalentTo([IntentType.Bus, IntentType.Queue]);
+        busPublished.Lane.Should().Be(MessageLane.Bus);
+        queuePublished.Lane.Should().Be(MessageLane.Queue);
+        busConsumed.Lane.Should().Be(MessageLane.Bus);
+        queueConsumed.Lane.Should().Be(MessageLane.Queue);
+        recorder.Intents.Should().BeEquivalentTo([MessageLane.Bus, MessageLane.Queue]);
     }
 
     [Fact]
@@ -412,12 +412,12 @@ public sealed class EndToEndTests : TestBase
         );
 
         var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(
-            IntentType.Bus,
+            MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
         var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(
-            IntentType.Queue,
+            MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
@@ -433,11 +433,11 @@ public sealed class EndToEndTests : TestBase
         );
 
         // then
-        busPublished.IntentType.Should().Be(IntentType.Bus);
-        queuePublished.IntentType.Should().Be(IntentType.Queue);
-        busConsumed.IntentType.Should().Be(IntentType.Bus);
-        queueConsumed.IntentType.Should().Be(IntentType.Queue);
-        recorder.Intents.Should().Contain([IntentType.Bus, IntentType.Queue]);
+        busPublished.Lane.Should().Be(MessageLane.Bus);
+        queuePublished.Lane.Should().Be(MessageLane.Queue);
+        busConsumed.Lane.Should().Be(MessageLane.Bus);
+        queueConsumed.Lane.Should().Be(MessageLane.Queue);
+        recorder.Intents.Should().Contain([MessageLane.Bus, MessageLane.Queue]);
     }
 
     [Fact]
@@ -467,13 +467,13 @@ public sealed class EndToEndTests : TestBase
 
         // then
         var published = await harness.WaitForPublished<OrderCreatedEvent>(
-            IntentType.Queue,
+            MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        published.IntentType.Should().Be(IntentType.Queue);
+        published.Lane.Should().Be(MessageLane.Queue);
         harness.Published.Should().ContainSingle();
-        harness.Published.Should().NotContain(message => message.IntentType == IntentType.Bus);
+        harness.Published.Should().NotContain(message => message.Lane == MessageLane.Bus);
     }
 
     private static string? _GetInnerTransportName(object transport)

@@ -12,6 +12,40 @@ namespace Tests.Internal;
 public sealed class ConsumeMiddlewarePipelineTests : TestBase
 {
     [Fact]
+    public async Task should_reject_unsupported_lane_header_before_dispatch_without_requiring_a_logger()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var pipeline = _BuildPipeline(_CreateServices(recorder));
+        var context = _BuildConsumerContext();
+        context.MediumMessage.Origin.Headers[Headers.Intent] = "Unknown";
+
+        // when
+        var act = () =>
+            pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*'Unknown'*");
+        recorder.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_keep_registration_lane_authoritative_when_compatible_header_disagrees()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var pipeline = _BuildPipeline(_CreateServices(recorder));
+        var context = _BuildConsumerContext();
+        context.MediumMessage.Origin.Headers[Headers.Intent] = "Queue";
+
+        // when
+        await pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+
+        // then
+        recorder.Calls.Should().Equal("dispatcher");
+    }
+
+    [Fact]
     public async Task should_invoke_bus_middleware_around_dispatcher()
     {
         // given
@@ -142,7 +176,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
@@ -171,7 +205,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 StorageId = Guid.NewGuid(),
                 Origin = origin,
                 Content = "{}",
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 Added = DateTimeOffset.UtcNow,
             }
         );

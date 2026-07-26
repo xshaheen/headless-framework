@@ -285,23 +285,24 @@ public record ConsumeContext
     public required string MessageName { get; init; }
 
     /// <summary>
-    /// Gets the delivery intent that produced this consume call: <see cref="IntentType.Bus"/> for
-    /// broadcast (publish/subscribe) dispatch, <see cref="IntentType.Queue"/> for point-to-point
+    /// Gets the delivery lane that produced this consume call: <see cref="MessageLane.Bus"/> for
+    /// broadcast (publish/subscribe) dispatch, <see cref="MessageLane.Queue"/> for point-to-point
     /// (work-queue) dispatch.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The intent is registration-derived, not envelope-derived: the framework stamps this value
-    /// from the consumer registration (<c>OnBus&lt;TConsumer&gt;()</c> vs
-    /// <c>OnQueue&lt;TConsumer&gt;()</c>) that delivered the message. No on-wire header carries
-    /// intent; the receiving runtime knows the dispatch path because it owns it.
+    /// The lane is registration-derived, not envelope-derived: the framework stamps this value
+    /// from the consumer registration (<c>Bus.Consumer&lt;TConsumer&gt;()</c> vs
+    /// <c>Queue.Consumer&lt;TConsumer&gt;()</c>) that delivered the message. The legacy
+    /// <c>headless-intent</c> header is validated for compatibility and diagnostics, but never reroutes
+    /// the registration-owned dispatch path.
     /// </para>
     /// <para>
-    /// A handler type registered under both intents (one bus, one queue) is invoked once per
-    /// dispatch path, and each call observes the matching <see cref="IntentType"/> value.
+    /// A handler type registered under both lanes (one bus, one queue) is invoked once per
+    /// dispatch path, and each call observes the matching <see cref="MessageLane"/> value.
     /// </para>
     /// </remarks>
-    public required IntentType IntentType { get; init; }
+    public required MessageLane Lane { get; init; }
 }
 
 /// <summary>

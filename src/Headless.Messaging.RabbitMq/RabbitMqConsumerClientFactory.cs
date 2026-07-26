@@ -21,11 +21,9 @@ internal sealed class RabbitMqConsumerClientFactory(
         CancellationToken cancellationToken = default
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
-        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, intentType);
+        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, lane);
 
         try
         {
@@ -36,7 +34,7 @@ internal sealed class RabbitMqConsumerClientFactory(
                 rabbitMqOptions,
                 serviceProvider,
                 config,
-                intentType
+                lane
             );
 
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

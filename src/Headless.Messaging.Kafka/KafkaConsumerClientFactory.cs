@@ -38,10 +38,7 @@ internal sealed class KafkaConsumerClientFactory(
 
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
-        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(
-            groupName,
-            MessageLaneCompatibility.ToIntentType(lane)
-        );
+        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(groupName, lane);
 
         try
         {

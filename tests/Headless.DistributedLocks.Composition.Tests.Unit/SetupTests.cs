@@ -53,7 +53,7 @@ public sealed class SetupTests : TestBase
         var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
         metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.Concurrency.Should().Be(1);
     }
 
@@ -103,7 +103,7 @@ public sealed class SetupTests : TestBase
             .Should()
             .ContainSingle(metadata =>
                 metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
-                && metadata.IntentType == IntentType.Bus
+                && metadata.Lane == MessageLane.Bus
             );
     }
 

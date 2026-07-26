@@ -68,7 +68,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         await using (scope)
         {
             // Stores the durable row in-transaction and buffers the accelerator dispatch on the coordinator.
-            await writer.PublishAsync(new RelayMessage("value"), options: null, intentType: IntentType.Bus, AbortToken);
+            await writer.PublishAsync(new RelayMessage("value"), options: null, lane: MessageLane.Bus, AbortToken);
         }
 
         // The signal was DROPPED (un-signalled dispose drains as rollback): the accelerator must not fire.
@@ -124,7 +124,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             TimeSpan? delayTime,
             Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
@@ -137,7 +137,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
         public Task ExecuteAsync<T>(
             T? contentObj,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             TimeSpan? delayTime,
             Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
@@ -151,7 +151,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             DeliveryDecision decision,
             Func<MessageOptions?, CancellationToken, Task> innerPublish,
@@ -163,7 +163,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
         public Task ExecuteAsync<T>(
             T? contentObj,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             DeliveryDecision decision,
             Func<MessageOptions?, CancellationToken, Task> innerPublish,

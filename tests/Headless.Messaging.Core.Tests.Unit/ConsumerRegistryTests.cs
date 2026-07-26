@@ -17,7 +17,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "test.group",
             2,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
 
         // when
@@ -35,21 +35,14 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
         );
 
         // when
         _ = registry.GetAll(); // Freeze
         var act = () =>
             registry.Register(
-                new ConsumerMetadata(
-                    typeof(TestMessage),
-                    typeof(TestConsumer),
-                    "test2",
-                    null,
-                    1,
-                    IntentType: IntentType.Bus
-                )
+                new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1, Lane: MessageLane.Bus)
             );
 
         // then
@@ -69,7 +62,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "original",
             null,
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var updated = new ConsumerMetadata(
             typeof(TestMessage),
@@ -77,7 +70,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "updated",
             "group1",
             5,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(original);
 
@@ -104,14 +97,14 @@ public sealed class ConsumerRegistryTests : TestBase
             "original",
             null,
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(original);
 
         // when
         registry.Update(
             m => m.ConsumerType == typeof(OtherConsumer),
-            new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "new", null, 1, IntentType: IntentType.Bus)
+            new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "new", null, 1, Lane: MessageLane.Bus)
         );
         var all = registry.GetAll();
 
@@ -126,7 +119,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
         );
         _ = registry.GetAll(); // Freeze
 
@@ -140,7 +133,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     "updated",
                     null,
                     1,
-                    IntentType: IntentType.Bus
+                    Lane: MessageLane.Bus
                 )
             );
 
@@ -156,7 +149,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
         );
 
         // when
@@ -184,7 +177,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
-                    IntentType.Bus
+                    MessageLane.Bus
                 )
             );
         }
@@ -211,7 +204,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 "orders.placed",
                 "billing",
                 1,
-                IntentType: IntentType.Bus,
+                Lane: MessageLane.Bus,
                 "Tests.ConsumerA"
             )
         );
@@ -225,7 +218,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     "orders.placed",
                     "billing",
                     1,
-                    IntentType: IntentType.Bus,
+                    Lane: MessageLane.Bus,
                     "Tests.ConsumerB"
                 )
             );
@@ -248,7 +241,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 "orders.placed",
                 "billing",
                 1,
-                IntentType: IntentType.Bus,
+                Lane: MessageLane.Bus,
                 "Tests.ConsumerA"
             )
         );
@@ -259,7 +252,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 "orders.cancelled",
                 "analytics",
                 1,
-                IntentType: IntentType.Bus,
+                Lane: MessageLane.Bus,
                 "Tests.ConsumerB"
             )
         );
@@ -274,7 +267,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     "orders.placed",
                     "billing",
                     1,
-                    IntentType: IntentType.Bus,
+                    Lane: MessageLane.Bus,
                     "Tests.ConsumerB"
                 )
             );
@@ -291,7 +284,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
         );
 
         var freezeTask = Task.Run(() => registry.GetAll());
@@ -310,7 +303,7 @@ public sealed class ConsumerRegistryTests : TestBase
                             "test2",
                             null,
                             1,
-                            IntentType: IntentType.Bus
+                            Lane: MessageLane.Bus
                         )
                     );
                 }
@@ -336,14 +329,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(
-                typeof(TestMessage),
-                typeof(TestConsumer),
-                "original",
-                null,
-                1,
-                IntentType: IntentType.Bus
-            )
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, Lane: MessageLane.Bus)
         );
         const int updateCount = 50;
 
@@ -358,7 +344,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
-                    IntentType.Bus
+                    MessageLane.Bus
                 )
             );
         }
@@ -405,7 +391,7 @@ public sealed class ConsumerRegistryTests : TestBase
                                         $"messageName.{index}",
                                         $"group.{index}",
                                         1,
-                                        IntentType: IntentType.Bus
+                                        Lane: MessageLane.Bus
                                     )
                                 );
                             }
@@ -468,7 +454,7 @@ public sealed class ConsumerRegistryTests : TestBase
                     "original",
                     null,
                     1,
-                    IntentType: IntentType.Bus
+                    Lane: MessageLane.Bus
                 )
             );
             using var barrier = new Barrier(2);
@@ -487,7 +473,7 @@ public sealed class ConsumerRegistryTests : TestBase
                                 "updated",
                                 "group1",
                                 5,
-                                IntentType: IntentType.Bus
+                                Lane: MessageLane.Bus
                             )
                         );
                     }
@@ -558,7 +544,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             null,
             2,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(metadata);
 
@@ -581,7 +567,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "group1",
             2,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(TestMessage),
@@ -589,7 +575,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "group2",
             3,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -615,7 +601,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 "test.messageName",
                 null,
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
 
@@ -638,7 +624,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 "test.messageName",
                 "group1",
                 1,
-                IntentType: IntentType.Bus
+                Lane: MessageLane.Bus
             )
         );
 
@@ -660,7 +646,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic1",
             null,
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(TestMessage),
@@ -668,7 +654,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic2",
             null,
             2,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata3 = new ConsumerMetadata(
             typeof(OtherMessage),
@@ -676,7 +662,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic3",
             null,
             3,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -703,7 +689,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic1",
             null,
             1,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(OtherMessage),
@@ -711,7 +697,7 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic2",
             null,
             2,
-            IntentType: IntentType.Bus
+            Lane: MessageLane.Bus
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -730,14 +716,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(
-                typeof(TestMessage),
-                typeof(TestConsumer),
-                "topic1",
-                null,
-                1,
-                IntentType: IntentType.Bus
-            )
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1, Lane: MessageLane.Bus)
         );
 
         // when

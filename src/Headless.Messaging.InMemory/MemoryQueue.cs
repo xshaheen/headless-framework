@@ -11,12 +11,9 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 {
     private readonly Lock _lock = new();
 
-    private readonly Dictionary<(IntentType IntentType, string MessageName), List<string>> _messageNameGroups = [];
-    private readonly Dictionary<
-        (IntentType IntentType, string GroupId),
-        List<InMemoryConsumerClient>
-    > _consumerClients = [];
-    private readonly Dictionary<(IntentType IntentType, string GroupId), int> _nextClientIndexes = [];
+    private readonly Dictionary<(MessageLane Lane, string MessageName), List<string>> _messageNameGroups = [];
+    private readonly Dictionary<(MessageLane Lane, string GroupId), List<InMemoryConsumerClient>> _consumerClients = [];
+    private readonly Dictionary<(MessageLane Lane, string GroupId), int> _nextClientIndexes = [];
     private readonly Dictionary<string, int> _nextQueueGroupIndexes = [];
 
     /// <summary>
@@ -24,11 +21,11 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// </summary>
     /// <param name="groupId">The consumer group ID</param>
     /// <param name="consumerClient">The consumer client to register</param>
-    public void RegisterConsumerClient(IntentType intentType, string groupId, InMemoryConsumerClient consumerClient)
+    public void RegisterConsumerClient(MessageLane lane, string groupId, InMemoryConsumerClient consumerClient)
     {
         lock (_lock)
         {
-            var key = (intentType, groupId);
+            var key = (lane, groupId);
             if (!_consumerClients.TryGetValue(key, out var clients))
             {
                 clients = [];
@@ -44,13 +41,13 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// </summary>
     /// <param name="groupId">The consumer group ID</param>
     /// <param name="messageNames">The message names to subscribe to</param>
-    public void Subscribe(IntentType intentType, string groupId, IEnumerable<string> messageNames)
+    public void Subscribe(MessageLane lane, string groupId, IEnumerable<string> messageNames)
     {
         lock (_lock)
         {
             foreach (var messageName in messageNames)
             {
-                var key = (intentType, messageName);
+                var key = (lane, messageName);
                 if (_messageNameGroups.TryGetValue(key, out var value))
                 {
                     if (!value.Contains(groupId, StringComparer.Ordinal))
@@ -70,11 +67,11 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// Unsubscribes a consumer group from the queue.
     /// </summary>
     /// <param name="groupId">The consumer group ID</param>
-    public void Unsubscribe(IntentType intentType, string groupId, InMemoryConsumerClient consumerClient)
+    public void Unsubscribe(MessageLane lane, string groupId, InMemoryConsumerClient consumerClient)
     {
         lock (_lock)
         {
-            var key = (intentType, groupId);
+            var key = (lane, groupId);
             if (_consumerClients.TryGetValue(key, out var clients))
             {
                 clients.Remove(consumerClient);
@@ -82,7 +79,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
                 {
                     _consumerClients.Remove(key);
                     _nextClientIndexes.Remove(key);
-                    _RemoveGroupSubscriptions(intentType, groupId);
+                    _RemoveGroupSubscriptions(lane, groupId);
                 }
             }
         }
@@ -90,11 +87,11 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         logger.ConsumerRemoved(groupId);
     }
 
-    private void _RemoveGroupSubscriptions(IntentType intentType, string groupId)
+    private void _RemoveGroupSubscriptions(MessageLane lane, string groupId)
     {
         foreach (var (key, groups) in _messageNameGroups.ToArray())
         {
-            if (key.IntentType != intentType)
+            if (key.Lane != lane)
             {
                 continue;
             }
@@ -137,7 +134,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var name = message.Name;
         lock (_lock)
         {
-            if (!_messageNameGroups.TryGetValue((IntentType.Bus, name), out var groupList))
+            if (!_messageNameGroups.TryGetValue((MessageLane.Bus, name), out var groupList))
             {
                 logger.NoSubscribersBus(name);
                 return;
@@ -145,7 +142,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
             foreach (var groupId in groupList)
             {
-                _TryDeliverToGroup(IntentType.Bus, groupId, message);
+                _TryDeliverToGroup(MessageLane.Bus, groupId, message);
             }
         }
     }
@@ -161,7 +158,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var name = message.Name;
         lock (_lock)
         {
-            if (!_messageNameGroups.TryGetValue((IntentType.Queue, name), out var groupList) || groupList.Count == 0)
+            if (!_messageNameGroups.TryGetValue((MessageLane.Queue, name), out var groupList) || groupList.Count == 0)
             {
                 logger.NoSubscribersQueue(name);
                 return;
@@ -173,7 +170,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
                 var currentIndex = (startIndex + offset) % groupList.Count;
                 var groupId = groupList[currentIndex];
 
-                if (_TryDeliverToGroup(IntentType.Queue, groupId, message))
+                if (_TryDeliverToGroup(MessageLane.Queue, groupId, message))
                 {
                     _nextQueueGroupIndexes[name] = (currentIndex + 1) % groupList.Count;
                     return;
@@ -185,9 +182,9 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         }
     }
 
-    private bool _TryDeliverToGroup(IntentType intentType, string groupId, TransportMessage message)
+    private bool _TryDeliverToGroup(MessageLane lane, string groupId, TransportMessage message)
     {
-        var key = (intentType, groupId);
+        var key = (lane, groupId);
         if (!_consumerClients.TryGetValue(key, out var clients) || clients.Count == 0)
         {
             return false;

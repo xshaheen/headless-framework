@@ -27,14 +27,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ConcurrentDictionary<Guid, MemoryMessage> ReceivedMessages { get; } = new();
 
-    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, IntentType).
+    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, MessageLane).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
     // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
     // over the whole received-message map. Updated in lockstep with every code path that inserts
     // into or removes from ReceivedMessages. ValueTuple's default equality uses ordinal string
     // equality for each component, matching the SQL providers' BINARY-collation key semantics.
     private readonly ConcurrentDictionary<
-        (string Version, string MessageId, string? Group, IntentType IntentType),
+        (string Version, string MessageId, string? Group, MessageLane Lane),
         Guid
     > _receivedIdentityIndex = new();
 
@@ -416,7 +416,7 @@ internal sealed partial class InMemoryDataStorage(
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -432,7 +432,7 @@ internal sealed partial class InMemoryDataStorage(
             Name = name,
             Origin = stored.Origin,
             Content = stored.Content,
-            IntentType = stored.IntentType,
+            Lane = stored.Lane,
             Retries = stored.Retries,
             InlineAttempts = stored.InlineAttempts,
             Added = stored.Added,
@@ -461,7 +461,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             dbTransaction,
             cancellationToken
@@ -488,7 +488,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = origin,
                 Content = content,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             exceptionInfo,
             cancellationToken
@@ -511,7 +511,7 @@ internal sealed partial class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var indexKey = (version, messageId, (string?)group, message.IntentType);
+        var indexKey = (version, messageId, (string?)group, message.Lane);
 
         // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
@@ -574,7 +574,7 @@ internal sealed partial class InMemoryDataStorage(
                 Origin = message.Origin,
                 Name = name,
                 Content = content,
-                IntentType = message.IntentType,
+                Lane = message.Lane,
                 Retries = retries,
                 Added = now,
                 ExpiresAt = expiresAt,
@@ -617,7 +617,7 @@ internal sealed partial class InMemoryDataStorage(
             return ValueTask.FromResult(inserted);
         }
 
-        var indexKey = (version, messageId!, (string?)group, message.IntentType);
+        var indexKey = (version, messageId!, (string?)group, message.Lane);
 
         // R3 — extend the same lock + check-then-insert/update pattern from
         // StoreReceivedExceptionMessageAsync to the non-exception path. Before R3 two concurrent
@@ -687,7 +687,7 @@ internal sealed partial class InMemoryDataStorage(
 
                 existing.Origin = message.Origin;
                 existing.Content = serialized;
-                existing.IntentType = message.IntentType;
+                existing.Lane = message.Lane;
                 // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
                 // The existing counters remain authoritative across lease expiry and restart.
                 existing.Added = added;
@@ -720,7 +720,7 @@ internal sealed partial class InMemoryDataStorage(
             StorageId = storageId ?? guidGenerator.Create(),
             Origin = message.Origin,
             Content = serialized,
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = initialNextRetryAt,
@@ -746,7 +746,7 @@ internal sealed partial class InMemoryDataStorage(
                 StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken
         );
@@ -768,7 +768,7 @@ internal sealed partial class InMemoryDataStorage(
         {
             StorageId = mdMessage.StorageId,
             Origin = mdMessage.Origin,
-            IntentType = mdMessage.IntentType,
+            Lane = mdMessage.Lane,
             Group = group,
             Name = name,
             Content = mdMessage.Content,
@@ -876,7 +876,7 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _ = MessageLaneCompatibility.ToIntentType(lane);
+        _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
@@ -896,7 +896,7 @@ internal sealed partial class InMemoryDataStorage(
 
             if (
                 !string.Equals(candidate.Version, version, StringComparison.Ordinal)
-                || _IsSupportedIntentType(candidate.IntentType)
+                || _IsSupportedLane(candidate.Lane)
             )
             {
                 continue;
@@ -916,7 +916,7 @@ internal sealed partial class InMemoryDataStorage(
                 candidate.ExpiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
                 candidate.ExceptionInfo = string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.IntentType}"
+                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.Lane}"
                 );
                 terminalizedInvalidCount++;
             }
@@ -948,12 +948,12 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (candidate)
             {
-                if (!_IsSupportedIntentType(candidate.IntentType))
+                if (!_IsSupportedLane(candidate.Lane))
                 {
                     continue;
                 }
 
-                if (MessageLaneCompatibility.ToLane(candidate.IntentType) != lane)
+                if (candidate.Lane != lane)
                 {
                     continue;
                 }
@@ -986,9 +986,9 @@ internal sealed partial class InMemoryDataStorage(
         return claimed;
     }
 
-    private static bool _IsSupportedIntentType(IntentType intentType)
+    private static bool _IsSupportedLane(MessageLane lane)
     {
-        return intentType is IntentType.Bus or IntentType.Queue;
+        return lane is MessageLane.Bus or MessageLane.Queue;
     }
 
     private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
@@ -1025,7 +1025,7 @@ internal sealed partial class InMemoryDataStorage(
             Retries = m.Retries,
             InlineAttempts = m.InlineAttempts,
             ExceptionInfo = m.ExceptionInfo,
-            IntentType = m.IntentType,
+            Lane = m.Lane,
         };
     }
 

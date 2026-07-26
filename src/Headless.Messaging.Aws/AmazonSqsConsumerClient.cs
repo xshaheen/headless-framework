@@ -18,7 +18,7 @@ internal sealed class AmazonSqsConsumerClient(
     byte groupConcurrent,
     IOptions<AmazonSqsMessagingOptions> options,
     ILogger<AmazonSqsConsumerClient> logger,
-    IntentType intentType = IntentType.Bus,
+    MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
@@ -56,7 +56,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(messageNames);
 
-        if (intentType == IntentType.Queue)
+        if (lane == MessageLane.Queue)
         {
             await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -99,7 +99,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(topics);
 
-        if (intentType == IntentType.Queue)
+        if (lane == MessageLane.Queue)
         {
             await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -120,10 +120,10 @@ internal sealed class AmazonSqsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _ConnectAsync(initSns: intentType == IntentType.Bus, initSqs: true, cancellationToken: cancellationToken)
+        await _ConnectAsync(initSns: lane == MessageLane.Bus, initSqs: true, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (intentType == IntentType.Bus && _GetQueueUrlsSnapshot().Length == 0)
+        if (lane == MessageLane.Bus && _GetQueueUrlsSnapshot().Length == 0)
         {
             _SetQueueUrls([_queueUrl]);
         }
@@ -381,7 +381,7 @@ internal sealed class AmazonSqsConsumerClient(
 #pragma warning restore CA1508
                 }
 
-                if (intentType == IntentType.Bus && string.IsNullOrWhiteSpace(_queueUrl))
+                if (lane == MessageLane.Bus && string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     // Create or get existing queue URL asynchronously
                     var queueResponse = await _sqsClient
@@ -400,7 +400,7 @@ internal sealed class AmazonSqsConsumerClient(
         string receiptHandle
     )
     {
-        if (intentType == IntentType.Queue)
+        if (lane == MessageLane.Queue)
         {
             var headers = sqsMessage.MessageAttributes.ToDictionary<
                 KeyValuePair<string, Amazon.SQS.Model.MessageAttributeValue>,

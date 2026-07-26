@@ -22,11 +22,9 @@ internal sealed class AzureServiceBusConsumerClientFactory(
         CancellationToken cancellationToken = default
     )
     {
-        var intentType = MessageLaneCompatibility.ToIntentType(lane);
-
         // Bus groups are Azure subscriptions. Queue groups are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
-        if (intentType == IntentType.Bus)
+        if (lane == MessageLane.Bus)
         {
             AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
         }
@@ -42,7 +40,7 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 asbOptions,
                 serviceProvider,
                 clientPool,
-                intentType
+                lane
             );
 
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

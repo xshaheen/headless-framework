@@ -162,7 +162,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             Registry.TryGetRawMessageName(messageType, lane, out var mappedMessageName) ? mappedMessageName : null,
             group,
             concurrency,
-            intentType: MessageLaneCompatibility.ToIntentType(lane)
+            lane: lane
         );
 
         Registry.Register(metadata);

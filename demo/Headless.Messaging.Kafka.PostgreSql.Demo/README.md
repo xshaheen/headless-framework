@@ -4,7 +4,7 @@ ASP.NET Core demo for Kafka transport with PostgreSQL messaging storage.
 
 ## Shows
 
-- Queue consumer registration with `OnQueue<TConsumer>()`.
+- Queue consumer registration with `Queue.Consumer<TConsumer>()`.
 - Raw PostgreSQL storage through `UsePostgreSql(connectionString)`.
 - Kafka transport through `UseKafka(...)`.
 - Dashboard registration with `WithNoAuth()`.

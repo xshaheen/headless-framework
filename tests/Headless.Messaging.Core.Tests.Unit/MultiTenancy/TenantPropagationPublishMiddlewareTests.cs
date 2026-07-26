@@ -15,7 +15,12 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         // given
         var currentTenant = new TestCurrentTenant { Id = "acme" };
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
-        var context = new PublishContext<Payload>(new Payload("hello"), IntentType.Bus, options: null, delayTime: null);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            delayTime: null
+        );
         string? observedDuringNext = null;
 
         // when
@@ -41,7 +46,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
         var context = new PublishContext<Payload>(
             new Payload("hello"),
-            IntentType.Bus,
+            MessageLane.Bus,
             new PublishOptions { TenantId = "system" },
             delayTime: null
         );
@@ -61,7 +66,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
         var context = new PublishContext<Payload>(
             new Payload("hello"),
-            IntentType.Bus,
+            MessageLane.Bus,
             new PublishOptions { CorrelationId = "corr-1", MessageId = "msg-1" },
             delayTime: null
         );
@@ -83,13 +88,13 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
         var nullContext = new PublishContext<Payload>(
             new Payload("hello"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null
         );
         var whitespaceContext = new PublishContext<Payload>(
             new Payload("hello"),
-            IntentType.Bus,
+            MessageLane.Bus,
             options: null,
             delayTime: null
         );
@@ -110,7 +115,12 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         // given
         var currentTenant = new TestCurrentTenant { Id = new string('x', MessageOptions.TenantIdMaxLength + 1) };
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
-        var context = new PublishContext<Payload>(new Payload("hello"), IntentType.Bus, options: null, delayTime: null);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            delayTime: null
+        );
 
         // when
         await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
@@ -126,7 +136,12 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         var exactlyMax = new string('x', MessageOptions.TenantIdMaxLength);
         var currentTenant = new TestCurrentTenant { Id = exactlyMax };
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
-        var context = new PublishContext<Payload>(new Payload("hello"), IntentType.Bus, options: null, delayTime: null);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            delayTime: null
+        );
 
         // when
         await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);

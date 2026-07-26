@@ -11,15 +11,15 @@ namespace Tests.Internal;
 public sealed class MessagePublishRequestFactoryTests
 {
     [Theory]
-    [InlineData(IntentType.Bus, "Bus")]
-    [InlineData(IntentType.Queue, "Queue")]
-    public void should_preserve_legacy_intent_header(IntentType intentType, string wireValue)
+    [InlineData(MessageLane.Bus, "Bus")]
+    [InlineData(MessageLane.Queue, "Queue")]
+    public void should_preserve_legacy_intent_header(MessageLane lane, string wireValue)
     {
         // given
         var factory = _CreateFactory();
 
         // when
-        var prepared = factory.Create(new CallbackResponse("accepted"), intentType: intentType);
+        var prepared = factory.Create(new CallbackResponse("accepted"), lane: lane);
 
         // then
         Headers.Intent.Should().Be("headless-intent");

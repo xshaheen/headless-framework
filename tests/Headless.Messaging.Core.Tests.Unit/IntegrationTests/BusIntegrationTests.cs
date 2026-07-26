@@ -51,7 +51,7 @@ public sealed class IBusIntegrationTests : TestBase
         var message = new DirectTestMessage("direct-dispatch-value");
         var context = new ConsumeContext<DirectTestMessage>
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,

@@ -31,7 +31,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     // --- Persist (message.persist) --------------------------------------------------------------------------
 
-    public Activity? PersistStart(Message message, string operation, IntentType intentType, long startTimestampMs)
+    public Activity? PersistStart(Message message, string operation, MessageLane lane, long startTimestampMs)
     {
         var extracted = _Extract(message.Headers);
         var parentContext = extracted.ActivityContext;
@@ -66,7 +66,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Persist,
                     message.Id,
                     operation,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -116,7 +116,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     public Activity? PublishStart(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress broker,
         long startTimestampMs
     )
@@ -155,7 +155,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Publish,
                     message.Id,
                     message.Name,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -213,7 +213,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     public Activity? ConsumeStart(
         TransportMessage message,
-        IntentType intentType,
+        MessageLane lane,
         BrokerAddress broker,
         long startTimestampMs
     )
@@ -259,7 +259,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.Consume,
                     message.Id,
                     message.Name,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount: 0
                 )
@@ -317,7 +317,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
     public Activity? SubscriberInvokeStart(
         Message message,
         string operation,
-        IntentType intentType,
+        MessageLane lane,
         MethodInfo method,
         int retryCount,
         long startTimestampMs
@@ -355,7 +355,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
                     MessagingEventKind.SubscriberInvoke,
                     message.Id,
                     operation,
-                    intentType,
+                    lane,
                     message.Headers,
                     retryCount
                 )
@@ -510,7 +510,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         MessagingEventKind kind,
         string messageId,
         string operation,
-        IntentType intentType,
+        MessageLane lane,
         IDictionary<string, string?> headers,
         int retryCount
     )
@@ -520,7 +520,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             Kind = kind,
             MessageId = messageId,
             MessageName = operation,
-            IntentType = intentType,
+            Lane = lane,
             TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
             CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
             RetryCount = retryCount,

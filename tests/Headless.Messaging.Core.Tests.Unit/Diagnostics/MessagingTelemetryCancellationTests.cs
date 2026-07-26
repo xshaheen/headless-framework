@@ -55,7 +55,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         var act = () =>
             DirectPublisherCore.SendAsync(
                 message,
-                IntentType.Bus,
+                MessageLane.Bus,
                 serializer,
                 _Broker,
                 SendTransport,
@@ -278,7 +278,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }

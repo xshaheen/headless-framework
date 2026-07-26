@@ -49,7 +49,7 @@ public sealed class FailedInfo
     /// <summary>
     /// Gets the delivery intent of the failed message.
     /// </summary>
-    public required IntentType IntentType { get; init; }
+    public required MessageLane Lane { get; init; }
 
     /// <summary>
     /// Gets the exception that triggered the exhausted retry decision.

@@ -54,7 +54,7 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
             messageInstance,
             messageType,
             store.GetUtcNow(),
-            context.MediumMessage.IntentType,
+            context.MediumMessage.Lane,
             exception
         );
     }

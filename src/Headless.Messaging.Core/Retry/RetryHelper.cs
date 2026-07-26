@@ -240,7 +240,7 @@ internal static class RetryHelper
                     ServiceProvider = dispatchServices,
                     MessageType = messageType,
                     Message = message.Origin,
-                    IntentType = message.IntentType,
+                    Lane = message.Lane,
                     Exception = exception,
                     StorageId = message.StorageId,
                     RetryCount = message.Retries,

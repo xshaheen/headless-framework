@@ -11,7 +11,7 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 - `IQueue` is the only queue publisher; `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
 - Durable delivery persists messages first, then drains them through the configured queue transport.
 - `EnqueueOptions.Delay` schedules durable queue delivery.
-- Every queue enqueue carries `IntentType.Queue` through storage, tracing, dashboard projections, and consume context.
+- Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
 ## Installation
 

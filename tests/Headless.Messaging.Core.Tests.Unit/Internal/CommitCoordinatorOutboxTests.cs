@@ -50,7 +50,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                         StorageId = Guid.NewGuid(),
                         Origin = ((MediumMessage)call[1]).Origin,
                         Content = "{}",
-                        IntentType = IntentType.Bus,
+                        Lane = MessageLane.Bus,
                         Added = DateTimeOffset.UtcNow,
                     };
                     stored = mediumMessage;
@@ -77,7 +77,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             await writer.PublishAsync(
                 new CoordinatorMessage("value"),
                 options: null,
-                intentType: IntentType.Bus,
+                lane: MessageLane.Bus,
                 AbortToken
             );
 
@@ -117,12 +117,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             );
 
             var act = () =>
-                writer.PublishAsync(
-                    new CoordinatorMessage("value"),
-                    options: null,
-                    intentType: IntentType.Bus,
-                    AbortToken
-                );
+                writer.PublishAsync(new CoordinatorMessage("value"), options: null, lane: MessageLane.Bus, AbortToken);
 
             await act.Should()
                 .ThrowAsync<InvalidOperationException>()
@@ -308,7 +303,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -372,7 +367,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             TimeSpan? delayTime,
             Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
@@ -386,7 +381,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         public Task ExecuteAsync<T>(
             T? contentObj,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             TimeSpan? delayTime,
             Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
@@ -401,7 +396,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         public Task ExecuteAsync(
             object? contentObj,
             Type declaredMessageType,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             DeliveryDecision decision,
             Func<MessageOptions?, CancellationToken, Task> innerPublish,
@@ -415,7 +410,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         public Task ExecuteAsync<T>(
             T? contentObj,
-            IntentType intentType,
+            MessageLane lane,
             MessageOptions? messageOptions,
             DeliveryDecision decision,
             Func<MessageOptions?, CancellationToken, Task> innerPublish,

@@ -311,7 +311,7 @@ public static class MessagingDashboardEndpoints
                 StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
-                message.IntentType,
+                message.Lane,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -338,7 +338,7 @@ public static class MessagingDashboardEndpoints
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
                 Group = message.Origin.GetGroup(),
-                message.IntentType,
+                message.Lane,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -376,10 +376,10 @@ public static class MessagingDashboardEndpoints
 
         foreach (var message in messages)
         {
-            var hasTransport = message.IntentType switch
+            var hasTransport = message.Lane switch
             {
-                IntentType.Bus => busTransport is not null,
-                IntentType.Queue => queueTransport is not null,
+                MessageLane.Bus => busTransport is not null,
+                MessageLane.Queue => queueTransport is not null,
                 _ => false,
             };
 
@@ -449,10 +449,10 @@ public static class MessagingDashboardEndpoints
 
         foreach (var message in messages)
         {
-            var hasTransport = message.IntentType switch
+            var hasTransport = message.Lane switch
             {
-                IntentType.Bus => busTransport is not null,
-                IntentType.Queue => queueTransport is not null,
+                MessageLane.Bus => busTransport is not null,
+                MessageLane.Queue => queueTransport is not null,
                 _ => false,
             };
 
@@ -499,7 +499,7 @@ public static class MessagingDashboardEndpoints
         IServiceProvider sp,
         string? name = null,
         string? content = null,
-        IntentType? intentType = null,
+        MessageLane? lane = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -522,7 +522,7 @@ public static class MessagingDashboardEndpoints
             MessageType = MessageType.Publish,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
-            IntentType = intentType,
+            Lane = lane,
             StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -538,7 +538,7 @@ public static class MessagingDashboardEndpoints
         string? name = null,
         string? group = null,
         string? content = null,
-        IntentType? intentType = null,
+        MessageLane? lane = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -562,7 +562,7 @@ public static class MessagingDashboardEndpoints
             Group = group ?? string.Empty,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
-            IntentType = intentType,
+            Lane = lane,
             StatusName = statusFilter,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -615,7 +615,7 @@ public static class MessagingDashboardEndpoints
             message.MessageId,
             message.Group,
             message.Name,
-            message.IntentType,
+            message.Lane,
             message.Content,
             message.Added,
             message.ExpiresAt,

@@ -19,7 +19,7 @@ namespace Tests;
 
 public sealed class MessageSenderTests : TestBase
 {
-    private static MediumMessage _CreateMediumMessage(IntentType intentType = IntentType.Bus)
+    private static MediumMessage _CreateMediumMessage(MessageLane lane = MessageLane.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -32,7 +32,7 @@ public sealed class MessageSenderTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = intentType,
+            Lane = lane,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -738,7 +738,7 @@ public sealed class MessageSenderTests : TestBase
         );
 
         // when
-        var result = await sender.SendAsync(_CreateMediumMessage(IntentType.Bus));
+        var result = await sender.SendAsync(_CreateMediumMessage(MessageLane.Bus));
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -797,7 +797,7 @@ public sealed class MessageSenderTests : TestBase
         );
 
         // when
-        var result = await sender.SendAsync(_CreateMediumMessage(IntentType.Queue));
+        var result = await sender.SendAsync(_CreateMediumMessage(MessageLane.Queue));
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -840,7 +840,7 @@ public sealed class MessageSenderTests : TestBase
             .Returns(ValueTask.FromResult(_CreateTransportMessage()));
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions());
-        var message = _CreateMediumMessage((IntentType)42);
+        var message = _CreateMediumMessage((MessageLane)42);
         message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
         message.Owner = "store-owner";
 
@@ -893,7 +893,7 @@ public sealed class MessageSenderTests : TestBase
             new MessagingOptions(),
             queueTransport: queueTransport
         );
-        var message = _CreateMediumMessage(IntentType.Bus);
+        var message = _CreateMediumMessage(MessageLane.Bus);
         message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
         message.Owner = "store-owner";
 
@@ -948,7 +948,7 @@ public sealed class MessageSenderTests : TestBase
         busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions(), busTransport);
-        var message = _CreateMediumMessage(IntentType.Queue);
+        var message = _CreateMediumMessage(MessageLane.Queue);
         message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
         message.Owner = "store-owner";
 

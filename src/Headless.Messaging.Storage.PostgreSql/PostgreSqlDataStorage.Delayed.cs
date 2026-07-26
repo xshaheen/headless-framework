@@ -67,7 +67,7 @@ internal sealed partial class PostgreSqlDataStorage
                                 StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
-                                IntentType = (IntentType)reader.GetInt16(2),
+                                Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
                                 Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
@@ -186,7 +186,7 @@ internal sealed partial class PostgreSqlDataStorage
                                     StorageId = storageId,
                                     Origin = serializer.Deserialize(content)!,
                                     Content = content,
-                                    IntentType = (IntentType)reader.GetInt16(2),
+                                    Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
                                     Retries = reader.GetInt32(3),
                                     InlineAttempts = reader.GetInt32(4),
                                     Added = await reader

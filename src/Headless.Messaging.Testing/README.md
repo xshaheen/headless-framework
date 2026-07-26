@@ -10,7 +10,7 @@ Integration-testing a messaging pipeline typically requires a running broker and
 
 - **Zero Infrastructure**: No broker, no Docker — runs entirely in-process
 - **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted`, and `WaitForExhausted` block until observed or timed out
-- **Lane-Aware Observations**: registrations use `setup.Bus` / `setup.Queue`, while the testing observation projection intentionally retains `WaitForPublished<T>(IntentType.Bus)` / `IntentType.Queue` compatibility until #350; identical payloads on the two lanes remain distinct
+- **Lane-Aware Observations**: registrations use `setup.Bus` / `setup.Queue`, while observations use `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue`; identical payloads on the two lanes remain distinct
 - **Full Pipeline Coverage**: Decorates the real bus/queue transports and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
 - **Host Integration**: `AddMessagingTestHarness()` extension decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
@@ -59,7 +59,7 @@ harness.Published.Should().ContainSingle(m => m.MessageType == typeof(OrderCreat
 harness.Faulted.Should().BeEmpty();
 ```
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `IntentType`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `Lane`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
 
 ### WaitFor* Methods
 
@@ -77,8 +77,8 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(
 
 // Same API for published and faulted
 await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
-await harness.WaitForPublished<OrderCreated>(IntentType.Bus, TimeSpan.FromSeconds(5));
-await harness.WaitForConsumed<OrderCreated>(IntentType.Queue, TimeSpan.FromSeconds(5));
+await harness.WaitForPublished<OrderCreated>(MessageLane.Bus, TimeSpan.FromSeconds(5));
+await harness.WaitForConsumed<OrderCreated>(MessageLane.Queue, TimeSpan.FromSeconds(5));
 await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
 await harness.WaitForExhausted<BadMessage>(TimeSpan.FromSeconds(5));
 ```

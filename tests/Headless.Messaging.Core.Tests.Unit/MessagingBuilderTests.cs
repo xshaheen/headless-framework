@@ -12,9 +12,9 @@ namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
-    private static string _CircuitKey(IntentType intentType, string group)
+    private static string _CircuitKey(MessageLane lane, string group)
     {
-        return $"{intentType:D}:{group}";
+        return $"{lane:D}:{group}";
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then
-        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "final-group"), out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(MessageLane.Bus, "final-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 }

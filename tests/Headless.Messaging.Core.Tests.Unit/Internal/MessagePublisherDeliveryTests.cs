@@ -73,7 +73,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
         harness.TransportLanes.Should().BeEmpty();
         stored.Should().NotBeNull();
-        stored!.IntentType.Should().Be(IntentType.Queue);
+        stored!.Lane.Should().Be(MessageLane.Queue);
         await harness.Dispatcher.Received(1).EnqueueToPublish(stored, Arg.Any<CancellationToken>());
     }
 
@@ -115,7 +115,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
         };
         harness
             .Storage.StoreMessageAsync(

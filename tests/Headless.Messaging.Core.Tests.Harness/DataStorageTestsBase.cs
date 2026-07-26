@@ -226,32 +226,32 @@ public abstract class DataStorageTestsBase : TestBase
         }
 
         var storage = GetStorage();
-        var legacyIntents = new[] { (IntentType.Bus, Value: (short)0), (IntentType.Queue, Value: (short)1) };
+        var legacyIntents = new[] { (MessageLane.Bus, Value: (short)0), (MessageLane.Queue, Value: (short)1) };
 
-        foreach (var (intentType, value) in legacyIntents)
+        foreach (var (lane, value) in legacyIntents)
         {
             var envelope = new MediumMessage
             {
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = intentType,
+                Lane = lane,
             };
 
             // when
             var result = await storage.StoreMessageAsync(
-                $"test-published-message-{intentType}",
+                $"test-published-message-{lane}",
                 envelope,
                 cancellationToken: AbortToken
             );
 
             // then
-            result.IntentType.Should().Be(intentType);
-            ((short)result.IntentType).Should().Be(value);
+            result.Lane.Should().Be(lane);
+            ((short)result.Lane).Should().Be(value);
             var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(result.StorageId, AbortToken);
             roundTripped.Should().NotBeNull();
-            roundTripped!.IntentType.Should().Be(intentType);
-            ((short)roundTripped.IntentType).Should().Be(value);
+            roundTripped!.Lane.Should().Be(lane);
+            ((short)roundTripped.Lane).Should().Be(value);
         }
     }
 
@@ -271,7 +271,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             cancellationToken: AbortToken
         );
@@ -282,7 +282,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Queue,
+                Lane = MessageLane.Queue,
             },
             cancellationToken: AbortToken
         );
@@ -295,14 +295,14 @@ public abstract class DataStorageTestsBase : TestBase
                 {
                     MessageType = MessageType.Publish,
                     Name = "intent-filter",
-                    IntentType = IntentType.Queue,
+                    Lane = MessageLane.Queue,
                     PageSize = 20,
                 },
                 AbortToken
             );
 
         // then
-        page.Items.Should().OnlyContain(message => message.IntentType == IntentType.Queue);
+        page.Items.Should().OnlyContain(message => message.Lane == MessageLane.Queue);
         page.Items.Should().ContainSingle();
     }
 
@@ -342,7 +342,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = bus,
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
             },
             AbortToken
         );
@@ -354,7 +354,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = queue,
                 Content = string.Empty,
-                IntentType = IntentType.Queue,
+                Lane = MessageLane.Queue,
             },
             AbortToken
         );
@@ -805,7 +805,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = now.AddSeconds(30),
             },
             cancellationToken: AbortToken
@@ -817,7 +817,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = now.AddSeconds(20),
             },
             cancellationToken: AbortToken
@@ -864,7 +864,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = expiresAt,
             },
             cancellationToken: AbortToken
@@ -911,7 +911,7 @@ public abstract class DataStorageTestsBase : TestBase
                 StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
-                IntentType = IntentType.Bus,
+                Lane = MessageLane.Bus,
                 ExpiresAt = expiresAt,
             },
             cancellationToken: AbortToken
@@ -960,7 +960,7 @@ public abstract class DataStorageTestsBase : TestBase
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                     ExpiresAt = expiresAt,
                 },
                 cancellationToken: AbortToken
@@ -1812,7 +1812,7 @@ public abstract class DataStorageTestsBase : TestBase
                             StorageId = storedMessage.StorageId,
                             Origin = storedMessage.Origin,
                             Content = storedMessage.Content,
-                            IntentType = IntentType.Bus,
+                            Lane = MessageLane.Bus,
                             Retries = 1,
                         };
                         var ok = await storage.ChangeReceiveStateAsync(
@@ -2495,18 +2495,12 @@ public abstract class DataStorageTestsBase : TestBase
         {
             for (var index = 0; index < batchSize + 1; index++)
             {
-                var intentType = lane switch
-                {
-                    MessageLane.Bus => IntentType.Bus,
-                    MessageLane.Queue => IntentType.Queue,
-                    _ => throw new InvalidOperationException($"Unsupported test lane '{lane}'."),
-                };
                 var envelope = new MediumMessage
                 {
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = intentType,
+                    Lane = lane,
                 };
                 var stored = published
                     ? await storage.StoreMessageAsync(
@@ -2551,7 +2545,7 @@ public abstract class DataStorageTestsBase : TestBase
             ).ToList();
 
             firstClaim.Should().HaveCount(batchSize);
-            firstClaim.Should().OnlyContain(message => (short)message.IntentType == (short)lane);
+            firstClaim.Should().OnlyContain(message => (short)message.Lane == (short)lane);
         }
 
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
@@ -2562,7 +2556,7 @@ public abstract class DataStorageTestsBase : TestBase
                     : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)
             ).ToList();
 
-            ((short)secondClaim.Should().ContainSingle().Which.IntentType).Should().Be((short)lane);
+            ((short)secondClaim.Should().ContainSingle().Which.Lane).Should().Be((short)lane);
         }
     }
 
@@ -2699,7 +2693,7 @@ public abstract class DataStorageTestsBase : TestBase
             StorageId = message.StorageId,
             Origin = message.Origin,
             Content = message.Content,
-            IntentType = message.IntentType,
+            Lane = message.Lane,
             Added = message.Added,
             ExpiresAt = message.ExpiresAt,
             NextRetryAt = message.NextRetryAt,

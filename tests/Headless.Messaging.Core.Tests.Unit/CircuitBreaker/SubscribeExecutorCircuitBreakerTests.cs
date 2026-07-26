@@ -45,7 +45,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
     }
@@ -62,7 +62,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
-            IntentType = IntentType.Bus,
+            Lane = MessageLane.Bus,
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

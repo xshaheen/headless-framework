@@ -8,14 +8,14 @@ internal sealed class IntentTagEnricher : IActivityTagEnricher
 {
     public void Enrich(Activity activity, in MessagingEnrichmentContext context)
     {
-        switch (context.IntentType)
+        switch (context.Lane)
         {
-            case IntentType.Bus:
+            case MessageLane.Bus:
                 activity.SetTag(MessagingTags.Intent, "bus");
                 activity.SetTag(MessagingTags.DestinationKind, "topic");
                 break;
 
-            case IntentType.Queue:
+            case MessageLane.Queue:
                 activity.SetTag(MessagingTags.Intent, "queue");
                 activity.SetTag(MessagingTags.DestinationKind, "queue");
                 break;

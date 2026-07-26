@@ -9,7 +9,7 @@ Defines the stable message envelope, consume context, consumer contract, publish
 ## Key Features
 
 - `IConsume<TMessage>` with `ConsumeContext<TMessage>` for type-safe handlers.
-- `IntentType` for broadcast bus versus point-to-point queue delivery.
+- `MessageLane` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
 - Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
@@ -31,7 +31,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
             "Processing {OrderId} from {MessageName} with {Intent}",
             context.Message.OrderId,
             context.MessageName,
-            context.IntentType
+            context.Lane
         );
 
         return ValueTask.CompletedTask;

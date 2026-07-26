@@ -130,8 +130,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
             .GetAll()
             .Should()
             .ContainSingle(metadata =>
-                metadata.ConsumerType == typeof(HybridCacheInvalidationConsumer)
-                && metadata.IntentType == IntentType.Bus
+                metadata.ConsumerType == typeof(HybridCacheInvalidationConsumer) && metadata.Lane == MessageLane.Bus
             );
     }
 
@@ -188,7 +187,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
             .Should()
             .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer))
             .Subject;
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
     }
 
     [Fact]

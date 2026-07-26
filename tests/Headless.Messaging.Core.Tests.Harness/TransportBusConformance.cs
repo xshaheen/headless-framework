@@ -25,7 +25,7 @@ public static class TransportBusConformance
         {
             [MessagingHeaders.MessageId] = expectedId,
             [MessagingHeaders.MessageName] = first.Destination,
-            [MessagingHeaders.Intent] = nameof(IntentType.Bus),
+            [MessagingHeaders.Intent] = nameof(MessageLane.Bus),
             ["x-headless-conformance"] = "bus-fanout",
         };
 
@@ -42,7 +42,7 @@ public static class TransportBusConformance
         {
             delivery.Message.Id.Should().Be(expectedId);
             delivery.Message.Name.Should().Be(first.Destination);
-            delivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Bus));
+            delivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(MessageLane.Bus));
             delivery.Message.Headers["x-headless-conformance"].Should().Be("bus-fanout");
             delivery.SettlementValue.Should().NotBeNull();
         }

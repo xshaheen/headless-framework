@@ -26,7 +26,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     {
         using var activity = new Activity("test");
 
-        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { IntentType = IntentType.Bus });
+        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Bus });
 
         activity.GetTagItem(MessagingTags.Intent).Should().Be("bus");
         activity.GetTagItem(MessagingTags.DestinationKind).Should().Be("topic");
@@ -37,7 +37,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     {
         using var activity = new Activity("test");
 
-        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { IntentType = IntentType.Queue });
+        new IntentTagEnricher().Enrich(activity, new MessagingEnrichmentContext { Lane = MessageLane.Queue });
 
         activity.GetTagItem(MessagingTags.Intent).Should().Be("queue");
         activity.GetTagItem(MessagingTags.DestinationKind).Should().Be("queue");
@@ -127,7 +127,7 @@ public sealed class MessagingInstrumentationTests : TestBase
             .Build();
 
         var message = _CreateTransportMessage("orders.placed");
-        var publish = MessagingTelemetry.Default.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = MessagingTelemetry.Default.PublishStart(message, MessageLane.Bus, _Broker, 100);
         MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 120);
 
         tracer!.ForceFlush();
@@ -145,7 +145,7 @@ public sealed class MessagingInstrumentationTests : TestBase
             .Build();
 
         var message = _CreateTransportMessage("orders.placed");
-        var publish = MessagingTelemetry.Default.PublishStart(message, IntentType.Bus, _Broker, 100);
+        var publish = MessagingTelemetry.Default.PublishStart(message, MessageLane.Bus, _Broker, 100);
         MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 120);
 
         meter!.ForceFlush();

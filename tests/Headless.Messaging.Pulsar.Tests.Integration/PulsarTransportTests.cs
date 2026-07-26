@@ -55,8 +55,8 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
         var secondDelivery = await second.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
         firstDelivery.Message.Id.Should().Be(expectedId);
         secondDelivery.Message.Id.Should().Be(expectedId);
-        firstDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Bus));
-        secondDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(IntentType.Bus));
+        firstDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(MessageLane.Bus));
+        secondDelivery.Message.Headers[MessagingHeaders.Intent].Should().Be(nameof(MessageLane.Bus));
         await first.Consumer.CommitAsync(firstDelivery.SettlementValue, AbortToken);
         await second.Consumer.CommitAsync(secondDelivery.SettlementValue, AbortToken);
     }
@@ -110,18 +110,18 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
         {
             [MessagingHeaders.MessageId] = messageId,
             [MessagingHeaders.MessageName] = destination,
-            [MessagingHeaders.Intent] = _ToIntentType(lane).ToString(),
+            [MessagingHeaders.Intent] = _ToMessageLane(lane).ToString(),
             ["x-headless-conformance"] = "pulsar-intent",
         };
 
         return new TransportMessage(headers, "pulsar-intent-probe"u8.ToArray());
     }
 
-    private static IntentType _ToIntentType(MessageLane lane) =>
+    private static MessageLane _ToMessageLane(MessageLane lane) =>
         lane switch
         {
-            MessageLane.Bus => IntentType.Bus,
-            MessageLane.Queue => IntentType.Queue,
+            MessageLane.Bus => MessageLane.Bus,
+            MessageLane.Queue => MessageLane.Queue,
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
         };
 }

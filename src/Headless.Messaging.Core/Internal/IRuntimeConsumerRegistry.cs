@@ -309,7 +309,7 @@ internal sealed class RuntimeConsumerRegistry(
             GroupName = group,
             Concurrency = concurrency,
             HandlerId = handlerId,
-            IntentType = MessageLaneCompatibility.ToIntentType(lane),
+            Lane = lane,
             Parameters =
             [
                 new ParameterDescriptor

@@ -433,7 +433,7 @@ public sealed class MessagingOptions
         string? group,
         byte concurrency,
         string? handlerId = null,
-        IntentType intentType = IntentType.Bus
+        MessageLane lane = MessageLane.Bus
     )
     {
         var conventions = Conventions;
@@ -451,7 +451,7 @@ public sealed class MessagingOptions
             finalMessageName,
             finalGroup,
             concurrency,
-            intentType,
+            lane,
             finalHandlerId
         );
     }

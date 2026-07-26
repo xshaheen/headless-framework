@@ -336,11 +336,7 @@ internal sealed class Bootstrapper(
         var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
         var routes = registry
             .GetAll()
-            .Select(static consumer => new MessageRouteKey(
-                consumer.MessageType,
-                consumer.MessageName,
-                MessageLaneCompatibility.ToLane(consumer.IntentType)
-            ))
+            .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
             .ToHashSet();
 
         foreach (var registration in serviceProvider.GetServices<MessageRegistration>())

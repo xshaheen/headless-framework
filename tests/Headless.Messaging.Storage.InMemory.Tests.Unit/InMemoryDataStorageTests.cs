@@ -453,7 +453,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
                     StorageId = Guid.Empty,
                     Origin = CreateMessage(),
                     Content = string.Empty,
-                    IntentType = IntentType.Bus,
+                    Lane = MessageLane.Bus,
                     ExpiresAt = expiresAt,
                 },
                 cancellationToken: AbortToken

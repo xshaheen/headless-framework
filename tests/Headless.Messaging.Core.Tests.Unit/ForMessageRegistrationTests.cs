@@ -138,7 +138,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         metadata.Group.Should().Be("orders");
         metadata.Concurrency.Should().Be(3);
         metadata.HandlerId.Should().Be("handler-1");
-        metadata.IntentType.Should().Be(IntentType.Queue);
+        metadata.Lane.Should().Be(MessageLane.Queue);
     }
 
     [Fact]
@@ -565,7 +565,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().Contain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
-        consumers.Should().OnlyContain(consumer => consumer.IntentType == IntentType.Bus);
+        consumers.Should().OnlyContain(consumer => consumer.Lane == MessageLane.Bus);
     }
 
     [Fact]
@@ -598,7 +598,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
-        metadata.IntentType.Should().Be(IntentType.Queue);
+        metadata.Lane.Should().Be(MessageLane.Queue);
         metadata.Group.Should().Be("orders");
     }
 
@@ -693,14 +693,14 @@ public sealed class ForMessageRegistrationTests : TestBase
             .Should()
             .Contain(consumer =>
                 consumer.ConsumerType == typeof(OrderPlacedHandler)
-                && consumer.IntentType == IntentType.Queue
+                && consumer.Lane == MessageLane.Queue
                 && consumer.Group == "orders"
             );
         consumers
             .Should()
             .Contain(consumer =>
                 consumer.ConsumerType == typeof(OrderPlacedAnalyticsHandler)
-                && consumer.IntentType == IntentType.Bus
+                && consumer.Lane == MessageLane.Bus
                 && consumer.Group == "analytics"
             );
     }
@@ -843,7 +843,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
-        callback.IntentType.Should().Be(IntentType.Bus);
+        callback.Lane.Should().Be(MessageLane.Bus);
         callback.Concurrency.Should().Be(1);
         callback.Should().BeEquivalentTo(noArg);
     }
@@ -909,7 +909,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
-        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.Group.Should().NotBe("ignored");
     }
 
@@ -964,7 +964,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-        circuitBreakers.TryGet($"{IntentType.Bus:D}:orders", out var options).Should().BeTrue();
+        circuitBreakers.TryGet($"{MessageLane.Bus:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
     }
 
@@ -995,7 +995,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-        circuitBreakers.TryGet($"{IntentType.Queue:D}:orders", out var options).Should().BeTrue();
+        circuitBreakers.TryGet($"{MessageLane.Queue:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
     }
 

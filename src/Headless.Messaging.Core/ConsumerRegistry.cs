@@ -59,7 +59,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             {
                 throw new InvalidOperationException(
                     "Duplicate consumer registration detected for messageName/group identity: "
-                        + $"intent='{metadata.IntentType}', messageName='{metadata.MessageName}', group='{metadata.Group ?? "<default>"}', "
+                        + $"intent='{metadata.Lane}', messageName='{metadata.MessageName}', group='{metadata.Group ?? "<default>"}', "
                         + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                         + $"newHandlerId='{metadata.ResolvedHandlerId}'."
                 );
@@ -156,7 +156,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                 {
                     throw new InvalidOperationException(
                         "Duplicate consumer registration detected for messageName/group identity: "
-                            + $"intent='{newMetadata.IntentType}', messageName='{newMetadata.MessageName}', group='{newMetadata.Group ?? "<default>"}', "
+                            + $"intent='{newMetadata.Lane}', messageName='{newMetadata.MessageName}', group='{newMetadata.Group ?? "<default>"}', "
                             + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                             + $"newHandlerId='{newMetadata.ResolvedHandlerId}'."
                     );
@@ -379,7 +379,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                 // Message names match case-insensitively at dispatch; groups stay case-sensitive.
                 string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
-                && existing.IntentType == candidate.IntentType
+                && existing.Lane == candidate.Lane
             )
             {
                 return existing;

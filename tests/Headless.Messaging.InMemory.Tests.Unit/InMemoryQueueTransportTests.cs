@@ -19,7 +19,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         var queue = new MemoryQueue(queueLogger);
         _transport = new InMemoryQueueTransport(queue, transportLogger);
-        _consumerClient = new InMemoryConsumerClient(queue, "test-group", 1, IntentType.Queue);
+        _consumerClient = new InMemoryConsumerClient(queue, "test-group", 1, MessageLane.Queue);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -251,8 +251,8 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var transportLogger = Substitute.For<ILogger<InMemoryQueueTransport>>();
         var queue = new MemoryQueue(queueLogger);
         await using var transport = new InMemoryQueueTransport(queue, transportLogger);
-        await using var worker1 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
-        await using var worker2 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
+        await using var worker1 = new InMemoryConsumerClient(queue, "workers", 1, MessageLane.Queue);
+        await using var worker2 = new InMemoryConsumerClient(queue, "workers", 1, MessageLane.Queue);
 
         await worker1.SubscribeAsync(["jobs"], AbortToken);
         await worker2.SubscribeAsync(["jobs"], AbortToken);
