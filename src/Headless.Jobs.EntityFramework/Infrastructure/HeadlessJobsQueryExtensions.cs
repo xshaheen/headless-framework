@@ -132,6 +132,134 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
+    /// U5/KTD3 timed-descendant claim gate: keeps a timed chain descendant (<c>ParentId != null</c> AND
+    /// <c>ExecutionTime != null</c>) with a parent-terminal-gated <c>RunCondition</c> out of the claim until its parent
+    /// reached the MATCHING terminal state. Rows with no parent, no execution time, or a non-gated run condition
+    /// (<c>InProgress</c> / <see langword="null"/>) pass untouched. The parent lookup is a correlated subquery over
+    /// <paramref name="allJobs"/> (the same <c>DbSet</c>), so EF evaluates the whole predicate inside the atomic claim
+    /// on the database — never a pre-evaluated local. Mirrors the in-memory <c>_ParentGateAllowsClaim</c> and the
+    /// native-SQL <c>EXISTS</c> gate; the three must stay in lockstep.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereClaimableUnderParentTerminalGate<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        IQueryable<TTimeJob> allJobs
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            e.ParentId == null
+            || e.ExecutionTime == null
+            || (
+                e.RunCondition != RunCondition.OnSuccess
+                && e.RunCondition != RunCondition.OnFailure
+                && e.RunCondition != RunCondition.OnCancelled
+                && e.RunCondition != RunCondition.OnFailureOrCancelled
+                && e.RunCondition != RunCondition.OnAnyCompletedStatus
+            )
+            || allJobs.Any(parent =>
+                parent.Id == e.ParentId
+                && (
+                    (
+                        e.RunCondition == RunCondition.OnSuccess
+                        && (parent.Status == JobStatus.Succeeded || parent.Status == JobStatus.DueDone)
+                    )
+                    || (e.RunCondition == RunCondition.OnFailure && parent.Status == JobStatus.Failed)
+                    || (e.RunCondition == RunCondition.OnCancelled && parent.Status == JobStatus.Cancelled)
+                    || (
+                        e.RunCondition == RunCondition.OnFailureOrCancelled
+                        && (parent.Status == JobStatus.Failed || parent.Status == JobStatus.Cancelled)
+                    )
+                    || (
+                        e.RunCondition == RunCondition.OnAnyCompletedStatus
+                        && (
+                            parent.Status == JobStatus.Succeeded
+                            || parent.Status == JobStatus.DueDone
+                            || parent.Status == JobStatus.Failed
+                            || parent.Status == JobStatus.Cancelled
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// U5/KTD3 reconcile helper: keeps only the rows whose parent has reached any terminal state (correlated subquery
+    /// over <paramref name="allJobs"/>). Combined with a base filter to idle timed gated children, this yields the
+    /// children whose parent has settled and therefore need release-or-skip reconciliation.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereParentIsTerminal<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        IQueryable<TTimeJob> allJobs
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            allJobs.Any(parent =>
+                parent.Id == e.ParentId
+                && (
+                    parent.Status == JobStatus.Succeeded
+                    || parent.Status == JobStatus.DueDone
+                    || parent.Status == JobStatus.Failed
+                    || parent.Status == JobStatus.Cancelled
+                    || parent.Status == JobStatus.Skipped
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// R2/KTD3/KTD6 bounded-sweep helper: keeps only the rows the skip-only safety net actually mutates — a gated
+    /// timed child whose parent reached a terminal state that does NOT satisfy the child's <c>RunCondition</c>. This
+    /// is the exact negation of <see cref="WhereClaimableUnderParentTerminalGate{TTimeJob}"/>'s match arm intersected
+    /// with "parent is terminal", so the poll-time sweep can bound its selection to the mismatched set — a page full
+    /// of matching (release-side) children, which this skip path never touches, can never starve it. Assumes the
+    /// caller already filtered to gated timed idle candidates (the escape arms — null parent / null time / non-gated
+    /// condition — are excluded upstream), matching the <see cref="WhereParentIsTerminal{TTimeJob}"/> precondition.
+    /// A <c>Skipped</c> parent is terminal and matches no run condition, so its children fall here and are skipped.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereParentTerminalRunConditionMismatched<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        IQueryable<TTimeJob> allJobs
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            allJobs.Any(parent =>
+                parent.Id == e.ParentId
+                && (
+                    parent.Status == JobStatus.Succeeded
+                    || parent.Status == JobStatus.DueDone
+                    || parent.Status == JobStatus.Failed
+                    || parent.Status == JobStatus.Cancelled
+                    || parent.Status == JobStatus.Skipped
+                )
+                && !(
+                    (
+                        e.RunCondition == RunCondition.OnSuccess
+                        && (parent.Status == JobStatus.Succeeded || parent.Status == JobStatus.DueDone)
+                    )
+                    || (e.RunCondition == RunCondition.OnFailure && parent.Status == JobStatus.Failed)
+                    || (e.RunCondition == RunCondition.OnCancelled && parent.Status == JobStatus.Cancelled)
+                    || (
+                        e.RunCondition == RunCondition.OnFailureOrCancelled
+                        && (parent.Status == JobStatus.Failed || parent.Status == JobStatus.Cancelled)
+                    )
+                    || (
+                        e.RunCondition == RunCondition.OnAnyCompletedStatus
+                        && (
+                            parent.Status == JobStatus.Succeeded
+                            || parent.Status == JobStatus.DueDone
+                            || parent.Status == JobStatus.Failed
+                            || parent.Status == JobStatus.Cancelled
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    /// <summary>
     /// Selects the non-terminal rows owned by <paramref name="owner"/> for dead-node reclaim. Unlike
     /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms (KTD5/R4): a survivor reacting
     /// to a dead incarnation reclaims only that incarnation's rows — never unowned-but-idle rows nor a

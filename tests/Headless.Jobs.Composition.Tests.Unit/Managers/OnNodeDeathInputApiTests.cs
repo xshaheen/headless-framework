@@ -2,7 +2,6 @@
 
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
-using Headless.Jobs.Managers;
 
 namespace Tests.Managers;
 
@@ -33,24 +32,37 @@ public sealed class OnNodeDeathInputApiTests
     }
 
     [Fact]
-    public void builder_set_on_node_death_flows_to_parent_child_and_grandchild()
+    public void on_node_death_flows_per_node_across_a_parent_child_grandchild_chain()
     {
-        FakeTimeJob job = FluentChainJobBuilder<FakeTimeJob>
-            .BeginWith(p => p.SetFunction("parent").SetOnNodeDeath(NodeDeathPolicy.MarkFailed))
-            .WithFirstChild(c => c.SetFunction("child").SetOnNodeDeath(NodeDeathPolicy.Skip))
-            .WithFirstGrandChild(g => g.SetFunction("grandchild").SetOnNodeDeath(NodeDeathPolicy.Retry));
+        // A three-level chain carries an independent OnNodeDeath at each node.
+        var grandChild = new FakeTimeJob { Function = "grandchild", OnNodeDeath = NodeDeathPolicy.Retry };
+        var child = new FakeTimeJob
+        {
+            Function = "child",
+            OnNodeDeath = NodeDeathPolicy.Skip,
+            Children = [grandChild],
+        };
+        var job = new FakeTimeJob
+        {
+            Function = "parent",
+            OnNodeDeath = NodeDeathPolicy.MarkFailed,
+            Children = [child],
+        };
 
         job.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
-        var child = job.Children.Should().ContainSingle().Subject;
-        child.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
-        child.Children.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
+        var childNode = job.Children.Should().ContainSingle().Subject;
+        childNode.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
+        childNode.Children.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 
     [Fact]
-    public void builder_defaults_on_node_death_to_retry_when_not_set()
+    public void on_node_death_defaults_to_retry_for_every_node_in_a_chain()
     {
-        FakeTimeJob job = FluentChainJobBuilder<FakeTimeJob>.BeginWith(p => p.SetFunction("parent"));
+        // Left unset at both levels, every chain node inherits the entity default.
+        var child = new FakeTimeJob { Function = "child" };
+        var job = new FakeTimeJob { Function = "parent", Children = [child] };
 
         job.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
+        job.Children.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 }

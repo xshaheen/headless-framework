@@ -596,7 +596,11 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var projection = await persistence.GetCronOccurrenceGraphStatusCountsAsync(cronId, today, ct);
 
             projection.Where(x => !x.IsRangeBoundary).Sum(x => x.Count).Should().Be(3);
-            var statements = capture.Statements;
+            // The host's background services may issue unrelated Jobs maintenance queries after Clear(); scope the
+            // assertion to the dashboard projection's CronJobOccurrences commands.
+            var statements = capture
+                .Statements.Where(sql => sql.Contains("CronJobOccurrences", StringComparison.Ordinal))
+                .ToArray();
             statements.Should().HaveCount(2);
             statements.Should().Contain(sql => sql.Contains("DISTINCT", StringComparison.OrdinalIgnoreCase));
             statements.Should().Contain(sql => sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase));
