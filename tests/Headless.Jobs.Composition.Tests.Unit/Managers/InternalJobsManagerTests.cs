@@ -36,7 +36,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            guidGenerator
+            guidGenerator,
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
         var definition = new FakeCronJob
         {
@@ -91,7 +93,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
         var definition = new FakeCronJob
         {
@@ -134,7 +138,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
         var acceptedId = Guid.NewGuid();
         var rejectedId = Guid.NewGuid();
@@ -160,7 +166,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
         var jobId = Guid.NewGuid();
         provider.RequestTimeJobCancellationAsync(jobId, AbortToken).Returns(true);
@@ -181,7 +189,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
 
         var owned = new JobExecutionState
@@ -225,7 +235,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
 
         // The grandchild must keep ITS OWN RunCondition; a regression to the parent's value would
@@ -263,6 +275,54 @@ public sealed class InternalJobsManagerTests : TestBase
         grandChildContext.RunCondition.Should().Be(RunCondition.OnCancelled);
     }
 
+    /// <summary>
+    /// R1/KTD1: the stranded-timed-child safety net is a last-resort backstop, but it sat on the scheduler's hot
+    /// path — <c>GetNextJobs</c> runs it, and the scheduler loop sleeps 1ms whenever work is due, so an unbounded
+    /// relational candidate scan ran at up to ~1kHz per node in every deployment. It must run on the fallback
+    /// cadence instead, while still running on the first poll after startup so a host that starts with an already
+    /// stranded child does not wait a whole interval.
+    /// </summary>
+    [Fact]
+    public async Task should_run_the_stranded_child_safety_net_on_the_fallback_cadence_not_on_every_poll()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var timeProvider = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(2026, 7, 24, 10, 0, 0, TimeSpan.Zero)
+        );
+        var schedulerOptions = new SchedulerOptionsBuilder();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            timeProvider,
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            schedulerOptions
+        );
+
+        // Nothing due on either side, so each poll returns right after the safety net and the call count is the only
+        // thing under test. Without this stub the auto-substituted occurrence carries a null CronJob and NREs.
+        provider
+            .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+
+        // First poll runs it: a host that starts with an already-stranded child must not wait out an interval.
+        await manager.GetNextJobs(AbortToken);
+        await provider.Received(1).SkipStrandedTimedChildrenAsync(Arg.Any<CancellationToken>());
+
+        // Back-to-back polls inside the interval must NOT re-run it — this is the 1kHz regression being closed.
+        await manager.GetNextJobs(AbortToken);
+        await manager.GetNextJobs(AbortToken);
+        await provider.Received(1).SkipStrandedTimedChildrenAsync(Arg.Any<CancellationToken>());
+
+        // Once the cadence elapses it runs again, so liveness of the backstop is preserved.
+        timeProvider.Advance(schedulerOptions.FallbackIntervalChecker + TimeSpan.FromSeconds(1));
+        await manager.GetNextJobs(AbortToken);
+        await provider.Received(2).SkipStrandedTimedChildrenAsync(Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task run_timed_out_tickers_threads_the_persisted_tenant_at_every_chain_level()
     {
@@ -278,7 +338,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
 
         var grandChild = new TimeJobEntity
@@ -330,7 +392,9 @@ public sealed class InternalJobsManagerTests : TestBase
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>()
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
         );
 
         var grandChild = new TimeJobEntity
