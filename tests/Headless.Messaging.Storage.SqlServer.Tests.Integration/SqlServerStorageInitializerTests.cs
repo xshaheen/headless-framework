@@ -196,6 +196,70 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         );
         await initializer.InitializeAsync(AbortToken);
 
+        await _AssertRetryIndexShapeAsync(connection, schema, table, indexName);
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
+    [Fact]
+    public async Task should_serialize_concurrent_retry_index_repairs()
+    {
+        const string schema = "concurrent_index_repair_test";
+        var initializer = _CreateInitializer(schema, useStorageLock: false);
+        await initializer.InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                DROP INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published];
+                CREATE NONCLUSTERED INDEX [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                DROP INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
+                CREATE NONCLUSTERED INDEX [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received] ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+
+        var initializationTasks = Enumerable
+            .Range(0, 8)
+            .Select(_ => _CreateInitializer(schema, useStorageLock: false).InitializeAsync(AbortToken))
+            .ToArray();
+
+        await Task.WhenAll(initializationTasks);
+
+        await _AssertRetryIndexShapeAsync(
+            connection,
+            schema,
+            "Published",
+            $"IX_{schema}_Published_Version_NextRetryAt"
+        );
+        await _AssertRetryIndexShapeAsync(connection, schema, "Received", $"IX_{schema}_Received_Version_NextRetryAt");
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
+    private static async Task _AssertRetryIndexShapeAsync(
+        SqlConnection connection,
+        string schema,
+        string table,
+        string indexName
+    )
+    {
         var keyColumns = (
             await connection.QueryAsync<string>(
                 new CommandDefinition(
@@ -225,8 +289,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         keyColumns.Should().BeEquivalentTo(["Version", "IntentType", "NextRetryAt"], opts => opts.WithStrictOrdering());
 
-        // Filtered predicate must be `[NextRetryAt] IS NOT NULL` so terminal rows are physically
-        // excluded — keeps the index small even under high failed-message volume.
         var filter = await connection.QueryFirstOrDefaultAsync<string>(
             new CommandDefinition(
                 """
@@ -246,15 +308,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         );
 
-        filter.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
-
-        // cleanup
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
-                cancellationToken: AbortToken
-            )
-        );
+        filter.Should().Be("([NextRetryAt] IS NOT NULL)");
     }
 
     [Theory]

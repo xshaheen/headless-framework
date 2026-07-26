@@ -38,9 +38,9 @@ internal sealed class SqlServerStorageInitializer(
 
     /// <summary>
     /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
-    /// table-valued parameter type if they do not already exist. Each DDL block is guarded by
-    /// an <c>IF NOT EXISTS</c> check inside a <c>TRY/CATCH</c> that swallows only duplicate-object
-    /// (2714) and PK-violation (2627) errors so concurrent multi-replica startups converge safely.
+    /// table-valued parameter type if they do not already exist. Concurrent initializers are serialized
+    /// with a session-scoped <c>sp_getapplock</c>; each DDL block remains independently idempotent so a
+    /// later initialization can repair a partially completed schema.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -54,9 +54,8 @@ internal sealed class SqlServerStorageInitializer(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         // No wrapping transaction: each idempotent block in the script is already protected by
-        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH that swallows only the
-        // duplicate-object (2714) and PK-violation (2627) errors raised under a TOCTOU race
-        // between concurrent startups (multi-replica rollouts). A wrapping transaction would
+        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH. The session-scoped application lock
+        // serializes the full repair sequence across concurrent startups. A wrapping transaction would
         // interact poorly with sessions that have SET XACT_ABORT ON — statement-level errors
         // doom the transaction (XACT_STATE = -1), the inner CATCH swallows the error, but the
         // outer COMMIT then fails with 3930, masking the real cause. A mid-script abort
@@ -87,9 +86,15 @@ internal sealed class SqlServerStorageInitializer(
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
+        var lockResource = $"headless_messaging_init:{schema}";
         var batchSql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = N'{lockResource}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
+            IF @lockResult < 0 THROW 50000, N'Headless.Messaging: failed to acquire init lock on the messaging schema. Another initializer may be holding it.', 1;
+
+            BEGIN TRY
             BEGIN TRY
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')
                 BEGIN
@@ -312,6 +317,21 @@ internal sealed class SqlServerStorageInitializer(
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+                EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
+            END TRY
+            BEGIN CATCH
+                -- Keep release failures from replacing the original DDL exception. Closing the
+                -- connection remains a backstop for this session-scoped lock.
+                BEGIN TRY
+                    IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
+                        EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
+                END TRY
+                BEGIN CATCH
+                    -- intentional: preserve the original initializer failure
+                END CATCH;
+                THROW;
             END CATCH;
 
             """
