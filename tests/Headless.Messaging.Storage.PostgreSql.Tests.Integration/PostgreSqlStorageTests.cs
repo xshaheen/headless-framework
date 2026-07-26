@@ -100,6 +100,74 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         );
     }
 
+    /// <inheritdoc />
+    protected override async Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
+        IDataStorage storage,
+        bool published,
+        short rawIntentType,
+        DateTimeOffset nextRetryAt,
+        CancellationToken cancellationToken
+    )
+    {
+        _EnsureInitialized();
+        var id = Guid.NewGuid();
+        var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
+        var tableName = published ? "published" : "received";
+        var groupColumns = published ? string.Empty : ", \"Group\", \"ExceptionInfo\"";
+        var groupValues = published ? string.Empty : ", 'unsupported-lane-group', NULL";
+        var sql = $"""
+            INSERT INTO messaging.{tableName}
+                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{groupColumns})
+            VALUES
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{groupValues});
+            """;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    IntentType = rawIntentType,
+                    Added = TimeProvider.GetUtcNow(),
+                    NextRetryAt = nextRetryAt,
+                    LockedUntil = nextRetryAt,
+                    MessageId = $"unsupported-lane-{id:N}",
+                },
+                cancellationToken: cancellationToken
+            )
+        );
+
+        return id;
+    }
+
+    /// <inheritdoc />
+    protected override async Task<PersistedPoisonRetryState?> GetPersistedPoisonRetryStateAsync(
+        IDataStorage storage,
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        var tableName = published ? "published" : "received";
+        var exceptionInfo = published ? "NULL::text" : "\"ExceptionInfo\"";
+        var sql = $"""
+            SELECT "IntentType" AS "RawIntentType", "StatusName", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner",
+                   {exceptionInfo} AS "ExceptionInfo"
+            FROM messaging.{tableName}
+            WHERE "Id"=@Id;
+            """;
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await connection.QuerySingleAsync<PersistedPoisonRetryState>(
+            new CommandDefinition(sql, new { Id = storageId }, cancellationToken: cancellationToken)
+        );
+    }
+
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
         return new PostgreSqlDataStorage(
@@ -323,6 +391,18 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
     {
         return base.should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]

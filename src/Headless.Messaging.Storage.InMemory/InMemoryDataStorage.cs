@@ -870,14 +870,42 @@ internal sealed partial class InMemoryDataStorage(
         var retryBatchSize = messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
 
-        // Corrupt persisted compatibility values must fail the pickup visibly. Validating the
-        // whole active version before applying the requested-lane batch prevents an unknown row
-        // from remaining silently stranded behind a full batch of otherwise valid rows.
+        // Unknown persisted values are poison data, not a reason to fail every subsequent poll.
+        // Terminalize a bounded batch under the same per-row lock used by normal claims, retain
+        // the raw value for diagnosis, then continue claiming healthy rows for the requested lane.
+        var terminalizedInvalidCount = 0;
         foreach (var candidate in source.Values)
         {
-            if (string.Equals(candidate.Version, version, StringComparison.Ordinal))
+            if (terminalizedInvalidCount >= retryBatchSize)
             {
-                _ = MessageLaneCompatibility.ToLane(candidate.IntentType);
+                break;
+            }
+
+            if (
+                !string.Equals(candidate.Version, version, StringComparison.Ordinal)
+                || _IsSupportedIntentType(candidate.IntentType)
+            )
+            {
+                continue;
+            }
+
+            lock (candidate)
+            {
+                if (!_IsEligibleRetryCandidate(candidate, now, maxPersistedRetries))
+                {
+                    continue;
+                }
+
+                candidate.StatusName = StatusName.Failed;
+                candidate.NextRetryAt = null;
+                candidate.LockedUntil = null;
+                candidate.Owner = null;
+                candidate.ExpiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+                candidate.ExceptionInfo = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType={(short)candidate.IntentType}"
+                );
+                terminalizedInvalidCount++;
             }
         }
 
@@ -907,6 +935,11 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (candidate)
             {
+                if (!_IsSupportedIntentType(candidate.IntentType))
+                {
+                    continue;
+                }
+
                 if (MessageLaneCompatibility.ToLane(candidate.IntentType) != lane)
                 {
                     continue;
@@ -938,6 +971,24 @@ internal sealed partial class InMemoryDataStorage(
         }
 
         return claimed;
+    }
+
+    private static bool _IsSupportedIntentType(IntentType intentType)
+    {
+        return intentType is IntentType.Bus or IntentType.Queue;
+    }
+
+    private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
+    {
+        if ((candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null)
+        {
+            return false;
+        }
+
+        return candidate.Retries <= maxPersistedRetries
+            && candidate.NextRetryAt is not null
+            && candidate.NextRetryAt <= now
+            && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
     private static MediumMessage _ToSnapshot(MemoryMessage m)

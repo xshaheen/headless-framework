@@ -86,6 +86,43 @@ public abstract class DataStorageTestsBase : TestBase
     /// <summary>Persisted ownership generation returned by provider-specific test queries.</summary>
     protected readonly record struct PersistedLeaseIdentity(DateTimeOffset LockedUntil, string? Owner);
 
+    /// <summary>
+    /// Seeds one eligible retry row with an unsupported raw intent value through the provider's
+    /// authoritative storage representation. Providers without a raw-row seam return <see langword="null"/>.
+    /// </summary>
+    protected virtual Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
+        IDataStorage storage,
+        bool published,
+        short rawIntentType,
+        DateTimeOffset nextRetryAt,
+        CancellationToken cancellationToken
+    )
+    {
+        return Task.FromResult<Guid?>(null);
+    }
+
+    /// <summary>Reads an unsupported-lane retry row without passing its raw intent through enum validation.</summary>
+    protected virtual Task<PersistedPoisonRetryState?> GetPersistedPoisonRetryStateAsync(
+        IDataStorage storage,
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        return Task.FromResult<PersistedPoisonRetryState?>(null);
+    }
+
+    /// <summary>Provider-neutral persisted state used to verify poison-row terminalization.</summary>
+    protected readonly record struct PersistedPoisonRetryState(
+        short RawIntentType,
+        string StatusName,
+        DateTimeOffset? ExpiresAt,
+        DateTimeOffset? NextRetryAt,
+        DateTimeOffset? LockedUntil,
+        string? Owner,
+        string? ExceptionInfo
+    );
+
     /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
     protected ControlledNodeMembership NodeMembership { get; } = new();
 
@@ -535,6 +572,16 @@ public abstract class DataStorageTestsBase : TestBase
     public virtual Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
     {
         return _ShouldClaimRetryMessagesByLaneAsync(published: false);
+    }
+
+    public virtual Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    {
+        return _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(published: true);
+    }
+
+    public virtual Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    {
+        return _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(published: false);
     }
 
     public virtual async Task should_delete_expired_messages()
@@ -2334,6 +2381,110 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         return stored;
+    }
+
+    private async Task _ShouldTerminalizeUnsupportedLaneWithoutStarvingRetryAsync(bool published)
+    {
+        const short unsupportedIntentType = 99;
+        var storage = GetStorage();
+        var now = _Now();
+        var invalidId = await SeedUnsupportedLaneRetryRowAsync(
+            storage,
+            published,
+            unsupportedIntentType,
+            now.AddMinutes(-2),
+            AbortToken
+        );
+        if (invalidId is null)
+        {
+            Assert.Skip("Storage does not expose an authoritative raw retry-row test seam");
+            return;
+        }
+
+        async Task<MediumMessage> storeHealthyAsync(MessageLane lane)
+        {
+            var intentType = lane switch
+            {
+                MessageLane.Bus => IntentType.Bus,
+                MessageLane.Queue => IntentType.Queue,
+                _ => throw new InvalidOperationException($"Unsupported test lane '{lane}'."),
+            };
+            var envelope = new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage($"healthy-{published}-{lane}-{Guid.NewGuid():N}"),
+                Content = string.Empty,
+                IntentType = intentType,
+            };
+            var stored = published
+                ? await storage.StoreMessageAsync(
+                    $"unsupported-lane-published-{lane}",
+                    envelope,
+                    cancellationToken: AbortToken
+                )
+                : await storage.StoreReceivedMessageAsync(
+                    $"unsupported-lane-received-{lane}",
+                    $"unsupported-lane-group-{lane}",
+                    envelope,
+                    AbortToken
+                );
+
+            if (published)
+            {
+                await storage.ChangePublishStateAsync(
+                    stored,
+                    StatusName.Failed,
+                    nextRetryAt: now.AddMinutes(-1),
+                    cancellationToken: AbortToken
+                );
+            }
+            else
+            {
+                await storage.ChangeReceiveStateAsync(
+                    stored,
+                    StatusName.Failed,
+                    nextRetryAt: now.AddMinutes(-1),
+                    cancellationToken: AbortToken
+                );
+            }
+
+            return stored;
+        }
+
+        var busMessage = await storeHealthyAsync(MessageLane.Bus);
+        var queueMessage = await storeHealthyAsync(MessageLane.Queue);
+
+        var busClaim = (
+            published
+                ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+                : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+        ).ToList();
+
+        busClaim.Should().ContainSingle(message => message.StorageId == busMessage.StorageId);
+        busClaim.Should().NotContain(message => message.StorageId == queueMessage.StorageId);
+        busClaim.Should().NotContain(message => message.StorageId == invalidId.Value);
+
+        var invalidState = await GetPersistedPoisonRetryStateAsync(storage, published, invalidId.Value, AbortToken);
+        invalidState.Should().NotBeNull();
+        var persisted = invalidState.GetValueOrDefault();
+        persisted.RawIntentType.Should().Be(unsupportedIntentType);
+        persisted.StatusName.Should().Be(nameof(StatusName.Failed));
+        persisted.ExpiresAt.Should().NotBeNull();
+        persisted.NextRetryAt.Should().BeNull();
+        persisted.LockedUntil.Should().BeNull();
+        persisted.Owner.Should().BeNull();
+        if (!published)
+        {
+            persisted.ExceptionInfo.Should().Contain("Unsupported persisted messaging lane").And.Contain("99");
+        }
+
+        var queueClaim = (
+            published
+                ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken)
+                : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken)
+        ).ToList();
+        queueClaim.Should().ContainSingle(message => message.StorageId == queueMessage.StorageId);
+        queueClaim.Should().NotContain(message => message.StorageId == invalidId.Value);
     }
 
     private async Task _ShouldClaimRetryMessagesByLaneAsync(bool published)

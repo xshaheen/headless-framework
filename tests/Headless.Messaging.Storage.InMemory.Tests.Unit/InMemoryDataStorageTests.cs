@@ -112,6 +112,78 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     /// <inheritdoc />
+    protected override Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
+        IDataStorage storage,
+        bool published,
+        short rawIntentType,
+        DateTimeOffset nextRetryAt,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var inMemoryStorage = storage.Should().BeOfType<InMemoryDataStorage>().Subject;
+        var id = Guid.NewGuid();
+        var origin = CreateMessage($"unsupported-lane-{id:N}");
+        var raw = new MemoryMessage
+        {
+            StorageId = id,
+            Origin = origin,
+            Content = GetSerializer().Serialize(origin),
+            IntentType = (IntentType)rawIntentType,
+            Added = TimeProvider.GetUtcNow(),
+            ExpiresAt = null,
+            NextRetryAt = nextRetryAt,
+            LockedUntil = nextRetryAt,
+            Owner = "stale-unsupported-lane-owner",
+            Retries = 0,
+            InlineAttempts = 0,
+            ExceptionInfo = null,
+            Name = "unsupported-lane",
+            Group = published ? null! : "unsupported-lane-group",
+            StatusName = StatusName.Failed,
+            Version = "v1",
+        };
+
+        var added = published
+            ? inMemoryStorage.PublishedMessages.TryAdd(id, raw)
+            : inMemoryStorage.ReceivedMessages.TryAdd(id, raw);
+        added.Should().BeTrue();
+
+        return Task.FromResult<Guid?>(id);
+    }
+
+    /// <inheritdoc />
+    protected override Task<PersistedPoisonRetryState?> GetPersistedPoisonRetryStateAsync(
+        IDataStorage storage,
+        bool published,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var inMemoryStorage = storage.Should().BeOfType<InMemoryDataStorage>().Subject;
+        var found = published
+            ? inMemoryStorage.PublishedMessages.TryGetValue(storageId, out var message)
+            : inMemoryStorage.ReceivedMessages.TryGetValue(storageId, out message);
+        if (!found)
+        {
+            return Task.FromResult<PersistedPoisonRetryState?>(null);
+        }
+
+        return Task.FromResult<PersistedPoisonRetryState?>(
+            new PersistedPoisonRetryState(
+                (short)message!.IntentType,
+                message.StatusName.ToString("G"),
+                message.ExpiresAt,
+                message.NextRetryAt,
+                message.LockedUntil,
+                message.Owner,
+                message.ExceptionInfo
+            )
+        );
+    }
+
+    /// <inheritdoc />
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -255,6 +327,18 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane()
     {
         return base.should_claim_received_retry_messages_by_lane_and_apply_batch_per_lane();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_published_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_published_retry();
+    }
+
+    [Fact]
+    public override Task should_terminalize_unsupported_lane_without_starving_received_retry()
+    {
+        return base.should_terminalize_unsupported_lane_without_starving_received_retry();
     }
 
     [Fact]

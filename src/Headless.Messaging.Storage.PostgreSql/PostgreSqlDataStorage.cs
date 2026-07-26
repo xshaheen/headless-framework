@@ -1104,8 +1104,14 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var intentType = MessageLaneCompatibility.ToIntentType(lane);
         var intentValue = checked((short)intentType);
-        // Atomic claim-and-return: a single UPDATE statement leases the rows (sets LockedUntil)
-        // and RETURNS the selected columns in one round-trip. Replaces the previous two-step
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var invalidLaneDiagnosticAssignment = isReceivedTable
+            ? ", \"ExceptionInfo\" = @InvalidLaneDiagnostic || target.\"IntentType\"::text"
+            : string.Empty;
+        // Transactional poison handling and claim-and-return: one command terminalizes a bounded
+        // set of eligible invalid-lane rows, then atomically leases and returns healthy rows in
+        // the requested lane. The claim UPDATE still performs leasing and RETURNING in one step.
+        // This replaces the previous two-step
         // SELECT-FOR-UPDATE-then-Lease pattern, which committed the SELECT transaction before
         // _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the same
         // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
@@ -1122,8 +1128,8 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            WITH invalid_lane AS MATERIALIZED (
-                SELECT message."IntentType"
+            WITH invalid_lanes AS MATERIALIZED (
+                SELECT message."Id"
                 FROM {tableName} AS message
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
@@ -1131,27 +1137,36 @@ internal sealed partial class PostgreSqlDataStorage(
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
                   AND message."IntentType" NOT IN (0, 1)
-                LIMIT 1
+                ORDER BY "NextRetryAt", "Id"
+                LIMIT @BatchSize
+                FOR UPDATE SKIP LOCKED
             ),
-            validated_lane AS MATERIALIZED (
-                SELECT CASE
-                    WHEN EXISTS (SELECT 1 FROM invalid_lane)
-                    THEN (SELECT "IntentType" / ("IntentType" - "IntentType") FROM invalid_lane)
-                    ELSE @IntentType
-                END::smallint AS "IntentType"
-            ),
-            candidates AS (
+            terminalized_invalid AS (
+                UPDATE {tableName} AS target
+                SET "StatusName" = @FailedStatus,
+                    "NextRetryAt" = NULL,
+                    "LockedUntil" = NULL,
+                    "Owner" = NULL,
+                    "ExpiresAt" = @ExpiresAt
+                    {invalidLaneDiagnosticAssignment}
+                FROM invalid_lanes
+                WHERE target."Id" = invalid_lanes."Id"
+                  AND {_TerminalRowGuardSimple}
+                RETURNING target."Id", target."IntentType"
+            )
+            SELECT "Id", "IntentType" FROM terminalized_invalid;
+
+            WITH candidates AS (
                 SELECT message."Id"
                 FROM {tableName} AS message
-                CROSS JOIN validated_lane
                 WHERE "Retries" <= @Retries
                   AND "Version" = @Version
-                  AND message."IntentType" = validated_lane."IntentType"
+                  AND message."IntentType" = @IntentType
                   AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
                   AND {_TerminalRowGuardSimple}
-                ORDER BY "NextRetryAt"
-                LIMIT {messagingOptions.Value.RetryBatchSize}
+                ORDER BY "NextRetryAt", "Id"
+                LIMIT @BatchSize
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE {tableName} AS message
@@ -1165,10 +1180,20 @@ internal sealed partial class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
+            new NpgsqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
+            new NpgsqlParameter("@FailedStatus", nameof(StatusName.Failed)),
+            new NpgsqlParameter(
+                "@ExpiresAt",
+                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
+            ),
+            new NpgsqlParameter(
+                "@InvalidLaneDiagnostic",
+                "Unsupported persisted messaging lane terminalized during retry pickup. Raw IntentType="
+            ),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
@@ -1187,6 +1212,21 @@ internal sealed partial class PostgreSqlDataStorage(
                 async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        RetryPickupLog.UnsupportedPersistedLaneTerminalized(
+                            logger,
+                            reader.GetGuid(0),
+                            reader.GetInt16(1),
+                            tableName
+                        );
+                    }
+
+                    if (!await reader.NextResultAsync(token).ConfigureAwait(false))
+                    {
+                        return messages;
+                    }
+
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var storageId = reader.GetGuid(0);
@@ -1401,6 +1441,22 @@ internal sealed partial class PostgreSqlDataStorage(
     private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
     {
         return new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+    }
+
+    private static partial class RetryPickupLog
+    {
+        [LoggerMessage(
+            EventId = 8,
+            EventName = "UnsupportedPersistedLaneTerminalized",
+            Level = LogLevel.Warning,
+            Message = "Terminalized message {StorageId} in {Table} because persisted IntentType {IntentType} is not a supported messaging lane."
+        )]
+        public static partial void UnsupportedPersistedLaneTerminalized(
+            ILogger logger,
+            Guid storageId,
+            short intentType,
+            string table
+        );
     }
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
