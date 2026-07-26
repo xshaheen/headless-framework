@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
+#pragma warning disable IDE0161 // EF migrations are generated with block-scoped namespaces.
+
 namespace Headless.Jobs.Console.Demo.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the initial Jobs operational store migration.</summary>
     public partial class InitialJobsOperationalStore : Migration
     {
         /// <inheritdoc />
