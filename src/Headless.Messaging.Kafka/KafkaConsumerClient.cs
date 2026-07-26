@@ -186,8 +186,22 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     continue;
                 }
 
-                if (consumerResult.IsPartitionEOF || consumerResult.Message.Value == null)
+                if (consumerResult.IsPartitionEOF)
                 {
+                    continue;
+                }
+
+                if (consumerResult.Message.Value == null)
+                {
+                    var tombstoneDelivery = _TrackDelivery(consumerResult);
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = "Kafka record had a null transport value and was terminally committed.",
+                        }
+                    );
+                    await CommitAsync(tombstoneDelivery, CancellationToken.None).ConfigureAwait(false);
                     continue;
                 }
 
@@ -485,11 +499,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, seeking back: {ex}",
+                    Reason = $"Failed to build transport message; the Kafka offset was terminally committed: {ex}",
                 }
             );
 
-            await RejectAsync(delivery).ConfigureAwait(false);
+            await CommitAsync(delivery).ConfigureAwait(false);
             return;
         }
 

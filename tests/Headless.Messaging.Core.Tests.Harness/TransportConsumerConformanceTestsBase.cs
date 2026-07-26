@@ -49,6 +49,7 @@ public sealed class TransportConsumerConformanceSession(
 
     public async Task StartAsync(
         Func<TransportConformanceDelivery, Task>? onDelivery = null,
+        Action<LogMessageEventArgs>? onLog = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -68,7 +69,11 @@ public sealed class TransportConsumerConformanceSession(
                     await onDelivery(delivery).ConfigureAwait(false);
                 }
             },
-            onLog: _logs.Enqueue
+            onLog: log =>
+            {
+                _logs.Enqueue(log);
+                onLog?.Invoke(log);
+            }
         );
 
         _listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -398,7 +403,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
                 handlerStarted.TrySetResult();
                 await releaseHandler.Task.ConfigureAwait(false);
             },
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         var message = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "active-shutdown"u8.ToArray());

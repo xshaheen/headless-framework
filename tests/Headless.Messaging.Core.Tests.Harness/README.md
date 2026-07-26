@@ -93,10 +93,10 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S |
 | `BusSubscriberGroupFanOut` | U | U | S | N/A | U | S† | S | S |
 | `BusReplicaCompetition` | U | U | S | N/A | U | S† | S | S |
-| `QueueOwnership` | U | U | S | U | U | S† | S | S |
+| `QueueOwnership` | U | U | S | S | U | S† | S | S |
 | `SameNameLaneIsolation` | U | U | S | N/A | U | S† | S | S |
-| `StartupRejectionBeforeSideEffects` | U | U | U | U | U | U | U | U |
-| `MalformedEnvelopeTerminalSettlement` | U | U | S | U | U | U | N/A | S |
+| `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
+| `MalformedEnvelopeTerminalSettlement` | U | U | S | S | U | U | N/A | S |
 | `LegacyCutoverRecovery` | U | U | U | N/A | U | N/A | N/A | S |
 
 Evidence anchors:
@@ -109,6 +109,7 @@ Evidence anchors:
 - Redis Streams Bus/Queue routing, group fan-out, replica competition, lane isolation, settlement, shutdown, and poison handling: `RedisConsumerConformanceTests` against Testcontainers Redis.
 - InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver.
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
+- Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `SetupTests`.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities

@@ -734,7 +734,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_seek_back_when_custom_headers_builder_throws()
+    public async Task should_terminally_commit_when_custom_headers_builder_throws()
     {
         // given
         var throwingOptions = Options.Create(
@@ -747,7 +747,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
         var consumeCallCount = 0;
-        var seekCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commitCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         consumer
             .Consume(Arg.Any<TimeSpan>())
             .Returns(_ =>
@@ -769,7 +769,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                 throw new OperationCanceledException();
             });
 
-        consumer.When(c => c.Seek(Arg.Any<TopicPartitionOffset>())).Do(_ => seekCalled.TrySetResult());
+        consumer.When(c => c.Commit(Arg.Any<ConsumeResult<string, byte[]>>())).Do(_ => commitCalled.TrySetResult());
 
         await using var client = new KafkaConsumerClient(
             "test-group",
@@ -796,13 +796,13 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        // when — ListeningAsync will fault after the seek; we only need to observe the seek signal
+        // when — ListeningAsync will fault after the terminal commit; we only need to observe the commit signal
 #pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
 #pragma warning restore AsyncFixer04
         try
         {
-            await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await commitCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
             // Observe the faulted task to prevent unobserved exception
             try
@@ -816,11 +816,13 @@ public sealed class KafkaConsumerClientTests : TestBase
             }
 #pragma warning restore ERP022
 
-            // then — callback should not be invoked, offset should be seeked back
+            // then — callback should not be invoked and the poison offset must not be sought for redelivery
             callbackInvoked.Should().BeFalse();
-            consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(tpo => tpo.Offset == 5));
+            consumer.Received(1).Commit(Arg.Is<ConsumeResult<string, byte[]>>(result => result.Offset == 5));
+            consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
             loggedError.Should().NotBeNull();
             loggedError!.Reason.Should().Contain("bad header builder");
+            loggedError.Reason.Should().Contain("terminally committed");
         }
         finally
         {

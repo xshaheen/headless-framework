@@ -318,6 +318,15 @@ public static class TransportConformanceManifest
                         "Kafka rejects Bus registration rather than creating Bus topology."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.Supported
+                )
+                .WithScenario(
+                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                    ConformanceSupport.Supported
+                )
                 .WithScenario(
                     TransportConformanceScenario.LegacyCutoverRecovery,
                     ConformanceSupport.NotApplicable("Kafka physical topology does not change in this release.")

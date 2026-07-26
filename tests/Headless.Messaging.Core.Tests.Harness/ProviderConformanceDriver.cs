@@ -119,7 +119,7 @@ public static class TransportProviderConformance
 
         await using var firstA = await driver.CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-a", "replica-1"),
-            cancellationToken
+            cancellationToken: cancellationToken
         );
         await using var firstB = await driver.CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-a", "replica-2"),
@@ -261,7 +261,7 @@ public static class TransportProviderConformance
                 deliveries.Add(delivery);
                 await session.Consumer.CommitAsync(delivery.SettlementValue, CancellationToken.None);
             },
-            cancellationToken
+            cancellationToken: cancellationToken
         );
     }
 

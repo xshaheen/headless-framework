@@ -140,9 +140,23 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
             return;
         }
 
+        var transport =
+            (
+                _providersByRole.TryGetValue(MessagingProviderRole.Transport, out var transports)
+                    ? transports.SingleOrDefault()
+                    : null
+            )
+            ?? throw new MessagingConfigurationException(
+                $"{lane} direct delivery is unsupported by the declared transport capabilities. "
+                    + "Register the provider through AddMessagingProviderCapabilities; raw transport registrations are not capability evidence."
+            );
+
+        var supportedLanes = string.Join(", ", transport.Lanes.Order());
+
         throw new MessagingConfigurationException(
-            $"{lane} direct delivery is unsupported by the declared transport capabilities. "
-                + "Register the provider through AddMessagingProviderCapabilities; raw transport registrations are not capability evidence."
+            $"{lane} direct delivery is unsupported: transport provider '{transport.Provider}' does not support {lane} delivery. "
+                + $"Supported lanes: {supportedLanes}. "
+                + $"Register this route with setup.{supportedLanes}.ForMessage<T>(...) or select a transport that supports {lane}."
         );
     }
 
