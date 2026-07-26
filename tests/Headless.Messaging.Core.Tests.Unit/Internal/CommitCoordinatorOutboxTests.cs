@@ -66,20 +66,20 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             var writer = new OutboxMessageWriter(
                 storage,
                 dispatcher,
-                _CreatePublishRequestFactory(),
-                stack,
-                new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
                 NullLogger<MessageOutboxBuffer>.Instance
             );
-
-            await writer.PublishAsync(
-                new CoordinatorMessage("value"),
-                options: null,
-                lane: MessageLane.Bus,
-                AbortToken
+            var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+            var decision = DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Durable,
+                delay: null,
+                DeliveryCoordination.Compatible(stack.Current!, transaction),
+                TimeProvider.System.GetUtcNow()
             );
+
+            await writer.WriteAsync(request, decision, AbortToken);
 
             await dispatcher.DidNotReceive().EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
 
@@ -105,23 +105,19 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             var storage = Substitute.For<IDataStorage>();
             var dispatcher = Substitute.For<IDispatcher>();
 
-            var writer = new OutboxMessageWriter(
-                storage,
-                dispatcher,
-                _CreatePublishRequestFactory(),
-                stack,
-                new NoopPublishMiddlewarePipeline(),
-                TimeProvider.System,
-                Options.Create(new MessagingOptions()),
-                NullLogger<MessageOutboxBuffer>.Instance
+            var coordination = DeliveryCoordination.Incompatible(
+                DeliveryCoordinationMismatch.MissingRelationalCapability
             );
-
             var act = () =>
-                writer.PublishAsync(new CoordinatorMessage("value"), options: null, lane: MessageLane.Bus, AbortToken);
+                DeliveryDecisionResolver.Resolve(
+                    MessageLane.Bus,
+                    DeliveryMode.Durable,
+                    delay: null,
+                    coordination,
+                    TimeProvider.System.GetUtcNow()
+                );
 
-            await act.Should()
-                .ThrowAsync<InvalidOperationException>()
-                .WithMessage("*coordination*MissingRelationalCapability*");
+            act.Should().Throw<InvalidOperationException>().WithMessage("*coordination*MissingRelationalCapability*");
             _ = storage
                 .DidNotReceive()
                 .StoreMessageAsync(

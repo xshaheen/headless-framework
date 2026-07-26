@@ -168,9 +168,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var writer = new OutboxMessageWriter(
             storage,
             dispatcher,
-            requestFactory,
-            new MessagingNullCommitCoordinator(),
-            pipeline,
             timeProvider,
             options,
             NullLogger<MessageOutboxBuffer>.Instance

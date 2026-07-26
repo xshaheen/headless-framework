@@ -16,9 +16,6 @@ namespace Headless.Messaging.Internal;
 internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
-    IMessagePublishRequestFactory publishRequestFactory,
-    ICurrentCommitCoordinator currentCommitCoordinator,
-    IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> messagingOptions,
     ILogger<MessageOutboxBuffer> outboxBufferLogger,
@@ -26,100 +23,6 @@ internal sealed class OutboxMessageWriter(
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
-
-    internal Task PublishAsync<T>(
-        T? contentObj,
-        MessageOptions? options,
-        MessageLane lane,
-        CancellationToken cancellationToken
-    )
-    {
-        var declaredMessageType = options?.MessageType ?? typeof(T);
-
-        // Capture the ambient coordinator + relational transaction ONCE here, in the caller's frame, before the
-        // pipeline await. Re-reading ICurrentCommitCoordinator.Current inside _PublishInternalAsync (after the
-        // middleware await) could observe a torn-down scope and silently fall through to the non-transactional
-        // immediate path — dispatching to the broker non-atomically with the transaction.
-        var coordination = _TryCaptureCoordination();
-        var decision = DeliveryDecisionResolver.Resolve(
-            lane,
-            DeliveryMode.Durable,
-            delay: null,
-            coordination,
-            timeProvider.GetUtcNow()
-        );
-
-        return publishPipeline.ExecuteAsync(
-            contentObj,
-            lane,
-            options,
-            decision,
-            innerPublish: (middlewareOptions, ct) =>
-                WriteAsync(
-                    publishRequestFactory.Create(contentObj, declaredMessageType, middlewareOptions, lane: lane),
-                    decision,
-                    ct
-                ),
-            cancellationToken
-        );
-    }
-
-    internal Task PublishDelayAsync<T>(
-        TimeSpan delayTime,
-        T? contentObj,
-        MessageOptions? options,
-        MessageLane lane,
-        CancellationToken cancellationToken
-    )
-    {
-        var declaredMessageType = options?.MessageType ?? typeof(T);
-        var coordination = _TryCaptureCoordination();
-        var decision = DeliveryDecisionResolver.Resolve(
-            lane,
-            DeliveryMode.Durable,
-            delayTime,
-            coordination,
-            timeProvider.GetUtcNow()
-        );
-
-        return publishPipeline.ExecuteAsync(
-            contentObj,
-            lane,
-            options,
-            decision,
-            innerPublish: (middlewareOptions, ct) =>
-                WriteAsync(
-                    publishRequestFactory.Create(
-                        contentObj,
-                        declaredMessageType,
-                        middlewareOptions,
-                        delayTime,
-                        decision.PublishAt!.Value,
-                        lane
-                    ),
-                    decision,
-                    ct
-                ),
-            cancellationToken
-        );
-    }
-
-    private DeliveryCoordination _TryCaptureCoordination()
-    {
-        var coordinator = currentCommitCoordinator.Current;
-
-        if (
-            coordinator?.TryGetCapability<IRelationalCommitContext>(out var relationalCommitContext) == true
-            && relationalCommitContext.Transaction is { } transaction
-        )
-        {
-            return DeliveryCoordination.Compatible(coordinator, transaction);
-        }
-
-        return coordinator is null
-            ? DeliveryCoordination.None
-            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
-    }
 
     internal async Task WriteAsync(
         PreparedPublishMessage publishRequest,
