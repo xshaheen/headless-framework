@@ -407,7 +407,7 @@ flowchart LR
 - Run `make restore` before no-restore builds in this worktree.
 - Run relevant Release builds/tests, Messaging provider integrations, dashboard validation, `make format-check`, and the narrowest credible analyzer targets; widen when shared projects change.
 - Record exact commands, counts, failures, and final SHA. Local validation and external CI are separate evidence.
-- Open one PR from `xshaheen/issue-350-publishers-delivery-modes` to `xshaheen/issue-336-lane-model-registration-v2`; its description names PR #763, states the stack dependency, and includes exact test scenarios without claiming parent findings as child fixes.
+- Open one PR from `xshaheen/issue-350-publishers-delivery-modes`; target `xshaheen/issue-336-lane-model-registration-v2` while PR #763 is open, then retarget to `xshaheen/messaging-verb-model` after #763 merges. Its description names PR #763, states the resolved stack dependency, and includes exact test scenarios without claiming parent findings as child fixes.
 - If CI does not auto-run for the stacked base, dispatch the appropriate workflow against the exact child SHA and verify terminal status. Classify runner/billing failures as external rather than repository regressions.
 - Complete structured code review, repair every actionable child finding within three rounds per repeated failure class, and babysit CI/review to the permitted terminal state without merging.
 
@@ -426,4 +426,4 @@ flowchart LR
 - [ ] Failure-injection evidence covers capture, commit, rollback, after-commit drain, transport/state ambiguity, cancellation, shutdown, and provider-specific unknown-lane behavior.
 - [ ] Full relevant Messaging unit and in-memory/PostgreSQL/SQL Server integration suites, dashboard/testing consumers, formatting, analyzers, and public API/search gates pass with exact results recorded.
 - [ ] Structured review has no unresolved actionable child finding; CI is terminal or any external blocker is durably and accurately reported.
-- [ ] One unmerged stacked PR targets `xshaheen/issue-336-lane-model-registration-v2`, names PR #763, and records the later retarget/revalidation handoff to `xshaheen/messaging-verb-model`.
+- [ ] One unmerged PR preserves the stacked ancestry, targets `xshaheen/messaging-verb-model` after PR #763 merged, names #763, and records the verified retarget/revalidation state.
