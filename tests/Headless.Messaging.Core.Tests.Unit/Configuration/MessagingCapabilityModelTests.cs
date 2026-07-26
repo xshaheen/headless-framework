@@ -8,6 +8,7 @@ using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests.Configuration;
 
@@ -147,6 +148,61 @@ public sealed class MessagingCapabilityModelTests : TestBase
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*SharedTopology*independent*lane*topology*");
         storageInitializerCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_validate_only_effective_lane_mapping_when_lane_override_replaces_global_fallback()
+    {
+        var storageInitializeCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.WithMessageNameMapping<SharedContract>("orders.global");
+            setup.Bus.ForMessage<SharedContract>(message => message.MessageName("orders.bus"));
+        });
+        services.AddMessagingProviderCapabilities(
+            _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
+        );
+        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
+        services.RemoveAll<IProcessingServer>();
+        services.AddSingleton<IStorageInitializer>(
+            new RecordingStorageInitializer(() => Interlocked.Increment(ref storageInitializeCalls))
+        );
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        bootstrapper.IsStarted.Should().BeTrue();
+        storageInitializeCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_check_message_name_collisions_using_effective_lane_mapping()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.WithMessageNameMapping<SharedContract>("orders.global");
+            setup.Bus.ForMessage<SharedContract>(message => message.MessageName("orders.bus"));
+            setup.Bus.ForMessage<OtherContract>(message => message.MessageName("orders.global"));
+        });
+        services.AddMessagingProviderCapabilities(
+            _Transport("IndependentTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: true)
+        );
+        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
+        services.RemoveAll<IProcessingServer>();
+        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(static () => { }));
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        bootstrapper.IsStarted.Should().BeTrue();
     }
 
     [Fact]

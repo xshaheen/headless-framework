@@ -363,25 +363,41 @@ internal sealed class Bootstrapper(
             );
         }
 
-        foreach (var mapping in registry.GetMessageNameMappings())
+        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
         {
-            var name = options.Value.ApplyMessageNamePrefix(mapping.Value);
-            routes.Add(new MessageRouteKey(mapping.Key, name, MessageLane.Bus));
-            routes.Add(new MessageRouteKey(mapping.Key, name, MessageLane.Queue));
-        }
-
-        foreach (var mapping in registry.GetLaneMessageNameMappings())
-        {
-            routes.Add(
-                new MessageRouteKey(
-                    mapping.Key.MessageType,
-                    options.Value.ApplyMessageNamePrefix(mapping.Value),
-                    mapping.Key.Lane
-                )
-            );
+            routes.Add(route);
         }
 
         return routes;
+    }
+
+    private IEnumerable<MessageRouteKey> _GetEffectiveMessageNameRoutes(ConsumerRegistry registry)
+    {
+        var laneMappings = registry.GetLaneMessageNameMappings();
+
+        foreach (var mapping in registry.GetMessageNameMappings())
+        {
+            var name = options.Value.ApplyMessageNamePrefix(mapping.Value);
+
+            if (!laneMappings.ContainsKey((mapping.Key, MessageLane.Bus)))
+            {
+                yield return new MessageRouteKey(mapping.Key, name, MessageLane.Bus);
+            }
+
+            if (!laneMappings.ContainsKey((mapping.Key, MessageLane.Queue)))
+            {
+                yield return new MessageRouteKey(mapping.Key, name, MessageLane.Queue);
+            }
+        }
+
+        foreach (var mapping in laneMappings)
+        {
+            yield return new MessageRouteKey(
+                mapping.Key.MessageType,
+                options.Value.ApplyMessageNamePrefix(mapping.Value),
+                mapping.Key.Lane
+            );
+        }
     }
 
     private void _CheckMessageNameCollisions()
@@ -399,23 +415,9 @@ internal sealed class Bootstrapper(
             _TrackMessageName(namesByLane, consumer.Lane, consumer.MessageName, consumer.MessageType);
         }
 
-        var mappings = registry.GetMessageNameMappings();
-
-        foreach (var mapping in mappings)
+        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
         {
-            var name = options.Value.ApplyMessageNamePrefix(mapping.Value);
-            _TrackMessageName(namesByLane, MessageLane.Bus, name, mapping.Key);
-            _TrackMessageName(namesByLane, MessageLane.Queue, name, mapping.Key);
-        }
-
-        foreach (var mapping in registry.GetLaneMessageNameMappings())
-        {
-            _TrackMessageName(
-                namesByLane,
-                mapping.Key.Lane,
-                options.Value.ApplyMessageNamePrefix(mapping.Value),
-                mapping.Key.MessageType
-            );
+            _TrackMessageName(namesByLane, route.Lane, route.MessageName, route.ContractType);
         }
 
         var (collisionLane, collisionName, types) = namesByLane
