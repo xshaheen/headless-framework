@@ -164,6 +164,16 @@ public sealed class TransportConsumerConformanceSession(
             {
                 // Expected when this session stops its listener.
             }
+            catch (TimeoutException ex)
+            {
+                var diagnostics = string.Join(Environment.NewLine, _logs.Select(log => $"{log.LogType}: {log.Reason}"));
+                throw new TimeoutException(
+                    $"Consumer listener did not stop within {timeout}. "
+                        + $"Cancellation requested: {_listeningCts?.IsCancellationRequested}; task status: {_listeningTask.Status}. "
+                        + $"Diagnostics:{Environment.NewLine}{diagnostics}",
+                    ex
+                );
+            }
         }
     }
 

@@ -165,7 +165,7 @@ public sealed class NatsConsumerClientTests : TestBase
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", MessageLane.Bus)
             .Should()
-            .Be("payments-orders_created");
+            .Be("bus-payments-orders_created");
     }
 
     [Fact]
@@ -521,7 +521,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_nak_when_custom_headers_builder_throws()
+    public async Task should_terminally_ack_when_custom_headers_builder_throws()
     {
         // given
         var options = MsOptions.Options.Create(
@@ -537,7 +537,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.Headers.Returns((NatsHeaders?)null);
 
         var callbackInvoked = false;
-        var nakCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ackCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = Substitute.For<INatsJSConsumer>();
         var callCount = 0;
         consumer
@@ -571,10 +571,10 @@ public sealed class NatsConsumerClientTests : TestBase
                 );
             });
 
-        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
+        msg.AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                nakCalled.TrySetResult();
+                ackCalled.TrySetResult();
                 return ValueTask.CompletedTask;
             });
 
@@ -608,13 +608,17 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await ackCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-            // then — message should be nacked, callback should not be invoked
+            // then — malformed input is terminally acknowledged and never reaches user code
             callbackInvoked.Should().BeFalse();
-            await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+            await msg.Received(1)
+                .AckAsync(
+                    Arg.Is<AckOpts?>(options => options.HasValue && options.Value.DoubleAck == true),
+                    CancellationToken.None
+                );
             loggedArgs.Should().NotBeNull();
-            loggedArgs!.Reason.Should().Contain("bad header builder");
+            loggedArgs!.Reason.Should().Contain("terminally acknowledged").And.NotContain("bad header builder");
         }
         finally
         {
@@ -771,7 +775,7 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             (_, config, _) =>
                 Task.FromResult(
-                    string.Equals(config.FilterSubject, "orders.created", StringComparison.Ordinal)
+                    string.Equals(config.FilterSubject, "headless.bus.orders.created", StringComparison.Ordinal)
                         ? failedConsumer
                         : siblingConsumer
                 )

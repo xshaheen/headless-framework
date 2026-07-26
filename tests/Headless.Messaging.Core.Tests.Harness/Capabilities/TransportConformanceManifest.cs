@@ -224,7 +224,7 @@ public static class TransportConformanceManifest
                     "NATS JetStream",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("JetStream terminal ACK", 1, TimeSpan.FromSeconds(3))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -235,6 +235,15 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                    ConformanceSupport.Supported
+                )
+                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")

@@ -69,6 +69,152 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
+    public Task should_fan_out_one_bus_copy_per_group_while_replicas_compete()
+    {
+        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+            new NatsProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public Task should_deliver_one_owned_queue_copy_across_replicas()
+    {
+        return TransportProviderConformance.AssertQueueOwnershipAsync(
+            new NatsProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public Task should_isolate_same_logical_name_across_bus_and_queue()
+    {
+        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(
+            new NatsProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public async Task should_terminally_acknowledge_malformed_envelope_across_consumer_restart()
+    {
+        var streamName = $"malformed-{Guid.NewGuid():N}"[..30];
+        var destination = $"{streamName}.probe";
+        var group = $"group-{Guid.NewGuid():N}"[..30];
+        var terminalLogs = 0;
+        await using var session = await fixture.CreateMalformedSessionAsync(streamName, destination, group, AbortToken);
+        await session.StartAsync(
+            onLog: log =>
+            {
+                if (log.Reason?.Contains("terminally acknowledged", StringComparison.Ordinal) == true)
+                {
+                    Interlocked.Increment(ref terminalLogs);
+                }
+            },
+            cancellationToken: AbortToken
+        );
+
+        var result = await session.PublishAsync(_Message(destination, MessageLane.Queue), AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
+        {
+            while (Volatile.Read(ref terminalLogs) == 0)
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+        await using var replacement = await session.CreateReplacementAsync(AbortToken);
+        await replacement.StartAsync(cancellationToken: AbortToken);
+
+        (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(3), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref terminalLogs).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_drain_legacy_stream_before_lane_cutover_and_reconcile_forward()
+    {
+        var legacyStream = $"legacy-{Guid.NewGuid():N}"[..29];
+        var logicalName = $"orders-{Guid.NewGuid():N}"[..29];
+        await fixture.EnsureStreamAsync(legacyStream, logicalName);
+
+        var connection = await fixture.GetConnectionAsync();
+        var js = new NatsJSContext(connection);
+        await js.PublishAsync(
+            logicalName,
+            "legacy"u8.ToArray(),
+            serializer: NatsRawSerializer<byte[]>.Default,
+            cancellationToken: AbortToken
+        );
+        var legacyConsumer = await js.CreateOrUpdateConsumerAsync(
+            legacyStream,
+            new ConsumerConfig($"drain-{Guid.NewGuid():N}"[..30])
+            {
+                FilterSubject = logicalName,
+                DeliverPolicy = ConsumerConfigDeliverPolicy.All,
+                AckPolicy = ConsumerConfigAckPolicy.Explicit,
+            },
+            AbortToken
+        );
+        var legacyDelivery = await legacyConsumer.NextAsync(
+            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+            opts: new NatsJSNextOpts { Expires = TimeSpan.FromSeconds(5) },
+            cancellationToken: AbortToken
+        );
+        legacyDelivery.Should().NotBeNull("the deployment fence must observe and drain legacy backlog");
+        await legacyDelivery!.AckAsync(new AckOpts { DoubleAck = true }, AbortToken);
+
+        await using var bus = await fixture.CreateLaneSessionAsync(
+            MessageLane.Bus,
+            $"cutover-{Guid.NewGuid():N}"[..29],
+            logicalName,
+            "orders-subscribers",
+            AbortToken
+        );
+        await using var queue = await fixture.CreateLaneSessionAsync(
+            MessageLane.Queue,
+            $"cutover-{Guid.NewGuid():N}"[..29],
+            logicalName,
+            logicalName,
+            AbortToken
+        );
+        await bus.StartAsync(cancellationToken: AbortToken);
+        await queue.StartAsync(cancellationToken: AbortToken);
+
+        (await bus.PublishAsync(_Message(logicalName, MessageLane.Bus), AbortToken)).Succeeded.Should().BeTrue();
+        var busDelivery = await bus.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await bus.Consumer.CommitAsync(busDelivery.SettlementValue, AbortToken);
+        (await queue.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+
+        (await queue.PublishAsync(_Message(logicalName, MessageLane.Queue), AbortToken)).Succeeded.Should().BeTrue();
+        var queueDelivery = await queue.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await queue.Consumer.CommitAsync(queueDelivery.SettlementValue, AbortToken);
+        (await bus.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+
+        var postCutoverLegacyDelivery = await legacyConsumer.NextAsync(
+            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+            opts: new NatsJSNextOpts { Expires = TimeSpan.FromSeconds(1) },
+            cancellationToken: AbortToken
+        );
+        postCutoverLegacyDelivery
+            .Should()
+            .BeNull("lane-qualified publication is roll-forward-only and must not return to the legacy subject");
+    }
+
+    private static TransportMessage _Message(string logicalName, MessageLane lane) =>
+        new(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = Guid.NewGuid().ToString("N"),
+                [MessagingHeaders.MessageName] = logicalName,
+                [MessagingHeaders.Intent] = lane.ToString(),
+            },
+            "cutover"u8.ToArray()
+        );
+
+    [Fact]
     public override Task should_dispatch_empty_message_body()
     {
         return base.should_dispatch_empty_message_body();
@@ -217,7 +363,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
 
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        var stream = await js.GetStreamAsync(
+            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+            cancellationToken: AbortToken
+        );
         stream.Should().NotBeNull();
     }
 
@@ -246,7 +395,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         // then — stream should use Memory storage (from callback)
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
-        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        var stream = await js.GetStreamAsync(
+            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+            cancellationToken: AbortToken
+        );
         var info = stream.Info;
         info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
     }
@@ -285,7 +437,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             var js = new NatsJSContext(conn);
             var headers = new NatsHeaders { { "X-Custom", "custom-value" } };
             await js.PublishAsync(
-                subject,
+                NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
                 "body"u8.ToArray(),
                 serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
                 headers: headers,
@@ -390,7 +542,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
 
     private async Task _EnsureStreamAsync(string streamName, string subjectPattern)
     {
-        await fixture.EnsureStreamAsync(streamName, subjectPattern);
+        await fixture.EnsureStreamAsync(
+            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+            NatsPhysicalAddress.Subject(MessageLane.Bus, subjectPattern),
+            StreamConfigRetention.Interest
+        );
     }
 
     private async Task _PublishAsync(string subject, byte[] body)
@@ -398,7 +554,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
         await js.PublishAsync(
-            subject,
+            NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
             new ReadOnlyMemory<byte>(body),
             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
             cancellationToken: AbortToken

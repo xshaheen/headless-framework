@@ -46,25 +46,40 @@ public sealed class NatsFixture : HeadlessNatsFixture
     /// <summary>
     /// Ensures a JetStream stream exists with a wildcard subject so publish tests succeed.
     /// </summary>
-    public async Task EnsureStreamAsync(string streamName, string subjectWildcard)
+    public async Task EnsureStreamAsync(
+        string streamName,
+        string subjectWildcard,
+        StreamConfigRetention retention = StreamConfigRetention.Limits
+    )
     {
         var conn = await GetConnectionAsync();
         var js = new NatsJSContext(conn);
 
         try
         {
-            await js.CreateOrUpdateStreamAsync(
+            _ = await js.GetStreamAsync(streamName);
+            return;
+        }
+        catch (NatsJSApiException e) when (e.Error.Code == 404 || e.Error.ErrCode == 10059)
+        {
+            // Create below.
+        }
+
+        try
+        {
+            await js.CreateStreamAsync(
                 new StreamConfig
                 {
                     Name = streamName,
                     Subjects = [subjectWildcard],
                     Storage = StreamConfigStorage.Memory,
+                    Retention = retention,
                 }
             );
         }
-        catch (NatsJSApiException e) when (e.Error.Code == 409)
+        catch (NatsJSApiException e) when (e.Error.Code is 400 or 409)
         {
-            // Already exists
+            _ = await js.GetStreamAsync(streamName);
         }
     }
 
@@ -117,6 +132,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
             destination,
             group,
             createReplacement,
+            failEnvelopeBuild: false,
             cancellationToken
         );
     }
@@ -134,6 +150,44 @@ public sealed class NatsFixture : HeadlessNatsFixture
             destination,
             group,
             createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateLaneSessionAsync(
+        MessageLane lane,
+        string streamName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            lane,
+            streamName,
+            destination,
+            group,
+            createReplacement: true,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
+        string streamName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Queue,
+            streamName,
+            destination,
+            group,
+            createReplacement: true,
+            failEnvelopeBuild: true,
             cancellationToken
         );
     }
@@ -144,20 +198,22 @@ public sealed class NatsFixture : HeadlessNatsFixture
         string? destination,
         string? group,
         bool createReplacement,
+        bool failEnvelopeBuild,
         CancellationToken cancellationToken
     )
     {
         streamName ??= $"conf-{Guid.NewGuid():N}"[..29];
         destination ??= $"{streamName}.probe";
         group ??= $"group-{Guid.NewGuid():N}"[..30];
-        await EnsureStreamAsync(streamName, $"{streamName}.>");
 
         var services = new ServiceCollection().BuildServiceProvider();
         var options = Options.Create(
             new NatsMessagingOptions
             {
                 Servers = ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = false,
+                EnableSubscriberClientStreamAndSubjectCreation = true,
+                NormalizeStreamName = _ => streamName,
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
                 ConsumerOptions = config =>
                 {
                     config.AckWait = TimeSpan.FromSeconds(1);
@@ -165,12 +221,17 @@ public sealed class NatsFixture : HeadlessNatsFixture
                 },
             }
         );
+        if (failEnvelopeBuild)
+        {
+            options.Value.CustomHeadersBuilder = static (_, _, _) =>
+                throw new InvalidOperationException("Injected malformed transport envelope.");
+        }
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new Headless.Messaging.Nats.NatsConnectionPool(
             NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
             options
         );
-        var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool);
+        var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool, lane);
         var consumer = new NatsConsumerClient(group, 1, options, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
 
@@ -198,6 +259,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
                             destination,
                             group,
                             createReplacement: false,
+                            failEnvelopeBuild,
                             replacementToken
                         )
                     : null

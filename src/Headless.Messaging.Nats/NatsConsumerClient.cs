@@ -105,8 +105,10 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
+            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
             var subjects = new HashSet<string>(
-                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup)),
+                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))
+                    .Select(subject => NatsPhysicalAddress.Subject(lane, subject)),
                 StringComparer.Ordinal
             );
 
@@ -118,7 +120,7 @@ internal sealed class NatsConsumerClient(
             try
             {
                 var existing = await _jsContext!
-                    .GetStreamAsync(streamGroup.Key, cancellationToken: cts.Token)
+                    .GetStreamAsync(streamName, cancellationToken: cts.Token)
                     .ConfigureAwait(false);
 
                 if (existing.Info.Config.Subjects is { } existingSubjects)
@@ -126,25 +128,40 @@ internal sealed class NatsConsumerClient(
                     subjects.UnionWith(existingSubjects);
                 }
             }
-            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404 || ex.Error.ErrCode == 10059)
             {
                 // Stream does not exist yet; it will be created below.
             }
 
+            var expectedSubjects = _PruneOverlappingSubjects(subjects);
+
             var config = new StreamConfig
             {
-                Name = streamGroup.Key,
+                Name = streamName,
                 // JetStream rejects a stream whose subject list contains overlapping entries, so drop any
                 // exact subject already covered by a '.>' wildcard in the union (e.g. a pre-provisioned
                 // 'prefix.>' catch-all subsumes the exact 'prefix.foo' subjects).
-                Subjects = [.. _PruneOverlappingSubjects(subjects)],
+                Subjects = [.. expectedSubjects],
                 NoAck = false,
                 // File storage is the production default. Override via StreamOptions
                 // for dev/testing: config.Storage = StreamConfigStorage.Memory;
                 Storage = StreamConfigStorage.File,
+                Retention = NatsPhysicalAddress.Retention(lane),
             };
 
             _natsOptions.StreamOptions?.Invoke(config);
+
+            if (
+                !string.Equals(config.Name, streamName, StringComparison.Ordinal)
+                || config.Retention != NatsPhysicalAddress.Retention(lane)
+                || config.Subjects?.ToHashSet(StringComparer.Ordinal).SetEquals(expectedSubjects) != true
+            )
+            {
+                throw new InvalidOperationException(
+                    $"NATS {lane} stream identity, subjects, and retention are provider-owned. "
+                        + "StreamOptions may configure storage, replicas, and limits but cannot override lane topology."
+                );
+            }
 
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
@@ -162,9 +179,7 @@ internal sealed class NatsConsumerClient(
 
     internal static string BuildDurableName(string groupName, string subject, MessageLane lane)
     {
-        return lane == MessageLane.Queue
-            ? TransportNaming.Normalize("queue-" + subject)
-            : TransportNaming.Normalize(groupName + "-" + subject);
+        return NatsPhysicalAddress.Durable(lane, groupName, subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -257,17 +272,20 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
+            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
             var groupName = TransportNaming.Normalize(name);
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
-            foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
+            foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
-                var durableName = BuildDurableName(groupName, subject, lane);
+                var durableName = BuildDurableName(groupName, logicalSubject, lane);
+                var subject = NatsPhysicalAddress.Subject(lane, logicalSubject);
 
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
                     FilterSubject = subject,
-                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                    DeliverPolicy =
+                        lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New,
                     AckWait = TimeSpan.FromSeconds(30),
                 };
 
@@ -276,9 +294,7 @@ internal sealed class NatsConsumerClient(
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
 #pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
-                tasks.Add(
-                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
-                );
+                tasks.Add(_ConsumeSubjectAsync(streamName, consumerConfig, timeout, startupReady, listeningCts.Token));
 #pragma warning restore AsyncFixer04
             }
         }
@@ -697,11 +713,11 @@ internal sealed class NatsConsumerClient(
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, nacking: {ex}",
+                    Reason = $"Malformed NATS transport envelope terminally acknowledged: {ex.GetType().Name}",
                 }
             );
 
-            await RejectAsync(msg).ConfigureAwait(false);
+            await msg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
             return;
         }
 

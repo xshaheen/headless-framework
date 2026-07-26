@@ -68,7 +68,7 @@ Provider leaves create an isolated `TransportConsumerConformanceSession` with a 
 - bounds startup, receive, shutdown, and negative-observation windows;
 - includes consumer diagnostics when a delivery times out.
 
-NATS is the reference implementation. Its test leaf uses queue intent, a unique memory-backed JetStream stream and durable, and a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
+NATS is a reference implementation. Its test leaf uses lane-qualified memory-backed JetStream streams and durables with a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Its provider leaf proves group fan-out, replica competition, queue ownership, same-name lane isolation, terminal malformed-envelope acknowledgement across restart, and a drained legacy stream followed by roll-forward-only publication. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
 
 RabbitMQ uses lane-qualified exchanges, routing keys, and owned queues; ACK absence is observed beyond the provider window, ordinary reject proves broker requeue, and malformed-envelope construction is terminally rejected without requeue. Its real-broker leaf also proves subscriber-group fan-out, replica competition, Queue ownership, same-name lane isolation, and a drained legacy exchange followed by roll-forward-only publication. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery and broker-restart behavior remain explicit linked gaps rather than inferred coverage.
 
@@ -91,13 +91,13 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar prov
 | `StaleSettlement` | U | U | U | U | U | U | U | U |
 | `HandlerFailureRedelivery` | U | U | U | U | U | U | U | U |
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S |
-| `BusSubscriberGroupFanOut` | U | S | S | N/A | U | S† | S | S |
-| `BusReplicaCompetition` | U | S | S | N/A | U | S† | S | S |
-| `QueueOwnership` | U | S | S | S | U | S† | S | S |
-| `SameNameLaneIsolation` | U | S | S | N/A | U | S† | S | S |
+| `BusSubscriberGroupFanOut` | S | S | S | N/A | U | S† | S | S |
+| `BusReplicaCompetition` | S | S | S | N/A | U | S† | S | S |
+| `QueueOwnership` | S | S | S | S | U | S† | S | S |
+| `SameNameLaneIsolation` | S | S | S | N/A | U | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
-| `MalformedEnvelopeTerminalSettlement` | U | S | S | S | U | U | N/A | S |
-| `LegacyCutoverRecovery` | U | S | U | N/A | U | N/A | N/A | S |
+| `MalformedEnvelopeTerminalSettlement` | S | S | S | S | U | U | N/A | S |
+| `LegacyCutoverRecovery` | S | S | U | N/A | U | N/A | N/A | S |
 
 Evidence anchors:
 
@@ -110,6 +110,7 @@ Evidence anchors:
 - InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver.
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
 - Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `SetupTests`.
+- NATS lane isolation, subscriber-group/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `NatsConsumerClientTests` against Testcontainers NATS JetStream.
 - RabbitMQ lane isolation, subscriber-group/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
