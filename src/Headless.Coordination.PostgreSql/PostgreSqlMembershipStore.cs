@@ -27,14 +27,14 @@ internal sealed class PostgreSqlMembershipStore(
                 {PostgreSqlMembershipSchema.ClusterName},
                 {PostgreSqlMembershipSchema.NodeId},
                 {PostgreSqlMembershipSchema.Generation.CurrentIncarnation},
-                {PostgreSqlMembershipSchema.DateUpdated}
+                {PostgreSqlMembershipSchema.UpdatedAt}
             )
             VALUES (@ClusterName, @NodeId, 1, clock_timestamp())
             ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId})
             DO UPDATE SET
                 {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} =
                     {PostgreSqlMembershipSchema.Generation.Table}.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} + 1,
-                {PostgreSqlMembershipSchema.DateUpdated} = clock_timestamp()
+                {PostgreSqlMembershipSchema.UpdatedAt} = clock_timestamp()
             RETURNING {PostgreSqlMembershipSchema.Generation.CurrentIncarnation};
             """;
 
@@ -75,7 +75,7 @@ internal sealed class PostgreSqlMembershipStore(
                     {PostgreSqlMembershipSchema.Descriptor.Endpoints},
                     {PostgreSqlMembershipSchema.Descriptor.Role},
                     {PostgreSqlMembershipSchema.Descriptor.Metadata},
-                    {PostgreSqlMembershipSchema.DateCreated}
+                    {PostgreSqlMembershipSchema.CreatedAt}
                 )
                 SELECT
                     @ClusterName,
@@ -353,7 +353,7 @@ internal sealed class PostgreSqlMembershipStore(
 
             DELETE FROM {PostgreSqlMembershipSchema.Descriptor.Table} d
             WHERE d.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
-              AND d.{PostgreSqlMembershipSchema.DateCreated} <= clock_timestamp() - @RetentionThreshold
+              AND d.{PostgreSqlMembershipSchema.CreatedAt} <= clock_timestamp() - @RetentionThreshold
               AND NOT EXISTS (
                   SELECT 1
                   FROM {PostgreSqlMembershipSchema.Liveness.Table} l

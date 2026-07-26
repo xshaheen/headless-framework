@@ -90,7 +90,7 @@ public sealed class HttpRequestContextTests : TestBase
         var sut = _CreateSut(timeProvider: timeProvider);
 
         // when
-        var result = sut.DateStarted;
+        var result = sut.StartedAt;
 
         // then
         result.Should().Be(fixedTime);

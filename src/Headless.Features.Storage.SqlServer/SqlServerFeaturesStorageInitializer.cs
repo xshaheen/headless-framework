@@ -122,8 +122,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [Value] nvarchar({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
                         [ProviderName] nvarchar({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
                         [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
-                        [DateCreated] datetimeoffset NOT NULL,
-                        [DateUpdated] datetimeoffset NULL,
+                        [CreatedAt] datetimeoffset NOT NULL,
+                        [UpdatedAt] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
@@ -131,6 +131,14 @@ internal sealed class SqlServerFeaturesStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
+
+            IF COL_LENGTH(N'{valuesObject}', N'DateCreated') IS NOT NULL
+               AND COL_LENGTH(N'{valuesObject}', N'CreatedAt') IS NULL
+                EXEC sys.sp_rename N'{valuesObject}.DateCreated', N'CreatedAt', N'COLUMN';
+
+            IF COL_LENGTH(N'{valuesObject}', N'DateUpdated') IS NOT NULL
+               AND COL_LENGTH(N'{valuesObject}', N'UpdatedAt') IS NULL
+                EXEC sys.sp_rename N'{valuesObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
 
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureGroupDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))

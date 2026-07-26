@@ -17,9 +17,9 @@ namespace Headless.EntityFramework.Contexts.Processors;
 /// the Headless audit interfaces.
 /// </summary>
 /// <remarks>
-/// On <c>Added</c> entries it sets <c>ICreateAudit.DateCreated</c> (if not already set) and
+/// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
-/// anonymous). On <c>Modified</c> entries it updates <c>IUpdateAudit.DateUpdated</c> and
+/// anonymous). On <c>Modified</c> entries it updates <c>IUpdateAudit.UpdatedAt</c> and
 /// <c>UpdatedById</c>, and reconciles delete/suspend audit fields when <c>IsDeleted</c> or
 /// <c>IsSuspended</c> transitions are detected.
 /// </remarks>
@@ -62,11 +62,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        if (entity.DateCreated == default)
+        if (entity.CreatedAt == default)
         {
             ObjectPropertiesHelper.TrySetProperty(
                 entity,
-                nameof(ICreateAudit.DateCreated),
+                nameof(ICreateAudit.CreatedAt),
                 () => timeProvider.GetUtcNow()
             );
         }
@@ -132,10 +132,10 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
     {
-        var propertyEntry = entry.Property(nameof(IUpdateAudit.DateUpdated));
+        var propertyEntry = entry.Property(nameof(IUpdateAudit.UpdatedAt));
 
         if (
-            entity.DateUpdated != null
+            entity.UpdatedAt != null
             && propertyEntry.IsModified
             && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue)
         )
@@ -146,7 +146,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         if (
             ObjectPropertiesHelper.TrySetProperty(
                 entity,
-                nameof(IUpdateAudit.DateUpdated),
+                nameof(IUpdateAudit.UpdatedAt),
                 () => timeProvider.GetUtcNow()
             )
         )
@@ -217,7 +217,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit.DateDeleted));
+        ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit.DeletedAt));
 
         if (_ImplementsGenericInterface(entry.Entity.GetType(), typeof(IDeleteAudit<>)))
         {
@@ -227,11 +227,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private void _TrySetDeleteAuditDate(EntityEntry entry, IDeleteAudit entity)
     {
-        if (entity.DateDeleted == null || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
+        if (entity.DeletedAt == null || !entry.Property(nameof(IDeleteAudit.DeletedAt)).IsModified)
         {
             ObjectPropertiesHelper.TrySetProperty(
                 entity,
-                nameof(IDeleteAudit.DateDeleted),
+                nameof(IDeleteAudit.DeletedAt),
                 () => timeProvider.GetUtcNow()
             );
         }
@@ -292,7 +292,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit.DateSuspended));
+        ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit.SuspendedAt));
 
         if (_ImplementsGenericInterface(entry.Entity.GetType(), typeof(ISuspendAudit<>)))
         {
@@ -302,11 +302,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private void _TrySetSuspendAuditDate(EntityEntry entry, ISuspendAudit entity)
     {
-        if (entity.DateSuspended == null || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
+        if (entity.SuspendedAt == null || !entry.Property(nameof(ISuspendAudit.SuspendedAt)).IsModified)
         {
             ObjectPropertiesHelper.TrySetProperty(
                 entity,
-                nameof(ISuspendAudit.DateSuspended),
+                nameof(ISuspendAudit.SuspendedAt),
                 () => timeProvider.GetUtcNow()
             );
         }

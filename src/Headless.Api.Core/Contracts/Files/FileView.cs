@@ -27,7 +27,7 @@ public class FileView
     public required string ContentType { get; init; }
 
     /// <summary>The UTC timestamp at which the file was uploaded.</summary>
-    public required DateTimeOffset DateUploaded { get; init; }
+    public required DateTimeOffset UploadedAt { get; init; }
 
     /// <summary>
     /// Maps a domain <see cref="File"/> to a <see cref="FileView"/>.
@@ -58,7 +58,7 @@ public class FileView
             Url = operand.Url,
             Length = operand.Length,
             ContentType = operand.ContentType,
-            DateUploaded = operand.DateUploaded,
+            UploadedAt = operand.UploadedAt,
         };
     }
 }

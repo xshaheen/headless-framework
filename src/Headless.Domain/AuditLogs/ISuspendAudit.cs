@@ -12,11 +12,11 @@ public interface ISuspendAudit
 
     /// <summary>Date and time the entity was suspended. when it has a value it means that this entity is suspended.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateSuspended { get; }
+    DateTimeOffset? SuspendedAt { get; }
 
     /// <summary>Date and time the entity was unsuspended.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateUnsuspended { get; }
+    DateTimeOffset? UnsuspendedAt { get; }
 }
 
 /// <summary>Extends <c>ISuspendAudit</c> with the identifiers of the accounts that suspended and unsuspended the entity.</summary>

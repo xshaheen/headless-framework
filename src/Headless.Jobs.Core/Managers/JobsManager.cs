@@ -144,7 +144,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
 
         // Mirror the batch path: on any pre-persistence failure, restore captured tenant mutations so a retried
@@ -194,7 +194,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 _DeferSideEffects(
                     context.Coordinator,
                     entity.Id.ToString(),
-                    ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow().UtcDateTime, executionTime, ct)
+                    ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow(), executionTime, ct)
                 );
 
                 return entity;
@@ -225,13 +225,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // row is already committed when this runs, so AcquireImmediateTimeJobsAsync (its own connection) observes it.
     private async Task _RunTimeJobSideEffectsAsync(
         TTimeJob entity,
-        DateTime now,
+        DateTimeOffset now,
         DateTime executionTime,
         CancellationToken cancellationToken
     )
     {
         // Only try to dispatch immediately if dispatcher is enabled (background services running)
-        if (_dispatcher.IsEnabled && executionTime <= now.AddSeconds(1))
+        if (_dispatcher.IsEnabled && executionTime <= now.UtcDateTime.AddSeconds(1))
         {
             // Acquire and mark InProgress in one provider call
             var acquired = await persistenceProvider
@@ -255,7 +255,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         _StampJob(entity, now, assignId: true);
 
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -269,7 +269,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         DateTime? nextOccurrence;
         try
         {
-            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, now, entity.TimeZoneId);
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                entity.Expression,
+                now.UtcDateTime,
+                entity.TimeZoneId
+            );
         }
         catch (ArgumentException exception)
         {
@@ -323,7 +327,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        timeJob.UpdatedAt = timeProvider.GetUtcNow();
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -380,11 +384,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
         DateTime? nextOccurrence;
         try
         {
-            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now, cronJob.TimeZoneId);
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                cronJob.Expression,
+                nowUtc,
+                cronJob.TimeZoneId
+            );
         }
         catch (ArgumentException exception)
         {
@@ -588,7 +597,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
         DateTime earliestForNonImmediate = default;
         List<string>? errors = null;
 
@@ -635,10 +645,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     continue;
                 }
 
-                entity.ExecutionTime ??= now;
+                entity.ExecutionTime ??= nowUtc;
                 entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-                if (entity.ExecutionTime.Value <= now.AddSeconds(1))
+                if (entity.ExecutionTime.Value <= nowUtc.AddSeconds(1))
                 {
                     immediateTickers.Add(entity.Id);
                 }
@@ -734,7 +744,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
         var nextOccurrences = new List<DateTime>();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
 
         foreach (var entity in entities)
         {
@@ -754,7 +764,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             {
                 nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
                     entity.Expression,
-                    now,
+                    now.UtcDateTime,
                     entity.TimeZoneId
                 );
             }
@@ -818,7 +828,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return validEntities;
     }
 
-    private void _StampTimeJobTree(TTimeJob root, DateTime now, bool assignIds)
+    private void _StampTimeJobTree(TTimeJob root, DateTimeOffset now, bool assignIds)
     {
         var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
         var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
@@ -841,7 +851,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private void _StampJob(BaseJobEntity entity, DateTime now, bool assignId)
+    private void _StampJob(BaseJobEntity entity, DateTimeOffset now, bool assignId)
     {
         if (assignId)
         {
@@ -997,7 +1007,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            timeJob.UpdatedAt = timeProvider.GetUtcNow();
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so
@@ -1061,7 +1071,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var candidates = new List<(TCronJob Definition, DateTime NextOccurrence)>();
         var updates = new List<CronJobAtomicUpdate<TCronJob>>();
         var needsRestart = false;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
 
         foreach (var cronJob in cronJobs)
         {
@@ -1089,7 +1100,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             {
                 nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
                     cronJob.Expression,
-                    now,
+                    nowUtc,
                     cronJob.TimeZoneId
                 );
             }

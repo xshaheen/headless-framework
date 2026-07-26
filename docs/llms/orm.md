@@ -211,14 +211,14 @@ using Microsoft.EntityFrameworkCore;
 
 public sealed class ScheduledWork
 {
-    public DateTime DateCreated { get; set; }
-    public DateTime? DateCompleted { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 }
 
 modelBuilder.Entity<ScheduledWork>(entity =>
 {
-    entity.Property(x => x.DateCreated).HasConversion(new NormalizeDateTimeValueConverter());
-    entity.Property(x => x.DateCompleted).HasConversion(new NullableNormalizeDateTimeValueConverter());
+    entity.Property(x => x.CreatedAt).HasConversion(new NormalizeDateTimeValueConverter());
+    entity.Property(x => x.CompletedAt).HasConversion(new NullableNormalizeDateTimeValueConverter());
 });
 
 var page = await dbContext.Set<ScheduledWork>().ToIndexPageAsync(0, 25, cancellationToken);

@@ -76,7 +76,7 @@ internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCo
                             [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
                             [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
                             [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] bigint NOT NULL,
-                            [{{SqlServerMembershipSchema.DateUpdated}}] datetime2(7) NOT NULL,
+                            [{{SqlServerMembershipSchema.UpdatedAt}}] datetime2(7) NOT NULL,
                             CONSTRAINT [PK_{{SqlServerMembershipSchema.Generation.Table}}] PRIMARY KEY CLUSTERED (
                                 [{{SqlServerMembershipSchema.ClusterName}}] ASC,
                                 [{{SqlServerMembershipSchema.NodeId}}] ASC
@@ -99,7 +99,7 @@ internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCo
                             [{{SqlServerMembershipSchema.Descriptor.Endpoints}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Endpoints] DEFAULT N'{}',
                             [{{SqlServerMembershipSchema.Descriptor.Role}}] nvarchar(200) NULL,
                             [{{SqlServerMembershipSchema.Descriptor.Metadata}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Metadata] DEFAULT N'{}',
-                            [{{SqlServerMembershipSchema.DateCreated}}] datetime2(7) NOT NULL,
+                            [{{SqlServerMembershipSchema.CreatedAt}}] datetime2(7) NOT NULL,
                             CONSTRAINT [PK_{{SqlServerMembershipSchema.Descriptor.Table}}] PRIMARY KEY CLUSTERED (
                                 [{{SqlServerMembershipSchema.ClusterName}}] ASC,
                                 [{{SqlServerMembershipSchema.NodeId}}] ASC,
@@ -111,6 +111,14 @@ internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCo
                 BEGIN CATCH
                     IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
                 END CATCH;
+
+                IF COL_LENGTH(N'{{generationObject}}', N'DateUpdated') IS NOT NULL
+                   AND COL_LENGTH(N'{{generationObject}}', N'{{SqlServerMembershipSchema.UpdatedAt}}') IS NULL
+                    EXEC sys.sp_rename N'{{generationObject}}.DateUpdated', N'{{SqlServerMembershipSchema.UpdatedAt}}', N'COLUMN';
+
+                IF COL_LENGTH(N'{{descriptorObject}}', N'DateCreated') IS NOT NULL
+                   AND COL_LENGTH(N'{{descriptorObject}}', N'{{SqlServerMembershipSchema.CreatedAt}}') IS NULL
+                    EXEC sys.sp_rename N'{{descriptorObject}}.DateCreated', N'{{SqlServerMembershipSchema.CreatedAt}}', N'COLUMN';
 
                 BEGIN TRY
                     IF OBJECT_ID(N'{{livenessObject}}', N'U') IS NULL

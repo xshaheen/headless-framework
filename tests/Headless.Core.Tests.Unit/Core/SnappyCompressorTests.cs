@@ -6,7 +6,7 @@ namespace Tests.Core;
 
 public sealed partial class SnappyCompressorTests
 {
-    private sealed record SnappyCompressorEntityTest(int Id, string Name, DateTimeOffset DateCreated);
+    private sealed record SnappyCompressorEntityTest(int Id, string Name, DateTimeOffset CreatedAt);
 
     private sealed record NestedObject(int Id, string Name, AddressInfo Address, List<OrderItem> Orders);
 
@@ -58,7 +58,7 @@ public sealed partial class SnappyCompressorTests
         decompressedObject.Should().NotBeNull();
         decompressedObject.Id.Should().Be(1);
         decompressedObject.Name.Should().Be("Headless");
-        decompressedObject.DateCreated.Should().Be(_timeProvider.GetUtcNow());
+        decompressedObject.CreatedAt.Should().Be(_timeProvider.GetUtcNow());
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public sealed partial class SnappyCompressorTests
         decompressed.Should().NotBeNull();
         decompressed!.Id.Should().Be(1);
         decompressed.Name.Should().Be("Headless");
-        decompressed.DateCreated.Should().Be(_timeProvider.GetUtcNow());
+        decompressed.CreatedAt.Should().Be(_timeProvider.GetUtcNow());
     }
 
     // Source generator context for AOT-compatible JSON serialization

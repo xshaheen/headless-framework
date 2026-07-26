@@ -48,7 +48,7 @@ public sealed class NullDistributedReadWriteLockTests : TestBase
         lease.LeaseId.Should().NotBeNullOrEmpty();
         lease.FencingToken.Should().BeNull();
         lease.CanObserveLoss.Should().BeFalse();
-        lease.DateAcquired.Should().Be(_timeProvider.GetUtcNow());
+        lease.AcquiredAt.Should().Be(_timeProvider.GetUtcNow());
     }
 
     [Fact]

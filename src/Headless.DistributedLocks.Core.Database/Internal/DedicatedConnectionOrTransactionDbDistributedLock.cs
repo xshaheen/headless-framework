@@ -178,7 +178,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; } = connection.TimeProvider.GetUtcNow();
+        public DateTimeOffset AcquiredAt { get; } = connection.TimeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

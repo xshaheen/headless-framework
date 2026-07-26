@@ -332,12 +332,6 @@
           "Headless.Core": "[1.0.0, )"
         }
       },
-      "headless.caching.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Extensions": "[1.0.0, )"
-        }
-      },
       "headless.checks": {
         "type": "Project"
       },

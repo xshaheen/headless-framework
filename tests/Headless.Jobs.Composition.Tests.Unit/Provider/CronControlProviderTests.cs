@@ -22,14 +22,14 @@ public sealed class CronControlProviderTests : TestBase
     }
 
     private const string _Owner = "node-a@incarnation";
-    private static readonly DateTime _Now = new(2026, 7, 17, 10, 30, 0, DateTimeKind.Utc);
+    private static readonly DateTimeOffset _Now = new(2026, 7, 17, 10, 30, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task should_skip_pending_and_preserve_in_progress_work_when_pause_wins()
     {
         var provider = _Create();
         var definition = _Definition(isPaused: false, revision: 4);
-        var lockedUntil = _Now.AddMinutes(5);
+        var lockedUntil = _Now.UtcDateTime.AddMinutes(5);
         var idle = _Occurrence(definition.Id, JobStatus.Idle, _Owner, lockedUntil);
         var queued = _Occurrence(definition.Id, JobStatus.Queued, _Owner, lockedUntil);
         var inProgress = _Occurrence(definition.Id, JobStatus.InProgress, _Owner, lockedUntil);
@@ -69,7 +69,7 @@ public sealed class CronControlProviderTests : TestBase
         var provider = _Create();
         var definition = _Definition(isPaused: true, revision: 7);
         await provider.InsertCronJobsAsync([definition], AbortToken);
-        var executionTime = _Now.AddMinutes(15);
+        var executionTime = _Now.UtcDateTime.AddMinutes(15);
 
         var attempts = await Task.WhenAll(
             Enumerable
@@ -101,11 +101,14 @@ public sealed class CronControlProviderTests : TestBase
         var stale = _Dispatch(definition, revision: 2);
 
         var staleResult = await provider
-            .QueueCronJobOccurrencesAsync((_Now.AddMinutes(1), [stale]), AbortToken)
+            .QueueCronJobOccurrencesAsync((_Now.UtcDateTime.AddMinutes(1), [stale]), AbortToken)
             .ToArrayAsync(AbortToken);
         await provider.PauseCronJobAsync(definition.Id, _Now, AbortToken);
         var pausedResult = await provider
-            .QueueCronJobOccurrencesAsync((_Now.AddMinutes(2), [_Dispatch(definition, revision: 4)]), AbortToken)
+            .QueueCronJobOccurrencesAsync(
+                (_Now.UtcDateTime.AddMinutes(2), [_Dispatch(definition, revision: 4)]),
+                AbortToken
+            )
             .ToArrayAsync(AbortToken);
 
         staleResult.Should().BeEmpty();
@@ -120,7 +123,7 @@ public sealed class CronControlProviderTests : TestBase
         var definition = _Definition(isPaused: false, revision: 3);
         await provider.InsertCronJobsAsync([definition], AbortToken);
         var dispatch = _Dispatch(definition, revision: 3);
-        var executionTime = _Now.AddMinutes(1);
+        var executionTime = _Now.UtcDateTime.AddMinutes(1);
 
         var attempts = await Task.WhenAll(
             Enumerable
@@ -145,7 +148,7 @@ public sealed class CronControlProviderTests : TestBase
         var provider = _Create();
         await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], AbortToken);
         var definition = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single();
-        var pending = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.AddMinutes(5));
+        var pending = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.UtcDateTime.AddMinutes(5));
         await provider.InsertCronJobOccurrencesAsync([pending], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], AbortToken);
@@ -165,7 +168,7 @@ public sealed class CronControlProviderTests : TestBase
     {
         var provider = _Create();
         var definition = _Definition(isPaused: false, revision: 2);
-        var existing = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.AddMinutes(5));
+        var existing = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.UtcDateTime.AddMinutes(5));
         await provider.InsertCronJobsAsync([definition], AbortToken);
         await provider.InsertCronJobOccurrencesAsync([existing], AbortToken);
 
@@ -191,7 +194,7 @@ public sealed class CronControlProviderTests : TestBase
             JobStatus.Idle,
             owner: null,
             lockedUntil: null,
-            _Now.AddMinutes(10)
+            _Now.UtcDateTime.AddMinutes(10)
         );
         var scheduleResult = await provider.UpdateCronJobsAtomicallyAsync(
             [new CronJobAtomicUpdate<FakeCronJob>(scheduleEdit, ExpectedScheduleRevision: 2, replacement)],
@@ -211,7 +214,7 @@ public sealed class CronControlProviderTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddHeadlessGuidGenerator();
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero)));
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider(_Now));
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _Owner });
         return new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(services.BuildServiceProvider());
     }
@@ -243,7 +246,7 @@ public sealed class CronControlProviderTests : TestBase
             Status = status,
             OwnerId = owner,
             LockedUntil = lockedUntil,
-            ExecutionTime = executionTime ?? _Now.AddMinutes(1),
+            ExecutionTime = executionTime ?? _Now.UtcDateTime.AddMinutes(1),
             CreatedAt = _Now.AddMinutes(-5),
             UpdatedAt = _Now.AddMinutes(-2),
         };

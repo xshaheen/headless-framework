@@ -123,7 +123,7 @@ WITH generation AS (
     FOR UPDATE
 ),
 descriptor AS (
-    INSERT INTO coordination.descriptor (..., date_created)
+    INSERT INTO coordination.descriptor (..., created_at)
     SELECT ..., clock_timestamp() FROM generation
     WHERE current_incarnation = @Incarnation
     ON CONFLICT DO NOTHING            -- write-once: re-register is idempotent

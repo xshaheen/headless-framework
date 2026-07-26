@@ -283,7 +283,7 @@ internal static class MappingExtensions
     internal static void UpdateTimeJob<TTimeJob>(
         this UpdateSettersBuilder<TTimeJob> setters,
         JobExecutionState functionContext,
-        DateTime updatedAt
+        DateTimeOffset updatedAt
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {

@@ -29,7 +29,7 @@ public interface IDistributedLease : IAsyncDisposable
     int RenewalCount { get; }
 
     /// <summary>The time the lease was acquired.</summary>
-    DateTimeOffset DateAcquired { get; }
+    DateTimeOffset AcquiredAt { get; }
 
     /// <summary>The amount of time waited to acquire the lease.</summary>
     TimeSpan TimeWaitedForLock { get; }

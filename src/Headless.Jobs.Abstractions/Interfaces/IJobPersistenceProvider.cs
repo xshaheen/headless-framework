@@ -710,7 +710,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     );
 
@@ -729,7 +729,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         Guid cronJobId,
         long expectedScheduleRevision,
         CronJobOccurrenceEntity<TCronJob> nextOccurrence,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     );
 
@@ -743,7 +743,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
         CronJobAtomicUpdate<TCronJob>[] updates,
-        DateTime operationTimeUtc,
+        DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     );
 

@@ -24,6 +24,8 @@ public interface IWebClientInfoProvider
     string? UserAgent { get; }
 
     /// <summary>Gets device-identifying information parsed or derived from the current request.</summary>
-    /// <remarks>Returns <see langword="null"/> outside an HTTP scope or when no device info is available.</remarks>
+    /// <remarks>
+    /// Returns <see langword="null"/> outside an HTTP scope or when no device info is available.
+    /// </remarks>
     string? DeviceInfo { get; }
 }

@@ -104,7 +104,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         // A pre-built root -> child -> grandchild tree with no ids or parent links, but every node carries distinct
         // stale (non-now) CreatedAt/UpdatedAt. The manager must OVERWRITE those with its injected clock — asserted
         // below — not merely fill defaults on unstamped nodes.
-        var stale = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var stale = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var job = new TimeJobEntity
         {
             Function = _FunctionName,
@@ -145,8 +145,8 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         grandChild.ParentId.Should().Be(childId);
         foreach (var item in new[] { result, child, grandChild })
         {
-            item.CreatedAt.Should().Be(now.UtcDateTime);
-            item.UpdatedAt.Should().Be(now.UtcDateTime);
+            item.CreatedAt.Should().Be(now);
+            item.UpdatedAt.Should().Be(now);
         }
     }
 
@@ -339,7 +339,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         sut.Persistence.GetCronJobByIdAsync(current.Id, AbortToken).Returns(current);
         sut.Persistence.UpdateCronJobsAtomicallyAsync(
                 Arg.Any<CronJobAtomicUpdate<CronJobEntity>[]>(),
-                Arg.Any<DateTime>(),
+                Arg.Any<DateTimeOffset>(),
                 AbortToken
             )
             .Returns([update]);

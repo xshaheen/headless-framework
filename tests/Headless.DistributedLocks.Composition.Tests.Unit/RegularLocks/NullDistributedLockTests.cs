@@ -39,7 +39,7 @@ public sealed class NullDistributedLockTests : TestBase
         lease.FencingToken.Should().BeNull();
         lease.CanObserveLoss.Should().BeFalse();
         lease.LostToken.Should().Be(CancellationToken.None);
-        lease.DateAcquired.Should().Be(_timeProvider.GetUtcNow());
+        lease.AcquiredAt.Should().Be(_timeProvider.GetUtcNow());
         lease.TimeWaitedForLock.Should().Be(TimeSpan.Zero);
     }
 

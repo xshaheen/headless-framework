@@ -8,8 +8,8 @@ internal static class SqlServerMembershipSchema
     public const string ClusterName = "ClusterName";
     public const string NodeId = "NodeId";
     public const string Incarnation = "Incarnation";
-    public const string DateCreated = "DateCreated";
-    public const string DateUpdated = "DateUpdated";
+    public const string CreatedAt = "CreatedAt";
+    public const string UpdatedAt = "UpdatedAt";
 
     public static class Descriptor
     {

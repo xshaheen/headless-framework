@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using k8s.Models;
-using Microsoft.Extensions.Caching.Memory;
 
 #pragma warning disable REFL009 // The referenced member is not known to exist
 namespace Tests;
@@ -14,7 +14,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
-    private readonly MemoryCache _cache = new(new MemoryCacheOptions());
+    private readonly MessagingDashboardCache _cache = new();
 
     public K8sNodeDiscoveryProviderTests()
     {

@@ -69,7 +69,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             // Metadata
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
-            blobMetadata.DateCreated = _timeProvider.GetUtcNow();
+            blobMetadata.CreatedAt = _timeProvider.GetUtcNow();
             // Same Creation-Defer-Length contract as CreateFileAsync: -1 means "length not yet known".
             blobMetadata.UploadLength = uploadLength >= 0 ? uploadLength : null;
             blobMetadata.ConcatType = "partial";
@@ -221,7 +221,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             // Create final file metadata
             blobMetadata.UploadLength = totalSize;
-            blobMetadata.DateCreated = _timeProvider.GetUtcNow();
+            blobMetadata.CreatedAt = _timeProvider.GetUtcNow();
             blobMetadata.ConcatType = "final";
             blobMetadata.PartialUploads = partialFiles;
 

@@ -71,20 +71,20 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         entity.Id.Should().NotBe(Guid.Empty);
 
         // then - create audit set
-        entity.DateCreated.Should().Be(Fixture.Now);
+        entity.CreatedAt.Should().Be(Fixture.Now);
         entity.CreatedById.Should().Be(Fixture.UserId);
 
         // then - concurrency stamp set
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
 
         // then - update/delete/suspend not set
-        entity.DateUpdated.Should().BeNull();
+        entity.UpdatedAt.Should().BeNull();
         entity.UpdatedById.Should().BeNull();
         entity.IsDeleted.Should().BeFalse();
-        entity.DateDeleted.Should().BeNull();
+        entity.DeletedAt.Should().BeNull();
         entity.DeletedById.Should().BeNull();
         entity.IsSuspended.Should().BeFalse();
-        entity.DateSuspended.Should().BeNull();
+        entity.SuspendedAt.Should().BeNull();
         entity.SuspendedById.Should().BeNull();
 
         // then - local domain events emitted (Created + Changed)
@@ -117,7 +117,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         await db.SaveChangesAsync(AbortToken);
 
         // then - update audit set
-        entity.DateUpdated.Should().Be(Fixture.Now);
+        entity.UpdatedAt.Should().Be(Fixture.Now);
         entity.UpdatedById.Should().Be(Fixture.UserId);
 
         // then - concurrency stamp updated
@@ -155,7 +155,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
 
         // then - delete audit set
         entity.IsDeleted.Should().BeTrue();
-        entity.DateDeleted.Should().Be(Fixture.Now);
+        entity.DeletedAt.Should().Be(Fixture.Now);
         entity.DeletedById.Should().Be(Fixture.UserId);
 
         // then - local domain events emitted (Updated + Changed)
@@ -188,7 +188,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
 
         // then - suspend audit set
         entity.IsSuspended.Should().BeTrue();
-        entity.DateSuspended.Should().Be(Fixture.Now);
+        entity.SuspendedAt.Should().Be(Fixture.Now);
         entity.SuspendedById.Should().Be(Fixture.UserId);
     }
 

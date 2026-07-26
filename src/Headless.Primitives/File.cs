@@ -30,7 +30,7 @@ public class File
     public required string ContentType { get; init; }
 
     /// <summary>Date the file was uploaded.</summary>
-    public required DateTimeOffset DateUploaded { get; init; }
+    public required DateTimeOffset UploadedAt { get; init; }
 
     /// <summary>Size of the file in bytes.</summary>
     public required long Length { get; init; }

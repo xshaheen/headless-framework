@@ -60,16 +60,16 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
-        entity.DateCreated.Should().Be(fixture.Now);
+        entity.CreatedAt.Should().Be(fixture.Now);
         entity.CreatedById.Should().Be(fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
-        entity.DateUpdated.Should().BeNull();
+        entity.UpdatedAt.Should().BeNull();
         entity.UpdatedById.Should().BeNull();
         entity.IsDeleted.Should().BeFalse();
-        entity.DateDeleted.Should().BeNull();
+        entity.DeletedAt.Should().BeNull();
         entity.DeletedById.Should().BeNull();
         entity.IsSuspended.Should().BeFalse();
-        entity.DateSuspended.Should().BeNull();
+        entity.SuspendedAt.Should().BeNull();
         entity.SuspendedById.Should().BeNull();
 
         // Local domain events: Created + Changed
@@ -157,7 +157,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        entity.DateUpdated.Should().Be(fixture.Now);
+        entity.UpdatedAt.Should().Be(fixture.Now);
         entity.UpdatedById.Should().Be(fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
@@ -191,7 +191,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
 
         // then
         entity.IsDeleted.Should().BeTrue();
-        entity.DateDeleted.Should().Be(fixture.Now);
+        entity.DeletedAt.Should().Be(fixture.Now);
         entity.DeletedById.Should().Be(fixture.UserId);
 
         db.EmittedLocalMessages.Should().HaveCount(2);
@@ -221,7 +221,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
 
         // then
         entity.IsSuspended.Should().BeTrue();
-        entity.DateSuspended.Should().Be(fixture.Now);
+        entity.SuspendedAt.Should().Be(fixture.Now);
         entity.SuspendedById.Should().Be(fixture.UserId);
     }
 

@@ -652,7 +652,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var updated = await persistenceProvider
             .PauseCronJobAsync(cronJobId, now, cancellationToken)
             .ConfigureAwait(false);
@@ -670,8 +670,12 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return false;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var next = cronScheduleCache.GetNextOccurrenceOrDefault(definition.Expression, now, definition.TimeZoneId);
+        var now = timeProvider.GetUtcNow();
+        var next = cronScheduleCache.GetNextOccurrenceOrDefault(
+            definition.Expression,
+            now.UtcDateTime,
+            definition.TimeZoneId
+        );
         if (next is null)
         {
             return false;
@@ -709,7 +713,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
             .SetProperty(x => x.ExecutedAt, now)

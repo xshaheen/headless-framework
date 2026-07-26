@@ -643,7 +643,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -663,7 +663,8 @@ public static class JobsCoordinationFixtureExtensions
         }
 
         var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
-        return (lockedUntil, reader.GetDateTime(1));
+        var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
+        return (lockedUntil, updatedAt);
     }
 
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
@@ -716,7 +717,7 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTime UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -736,7 +737,8 @@ public static class JobsCoordinationFixtureExtensions
         }
 
         var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
-        return (lockedUntil, reader.GetDateTime(1));
+        var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
+        return (lockedUntil, updatedAt);
     }
 
     /// <summary>Reads a TimeJob's persisted <c>TenantId</c> (system scope reads back as <see langword="null"/>).</summary>

@@ -36,5 +36,5 @@ internal sealed class HttpRequestContext(
 
     public bool IsAvailable => accessor.HttpContext is not null;
 
-    public DateTimeOffset DateStarted { get; } = timeProvider.GetUtcNow();
+    public DateTimeOffset StartedAt { get; } = timeProvider.GetUtcNow();
 }

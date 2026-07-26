@@ -10,7 +10,7 @@ namespace Tests.Chains;
 
 /// <summary>
 /// U5/KTD3 four-way gate parity. The timed-descendant claim gate is implemented four times by hand — the LINQ
-/// <see cref="M:Microsoft.EntityFrameworkCore.HeadlessJobsQueryExtensions.WhereClaimableUnderParentTerminalGate``1"/>,
+/// <c>HeadlessJobsQueryExtensions.WhereClaimableUnderParentTerminalGate</c>,
 /// the native-SQL <c>TimedChildGateSql.Build</c>, the in-memory <c>_ParentGateAllowsClaim</c>, and (U2) the mismatch
 /// predicate <c>WhereParentTerminalRunConditionMismatched</c> — each carrying a comment that "the three/four must stay
 /// in lockstep" with nothing enforcing it. This replays one shared case grid (every <see cref="RunCondition"/>

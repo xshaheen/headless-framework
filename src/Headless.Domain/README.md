@@ -31,7 +31,7 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 {
     public required string CustomerName { get; init; }
     public decimal Total { get; private set; }
-    public DateTimeOffset DateCreated { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 
     public void Complete()
     {
@@ -54,8 +54,8 @@ Implement audit interfaces for automatic tracking:
 public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 {
     public required string Name { get; set; }
-    public DateTimeOffset DateCreated { get; set; }
-    public DateTimeOffset? DateUpdated { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
 }
 ```
 

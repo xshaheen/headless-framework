@@ -270,7 +270,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         // Gateway proxy deps for ActivatorUtilities resolution
         appBuilder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         appBuilder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
-        appBuilder.Services.AddMemoryCache();
+        appBuilder.Services.AddSingleton<MessagingDashboardCache>();
         appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();

@@ -39,7 +39,7 @@ public abstract class DistributedLockTestsBase : TestBase
         handle.Should().NotBeNull();
         handle.Resource.Should().Be(resource);
         handle.LeaseId.Should().NotBeNullOrEmpty();
-        handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
+        handle.AcquiredAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
     }
@@ -52,7 +52,7 @@ public abstract class DistributedLockTestsBase : TestBase
 
         handle.Resource.Should().Be(resource);
         handle.LeaseId.Should().NotBeNullOrEmpty();
-        handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
+        handle.AcquiredAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
     }

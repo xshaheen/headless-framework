@@ -11,7 +11,7 @@ internal static class CronJobOccurrenceFactory
     public static CronJobOccurrenceEntity<TCronJob> Create<TCronJob>(
         TCronJob definition,
         DateTime executionTime,
-        DateTime now,
+        DateTimeOffset now,
         IGuidGenerator guidGenerator
     )
         where TCronJob : CronJobEntity

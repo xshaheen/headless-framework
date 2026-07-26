@@ -45,14 +45,55 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         tables.Should().NotContain("CoordinationDescriptor");
         columns.Should().Contain("cluster_name");
         columns.Should().Contain("node_id");
-        columns.Should().Contain("date_created");
-        columns.Should().Contain("date_updated");
+        columns.Should().Contain("created_at");
+        columns.Should().Contain("updated_at");
         columns.Should().Contain("current_incarnation");
         columns.Should().Contain("last_beat");
         columns.Should().Contain("left_at");
-        columns.Should().NotContain("created_at");
-        columns.Should().NotContain("updated_at");
+        columns.Should().NotContain("date_created");
+        columns.Should().NotContain("date_updated");
         columns.Should().NotContain("ClusterName");
+    }
+
+    [Fact]
+    public async Task should_rename_legacy_timestamp_columns_without_losing_membership_rows()
+    {
+        await _DropSchemaAsync();
+        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        var updatedAt = createdAt.AddMinutes(5);
+        await _CreateLegacyTimestampTablesAsync(createdAt, updatedAt);
+
+        await using var node = await fixture.CreateNodeAsync(_Cluster(), "migration-node", AbortToken);
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = await _ReadStringsAsync(
+            connection,
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name IN ('coordination_descriptor', 'coordination_node_generation');
+            """
+        );
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT count(*)
+            FROM coordination_node_generation generation
+            JOIN coordination_descriptor descriptor USING (cluster_name, node_id)
+            WHERE generation.updated_at = @updatedAt
+              AND descriptor.created_at = @createdAt;
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("updatedAt", updatedAt);
+        command.Parameters.AddWithValue("createdAt", createdAt);
+
+        columns.Should().Contain("created_at");
+        columns.Should().Contain("updated_at");
+        columns.Should().NotContain("date_created");
+        columns.Should().NotContain("date_updated");
+        ((long)(await command.ExecuteScalarAsync(AbortToken))!).Should().Be(1);
     }
 
     [Fact]
@@ -301,6 +342,42 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
             connection
         );
 
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task _CreateLegacyTimestampTablesAsync(DateTimeOffset createdAt, DateTimeOffset updatedAt)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            """
+            CREATE TABLE coordination_node_generation (
+                cluster_name varchar(200) NOT NULL,
+                node_id varchar(400) NOT NULL,
+                current_incarnation bigint NOT NULL,
+                date_updated timestamptz NOT NULL,
+                PRIMARY KEY (cluster_name, node_id)
+            );
+            CREATE TABLE coordination_descriptor (
+                cluster_name varchar(200) NOT NULL,
+                node_id varchar(400) NOT NULL,
+                incarnation bigint NOT NULL,
+                host_name text NULL,
+                endpoints jsonb NOT NULL DEFAULT '{}'::jsonb,
+                role varchar(200) NULL,
+                metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+                date_created timestamptz NOT NULL,
+                PRIMARY KEY (cluster_name, node_id, incarnation)
+            );
+            INSERT INTO coordination_node_generation VALUES ('legacy', 'node-a', 1, @updatedAt);
+            INSERT INTO coordination_descriptor
+                (cluster_name, node_id, incarnation, date_created)
+            VALUES ('legacy', 'node-a', 1, @createdAt);
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("updatedAt", updatedAt);
+        command.Parameters.AddWithValue("createdAt", createdAt);
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

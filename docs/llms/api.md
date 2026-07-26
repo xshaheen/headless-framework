@@ -196,6 +196,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
+- `IUserAgentParser` — `GetDeviceInfo(userAgent)`, the User-Agent → `"Windows Chrome"` parse behind `IWebClientInfoProvider.DeviceInfo` (implemented in `Headless.Api.Core` over DeviceDetector.NET). Substitute it to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 (longer values are truncated before parsing and keying). The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
 - `IRequestedApiVersion` — API versioning abstraction
 - `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
@@ -226,7 +227,7 @@ public sealed class OrderService(IRequestContext context)
                 {
                     UserId = userId,
                     TenantId = tenantId,
-                    CreatedAt = context.DateStarted,
+                    CreatedAt = context.StartedAt,
                 },
                 ct
             )
@@ -394,7 +395,6 @@ All other exceptions return `false`; the host default or a downstream handler re
 - `Headless.MultiTenancy`
 - `Headless.Security.Abstractions`
 - `Headless.Security`
-- `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Hosting`
 - `Asp.Versioning.Http`

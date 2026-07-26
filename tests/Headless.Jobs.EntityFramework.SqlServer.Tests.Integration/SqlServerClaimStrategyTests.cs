@@ -334,7 +334,8 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             command.Parameters.Add(new SqlParameter("id", job.Id));
             await using var reader = await command.ExecuteReaderAsync(ct);
             (await reader.ReadAsync(ct)).Should().BeTrue();
-            var persistedLeaseDuration = reader.GetDateTime(1) - reader.GetDateTime(0);
+            var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(0, ct);
+            var persistedLeaseDuration = reader.GetDateTime(1) - updatedAt.UtcDateTime;
 
             persistedLeaseDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(499));
             persistedLeaseDuration.Should().BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(501));

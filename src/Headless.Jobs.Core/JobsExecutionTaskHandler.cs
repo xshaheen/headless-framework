@@ -521,7 +521,7 @@ internal sealed class JobsExecutionTaskHandler
 
                     context
                         .SetProperty(x => x.Status, JobStatus.Cancelled)
-                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
                         .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
                         .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
 
@@ -569,7 +569,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 context
                     .SetProperty(x => x.Status, ex.Status)
-                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
                     .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
 
                 if (ex.InnerException != null)
@@ -627,7 +627,7 @@ internal sealed class JobsExecutionTaskHandler
 
             context
                 .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime);
+                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow());
 
             if (success)
             {

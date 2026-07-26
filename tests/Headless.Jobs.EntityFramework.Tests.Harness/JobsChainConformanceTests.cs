@@ -1046,7 +1046,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     // children per node — the shape the bounded sweep needs but the builder cannot express.
     private static TimeJobEntity _NewJob(string function, DateTime? executionTime)
     {
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         return new TimeJobEntity
         {
             Id = Guid.NewGuid(),

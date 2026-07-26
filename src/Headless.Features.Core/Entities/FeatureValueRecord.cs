@@ -49,8 +49,8 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
     /// <param name="value">The stored feature value.</param>
     /// <param name="providerName">The name of the value provider that owns this record.</param>
     /// <param name="providerKey">The provider-specific scoping key, or <see langword="null"/>.</param>
-    /// <param name="dateCreated">UTC timestamp when the record was first created.</param>
-    /// <param name="dateUpdated">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
+    /// <param name="createdAt">UTC timestamp when the record was first created.</param>
+    /// <param name="updatedAt">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
     /// <returns>A fully-hydrated <see cref="FeatureValueRecord"/> with audit fields populated.</returns>
     public static FeatureValueRecord FromStorage(
         Guid id,
@@ -58,14 +58,14 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
         string value,
         string providerName,
         string? providerKey,
-        DateTimeOffset dateCreated,
-        DateTimeOffset? dateUpdated
+        DateTimeOffset createdAt,
+        DateTimeOffset? updatedAt
     )
     {
         return new FeatureValueRecord(id, name, value, providerName, providerKey)
         {
-            DateCreated = dateCreated,
-            DateUpdated = dateUpdated,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
         };
     }
 
@@ -82,10 +82,10 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
     public string? ProviderKey { get; private init; }
 
     /// <summary>Gets the UTC timestamp when this record was first created.</summary>
-    public DateTimeOffset DateCreated { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>Gets the UTC timestamp of the last update, or <see langword="null"/> if the record has never been updated.</summary>
-    public DateTimeOffset? DateUpdated { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
 
     /// <inheritdoc/>
     public override string ToString()

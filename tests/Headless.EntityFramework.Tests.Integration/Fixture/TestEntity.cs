@@ -20,19 +20,19 @@ public sealed class TestEntity
     public string? TenantId { get; init; }
 
     // Audits
-    public DateTimeOffset DateCreated { get; private init; }
+    public DateTimeOffset CreatedAt { get; private init; }
 
     public UserId? CreatedById { get; private init; }
 
-    public DateTimeOffset? DateUpdated { get; private init; }
+    public DateTimeOffset? UpdatedAt { get; private init; }
 
     public UserId? UpdatedById { get; private init; }
 
     public bool IsDeleted { get; private set; }
 
-    public DateTimeOffset? DateDeleted { get; private init; }
+    public DateTimeOffset? DeletedAt { get; private init; }
 
-    public DateTimeOffset? DateRestored { get; private init; }
+    public DateTimeOffset? RestoredAt { get; private init; }
 
     public UserId? DeletedById { get; private init; }
 
@@ -40,11 +40,11 @@ public sealed class TestEntity
 
     public bool IsSuspended { get; private set; }
 
-    public DateTimeOffset? DateSuspended { get; private init; }
+    public DateTimeOffset? SuspendedAt { get; private init; }
 
     public UserId? SuspendedById { get; private init; }
 
-    public DateTimeOffset? DateUnsuspended { get; private init; }
+    public DateTimeOffset? UnsuspendedAt { get; private init; }
 
     public UserId? UnsuspendedById { get; private init; }
 

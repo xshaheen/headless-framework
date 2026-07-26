@@ -128,7 +128,7 @@ public sealed class TusAzureMetadataTests : TestBase
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
-        metadata.DateExpiration.Should().BeNull(); // system state untouched
+        metadata.ExpiresAt.Should().BeNull(); // system state untouched
 
         // then
         metadata.ToTusString().Should().Be(tusString);
@@ -384,7 +384,7 @@ public sealed class TusAzureMetadataTests : TestBase
 
     #endregion
 
-    #region DateCreated Property
+    #region CreatedAt Property
 
     [Fact]
     public void should_set_date_created()
@@ -395,10 +395,10 @@ public sealed class TusAzureMetadataTests : TestBase
         var date = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
 
         // when
-        metadata.DateCreated = date;
+        metadata.CreatedAt = date;
 
         // then
-        metadata.DateCreated.Should().Be(date);
+        metadata.CreatedAt.Should().Be(date);
         dict.Should().ContainKey(TusAzureMetadata.CreatedDateKey);
     }
 
@@ -414,7 +414,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        var result = metadata.DateCreated;
+        var result = metadata.CreatedAt;
 
         // then
         result.Should().Be(date);
@@ -427,7 +427,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(new Dictionary<string, string>(StringComparer.Ordinal));
 
         // when
-        var result = metadata.DateCreated;
+        var result = metadata.CreatedAt;
 
         // then
         result.Should().BeNull();
@@ -444,10 +444,10 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.DateCreated = null;
+        metadata.CreatedAt = null;
 
         // then
-        metadata.DateCreated.Should().BeNull();
+        metadata.CreatedAt.Should().BeNull();
         dict.Should().NotContainKey(TusAzureMetadata.CreatedDateKey);
     }
 
@@ -462,7 +462,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        var result = metadata.DateCreated;
+        var result = metadata.CreatedAt;
 
         // then
         result.Should().BeNull();
@@ -569,7 +569,7 @@ public sealed class TusAzureMetadataTests : TestBase
 
     #endregion
 
-    #region DateExpiration Property
+    #region ExpiresAt Property
 
     [Fact]
     public void should_set_expiration()
@@ -580,10 +580,10 @@ public sealed class TusAzureMetadataTests : TestBase
         var expiration = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
 
         // when
-        metadata.DateExpiration = expiration;
+        metadata.ExpiresAt = expiration;
 
         // then
-        metadata.DateExpiration.Should().Be(expiration);
+        metadata.ExpiresAt.Should().Be(expiration);
         dict.Should().ContainKey(TusAzureMetadata.ExpirationKey);
     }
 
@@ -599,7 +599,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        var result = metadata.DateExpiration;
+        var result = metadata.ExpiresAt;
 
         // then
         result.Should().Be(expiration);
@@ -612,7 +612,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(new Dictionary<string, string>(StringComparer.Ordinal));
 
         // when
-        var result = metadata.DateExpiration;
+        var result = metadata.ExpiresAt;
 
         // then
         result.Should().BeNull();
@@ -629,10 +629,10 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        metadata.DateExpiration = null;
+        metadata.ExpiresAt = null;
 
         // then
-        metadata.DateExpiration.Should().BeNull();
+        metadata.ExpiresAt.Should().BeNull();
         dict.Should().NotContainKey(TusAzureMetadata.ExpirationKey);
     }
 
@@ -647,7 +647,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        var result = metadata.DateExpiration;
+        var result = metadata.ExpiresAt;
 
         // then
         result.Should().BeNull();

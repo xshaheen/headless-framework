@@ -143,7 +143,6 @@ All other exceptions return `false`; the host default or a downstream handler re
 - `Headless.MultiTenancy`
 - `Headless.Security.Abstractions`
 - `Headless.Security`
-- `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Hosting`
 - `Asp.Versioning.Http`

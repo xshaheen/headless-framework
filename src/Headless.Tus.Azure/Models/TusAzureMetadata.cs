@@ -44,7 +44,7 @@ internal sealed class TusAzureMetadata
 
     private readonly IDictionary<string, string> _decodedMetadata;
 
-    public DateTimeOffset? DateCreated
+    public DateTimeOffset? CreatedAt
     {
         get
         {
@@ -66,7 +66,7 @@ internal sealed class TusAzureMetadata
         }
     }
 
-    public DateTimeOffset? DateExpiration
+    public DateTimeOffset? ExpiresAt
     {
         get =>
             _decodedMetadata.TryGetValue(ExpirationKey, out var value) && _ParseDateTimeOffset(value, out var date)
