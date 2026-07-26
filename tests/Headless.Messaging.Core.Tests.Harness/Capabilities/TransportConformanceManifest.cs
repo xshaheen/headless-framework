@@ -367,6 +367,10 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
@@ -384,6 +388,16 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                    ConformanceSupport.NotApplicable(
+                        "InMemory transports TransportMessage instances directly and has no transport envelope to parse."
+                    )
+                )
                 .WithScenario(
                     TransportConformanceScenario.LegacyCutoverRecovery,
                     ConformanceSupport.NotApplicable("InMemory has no durable broker topology to migrate.")
@@ -399,7 +413,21 @@ public static class TransportConformanceManifest
                 .WithMalformedEnvelopeBound("Redis Stream entry acknowledged", 1, TimeSpan.FromSeconds(5))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported),
+                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                    ConformanceSupport.Supported
+                )
+                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
+                .EnableRealBrokerLeaf(),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static IReadOnlyList<string> GetValidationErrors()

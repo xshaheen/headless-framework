@@ -14,6 +14,7 @@ internal sealed class RedisConsumerClient(
     IRedisStreamManager redis,
     IOptions<RedisMessagingOptions> options,
     ILogger<RedisConsumerClient> logger,
+    MessageLane lane = MessageLane.Queue,
     TimeSpan? stalePendingClaimMinIdleTime = null,
     TimeProvider? timeProvider = null
 ) : IConsumerClient
@@ -46,7 +47,7 @@ internal sealed class RedisConsumerClient(
     {
         Argument.IsNotNull(messageNames);
 
-        var arr = messageNames.ToArray();
+        var arr = messageNames.Select(messageName => RedisPhysicalAddress.ForLane(lane, messageName)).ToArray();
 
         foreach (var messageName in arr)
         {
@@ -252,7 +253,10 @@ internal sealed class RedisConsumerClient(
                     }
                     finally
                     {
-                        OnLogCallback!(logArgs);
+                        OnLogCallback?.Invoke(logArgs);
+                        await redis
+                            .Ack(stream.Key.ToString(), groupId, entry.Id.ToString(), CancellationToken.None)
+                            .ConfigureAwait(false);
                     }
 
                     return;

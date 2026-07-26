@@ -64,4 +64,31 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     {
         return base.should_bound_shutdown_while_handler_is_active();
     }
+
+    [Fact]
+    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
+    {
+        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+            new AzureServiceBusProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public Task should_deliver_one_owned_queue_copy_across_replicas()
+    {
+        return TransportProviderConformance.AssertQueueOwnershipAsync(
+            new AzureServiceBusProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public Task should_isolate_same_logical_name_between_bus_and_queue()
+    {
+        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(
+            new AzureServiceBusProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
 }

@@ -29,7 +29,8 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // then
         provider.GetService<IQueueTransport>().Should().BeOfType<RedisTransport>();
-        provider.GetService<IConsumerClientFactory>().Should().BeOfType<RedisConsumerClientFactorySelector>();
+        provider.GetService<IBusTransport>().Should().BeOfType<RedisBusTransport>();
+        provider.GetService<IConsumerClientFactory>().Should().BeOfType<RedisConsumerClientFactory>();
         provider.GetService<IRedisStreamManager>().Should().NotBeNull();
         provider.GetService<IRedisConnectionPool>().Should().NotBeNull();
     }
@@ -95,16 +96,12 @@ public sealed class RedisStreamsSetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_route_consumer_clients_by_lane_when_streams_and_pubsub_are_configured()
+    public async Task should_route_both_consumer_lanes_through_streams()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(opt =>
-        {
-            opt.UseRedis();
-            opt.UseRedisPubSub();
-        });
+        services.AddHeadlessMessaging(opt => opt.UseRedis());
 
         // when
         await using var provider = services.BuildServiceProvider();
@@ -116,7 +113,7 @@ public sealed class RedisStreamsSetupTests : TestBase
         await using var busClient = await factory.CreateAsync("bus-group", 1, MessageLane.Bus, AbortToken);
 
         queueClient.Should().BeOfType<RedisConsumerClient>();
-        busClient.Should().BeOfType<RedisPubSubConsumerClient>();
+        busClient.Should().BeOfType<RedisConsumerClient>();
     }
 
     [Theory]
@@ -126,11 +123,7 @@ public sealed class RedisStreamsSetupTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(opt =>
-        {
-            opt.UseRedis();
-            opt.UseRedisPubSub();
-        });
+        services.AddHeadlessMessaging(opt => opt.UseRedis());
         await using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IConsumerClientFactory>();
         var cancellationToken = new CancellationToken(canceled: true);

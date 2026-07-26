@@ -341,6 +341,7 @@
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Redis.Tests.Integration/Headless.Messaging.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Observability/">

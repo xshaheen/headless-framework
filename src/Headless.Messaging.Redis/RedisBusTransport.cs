@@ -5,11 +5,11 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Redis;
 
-internal sealed class RedisTransport(
+internal sealed class RedisBusTransport(
     IRedisStreamManager redis,
     IOptions<RedisMessagingOptions> options,
-    ILogger<RedisTransport> logger
-) : IQueueTransport
+    ILogger<RedisBusTransport> logger
+) : IBusTransport
 {
     private readonly RedisMessagingOptions _options = options.Value;
 
@@ -22,15 +22,13 @@ internal sealed class RedisTransport(
         {
             await redis
                 .PublishAsync(
-                    RedisPhysicalAddress.QueueStream(message.Name),
+                    RedisPhysicalAddress.BusStream(message.Name),
                     message.AsStreamEntries(),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            var messageName = message.Name;
-            logger.MessagePublished(messageName);
-
+            logger.BusMessagePublished(message.Name);
             return OperateResult.Success;
         }
         catch (OperationCanceledException)
@@ -39,20 +37,15 @@ internal sealed class RedisTransport(
         }
         catch (Exception ex)
         {
-            var wrapperEx = new PublisherSentFailedException(ex.Message, ex);
-
-            return OperateResult.Failed(wrapperEx);
+            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
         }
     }
 
-    public ValueTask DisposeAsync()
-    {
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-internal static partial class RedisTransportLog
+internal static partial class RedisBusTransportLog
 {
-    [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Redis message [{Message}] has been published.")]
-    public static partial void MessagePublished(this ILogger logger, string message);
+    [LoggerMessage(EventId = 3010, Level = LogLevel.Debug, Message = "Redis Bus message [{Message}] was published.")]
+    public static partial void BusMessagePublished(this ILogger logger, string message);
 }

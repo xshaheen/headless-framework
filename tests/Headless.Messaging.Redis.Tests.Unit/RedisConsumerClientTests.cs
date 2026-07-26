@@ -52,10 +52,18 @@ public sealed class RedisConsumerClientTests : TestBase
         // then
         await _mockStreamManager
             .Received(1)
-            .CreateStreamWithConsumerGroupAsync("messageName-1", "my-group", Arg.Any<CancellationToken>());
+            .CreateStreamWithConsumerGroupAsync(
+                "headless:messaging:queue:messageName-1",
+                "my-group",
+                Arg.Any<CancellationToken>()
+            );
         await _mockStreamManager
             .Received(1)
-            .CreateStreamWithConsumerGroupAsync("messageName-2", "my-group", Arg.Any<CancellationToken>());
+            .CreateStreamWithConsumerGroupAsync(
+                "headless:messaging:queue:messageName-2",
+                "my-group",
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -67,7 +75,29 @@ public sealed class RedisConsumerClientTests : TestBase
 
         await client.SubscribeAsync(["orders"], cts.Token);
 
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("orders", "my-group", cts.Token);
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("headless:messaging:queue:orders", "my-group", cts.Token);
+    }
+
+    [Fact]
+    public async Task should_lane_qualify_bus_streams()
+    {
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient(
+            "billing",
+            1,
+            _mockStreamManager,
+            _options,
+            logger,
+            MessageLane.Bus
+        );
+
+        await client.SubscribeAsync(["orders"], AbortToken);
+
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("headless:messaging:bus:orders", "billing", AbortToken);
     }
 
     [Fact]

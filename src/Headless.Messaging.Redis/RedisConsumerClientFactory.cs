@@ -23,14 +23,7 @@ internal sealed class RedisConsumerClientFactory(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (lane == MessageLane.Bus)
-        {
-            throw new NotSupportedException(
-                "Headless.Messaging.Redis is a queue transport provider and cannot create bus consumers."
-            );
-        }
-
-        if (lane != MessageLane.Queue)
+        if (lane is not (MessageLane.Bus or MessageLane.Queue))
         {
             throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null);
         }
@@ -41,6 +34,7 @@ internal sealed class RedisConsumerClientFactory(
             redis,
             redisOptions,
             logger,
+            lane,
             messagingOptions.Value.RetryPolicy.DispatchTimeout
         );
         return Task.FromResult<IConsumerClient>(client);
