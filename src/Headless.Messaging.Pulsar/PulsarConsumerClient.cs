@@ -15,7 +15,8 @@ internal sealed class PulsarConsumerClient(
     string groupName,
     byte groupConcurrent,
     MessageLane lane = MessageLane.Bus,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
@@ -55,7 +56,7 @@ internal sealed class PulsarConsumerClient(
         var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
         var subscribeTask = client
             .NewConsumer()
-            .Topics(topics)
+            .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(lane, topic)))
             .SubscriptionName(GetSubscriptionName(groupName, lane))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
@@ -104,7 +105,7 @@ internal sealed class PulsarConsumerClient(
 
     internal static string GetSubscriptionName(string groupName, MessageLane lane)
     {
-        return lane == MessageLane.Queue ? "headless-queue" : groupName;
+        return PulsarPhysicalAddress.Subscription(lane, groupName);
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -225,7 +226,9 @@ internal sealed class PulsarConsumerClient(
 
                         headers[Headers.Group] = groupName;
 
-                        message = new TransportMessage(headers, currentMessage.Data);
+                        message = transportMessageFactory is null
+                            ? new TransportMessage(headers, currentMessage.Data)
+                            : transportMessageFactory(headers, currentMessage.Data);
                     }
                     catch (Exception ex)
                     {
@@ -233,12 +236,13 @@ internal sealed class PulsarConsumerClient(
                             new LogMessageEventArgs
                             {
                                 LogType = MqLogType.ConsumeError,
-                                Reason = $"Failed to build transport message, nacking: {ex}",
+                                Reason =
+                                    $"Malformed Pulsar transport envelope terminally acknowledged: {ex.GetType().Name}",
                             }
                         );
 
-                        // Settlement is must-complete: nack the malformed message regardless of shutdown.
-                        await RejectAsync(currentMessage.MessageId, CancellationToken.None).ConfigureAwait(false);
+                        // Settlement is must-complete: acknowledge malformed broker data so it cannot redeliver forever.
+                        await _consumerClient!.AcknowledgeAsync(currentMessage.MessageId).ConfigureAwait(false);
                         return;
                     }
 

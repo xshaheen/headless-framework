@@ -159,12 +159,12 @@ public sealed class TransportConformanceManifestTests : TestBase
         var matching = MessagingProviderCapabilities.Transport(
             "NATS JetStream",
             [MessageLane.Bus, MessageLane.Queue],
-            supportsIndependentLaneTopology: false
+            supportsIndependentLaneTopology: true
         );
         var drifted = MessagingProviderCapabilities.Transport(
             "NATS JetStream",
             [MessageLane.Bus],
-            supportsIndependentLaneTopology: true
+            supportsIndependentLaneTopology: false
         );
 
         expected.GetMismatchErrors(matching).Should().BeEmpty();

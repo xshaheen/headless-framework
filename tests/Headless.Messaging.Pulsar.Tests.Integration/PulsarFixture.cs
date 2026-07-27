@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -23,7 +25,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
             cancellationToken,
             destination,
             group,
-            createReplacement
+            createReplacement,
+            failEnvelopeBuild: false
         );
     }
 
@@ -33,7 +36,47 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         string? destination = null
     )
     {
-        return CreateSessionAsync(ConnectionString, MessageLane.Bus, cancellationToken, destination, group);
+        return CreateSessionAsync(
+            ConnectionString,
+            MessageLane.Bus,
+            cancellationToken,
+            destination,
+            group,
+            failEnvelopeBuild: false
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateLaneSessionAsync(
+        MessageLane lane,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return CreateSessionAsync(
+            ConnectionString,
+            lane,
+            cancellationToken,
+            destination,
+            group,
+            failEnvelopeBuild: false
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return CreateSessionAsync(
+            ConnectionString,
+            MessageLane.Queue,
+            cancellationToken,
+            destination,
+            group,
+            failEnvelopeBuild: true
+        );
     }
 
     internal static async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
@@ -42,7 +85,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
-        bool createReplacement = true
+        bool createReplacement = true,
+        bool failEnvelopeBuild = false
     )
     {
         destination ??= $"persistent://public/default/conf-{Guid.NewGuid():N}";
@@ -61,9 +105,25 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
 
         try
         {
-            var producer = serviceProvider.GetRequiredService<IQueueTransport>();
-            var factory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await factory.CreateAsync(group, 2, lane, cancellationToken);
+            var producer =
+                lane == MessageLane.Bus
+                    ? (ITransport)serviceProvider.GetRequiredService<IBusTransport>()
+                    : serviceProvider.GetRequiredService<IQueueTransport>();
+            var connectionFactory = serviceProvider.GetRequiredService<IConnectionFactory>();
+            var client = await connectionFactory.RentClientAsync(cancellationToken);
+            var options = serviceProvider.GetRequiredService<IOptions<PulsarMessagingOptions>>();
+#pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
+            var consumer = new PulsarConsumerClient(
+                options,
+                client,
+                group,
+                2,
+                lane,
+                transportMessageFactory: failEnvelopeBuild
+                    ? static (_, _) => throw new InvalidOperationException("Injected malformed transport envelope.")
+                    : null
+            );
+#pragma warning restore CA2000
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try
@@ -84,7 +144,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                                 replacementToken,
                                 destination,
                                 group,
-                                createReplacement: false
+                                createReplacement: false,
+                                failEnvelopeBuild
                             )
                         : null
                 );

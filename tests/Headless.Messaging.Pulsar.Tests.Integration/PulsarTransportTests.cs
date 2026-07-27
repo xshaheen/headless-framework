@@ -22,7 +22,7 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
         var bus = serviceProvider.GetRequiredService<IBusTransport>();
         var queue = serviceProvider.GetRequiredService<IQueueTransport>();
 
-        bus.Should().BeSameAs(queue);
+        bus.Should().NotBeSameAs(queue);
         serviceProvider
             .GetRequiredService<IConsumerClientFactory>()
             .GetType()
