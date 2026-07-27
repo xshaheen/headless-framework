@@ -21,8 +21,7 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # Mirror the local 7-day supply-chain quarantine: don't open PRs for versions published <7 days ago
-    # (majors soak 14 days), so a compromised fresh release isn't auto-proposed before it's flagged.
+    # Mirror the local 7-day supply-chain quarantine for version updates. Majors soak 14 days.
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -125,6 +124,8 @@ updates:
         applies-to: "security-updates"
         patterns:
           - "*"
+    # Dependabot security updates bypass cooldowns; review their release age against the local
+    # 7-day quarantine before merging.
     cooldown:
       default-days: 7
       semver-major-days: 14

@@ -21,7 +21,7 @@ internal static class DashboardRequestBodyReader
 
         try
         {
-            using var limitedBody = new SizeLimitedReadStream(
+            await using var limitedBody = new SizeLimitedReadStream(
                 context.Request.Body,
                 DashboardOptionsBuilder.MaxRequestBodyBytes,
                 leaveOpen: true
