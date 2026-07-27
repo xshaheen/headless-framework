@@ -33,7 +33,7 @@ dotnet add package Headless.Messaging.Redis
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     // Bus and Queue delivery through lane-qualified Redis Streams.

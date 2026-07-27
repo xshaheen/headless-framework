@@ -43,7 +43,10 @@ const navigationLinks: NavLink[] = [
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)
 
 const messagingStore = useMessagingStore()
-const { meta, stats } = storeToRefs(messagingStore)
+const { isMetaLoaded, meta, metaError, stats } = storeToRefs(messagingStore)
+const transportCapabilities = computed(() =>
+  meta.value.providerCapabilities.filter((capability) => capability.role === 'Transport'),
+)
 
 function getNodeCookie(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)messaging\.node=([^;]*)/)
@@ -69,6 +72,10 @@ function handleAuthLogout() {
   if (typeof window !== 'undefined') {
     window.location.reload()
   }
+}
+
+async function retryProviderCapabilities() {
+  await messagingStore.fetchMeta()
 }
 </script>
 
@@ -165,6 +172,60 @@ function handleAuthLogout() {
           >
             Storage: {{ meta.storage.name }}
           </v-chip>
+          <v-menu :close-on-content-click="false" location="top start">
+            <template #activator="{ props }">
+              <v-chip
+                v-bind="props"
+                size="x-small"
+                variant="tonal"
+                color="info"
+                class="footer-chip"
+                prepend-icon="mdi-transit-connection-variant"
+                :aria-label="`Show provider capabilities (${transportCapabilities.length} transports)`"
+              >
+                Providers: {{ isMetaLoaded ? transportCapabilities.length : 'loading' }}
+              </v-chip>
+            </template>
+
+            <v-card class="provider-capabilities" aria-live="polite">
+              <v-card-title class="text-subtitle-1">Provider capabilities</v-card-title>
+              <v-card-text v-if="!isMetaLoaded">Loading provider capabilities…</v-card-text>
+              <v-card-text v-else-if="metaError">
+                <p>{{ metaError }}</p>
+                <v-btn
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-refresh"
+                  @click="retryProviderCapabilities"
+                >
+                  Retry
+                </v-btn>
+              </v-card-text>
+              <v-card-text v-else-if="transportCapabilities.length === 0">
+                No transport provider is registered.
+              </v-card-text>
+              <v-table v-else density="compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Provider</th>
+                    <th scope="col">Lanes</th>
+                    <th scope="col">Topology</th>
+                    <th scope="col">Delay</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="capability in transportCapabilities" :key="capability.provider">
+                    <th scope="row">{{ capability.provider }}</th>
+                    <td>{{ capability.lanes.join(' + ') || 'None' }}</td>
+                    <td>
+                      {{ capability.supportsIndependentLaneTopology ? 'Lane-isolated' : 'Shared' }}
+                    </td>
+                    <td>{{ capability.supportsDelayedScheduling ? 'Supported' : 'Unsupported' }}</td>
+                  </tr>
+                </tbody>
+              </v-table>
+            </v-card>
+          </v-menu>
           <v-chip
             v-if="switchedNode"
             size="x-small"
@@ -370,6 +431,15 @@ function handleAuthLogout() {
   font-size: 0.7rem !important;
   height: 20px !important;
   white-space: nowrap;
+}
+
+.provider-capabilities {
+  min-width: min(34rem, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+}
+
+.provider-capabilities p {
+  margin-bottom: 12px;
 }
 
 .footer-copyright {

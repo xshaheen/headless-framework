@@ -19,6 +19,15 @@ export interface MetaInfo {
   messaging: { name: string; version: string } | null
   broker: { name: string } | null
   storage: { name: string } | null
+  providerCapabilities: ProviderCapability[]
+}
+
+export interface ProviderCapability {
+  provider: string
+  role: 'Transport' | 'Storage' | 'Coordination'
+  lanes: Array<'Bus' | 'Queue'>
+  supportsIndependentLaneTopology: boolean
+  supportsDelayedScheduling: boolean
 }
 
 export interface MetricsHistory {
@@ -41,6 +50,7 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   const isLoading = ref(false)
   const isMetaLoaded = ref(false)
+  const metaError = ref<string | null>(null)
   const isHistoryLoaded = ref(false)
 
   const stats = reactive<Stats>({
@@ -57,6 +67,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     messaging: null,
     broker: null,
     storage: null,
+    providerCapabilities: [],
   })
 
   const realtimeMetrics = ref<RealtimeMetrics | null>(null)
@@ -92,10 +103,12 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   async function fetchMeta(): Promise<void> {
     try {
+      metaError.value = null
       const data = await httpService.get<{
         messaging?: { name?: string; version?: string } | null
         broker?: { name?: string } | null
         storage?: { name?: string } | null
+        providerCapabilities?: ProviderCapability[]
       }>('/meta')
 
       meta.messaging = data.messaging
@@ -103,8 +116,10 @@ export const useMessagingStore = defineStore('messaging', () => {
         : null
       meta.broker = data.broker ? { name: data.broker.name ?? '' } : null
       meta.storage = data.storage ? { name: data.storage.name ?? '' } : null
+      meta.providerCapabilities = data.providerCapabilities ?? []
     } catch (error) {
       console.error('Failed to fetch meta:', error)
+      metaError.value = 'Provider capabilities could not be loaded.'
     } finally {
       isMetaLoaded.value = true
     }
@@ -191,6 +206,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     // State
     isLoading,
     isMetaLoaded,
+    metaError,
     isHistoryLoaded,
     stats,
     meta,

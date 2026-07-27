@@ -12,20 +12,22 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 - **SQS Queue**: Sends Queue-lane messages directly to SQS queues.
 - **SQS Consumer**: Receives both SNS-enveloped bus messages and direct queue messages.
 - **Auto-Provisioning**: Automatic queue and topic creation
-- **Malformed Message Handling**: Releases malformed SNS envelopes with a 3-second visibility timeout; an external SQS redrive policy controls eventual dead-letter delivery
-- **IAM Integration**: Automatic policy configuration
+- **Malformed Message Handling**: Terminally deletes malformed SNS transport envelopes so they cannot create a visibility-timeout redelivery storm
+- **IAM Integration**: Queue policies grant `sqs:SendMessage` only to SNS and only from the subscribing topic ARN; provisioning failures name the required actions and resources
 - **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
 - **Host-Cancellable Startup**: Consumer connection, topology provisioning, and subscription honor host shutdown.
 
 ## Design Notes
 
-The package registers immutable Bus and Queue transport capabilities with independent physical lane topology. Bus publishes use SNS and subscribe SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message, so the same contract/logical name may be registered independently on both lane roots.
+The package registers immutable Bus and Queue transport capabilities with independent physical lane topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{subscriber-group}` SQS queue per logical subscriber group; replicas inside a group compete on that queue. Queue sends bypass SNS and write directly to `queue-{logical-name}`, so the same contract/logical name may be registered independently on both lane roots.
 
 Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from `AwsMessagingHeaders.MessageGroupId` when present, then `headless-msg-group` when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
 
 SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
 
-Malformed SNS envelopes are not deleted or moved directly to a dead-letter queue. The consumer changes their visibility timeout to 3 seconds so SQS can redeliver them. Configure an SQS redrive policy on the queue to move messages to a dead-letter queue after the desired receive count.
+Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
+
+This topology replaces legacy unqualified topics and queues. Before deployment, stop old and new publishers, inventory producer/consumer versions plus SNS/SQS create/subscribe/policy permissions, drain legacy queues to zero visible/in-flight messages, and deploy consumers before publishers behind a version fence. Abort before the first lane-qualified publish if drain or provisioning fails. After publication begins, recover by rolling forward and reconciling legacy and lane-qualified queue counts; retain legacy entities until the deployment owner signs off.
 
 ## Installation
 
@@ -81,4 +83,4 @@ options.Bus.ForMessage<OrderEvent>(message =>
 - Configures IAM policies for bus queue access.
 - Establishes persistent connections to AWS services.
 - Queue-lane consumers subscribe directly to queue URLs and do not create the Bus group queue.
-- Malformed SNS envelopes are released with a 3-second visibility timeout; dead-letter delivery requires an SQS redrive policy configured outside this package.
+- Malformed SNS transport envelopes are terminally deleted; handler failures remain eligible for externally configured SQS redrive.

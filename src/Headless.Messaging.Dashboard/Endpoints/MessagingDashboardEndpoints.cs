@@ -221,6 +221,17 @@ public static class MessagingDashboardEndpoints
         var messaging = sp.GetService<MessagingMarkerService>();
         var broker = sp.GetService<MessageQueueMarkerService>();
         var storage = sp.GetService<MessageStorageMarkerService>();
+        var providerCapabilities = sp.GetServices<MessagingProviderCapabilities>()
+            .OrderBy(capability => capability.Role)
+            .ThenBy(capability => capability.Provider, StringComparer.Ordinal)
+            .Select(capability => new
+            {
+                capability.Provider,
+                Role = capability.Role.ToString(),
+                Lanes = capability.Lanes.Order().Select(lane => lane.ToString()).ToArray(),
+                capability.SupportsIndependentLaneTopology,
+                capability.SupportsDelayedScheduling,
+            });
 
         return Results.Json(
             new
@@ -228,6 +239,7 @@ public static class MessagingDashboardEndpoints
                 messaging,
                 broker,
                 storage,
+                providerCapabilities,
             }
         );
     }
