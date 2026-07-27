@@ -61,7 +61,8 @@ public abstract class TransportProviderConformanceDriver
 {
     public abstract string ProviderName { get; }
 
-    public abstract TransportConformanceDriverCapabilities Capabilities { get; }
+    public virtual TransportConformanceDriverCapabilities Capabilities { get; } =
+        new(false, false, false, false, false);
 
     public abstract TransportMalformedEnvelopeBound MalformedEnvelopeBound { get; }
 

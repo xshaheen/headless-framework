@@ -74,9 +74,6 @@ function handleAuthLogout() {
   }
 }
 
-async function retryProviderCapabilities() {
-  await messagingStore.fetchMeta()
-}
 </script>
 
 <template>
@@ -196,7 +193,7 @@ async function retryProviderCapabilities() {
                   size="small"
                   variant="tonal"
                   prepend-icon="mdi-refresh"
-                  @click="retryProviderCapabilities"
+                  @click="messagingStore.fetchMeta()"
                 >
                   Retry
                 </v-btn>

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Cryptography;
-
 namespace Headless.Messaging.Aws;
 
 /// <summary>Single authority for lane-qualified SNS topics and SQS queues.</summary>
@@ -27,7 +25,7 @@ internal static class AwsPhysicalAddress
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
 
         const string fifoSuffix = ".fifo";
-        var isFifo = value.EndsWith(fifoSuffix, StringComparison.Ordinal);
+        var isFifo = value.IsAwsFifoName();
         var core = isFifo ? value[..^fifoSuffix.Length] : value;
         core = core.Replace('.', '-').Replace(':', '_');
 
@@ -38,7 +36,7 @@ internal static class AwsPhysicalAddress
             return qualified;
         }
 
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(qualified)))[..12];
+        var hash = qualified.ToSha256()[..12];
         var availableCoreLength = maxLength - lane.Length - hash.Length - suffix.Length - 2;
         var truncatedCore = core[..availableCoreLength].TrimEnd('-', '_');
         return $"{lane}-{truncatedCore}-{hash}{suffix}";

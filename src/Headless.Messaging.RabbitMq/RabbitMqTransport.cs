@@ -10,7 +10,6 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 {
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly string _exchange;
-    private readonly string _exchangeType;
     private readonly MessageLane _lane;
     private readonly ILogger _logger;
 
@@ -24,7 +23,6 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         _connectionChannelPool = connectionChannelPool;
         _lane = lane;
         _exchange = RabbitMqPhysicalAddress.Exchange(_connectionChannelPool.Exchange, lane);
-        _exchangeType = RabbitMqPhysicalAddress.ExchangeType(lane);
     }
 
     public BrokerAddress BrokerAddress => new("rabbitmq", _connectionChannelPool.HostAddress);
@@ -39,16 +37,6 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         try
         {
             channel = await _connectionChannelPool.Rent(cancellationToken).ConfigureAwait(false);
-
-            await channel
-                .ExchangeDeclareAsync(
-                    _exchange,
-                    _exchangeType,
-                    durable: true,
-                    autoDelete: false,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
 
             var props = new BasicProperties
             {

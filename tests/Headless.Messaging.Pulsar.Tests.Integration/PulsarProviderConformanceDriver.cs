@@ -10,9 +10,6 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
 
     public override string ProviderName => _Profile.Provider;
 
-    public override TransportConformanceDriverCapabilities Capabilities { get; } =
-        new(false, false, false, false, false);
-
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(

@@ -13,15 +13,6 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
 
     public override string ProviderName => _Profile.Provider;
 
-    public override TransportConformanceDriverCapabilities Capabilities { get; } =
-        new(
-            SupportsRawEnvelopeInjection: false,
-            SupportsTerminalStateObservation: false,
-            SupportsTopologyInspection: false,
-            SupportsStartupSideEffectObservation: false,
-            SupportsLegacyMigration: false
-        );
-
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(

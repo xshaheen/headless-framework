@@ -37,6 +37,33 @@ public sealed class ConnectionChannelPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_declare_both_lane_exchanges_when_channel_created()
+    {
+        var connection = Substitute.For<IConnection>();
+        var channel = Substitute.For<IChannel>();
+        connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+#pragma warning disable CA2025 // Rent awaits the completed factory task before the pool owns and disposes the connection.
+            _ => Task.FromResult(connection)
+#pragma warning restore CA2025
+        );
+
+        var rented = await ((IConnectionChannelPool)pool).Rent(AbortToken);
+
+        rented.Should().BeSameAs(channel);
+        await channel
+            .Received(1)
+            .ExchangeDeclareAsync("test.exchange.bus", "topic", true, false, null, false, false, AbortToken);
+        await channel
+            .Received(1)
+            .ExchangeDeclareAsync("test.exchange.queue", "direct", true, false, null, false, false, AbortToken);
+        ((IConnectionChannelPool)pool).Return(rented);
+    }
+
+    [Fact]
     public void should_initialize_with_correct_host_address()
     {
         // given, When

@@ -11,9 +11,6 @@ internal sealed class NatsProviderConformanceDriver(NatsFixture fixture) : Trans
 
     public override string ProviderName => _Profile.Provider;
 
-    public override TransportConformanceDriverCapabilities Capabilities { get; } =
-        new(false, false, false, false, false);
-
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
