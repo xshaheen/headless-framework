@@ -291,7 +291,7 @@ coverage-open: coverage-html ## Generate report and open in browser.
 .PHONY: pack
 pack: restore verify-package-manifest ## Pack NuGet packages (symbols are embedded in the assemblies).
 	@mkdir -p "$(PACKAGES_DIR)"
-	@for csproj in src/*/*.csproj; do \
+	@set -e; for csproj in src/*/*.csproj; do \
 		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
 	done
 	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
@@ -299,7 +299,7 @@ pack: restore verify-package-manifest ## Pack NuGet packages (symbols are embedd
 .PHONY: pack-built
 pack-built: verify-package-manifest ## Pack already-built source projects without restore/build; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
-	@for csproj in src/*/*.csproj; do \
+	@set -e; for csproj in src/*/*.csproj; do \
 		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
 	done
 	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
@@ -307,7 +307,7 @@ pack-built: verify-package-manifest ## Pack already-built source projects withou
 .PHONY: pack-sbom
 pack-sbom: restore verify-package-manifest ## Pack NuGet packages with GenerateSBOM=true.
 	@mkdir -p "$(PACKAGES_DIR)"
-	@for csproj in src/*/*.csproj; do \
+	@set -e; for csproj in src/*/*.csproj; do \
 		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
 	done
 	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
