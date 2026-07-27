@@ -227,6 +227,14 @@ internal sealed class AmazonSqsConsumerClient(
                 return;
             }
 
+            if (!_HasRequiredHeaders(header))
+            {
+                _logger.SqsMessageMissingRequiredHeaders();
+                await CommitAsync(new InflightSqsMessage(queueUrl, receiptHandle), CancellationToken.None)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
             {
                 Headers = { [Headers.Group] = groupId },
@@ -291,8 +299,7 @@ internal sealed class AmazonSqsConsumerClient(
         return new InvalidOperationException(
             $"AWS_MESSAGING_PROVISIONING_DENIED: Failed to {stage} for the {lane} lane and logical group '{groupId}' "
                 + $"({errorCode}). Verify region/service endpoints and grant the runtime identity only the required actions: "
-                + $"{requiredActions}. Auto-provisioning never widens IAM policy automatically.",
-            exception
+                + $"{requiredActions}. Auto-provisioning never widens IAM policy automatically."
         );
     }
 
@@ -475,6 +482,14 @@ internal sealed class AmazonSqsConsumerClient(
         return (header, messageObj.Message);
     }
 
+    private static bool _HasRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        return headers.TryGetValue(Headers.MessageId, out var messageId)
+            && !string.IsNullOrWhiteSpace(messageId)
+            && headers.TryGetValue(Headers.MessageName, out var messageName)
+            && !string.IsNullOrWhiteSpace(messageName);
+    }
+
     private InflightSqsMessage _GetInflightMessage(object? sender)
     {
         return sender switch
@@ -575,6 +590,13 @@ internal static partial class AmazonSqsConsumerClientLog
         Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. The malformed transport envelope was terminally deleted."
     )]
     public static partial void InvalidSqsMessageStructure(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4202,
+        Level = LogLevel.Error,
+        Message = "Invalid SQS transport envelope: required Messaging headers are missing. The malformed transport envelope was terminally deleted."
+    )]
+    public static partial void SqsMessageMissingRequiredHeaders(this ILogger logger);
 
     [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Error consuming message for group {GroupId}")]
     public static partial void SqsMessageConsumeFailed(this ILogger logger, Exception exception, string groupId);

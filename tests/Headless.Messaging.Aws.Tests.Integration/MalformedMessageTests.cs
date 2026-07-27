@@ -172,6 +172,8 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
             {
                 "Message": "test content",
                 "MessageAttributes": {
+                    "headless-msg-id": {"Type": "String", "Value": "msg-1"},
+                    "headless-msg-name": {"Type": "String", "Value": "TestEvent"},
                     "TestHeader": {"Type": "String", "Value": "TestValue"}
                 }
             }

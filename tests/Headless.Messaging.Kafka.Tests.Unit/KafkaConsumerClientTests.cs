@@ -259,7 +259,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         var consumeResult = new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(2), new Offset(17)),
-            Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+            Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
         };
 
         // when
@@ -364,7 +364,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(0)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
                     },
                     2 => new ConsumeResult<string, byte[]>
                     {
@@ -373,7 +373,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(1)
                         ),
-                        Message = new Message<string, byte[]> { Value = [2], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [2], Headers = _CreateHeaders() },
                     },
                     _ => waitAndReturnNull(),
                 };
@@ -734,14 +734,15 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_terminally_commit_when_custom_headers_builder_throws()
+    public async Task should_terminally_commit_when_required_header_is_missing()
     {
         // given
-        var throwingOptions = Options.Create(
+        var malformedOptions = Options.Create(
             new KafkaMessagingOptions
             {
                 Servers = "localhost:9092",
-                CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),
+                CustomHeadersBuilder = (_, _) =>
+                    [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)],
             }
         );
 
@@ -761,7 +762,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(5)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
                     };
                 }
 
@@ -774,7 +775,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient(
             "test-group",
             1,
-            throwingOptions,
+            malformedOptions,
             _serviceProvider,
             consumerFactory: _ => consumer
         );
@@ -821,8 +822,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             consumer.Received(1).Commit(Arg.Is<ConsumeResult<string, byte[]>>(result => result.Offset == 5));
             consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
             loggedError.Should().NotBeNull();
-            loggedError!.Reason.Should().Contain("bad header builder");
-            loggedError.Reason.Should().Contain("terminally committed");
+            loggedError!.Reason.Should().Contain("terminally committed").And.NotContain("Messaging header");
         }
         finally
         {
@@ -845,8 +845,17 @@ public sealed class KafkaConsumerClientTests : TestBase
         return new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
-            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = [] },
+            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = _CreateHeaders() },
         };
+    }
+
+    private static Confluent.Kafka.Headers _CreateHeaders()
+    {
+        return
+        [
+            new Header(Headless.Messaging.Headers.MessageId, "msg-1"u8.ToArray()),
+            new Header(Headless.Messaging.Headers.MessageName, "TestEvent"u8.ToArray()),
+        ];
     }
 
     private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)

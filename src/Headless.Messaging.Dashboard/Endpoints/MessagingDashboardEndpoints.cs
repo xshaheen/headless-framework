@@ -221,7 +221,9 @@ public static class MessagingDashboardEndpoints
         var messaging = sp.GetService<MessagingMarkerService>();
         var broker = sp.GetService<MessageQueueMarkerService>();
         var storage = sp.GetService<MessageStorageMarkerService>();
-        var providerCapabilities = sp.GetServices<MessagingProviderCapabilities>()
+        var declaredCapabilities =
+            sp.GetService<IMessagingCapabilityModel>()?.Providers ?? sp.GetServices<MessagingProviderCapabilities>();
+        var providerCapabilities = declaredCapabilities
             .OrderBy(capability => capability.Role)
             .ThenBy(capability => capability.Provider, StringComparer.Ordinal)
             .Select(capability => new

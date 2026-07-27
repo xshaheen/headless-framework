@@ -491,6 +491,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 }
             }
 
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, consumerResult.Message.Value);
         }
         catch (Exception ex)
@@ -499,7 +500,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message; the Kafka offset was terminally committed: {ex}",
+                    Reason =
+                        $"Failed to build transport message; the Kafka offset was terminally committed: {ex.GetType().Name}",
                 }
             );
 
@@ -508,6 +510,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
 
         await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The Kafka transport envelope is missing a required Messaging header.");
+        }
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)

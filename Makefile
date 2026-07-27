@@ -8,6 +8,7 @@ NPM ?= npm
 SOLUTION ?= headless-framework.slnx
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
+MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
@@ -333,6 +334,32 @@ nuget-publish-preflight: ## Fail when an expected package ID/version already exi
 		--expected-version "$(EXPECTED_PACKAGE_VERSION)" \
 		--repository-url "$(EXPECTED_REPOSITORY_URL)" \
 		--repository-commit "$(EXPECTED_REPOSITORY_COMMIT)"
+
+.PHONY: verify-messaging-package-compatibility
+verify-messaging-package-compatibility: pack ## Compile old/new Messaging package families and prove the selected mixed graph fails.
+	@test -n "$${GITHUB_PACKAGES_TOKEN:-}" || (echo "GITHUB_PACKAGES_TOKEN is required for the previous-family and selected-mixed probes." && exit 2)
+	@set -e; \
+	version=$$(sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"); \
+	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
+		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/NuGet.config" --locked-mode; \
+	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
+		--configuration "$(CONFIGURATION)" --no-restore; \
+	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
+		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NuGet.config" \
+		-p:MessagingPackageVersion="$$version"; \
+	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
+		--configuration "$(CONFIGURATION)" --no-restore \
+		-p:MessagingPackageVersion="$$version"; \
+	log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
+	if $(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/SelectedMixed.csproj" \
+		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/NuGet.config" \
+		-p:MessagingPackageVersion="$$version" >"$$log" 2>&1; then \
+		sed -n '1,240p' "$$log"; \
+		echo "SelectedMixed unexpectedly restored successfully."; \
+		exit 1; \
+	fi; \
+	sed -n '1,240p' "$$log"; \
+	rg -q 'NU1605' "$$log" || (echo "SelectedMixed failed without the expected NU1605 downgrade boundary." && exit 1)
 
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.

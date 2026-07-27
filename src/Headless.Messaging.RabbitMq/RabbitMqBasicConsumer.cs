@@ -128,6 +128,7 @@ internal sealed class RabbitMqBasicConsumer(
                 }
             }
 
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, body);
         }
         catch (Exception ex)
@@ -164,6 +165,19 @@ internal sealed class RabbitMqBasicConsumer(
         }
 
         await msgCallback(message, deliveryTag).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The RabbitMQ transport envelope is missing a required Messaging header.");
+        }
     }
 
     public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)

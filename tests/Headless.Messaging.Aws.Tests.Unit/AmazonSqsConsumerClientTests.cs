@@ -170,7 +170,10 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Queue);
         var sqsClient = Substitute.For<IAmazonSQS>();
-        var denied = new AmazonSQSException("denied") { ErrorCode = "AccessDenied" };
+        var denied = new AmazonSQSException("denied https://user:secret@sqs.example/queue?token=leaked")
+        {
+            ErrorCode = "AccessDenied",
+        };
         sqsClient.CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
         _SetPrivateFields(client, sqsClient, string.Empty);
 
@@ -179,7 +182,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var exception = await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*AWS_MESSAGING_PROVISIONING_DENIED*Queue*billing*AccessDenied*sqs:CreateQueue*");
-        exception.Which.InnerException.Should().BeSameAs(denied);
+        exception.Which.InnerException.Should().BeNull();
+        exception.Which.ToString().Should().NotContain("secret").And.NotContain("token=leaked");
     }
 
     [Fact]
@@ -189,7 +193,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Bus);
         var sqsClient = Substitute.For<IAmazonSQS>();
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        var denied = new AmazonSimpleNotificationServiceException("denied") { ErrorCode = "AccessDenied" };
+        var denied = new AmazonSimpleNotificationServiceException(
+            "denied https://user:secret@sns.example/topic?token=leaked"
+        )
+        {
+            ErrorCode = "AccessDenied",
+        };
         snsClient.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
         _SetPrivateFields(client, sqsClient, string.Empty);
         _SetSnsClient(client, snsClient);
@@ -199,7 +208,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var exception = await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*AWS_MESSAGING_PROVISIONING_DENIED*Bus*billing*AccessDenied*sns:CreateTopic*sns:Subscribe*");
-        exception.Which.InnerException.Should().BeSameAs(denied);
+        exception.Which.InnerException.Should().BeNull();
+        exception.Which.ToString().Should().NotContain("secret").And.NotContain("token=leaked");
     }
 
     [Fact]
@@ -239,6 +249,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     {
                                         "Message": "test message",
                                         "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
                                             "test-key": { "Value": "test-value" }
                                         }
                                     }
@@ -307,6 +319,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     {
                                         "Message": "test message",
                                         "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
                                             "test-key": { "Value": "test-value" }
                                         }
                                     }
@@ -454,7 +468,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     Body = """
                                     {
                                         "Message": "test",
-                                        "MessageAttributes": { "key": { "Value": "value" } }
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
+                                            "key": { "Value": "value" }
+                                        }
                                     }
                                     """,
                                     ReceiptHandle = "receipt",
@@ -511,7 +529,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     Body = """
                         {
                             "Message": "test",
-                            "MessageAttributes": { "key": { "Value": "value" } }
+                            "MessageAttributes": {
+                                "headless-msg-id": { "Value": "msg-1" },
+                                "headless-msg-name": { "Value": "TestEvent" },
+                                "key": { "Value": "value" }
+                            }
                         }
                         """,
                     ReceiptHandle = "receipt-1",
@@ -689,7 +711,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     Body = """
                                     {
                                         "Message": "test",
-                                        "MessageAttributes": { "key": { "Value": "value" } }
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
+                                            "key": { "Value": "value" }
+                                        }
                                     }
                                     """,
                                     ReceiptHandle = $"receipt-{count}",
@@ -981,6 +1007,75 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ChangeMessageVisibilityAsync(
                 Arg.Any<string>(),
                 "receipt-json-error",
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_delete_missing_required_headers_without_redelivery()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        logger.IsEnabled(LogLevel.Error).Returns(true);
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+        var callbackInvoked = false;
+        client.OnMessageCallback = (_, _) =>
+        {
+            callbackInvoked = true;
+            return Task.CompletedTask;
+        };
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var receiveCount = 0;
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage
+                                {
+                                    Body = """
+                                    {
+                                        "Message": "valid body",
+                                        "MessageAttributes": {
+                                            "headless-msg-name": { "Value": "TestEvent" }
+                                        }
+                                    }
+                                    """,
+                                    ReceiptHandle = "receipt-missing-header",
+                                },
+                            ],
+                        }
+                    );
+                }
+
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
+        _SetPrivateFields(client, sqsClient, "http://test");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected once the single malformed delivery has been terminally settled.
+        }
+
+        callbackInvoked.Should().BeFalse();
+        _AssertLoggedEvent(logger, LogLevel.Error, 4202, messageContains: "terminally deleted");
+        await sqsClient.Received(1).DeleteMessageAsync("http://test", "receipt-missing-header", CancellationToken.None);
+        await sqsClient
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                "receipt-missing-header",
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );

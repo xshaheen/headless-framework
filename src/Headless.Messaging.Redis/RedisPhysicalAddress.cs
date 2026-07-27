@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Redis;
 
 internal static class RedisPhysicalAddress
@@ -20,7 +22,7 @@ internal static class RedisPhysicalAddress
 
     private static string _Qualify(string lane, string logicalName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(logicalName);
+        Argument.IsNotNullOrWhiteSpace(logicalName);
         return $"headless:messaging:{lane}:{logicalName}";
     }
 }

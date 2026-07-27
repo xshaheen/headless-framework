@@ -157,7 +157,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         if (failEnvelopeBuild)
         {
             rabbitOptions.Value.CustomHeadersBuilder = static (_, _) =>
-                throw new InvalidOperationException("Injected malformed transport envelope.");
+                [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)];
         }
 
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.

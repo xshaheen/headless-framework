@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Aws;
 
 /// <summary>Single authority for lane-qualified SNS topics and SQS queues.</summary>
@@ -22,7 +24,7 @@ internal static class AwsPhysicalAddress
 
     private static string _Qualify(string lane, string value, int maxLength)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        Argument.IsNotNullOrWhiteSpace(value);
 
         const string fifoSuffix = ".fifo";
         var isFifo = value.IsAwsFifoName();

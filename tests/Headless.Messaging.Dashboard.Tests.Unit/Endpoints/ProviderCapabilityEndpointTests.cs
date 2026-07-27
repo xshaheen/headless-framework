@@ -19,7 +19,17 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
     [Fact]
     public async Task should_report_runtime_provider_capabilities_when_meta()
     {
-        await using var app = _CreateTestApp();
+        var bus = MessagingProviderCapabilities.Transport(
+            "Test Transport",
+            [MessageLane.Bus],
+            supportsIndependentLaneTopology: true
+        );
+        var queue = MessagingProviderCapabilities.Transport(
+            "Test Transport",
+            [MessageLane.Queue],
+            supportsIndependentLaneTopology: true
+        );
+        await using var app = _CreateTestApp(bus, queue, composeCapabilities: true);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
@@ -40,7 +50,32 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         capabilities[0].GetProperty("supportsIndependentLaneTopology").GetBoolean().Should().BeTrue();
     }
 
-    private static WebApplication _CreateTestApp()
+    [Fact]
+    public async Task should_report_raw_capabilities_for_standalone_dashboard_host()
+    {
+        var transport = MessagingProviderCapabilities.Transport(
+            "Standalone Transport",
+            [MessageLane.Queue],
+            supportsIndependentLaneTopology: true
+        );
+        await using var app = _CreateTestApp(transport);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        var response = await client.GetAsync("/api/meta", AbortToken);
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        var capabilities = document.RootElement.GetProperty("providerCapabilities").EnumerateArray().ToArray();
+        capabilities.Should().ContainSingle();
+        capabilities[0].GetProperty("provider").GetString().Should().Be("Standalone Transport");
+    }
+
+    private static WebApplication _CreateTestApp(
+        MessagingProviderCapabilities first,
+        MessagingProviderCapabilities? second = null,
+        bool composeCapabilities = false
+    )
     {
         var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
         var builder = WebApplication.CreateSlimBuilder();
@@ -54,13 +89,18 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         builder.Services.AddSingleton<GatewayProxyAgent>();
-        builder.Services.AddMessagingProviderCapabilities(
-            MessagingProviderCapabilities.Transport(
-                "Test Transport",
-                [MessageLane.Bus, MessageLane.Queue],
-                supportsIndependentLaneTopology: true
-            )
-        );
+        builder.Services.AddMessagingProviderCapabilities(first);
+        if (second is not null)
+        {
+            builder.Services.AddMessagingProviderCapabilities(second);
+        }
+
+        if (composeCapabilities)
+        {
+            builder.Services.AddSingleton<IMessagingCapabilityModel>(
+                MessagingCapabilityModel.Compose(second is null ? [first] : [first, second])
+            );
+        }
         builder.Services.AddRouting();
         builder.Services.AddAuthorization();
         builder.Services.AddCors(options =>

@@ -280,16 +280,29 @@ internal sealed class NatsConsumerClient(
             {
                 var durableName = BuildDurableName(groupName, logicalSubject, lane);
                 var subject = NatsPhysicalAddress.Subject(lane, logicalSubject);
+                var deliverPolicy =
+                    lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;
 
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
                     FilterSubject = subject,
-                    DeliverPolicy =
-                        lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New,
+                    DeliverPolicy = deliverPolicy,
                     AckWait = TimeSpan.FromSeconds(30),
                 };
 
                 _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
+
+                if (
+                    !string.Equals(consumerConfig.Name, durableName, StringComparison.Ordinal)
+                    || !string.Equals(consumerConfig.FilterSubject, subject, StringComparison.Ordinal)
+                    || consumerConfig.DeliverPolicy != deliverPolicy
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"NATS {lane} consumer identity, subject, and delivery policy are provider-owned. "
+                            + "ConsumerOptions may configure acknowledgement, retry, replica, and backoff settings but cannot override lane topology."
+                    );
+                }
 
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
@@ -705,6 +718,7 @@ internal sealed class NatsConsumerClient(
                 }
             }
 
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, msg.Data);
         }
         catch (Exception ex)
@@ -730,6 +744,19 @@ internal sealed class NatsConsumerClient(
             );
 
         await onMessage(message, msg).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The NATS transport envelope is missing a required Messaging header.");
+        }
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)

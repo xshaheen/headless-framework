@@ -2,38 +2,30 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tests.Capabilities;
 
 namespace Tests;
 
-public sealed class InMemoryProviderConformanceTests
+public sealed class InMemoryProviderConformanceTests : TestBase
 {
     [Fact]
     public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
     {
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
-            _CreateDriver(),
-            TestContext.Current.CancellationToken
-        );
+        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(_CreateDriver(), AbortToken);
     }
 
     [Fact]
     public Task should_deliver_one_owned_queue_copy_across_replicas()
     {
-        return TransportProviderConformance.AssertQueueOwnershipAsync(
-            _CreateDriver(),
-            TestContext.Current.CancellationToken
-        );
+        return TransportProviderConformance.AssertQueueOwnershipAsync(_CreateDriver(), AbortToken);
     }
 
     [Fact]
     public Task should_isolate_same_logical_name_between_bus_and_queue()
     {
-        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(
-            _CreateDriver(),
-            TestContext.Current.CancellationToken
-        );
+        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(_CreateDriver(), AbortToken);
     }
 
     private static InMemoryProviderConformanceDriver _CreateDriver()

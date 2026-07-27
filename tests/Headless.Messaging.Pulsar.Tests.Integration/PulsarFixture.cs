@@ -112,6 +112,17 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
             var connectionFactory = serviceProvider.GetRequiredService<IConnectionFactory>();
             var client = await connectionFactory.RentClientAsync(cancellationToken);
             var options = serviceProvider.GetRequiredService<IOptions<PulsarMessagingOptions>>();
+            Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null;
+            if (failEnvelopeBuild)
+            {
+                transportMessageFactory = static (headers, body) =>
+                {
+                    var malformedHeaders = headers
+                        .Where(x => !string.Equals(x.Key, Headers.MessageId, StringComparison.Ordinal))
+                        .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+                    return new TransportMessage(malformedHeaders, body);
+                };
+            }
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
             var consumer = new PulsarConsumerClient(
                 options,
@@ -119,9 +130,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                 group,
                 2,
                 lane,
-                transportMessageFactory: failEnvelopeBuild
-                    ? static (_, _) => throw new InvalidOperationException("Injected malformed transport envelope.")
-                    : null
+                transportMessageFactory: transportMessageFactory
             );
 #pragma warning restore CA2000
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });

@@ -521,20 +521,21 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_terminally_ack_when_custom_headers_builder_throws()
+    public async Task should_terminally_ack_when_required_header_is_missing()
     {
         // given
         var options = MsOptions.Options.Create(
             new NatsMessagingOptions
             {
                 Servers = "nats://localhost:4222",
-                CustomHeadersBuilder = (_, _, _) => throw new InvalidOperationException("bad header builder"),
+                CustomHeadersBuilder = (_, _, _) =>
+                    [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)],
             }
         );
 
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
         msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
-        msg.Headers.Returns((NatsHeaders?)null);
+        msg.Headers.Returns(_CreateHeaders());
 
         var callbackInvoked = false;
         var ackCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -618,7 +619,7 @@ public sealed class NatsConsumerClientTests : TestBase
                     CancellationToken.None
                 );
             loggedArgs.Should().NotBeNull();
-            loggedArgs!.Reason.Should().Contain("terminally acknowledged").And.NotContain("bad header builder");
+            loggedArgs!.Reason.Should().Contain("terminally acknowledged").And.NotContain("Messaging header");
         }
         finally
         {
@@ -1001,7 +1002,7 @@ public sealed class NatsConsumerClientTests : TestBase
         // given — one message delivered, then NextAsync blocks until cancellation
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
         msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
-        msg.Headers.Returns((NatsHeaders?)null);
+        msg.Headers.Returns(_CreateHeaders());
 
         var delivered = 0;
         var consumer = Substitute.For<INatsJSConsumer>();
@@ -1364,6 +1365,15 @@ public sealed class NatsConsumerClientTests : TestBase
                     TaskScheduler.Default
                 )
         );
+    }
+
+    private static NatsHeaders _CreateHeaders()
+    {
+        return new NatsHeaders
+        {
+            { Headless.Messaging.Headers.MessageId, "msg-1" },
+            { Headless.Messaging.Headers.MessageName, "TestEvent" },
+        };
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)

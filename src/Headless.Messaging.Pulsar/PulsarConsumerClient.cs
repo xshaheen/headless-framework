@@ -229,6 +229,7 @@ internal sealed class PulsarConsumerClient(
                         message = transportMessageFactory is null
                             ? new TransportMessage(headers, currentMessage.Data)
                             : transportMessageFactory(headers, currentMessage.Data);
+                        _ValidateRequiredHeaders(message.Headers);
                     }
                     catch (Exception ex)
                     {
@@ -259,6 +260,19 @@ internal sealed class PulsarConsumerClient(
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(IDictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The Pulsar transport envelope is missing a required Messaging header.");
+        }
     }
 
     public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)

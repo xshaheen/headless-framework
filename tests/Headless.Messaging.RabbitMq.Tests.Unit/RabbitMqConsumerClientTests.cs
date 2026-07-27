@@ -121,7 +121,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueDeclareAsync(
-                "test-group",
+                "bus.test-group",
                 true, // durable
                 false, // exclusive
                 false, // autoDelete
@@ -493,7 +493,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueDeclareAsync(
-                "test-group",
+                "bus.test-group",
                 false, // durable
                 true, // exclusive
                 true, // autoDelete

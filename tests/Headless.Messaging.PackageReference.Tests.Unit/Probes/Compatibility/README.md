@@ -8,7 +8,15 @@ These projects are isolated from the repository's central package versions and i
 
 The selected mixed restore is expected to fail with `NU1605`: the local Redis package requires the matching new Core version while the application directly pins Core `0.11.0`. This proves only that selected downgrade boundary. The all-new lockfile is an ephemeral exact-artifact receipt because MinVer changes the preview version at each commit; the committed all-old lock remains stable at `0.11.0`.
 
-Run from the repository root after `make pack`:
+Run the complete enforced probe from the repository root. The target first packs the exact current
+commit, requires a token only for the historical GitHub Packages family, compiles the all-old and
+all-new families, and verifies that the selected mixed restore fails specifically with `NU1605`:
+
+```bash
+GITHUB_PACKAGES_TOKEN="$(gh auth token)" make verify-messaging-package-compatibility
+```
+
+The equivalent individual commands are:
 
 ```bash
 GITHUB_PACKAGES_TOKEN="$(gh auth token)" dotnet build \

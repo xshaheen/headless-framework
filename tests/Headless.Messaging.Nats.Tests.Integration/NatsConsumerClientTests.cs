@@ -403,6 +403,76 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
     }
 
+    [Theory]
+    [InlineData(MessageLane.Bus, false)]
+    [InlineData(MessageLane.Bus, true)]
+    [InlineData(MessageLane.Queue, false)]
+    [InlineData(MessageLane.Queue, true)]
+    public async Task should_reject_consumer_options_lane_override_before_readiness(
+        MessageLane lane,
+        bool overrideDeliveryPolicy
+    )
+    {
+        var streamName = $"consumer-guard-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+                ConsumerOptions = config =>
+                {
+                    if (overrideDeliveryPolicy)
+                    {
+                        config.DeliverPolicy =
+                            lane == MessageLane.Bus ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;
+                    }
+                    else
+                    {
+                        config.FilterSubject =
+                            lane == MessageLane.Bus ? "headless.queue.redirected" : "headless.bus.redirected";
+                    }
+                },
+            }
+        );
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider, lane: lane);
+        await client.ConnectAsync(AbortToken);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
+
+        var act = async () => await client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*provider-owned*lane topology*");
+    }
+
+    [Fact]
+    public async Task should_allow_consumer_options_acknowledgement_tuning()
+    {
+        var streamName = $"consumer-tuning-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+                ConsumerOptions = config => config.AckWait = TimeSpan.FromSeconds(5),
+            }
+        );
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        listening.IsFaulted.Should().BeFalse();
+        await _StopListeningAsync(listening, cts);
+    }
+
     [Fact]
     public async Task should_receive_headers_from_published_message()
     {
@@ -435,7 +505,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
 
             var conn = await fixture.GetConnectionAsync();
             var js = new NatsJSContext(conn);
-            var headers = new NatsHeaders { { "X-Custom", "custom-value" } };
+            var headers = _CreateHeaders();
+            headers.Add("X-Custom", "custom-value");
             await js.PublishAsync(
                 NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
                 "body"u8.ToArray(),
@@ -505,7 +576,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500, AbortToken); // let consumer start and create durable consumer
+            await client.WaitUntilReadyAsync(AbortToken);
 
             await client.PauseAsync(AbortToken);
             await _PublishAsync(subject, "paused-msg"u8.ToArray());
@@ -557,8 +628,18 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
             new ReadOnlyMemory<byte>(body),
             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+            headers: _CreateHeaders(),
             cancellationToken: AbortToken
         );
+    }
+
+    private static NatsHeaders _CreateHeaders()
+    {
+        return new NatsHeaders
+        {
+            { MessagingHeaders.MessageId, Guid.NewGuid().ToString("N") },
+            { MessagingHeaders.MessageName, "TestEvent" },
+        };
     }
 
     private static async Task _StopListeningAsync(Task listeningTask, CancellationTokenSource cts)

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 
@@ -90,5 +91,41 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
             new AzureServiceBusProviderConformanceDriver(fixture),
             AbortToken
         );
+    }
+
+    [Fact]
+    public async Task should_terminally_complete_missing_required_headers_across_consumer_restart()
+    {
+        var terminalLogs = 0;
+        await using var session = await fixture.CreateQueueSessionAsync(AbortToken);
+        await session.StartAsync(
+            onLog: log =>
+            {
+                if (log.Reason?.Contains("terminally completed", StringComparison.Ordinal) == true)
+                {
+                    Interlocked.Increment(ref terminalLogs);
+                }
+            },
+            cancellationToken: AbortToken
+        );
+        await using var client = new ServiceBusClient(fixture.ConnectionString);
+        await using var sender = client.CreateSender(session.Destination);
+
+        await sender.SendMessageAsync(new ServiceBusMessage("valid-body"), AbortToken);
+
+        using (var timeout = TimeSpan.FromSeconds(15).ToCancellationTokenSource(AbortToken))
+        {
+            while (Volatile.Read(ref terminalLogs) == 0)
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+        await using var replacement = await session.CreateReplacementAsync(AbortToken);
+        await replacement.StartAsync(cancellationToken: AbortToken);
+
+        (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref terminalLogs).Should().Be(1);
     }
 }

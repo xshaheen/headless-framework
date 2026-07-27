@@ -75,7 +75,7 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
     }
 
     [Fact]
-    public async Task should_terminally_commit_null_transport_value_across_consumer_restart()
+    public async Task should_terminally_commit_missing_required_headers_across_consumer_restart()
     {
         var destination = $"malformed-{Guid.NewGuid():N}";
         var group = $"group-{Guid.NewGuid():N}";
@@ -97,7 +97,12 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
 
         await producer.ProduceAsync(
             destination,
-            new Message<string, byte[]> { Key = "poison", Value = null! },
+            new Message<string, byte[]>
+            {
+                Key = "poison",
+                Value = "valid-body"u8.ToArray(),
+                Headers = [],
+            },
             AbortToken
         );
 

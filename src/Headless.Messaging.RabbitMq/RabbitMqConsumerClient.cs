@@ -293,10 +293,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
                 _channel = channel;
 
-                if (_lane == MessageLane.Bus && !_queueNames.Contains(_groupName, StringComparer.Ordinal))
+                var busQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Bus, _groupName, _groupName);
+                if (_lane == MessageLane.Bus && !_queueNames.Contains(busQueue, StringComparer.Ordinal))
                 {
-                    await _DeclareQueueAsync(_groupName, cancellationToken).ConfigureAwait(false);
-                    _queueNames.Add(_groupName);
+                    await _DeclareQueueAsync(busQueue, cancellationToken).ConfigureAwait(false);
+                    _queueNames.Add(busQueue);
                 }
             }
             catch (TimeoutException ex)

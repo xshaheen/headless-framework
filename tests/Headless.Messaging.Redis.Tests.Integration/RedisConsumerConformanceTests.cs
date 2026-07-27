@@ -92,7 +92,15 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
         var database = connection.GetDatabase();
         var stream = $"headless:messaging:queue:{destination}";
-        await database.StreamAddAsync(stream, [new NameValueEntry("body", "not-json")]);
+        var malformed = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = destination,
+                [Headers.Intent] = nameof(MessageLane.Queue),
+            },
+            "valid-body"u8.ToArray()
+        );
+        await database.StreamAddAsync(stream, malformed.AsStreamEntries());
 
         using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
         {
