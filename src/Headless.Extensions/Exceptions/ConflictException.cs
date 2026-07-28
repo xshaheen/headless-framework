@@ -12,7 +12,7 @@ namespace Headless.Exceptions;
 public sealed class ConflictException : Exception
 {
     /// <summary>The error code applied to conflict errors that are created without an explicit code.</summary>
-    public const string DefaultErrorCode = "error";
+    public const string DefaultErrorCode = ApiResultErrorCodes.Default;
 
     /// <summary>Initializes a conflict exception from a single <see cref="ErrorDescriptor"/>.</summary>
     /// <param name="error">The descriptor of the conflicting condition.</param>

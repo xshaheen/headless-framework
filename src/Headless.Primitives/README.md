@@ -40,6 +40,16 @@ descending.
 parameter-bag constructor accepts any `IReadOnlyDictionary<string, object?>` and copies it defensively into a
 case-insensitive bag.
 
+The built-in result factories preserve the same structured error data as the exception path. `Conflict(...)`
+accepts a message, one descriptor, or many `ErrorDescriptor` instances; `Unauthorized(...)` and
+`Forbidden(...)` accept descriptors; and `ValidationFailed(...)` accepts a field-keyed descriptor map.
+Message-only conflicts use `ApiResultErrorCodes.Default`, while string-only validation pairs use the stable
+`ApiResultErrorCodes.ValidationFailed` code. Error collections are snapshotted when a result is created.
+
+A default-initialized `ApiResult` or `ApiResult<T>` is uninitialized: both `IsSuccess` and `IsFailure` are false,
+`TryGetValue` / `TryGetError` return false, and branch operations or direct access throw a clear
+`InvalidOperationException`.
+
 `FullGeoCoordinate` is constructed from latitude/longitude; the optional components (`Altitude`,
 `HorizontalAccuracy`, `VerticalAccuracy`, `Speed`, `Course`) are init-only properties that default to
 `double.NaN` (unknown) — set them via object initializer when known.
@@ -69,6 +79,11 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 
     return user; // implicit conversion from T to ApiResult<T>
 }
+
+var conflicts = ApiResult.Conflict(
+    new ErrorDescriptor("user:duplicate_email", "Email already exists"),
+    new ErrorDescriptor("user:duplicate_phone", "Phone already exists")
+);
 ```
 
 ### Money and MoneyAmount

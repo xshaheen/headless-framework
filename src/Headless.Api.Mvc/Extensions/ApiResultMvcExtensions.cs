@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.Resources;
 using Microsoft.AspNetCore.Mvc;
 
 // ReSharper disable once CheckNamespace
@@ -16,7 +15,8 @@ namespace Headless.Primitives;
 ///   <item><see cref="ValidationError"/> → 422 Unprocessable Entity</item>
 ///   <item><see cref="ForbiddenError"/> → 403 Forbidden</item>
 ///   <item><see cref="UnauthorizedError"/> → 401 Unauthorized</item>
-///   <item><see cref="AggregateError"/> → 409 Conflict</item>
+///   <item><see cref="AggregateError"/> containing only validation errors → 422 Unprocessable Entity</item>
+///   <item>Other <see cref="AggregateError"/> instances → 409 Conflict</item>
 ///   <item><see cref="ConflictError"/> → 409 Conflict</item>
 ///   <item>All other errors → 409 Conflict</item>
 /// </list>
@@ -60,7 +60,7 @@ public static class ApiResultMvcExtensions
     )
     {
         // Branch instead of Match: the delegates would capture `controller`/`creator` and allocate on every response.
-        return result.TryGetError(out var error) ? error.ToActionResult(controller, creator) : controller.NoContent();
+        return result.IsSuccess ? controller.NoContent() : result.Error.ToActionResult(controller, creator);
     }
 
     /// <summary>
@@ -81,24 +81,19 @@ public static class ApiResultMvcExtensions
         {
             NotFoundError => controller.NotFound(creator.EntityNotFound()),
 
-            ValidationError e => controller.UnprocessableEntity(
-                creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())
+            ValidationError e => controller.UnprocessableEntity(creator.UnprocessableEntity(e.Errors)),
+
+            ForbiddenError e => new ObjectResult(creator.Forbidden(error: e.Error)) { StatusCode = 403 },
+
+            UnauthorizedError e => controller.Unauthorized(creator.Unauthorized(e.Error)),
+
+            AggregateError e when e.TryGetValidationErrors(out var validationErrors) => controller.UnprocessableEntity(
+                creator.UnprocessableEntity(validationErrors)
             ),
 
-            ForbiddenError e => new ObjectResult(
-                creator.Forbidden(error: new ErrorDescriptor(GeneralErrorCodes.Forbidden, e.Reason))
-            )
-            {
-                StatusCode = 403,
-            },
+            AggregateError e => controller.Conflict(creator.Conflict(e.ToErrorDescriptors())),
 
-            UnauthorizedError => controller.Unauthorized(creator.Unauthorized()),
-
-            AggregateError e => controller.Conflict(
-                creator.Conflict(e.Errors.Select(err => new ErrorDescriptor(err.Code, err.Message)).ToList())
-            ),
-
-            ConflictError e => controller.Conflict(creator.Conflict([new ErrorDescriptor(e.Code, e.Message)])),
+            ConflictError e => controller.Conflict(creator.Conflict(e.Errors)),
 
             // Default: treat as conflict
             _ => controller.Conflict(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),

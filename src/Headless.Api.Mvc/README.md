@@ -13,6 +13,8 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — maps expected failures to the same
+  ProblemDetails shapes as `HeadlessApiExceptionHandler`
 - API versioning integration with API Explorer
 
 ## Installation
@@ -40,13 +42,13 @@ app.Run();
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
-public sealed class OrdersController : ApiControllerBase
+public sealed class OrdersController(IOrderService service, IProblemDetailsCreator problems) : ControllerBase
 {
     [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetAsync(int id, CancellationToken ct)
+    public async Task<ActionResult<Order>> GetAsync(int id, CancellationToken ct)
     {
-        var order = await _service.GetAsync(id, ct).ConfigureAwait(false);
-        return order is null ? NotFound() : Ok(order);
+        var result = await service.GetAsync(id, ct).ConfigureAwait(false);
+        return result.ToActionResult(this, problems);
     }
 }
 ```

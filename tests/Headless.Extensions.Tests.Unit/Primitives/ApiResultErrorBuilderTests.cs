@@ -32,8 +32,7 @@ public sealed class ApiResultErrorBuilderTests
 
         // then
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<AggregateError>();
-        ((AggregateError)result.Error).Errors.Should().ContainSingle();
+        result.Error.Should().BeOfType<NotFoundError>();
     }
 
     [Fact]
@@ -78,6 +77,36 @@ public sealed class ApiResultErrorBuilderTests
 
         // then
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<AggregateError>();
+        result.Error.Should().BeOfType<NotFoundError>();
+    }
+
+    [Fact]
+    public void should_snapshot_errors_when_materializing_result()
+    {
+        // given
+        var builder = new ApiResultErrorBuilder();
+        builder.Add(new NotFoundError { Entity = "User", Key = "1" });
+        builder.Add(new NotFoundError { Entity = "Order", Key = "2" });
+        var result = builder.ToApiResult();
+
+        // when
+        builder.Add(new ConflictError("user:duplicate", "Duplicate user"));
+
+        // then
+        result.Error.Should().BeOfType<AggregateError>().Which.Errors.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void should_reject_null_error_when_adding()
+    {
+        // when
+        var action = static () =>
+        {
+            var builder = new ApiResultErrorBuilder();
+            builder.Add(null!);
+        };
+
+        // then
+        action.Should().Throw<ArgumentNullException>();
     }
 }
