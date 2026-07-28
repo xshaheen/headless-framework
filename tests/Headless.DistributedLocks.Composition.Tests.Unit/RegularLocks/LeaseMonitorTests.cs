@@ -66,13 +66,18 @@ public sealed class LeaseMonitorTests : TestBase
         var handle = new FakeLeaseHandle();
         handle.Enqueue(new TimeoutException("transient"));
         await using var sut = _CreateMonitor(handle);
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var lostRegistration = sut.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
 
         // when
         sut.TriggerImmediateValidation();
         await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
