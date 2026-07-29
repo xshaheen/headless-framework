@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,11 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
+        // SQL Server materializes datetime2 with DateTimeKind.Unspecified, so the watermark and projection need the
+        // same normalization the occurrence timestamps use — their UTC contract must not depend on the host's Kind
+        // defaults (docs/solutions/design-patterns/temporal-authority-standard.md).
+        var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
+
         builder.HasKey("Id");
 
         builder.Property(e => e.Id).ValueGeneratedNever();
@@ -28,6 +34,10 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
         builder.Property(e => e.OnMissedRun).HasConversion<string>().HasMaxLength(32);
 
         builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
+
+        builder.Property(e => e.ReconciledThroughUtc).HasConversion(utcDateTimeConverter);
+
+        builder.Property(e => e.NextDueUtc).HasConversion(utcDateTimeConverter);
 
         // The scheduler selects due definitions by this column instead of evaluating every expression on every
         // node, so it carries the dispatch hot path and is indexed alongside the pause flag it is always filtered
