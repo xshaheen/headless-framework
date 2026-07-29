@@ -478,9 +478,19 @@ function handleAuthLogout() {
 
 .provider-capabilities-trigger {
   min-width: 0 !important;
-  padding: 0 8px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  padding: 0 6px !important;
   letter-spacing: normal !important;
   text-transform: none !important;
+}
+
+.provider-capabilities-trigger :deep(.v-btn__prepend) {
+  margin-inline: 0 4px;
+}
+
+.provider-capabilities-trigger :deep(.v-icon) {
+  font-size: 0.875rem;
 }
 
 .provider-capabilities {
