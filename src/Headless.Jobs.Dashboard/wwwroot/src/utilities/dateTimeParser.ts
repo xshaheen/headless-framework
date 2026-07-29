@@ -1,4 +1,6 @@
 
+const TIME_ZONE_SUFFIX = /(Z|[+-]\d{2}:?\d{2})$/i
+
 export function formatDate(
     utcDateString: string,
     includeTime = true,
@@ -8,16 +10,16 @@ export function formatDate(
         // nothing to format, return empty (or some placeholder)
         return '';
       }
-    // 1) Ensure there’s a “Z”
-    let iso = utcDateString.trim();
-    if (!iso.endsWith('Z')) {
-        iso = iso.replace(' ', 'T') + 'Z';
+    let iso = utcDateString.trim().replace(' ', 'T');
+    if (!TIME_ZONE_SUFFIX.test(iso)) {
+        iso += 'Z';
     }
 
-    // 2) Now JS knows “that’s UTC” and will shift to local when you read getHours()
     const dateObj = toTimeZoneDate(iso, timeZone);
+    if (Number.isNaN(dateObj.getTime())) {
+        return '';
+    }
 
-    // 3) Extract with local getters
     const dd = String(dateObj.getDate()).padStart(2, '0');
     const MM = String(dateObj.getMonth() + 1).padStart(2, '0');
     const yyyy = dateObj.getFullYear();

@@ -42,6 +42,17 @@ describe('formatDate', () => {
     expect(formatDate('2024-01-02 03:04:05', true, 'UTC')).toBe('02.01.2024 03:04:05')
   })
 
+  it('preserves timestamps that already include an offset', () => {
+    expect(formatDate('2024-01-02T06:04:05+03:00', true, 'UTC')).toBe('02.01.2024 03:04:05')
+    expect(formatDate('2024-01-02T00:04:05-03:00', true, 'UTC')).toBe('02.01.2024 03:04:05')
+    expect(formatDate('2024-01-02T06:04:05+0300', true, 'UTC')).toBe('02.01.2024 03:04:05')
+  })
+
+  it('returns an empty string for invalid input', () => {
+    expect(formatDate('not-a-date')).toBe('')
+    expect(formatDate('not-a-date', true, 'UTC')).toBe('')
+  })
+
   it('returns an empty string for empty input', () => {
     expect(formatDate('')).toBe('')
   })
