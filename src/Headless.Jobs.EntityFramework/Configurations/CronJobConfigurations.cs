@@ -25,6 +25,21 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
+        builder.Property(e => e.OnMissedRun).HasConversion<string>().HasMaxLength(32);
+
+        builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
+
+        // The scheduler selects due definitions by this column instead of evaluating every expression on every
+        // node, so it carries the dispatch hot path and is indexed alongside the pause flag it is always filtered
+        // with. The fingerprint sweep selects on staleness independently of due-ness, hence the second index.
+        builder
+            .HasIndex(nameof(CronJobEntity.IsPaused), nameof(CronJobEntity.NextDueUtc))
+            .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
+
+        builder
+            .HasIndex(nameof(CronJobEntity.EvaluationFingerprint))
+            .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
+
         // Cron is system-scope by contract (a tenant-scoped cron definition is rejected at schedule time), so
         // TenantId always persists null. Bound the column length for parity with time jobs; no tenant index — cron
         // pickup never filters by tenant.

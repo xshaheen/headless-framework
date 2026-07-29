@@ -65,6 +65,26 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Number of retry attempts consumed so far for this occurrence.</summary>
     public virtual int RetryCount { get; internal set; }
 
+    /// <summary>
+    /// Earliest missed instant this run stands in for, or <see langword="null"/> when the occurrence was dispatched
+    /// normally. The earliest instant is the first occurrence after the definition's watermark, so it is exact
+    /// however large the backlog was — and a job using it as an incremental-processing watermark reprocesses
+    /// redundantly rather than silently skipping the outage window.
+    /// </summary>
+    /// <remarks>
+    /// Persisted on the occurrence rather than derived at execution time: the definition's watermark has already
+    /// advanced past the backlog by then, so a run reclaimed after a restart could not otherwise reconstruct it.
+    /// The missed count and the latest missed instant are emitted as telemetry at recovery time and deliberately
+    /// not persisted.
+    /// </remarks>
+    public virtual DateTime? RecoveredFromUtc { get; internal set; }
+
+    /// <summary>
+    /// Whether this occurrence was materialized by misfire recovery rather than normal dispatch. Derived from
+    /// <see cref="RecoveredFromUtc"/> so the two can never disagree; not mapped to a column.
+    /// </summary>
+    public bool IsRecoveryRun => RecoveredFromUtc is not null;
+
     /// <summary>UTC timestamp when this occurrence row was first created.</summary>
     public virtual DateTimeOffset CreatedAt { get; internal set; }
 

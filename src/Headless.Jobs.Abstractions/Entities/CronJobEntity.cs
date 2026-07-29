@@ -40,6 +40,40 @@ public class CronJobEntity : BaseJobEntity
     public virtual long ScheduleRevision { get; set; }
 
     /// <summary>
+    /// UTC instant through which this definition's schedule has been reconciled. Records what was <i>accounted
+    /// for</i> rather than what was promised, so a skip advances it without anything firing and it stays true when
+    /// a rule change invalidates any derived prediction. Written and compared using the store's clock.
+    /// </summary>
+    public virtual DateTime ReconciledThroughUtc { get; set; }
+
+    /// <summary>
+    /// UTC instant of the first occurrence after <see cref="ReconciledThroughUtc"/>. This is the indexed dispatch
+    /// key the scheduler selects on; it is always derivable from the watermark and the definition, so it can be
+    /// rebuilt whenever schedule interpretation changes.
+    /// </summary>
+    public virtual DateTime NextDueUtc { get; set; }
+
+    /// <summary>
+    /// Opaque fingerprint of the rules used to derive <see cref="NextDueUtc"/> — cron-library semantics, timezone
+    /// rule version, and DST interpretation. Only equality is meaningful. A mismatch means an identical expression
+    /// and timezone now resolve to a different instant, which is surfaced and rebased rather than replayed.
+    /// </summary>
+    public virtual string? EvaluationFingerprint { get; set; }
+
+    /// <summary>
+    /// Seconds of lateness tolerated before a single pending occurrence counts as a misfire. Resolved once at
+    /// creation from the scheduler-wide setting and persisted here, so every node evaluates the same threshold and
+    /// no node's local configuration can decide whether an instant misfired.
+    /// </summary>
+    public virtual int MissedRunGraceSeconds { get; set; }
+
+    /// <summary>
+    /// Policy applied when this definition enters recovery. Seeded from the job function attribute at creation and
+    /// never reapplied afterwards, so any later value is an operator override.
+    /// </summary>
+    public virtual MissedRunPolicy OnMissedRun { get; set; } = MissedRunPolicy.Coalesce;
+
+    /// <summary>
     /// Optional serialized request payload (JSON, optionally GZip-compressed) propagated to every
     /// generated occurrence.
     /// </summary>

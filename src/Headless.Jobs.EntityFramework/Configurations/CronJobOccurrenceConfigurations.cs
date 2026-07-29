@@ -29,6 +29,9 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
+        // Derived from RecoveredFromUtc so the two cannot disagree; never a column.
+        builder.Ignore(x => x.IsRecoveryRun);
+
         builder.HasIndex("CronJobId").HasDatabaseName("IX_CronJobOccurrence_CronJobId");
 
         builder.HasIndex("ExecutionTime").HasDatabaseName("IX_CronJobOccurrence_ExecutionTime");

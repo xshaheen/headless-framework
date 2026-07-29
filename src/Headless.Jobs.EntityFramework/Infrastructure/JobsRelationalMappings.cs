@@ -12,7 +12,11 @@ internal sealed record CronDefinitionRelationalMapping(
     string Table,
     string Id,
     string IsPaused,
-    string ScheduleRevision
+    string ScheduleRevision,
+    string ReconciledThroughUtc,
+    string NextDueUtc,
+    string EvaluationFingerprint,
+    string MissedRunGraceSeconds
 )
 {
     public static CronDefinitionRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
@@ -44,7 +48,11 @@ internal sealed record CronDefinitionRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
             Column(nameof(CronJobEntity.Id)),
             Column(nameof(CronJobEntity.IsPaused)),
-            Column(nameof(CronJobEntity.ScheduleRevision))
+            Column(nameof(CronJobEntity.ScheduleRevision)),
+            Column(nameof(CronJobEntity.ReconciledThroughUtc)),
+            Column(nameof(CronJobEntity.NextDueUtc)),
+            Column(nameof(CronJobEntity.EvaluationFingerprint)),
+            Column(nameof(CronJobEntity.MissedRunGraceSeconds))
         );
     }
 }
