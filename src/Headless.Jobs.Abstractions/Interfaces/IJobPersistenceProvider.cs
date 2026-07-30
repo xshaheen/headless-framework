@@ -371,6 +371,33 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the earliest non-paused cron definitions by dispatch projection, together with the store's own instant.
+    /// This is the scheduler's selection path: an indexed range scan replacing the load-every-definition-and-evaluate
+    /// -every-expression walk that previously ran on every node at every wake.
+    /// </summary>
+    /// <param name="limit">Maximum definitions to return. The caller needs the earliest instant and its ties, not a page.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// The earliest definitions ordered by projection with the store instant they were read against, or
+    /// <see langword="null"/> when no selectable definition exists — the scheduler then has no cron work to wake for.
+    /// </returns>
+    /// <remarks>
+    /// Deliberately NOT filtered to due definitions: the scheduler also needs the earliest projection to know how long
+    /// to sleep when nothing is due yet. The caller decides due-ness by comparing against the returned store instant —
+    /// a store-side decision, since both values come from one server snapshot.
+    /// <para>
+    /// Unlike <see cref="GetAllCronJobExpressionsAsync"/> this must not be served from a cache. It carries the schedule
+    /// position, which every advance moves; a cached projection would hand the scheduler a watermark that has already
+    /// been superseded and make every advance lose its fence.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Compare-and-advances one cron definition's schedule position: the watermark recording the instant through
     /// which its schedule has been reconciled, and the projection of the first occurrence after it. Returns the
     /// committed position and the store's own clock, or <see langword="null"/> when the advance lost its fence.

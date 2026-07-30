@@ -1417,6 +1417,43 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(job is null ? null : _CloneCronJob(job));
     }
 
+    public Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var candidates = _cronJobs
+            .Values.Where(x => !x.IsPaused)
+            .OrderBy(x => x.NextDueUtc)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new CronDispatchCandidate
+            {
+                CronJobId = x.Id,
+                Function = x.Function,
+                Expression = x.Expression,
+                TimeZoneId = x.TimeZoneId,
+                ScheduleRevision = x.ScheduleRevision,
+                ReconciledThroughUtc = x.ReconciledThroughUtc,
+                NextDueUtc = x.NextDueUtc,
+                Retries = x.Retries,
+                RetryIntervals = x.RetryIntervals,
+                OnNodeDeath = x.OnNodeDeath,
+            })
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            return Task.FromResult<CronDispatchCandidates?>(null);
+        }
+
+        return Task.FromResult<CronDispatchCandidates?>(
+            new CronDispatchCandidates { Candidates = candidates, StoreUtcNow = _timeProvider.GetUtcNow().UtcDateTime }
+        );
+    }
+
     public Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
         CronScheduleAdvance advance,
         CancellationToken cancellationToken = default
@@ -1537,6 +1574,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updated.IsPaused = false;
             updated.ScheduleRevision++;
             updated.UpdatedAt = operationTimeUtc;
+            // R10: the position moves with the pause state and revision, so a resumed definition never carries a
+            // pre-pause watermark that would read as a backlog spanning the whole pause.
+            updated.ReconciledThroughUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            updated.NextDueUtc = nextOccurrence.ExecutionTime;
 
             var replacement = _CloneCronOccurrence(nextOccurrence);
             replacement.CronJob = updated;
@@ -1603,6 +1644,20 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 definition.ScheduleRevision = changed ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
                 definition.UpdatedAt = operationTimeUtc;
+
+                // R10: rebase the position on a schedule-changing edit so the old expression's projection cannot
+                // survive it; a metadata-only edit leaves the position exactly where it was. Carried explicitly
+                // because the caller's definition instance does not own these fields.
+                if (changed && update.NextOccurrence is not null)
+                {
+                    definition.ReconciledThroughUtc = _timeProvider.GetUtcNow().UtcDateTime;
+                    definition.NextDueUtc = update.NextOccurrence.ExecutionTime;
+                }
+                else
+                {
+                    definition.ReconciledThroughUtc = current.ReconciledThroughUtc;
+                    definition.NextDueUtc = current.NextDueUtc;
+                }
 
                 CronJobOccurrenceEntity<TCronJob>? replacement = null;
                 if (changed && !current.IsPaused)

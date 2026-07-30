@@ -1317,6 +1317,69 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    public async Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // One indexed range scan over (IsPaused, NextDueUtc). The store instant rides along in the same statement, so
+        // the caller's due-ness comparison is made against the server's clock rather than this node's, with no extra
+        // round trip. Uncached by construction — the schedule position moves on every advance.
+        var rows = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused)
+            .OrderBy(x => x.NextDueUtc)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new
+            {
+                x.Id,
+                x.Function,
+                x.Expression,
+                x.TimeZoneId,
+                x.ScheduleRevision,
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.Retries,
+                x.RetryIntervals,
+                x.OnNodeDeath,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Length == 0)
+        {
+            return null;
+        }
+
+        return new CronDispatchCandidates
+        {
+            StoreUtcNow = rows[0].StoreUtcNow,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    Function = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                }),
+            ],
+        };
+    }
+
     public async Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
         CronScheduleAdvance advance,
         CancellationToken cancellationToken = default
@@ -1697,7 +1760,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
+            // An empty id set searches every definition, per the interface contract and the in-memory provider. The
+            // scheduler relies on that: it no longer enumerates all definitions to build this filter, so passing the
+            // full id set would reintroduce exactly the load-everything read the projection path removed. The
+            // remaining predicates (window, pause, acquirability) plus OrderBy/FirstOrDefault already bound the scan.
+            .Where(x => ids.Length == 0 || ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquireUsingDatabaseClock(owner)

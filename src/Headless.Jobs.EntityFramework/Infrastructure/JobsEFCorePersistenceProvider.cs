@@ -339,6 +339,18 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        // R10: the schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
+        // no window exposes a resumed definition still carrying its pre-pause position — which would read as a backlog
+        // spanning the entire pause and hand recovery an interval that was deliberately not running.
+        //
+        // The watermark is stamped from the DB clock rather than the caller's, so no node's skew decides where a
+        // resumed schedule restarts. This statement runs inside an explicit transaction (the replacement occurrence
+        // must land atomically with it), so on PostgreSQL the clock is transaction-start time — the watermark is
+        // therefore earlier than true by the transaction's own age, single-digit milliseconds. That direction is
+        // benign: at worst one boundary occurrence is considered pending. A lease DEADLINE could not tolerate this and
+        // is why the advance primitive stays in autocommit; a resume watermark can.
+        var resumeProjection = nextOccurrence.ExecutionTime;
+
         var accepted = await dbContext
             .Set<TCronJob>()
             .Where(x => x.Id == cronJobId && x.IsPaused && x.ScheduleRevision == expectedScheduleRevision)
@@ -347,6 +359,8 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                     setter
                         .SetProperty(x => x.IsPaused, valueExpression: false)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
+                        .SetProperty(x => x.ReconciledThroughUtc, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.NextDueUtc, resumeProjection)
                         .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
             )
@@ -421,6 +435,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 return null;
             }
 
+            // R10: a schedule-changing edit rebases the position in the same transition that bumps the revision, so the
+            // old expression's projection never survives the edit. A metadata-only edit leaves both untouched — the
+            // schedule did not move, so neither should the position. Same DB-clock-inside-a-transaction trade-off as
+            // the resume path above.
+            var editProjection = update.NextOccurrence?.ExecutionTime;
+            var rebasePosition = scheduleChanged && editProjection is not null;
+
             var affected = await dbContext
                 .Set<TCronJob>()
                 .Where(x => x.Id == current.Id && x.ScheduleRevision == update.ExpectedScheduleRevision)
@@ -439,6 +460,11 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                                 x => x.ScheduleRevision,
                                 scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
                             )
+                            .SetProperty(
+                                x => x.ReconciledThroughUtc,
+                                x => rebasePosition ? DateTime.UtcNow : x.ReconciledThroughUtc
+                            )
+                            .SetProperty(x => x.NextDueUtc, x => rebasePosition ? editProjection!.Value : x.NextDueUtc)
                             .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                     cancellationToken
                 )
