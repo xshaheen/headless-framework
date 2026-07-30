@@ -371,6 +371,45 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Compare-and-advances one cron definition's schedule position: the watermark recording the instant through
+    /// which its schedule has been reconciled, and the projection of the first occurrence after it. Returns the
+    /// committed position and the store's own clock, or <see langword="null"/> when the advance lost its fence.
+    /// </summary>
+    /// <param name="advance">The observed position to advance from and the position to persist.</param>
+    /// <param name="cancellationToken">Token that aborts the advance.</param>
+    /// <returns>
+    /// The persisted watermark, the persisted projection, and the store instant; <see langword="null"/> when no row
+    /// matched — the definition was concurrently advanced, its revision moved, it is paused, or (when
+    /// <see cref="CronScheduleAdvance.RequireProjectionDue"/> is set) the store does not consider it due.
+    /// </returns>
+    /// <remarks>
+    /// This is the single write through which a definition's schedule position moves, and it is the mechanism that
+    /// makes missed occurrences detectable: the watermark states what was <i>accounted for</i>, so it stays true when
+    /// a rule change invalidates the derived projection, and a skip advances it without anything firing.
+    /// <para>
+    /// Losing the fence is ordinary, not exceptional. On an N-node cluster every node but one loses each race and
+    /// must complete without an exception and without a failed insert.
+    /// </para>
+    /// <para>
+    /// Relational providers must express this as a single atomic statement with the store's clock <i>inside</i> it,
+    /// never sampled into a parameter, and must not wrap it in an explicit transaction — PostgreSQL freezes
+    /// <c>now()</c> at transaction open, which would make the returned instant stale by the transaction's age. The
+    /// in-memory provider uses its injected <c>TimeProvider</c> as the coherent single-process authority. See
+    /// <c>docs/solutions/design-patterns/temporal-authority-standard.md</c>.
+    /// </para>
+    /// <para>
+    /// A crash between a successful advance and whatever occurrence work accompanies it is self-healing rather than
+    /// transactional: the next wake re-derives the projection from the persisted watermark and materializes it, and
+    /// the filtered uniqueness index on <c>(CronJobId, ExecutionTime)</c> makes the repeated insert idempotent.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Recovers the time jobs held by a node that coordination has declared dead, applying each row's
     /// <c>OnNodeDeath</c> policy: <c>Retry</c> → released to <c>Idle</c>, <c>MarkFailed</c> → <c>Failed</c>,
     /// <c>Skip</c> → <c>Skipped</c>.

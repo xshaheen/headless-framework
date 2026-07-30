@@ -1417,6 +1417,57 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(job is null ? null : _CloneCronJob(job));
     }
 
+    public Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The per-definition lock is this provider's equivalent of the relational value CAS: it makes the fence check
+        // and the position write one indivisible step, so concurrent advances from the same observed watermark produce
+        // exactly one winner here too. The lock is per definition, so advancing one never blocks or mutates a sibling.
+        lock (_GetCronDefinitionLock(advance.CronJobId))
+        {
+            if (
+                !_cronJobs.TryGetValue(advance.CronJobId, out var current)
+                || current.IsPaused
+                || current.ScheduleRevision != advance.ExpectedScheduleRevision
+                || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+            )
+            {
+                return Task.FromResult<CronScheduleAdvanceResult?>(null);
+            }
+
+            // KTD2: TimeProvider is the coherent single-process authority for this provider — there is no separate
+            // store whose clock could disagree — and it is the deterministic seam FakeTimeProvider drives in tests.
+            var storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
+
+            if (advance.RequireProjectionDue && current.NextDueUtc > storeUtcNow)
+            {
+                return Task.FromResult<CronScheduleAdvanceResult?>(null);
+            }
+
+            // Copy-on-write, matching every other definition transition in this provider: a reader holding the prior
+            // instance keeps a coherent snapshot instead of observing a half-updated position.
+            var updated = _CloneCronJob(current);
+            updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
+            updated.NextDueUtc = advance.NextDueUtc;
+            _cronJobs[advance.CronJobId] = updated;
+
+            // Read back off the stored instance rather than echoing the request, so this provider's result is
+            // indistinguishable in shape and origin from the relational read-back.
+            return Task.FromResult<CronScheduleAdvanceResult?>(
+                new CronScheduleAdvanceResult
+                {
+                    ReconciledThroughUtc = updated.ReconciledThroughUtc,
+                    NextDueUtc = updated.NextDueUtc,
+                    StoreUtcNow = storeUtcNow,
+                }
+            );
+        }
+    }
+
     public Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
         DateTimeOffset operationTimeUtc,

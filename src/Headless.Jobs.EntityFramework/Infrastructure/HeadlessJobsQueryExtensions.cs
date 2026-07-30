@@ -132,6 +132,49 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
+    /// The compare-and-advance fence for a cron definition's schedule position: the row still holds the watermark and
+    /// the schedule revision the caller observed, and is not paused. Advancement requires all three, so concurrent
+    /// nodes advancing from the same observed watermark produce exactly one winner (the loser matches zero rows) and a
+    /// node holding a stale definition snapshot cannot apply superseded settings.
+    /// </summary>
+    /// <remarks>
+    /// The watermark equality is what serializes the racers — it is a value CAS, not a lock, so the losing node needs
+    /// no rollback and raises nothing. Deliberately clock-free: due-ness is a separate, opt-in concern
+    /// (<see cref="WhereProjectionIsDueUsingDatabaseClock{TCronJob}"/>) because the fingerprint sweep must be able to
+    /// rebase a definition whether or not its stale projection is due.
+    /// </remarks>
+    internal static IQueryable<TCronJob> WhereScheduleAdvanceFenceHolds<TCronJob>(
+        this IQueryable<TCronJob> q,
+        Guid cronJobId,
+        DateTime observedReconciledThroughUtc,
+        long expectedScheduleRevision
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e =>
+            e.Id == cronJobId
+            && !e.IsPaused
+            && e.ScheduleRevision == expectedScheduleRevision
+            && e.ReconciledThroughUtc == observedReconciledThroughUtc
+        );
+    }
+
+    /// <summary>
+    /// Keeps only definitions whose projection the <i>database</i> considers due. <c>DateTime.UtcNow</c> is
+    /// provider-translated to server time inside the statement, so a node whose wall clock runs ahead of the database
+    /// cannot advance a definition that is not yet due, and one whose clock lags cannot stall one that is.
+    /// </summary>
+    /// <remarks>
+    /// Never evaluate this into a local variable first: that reintroduces the application clock and adds a round trip
+    /// whose latency lands the comparison on a different instant than the store's.
+    /// </remarks>
+    internal static IQueryable<TCronJob> WhereProjectionIsDueUsingDatabaseClock<TCronJob>(this IQueryable<TCronJob> q)
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e => e.NextDueUtc <= DateTime.UtcNow);
+    }
+
+    /// <summary>
     /// U5/KTD3 timed-descendant claim gate: keeps a timed chain descendant (<c>ParentId != null</c> AND
     /// <c>ExecutionTime != null</c>) with a parent-terminal-gated <c>RunCondition</c> out of the claim until its parent
     /// reached the MATCHING terminal state. Rows with no parent, no execution time, or a non-gated run condition

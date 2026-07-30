@@ -1316,6 +1316,87 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
     }
+
+    public async Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+
+        if (advance.RequireProjectionDue)
+        {
+            fenced = fenced.WhereProjectionIsDueUsingDatabaseClock();
+        }
+
+        // AUTOCOMMIT BY CONSTRUCTION — do not wrap this in an explicit transaction. The due-ness arm of the fence and
+        // the store instant returned below are both server-clock reads, and PostgreSQL's now() is TRANSACTION-START
+        // time: inside a transaction the comparison and the returned instant would both be stale by the transaction's
+        // age, so a definition would look due (or not) as of when the transaction opened rather than now. See the
+        // class-level lease-clock note above and docs/solutions/design-patterns/temporal-authority-standard.md.
+        //
+        // A single UPDATE needs no transaction to be atomic, and the watermark equality in the fence is a value CAS —
+        // so a losing racer matches zero rows, returns null, and leaves nothing to roll back. Atomicity with the
+        // occurrence work that accompanies an advance is provided by self-healing rather than by this statement: a
+        // crash in between leaves a watermark with no occurrence, and the next wake re-derives the projection from the
+        // persisted watermark and materializes it, idempotently against the filtered uniqueness index.
+        //
+        // The local copies exist so the ExecuteUpdate expression trees capture plain DateTime values; capturing
+        // `advance` would put a property access on the record inside the tree for EF to translate.
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return null;
+        }
+
+        // Read the committed values back instead of echoing the request (KTD4), so the caller sees exactly what the
+        // store decided: both providers truncate to their column precision. DateTime.UtcNow in this projection is
+        // translated to server time, which is how the store's clock reaches the caller without a scalar clock query
+        // and without hijacking UpdatedAt — that column is observational time and stays on the injected TimeProvider.
+        var committed = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Deliberately NOT invalidating the cron-expressions cache: its projection
+        // (MappingExtensions.ForCronJobExpressions) carries no schedule-position field, so it cannot serve a stale
+        // watermark, and dropping the entry on every advance would evict it on every scheduler tick — the opposite of
+        // why it exists. Any future field added to that projection must revisit this.
+        return new CronScheduleAdvanceResult
+        {
+            ReconciledThroughUtc = committed.ReconciledThroughUtc,
+            NextDueUtc = committed.NextDueUtc,
+            StoreUtcNow = committed.StoreUtcNow,
+        };
+    }
     #endregion
 
     #region Core_Cron_TickerOccurrence_Methods
