@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
+#pragma warning disable IDE0161 // EF migrations are generated with block-scoped namespaces.
+
 namespace Headless.Jobs.Api.Demo.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Adds the cron schedule watermark, dispatch projection, and misfire recovery columns.</summary>
     public partial class AddCronScheduleWatermark : Migration
     {
         /// <inheritdoc />
