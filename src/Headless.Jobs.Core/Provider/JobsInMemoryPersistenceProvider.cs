@@ -1432,7 +1432,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             .Select(x => new CronDispatchCandidate
             {
                 CronJobId = x.Id,
-                Function = x.Function,
+                FunctionName = x.Function,
                 Expression = x.Expression,
                 TimeZoneId = x.TimeZoneId,
                 ScheduleRevision = x.ScheduleRevision,

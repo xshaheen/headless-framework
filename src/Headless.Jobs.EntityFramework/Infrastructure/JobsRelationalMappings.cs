@@ -8,15 +8,14 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Jobs.Infrastructure;
 
+// Only the columns the native claim strategies actually name in raw SQL belong here. The schedule-position columns
+// are deliberately absent: the advance goes through EF's ExecuteUpdate, not this helper, and resolving a column here
+// costs an EF metadata lookup on every cron claim batch. Add one back when a native-SQL consumer needs it.
 internal sealed record CronDefinitionRelationalMapping(
     string Table,
     string Id,
     string IsPaused,
-    string ScheduleRevision,
-    string ReconciledThroughUtc,
-    string NextDueUtc,
-    string EvaluationFingerprint,
-    string MissedRunGraceSeconds
+    string ScheduleRevision
 )
 {
     public static CronDefinitionRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
@@ -48,11 +47,7 @@ internal sealed record CronDefinitionRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
             Column(nameof(CronJobEntity.Id)),
             Column(nameof(CronJobEntity.IsPaused)),
-            Column(nameof(CronJobEntity.ScheduleRevision)),
-            Column(nameof(CronJobEntity.ReconciledThroughUtc)),
-            Column(nameof(CronJobEntity.NextDueUtc)),
-            Column(nameof(CronJobEntity.EvaluationFingerprint)),
-            Column(nameof(CronJobEntity.MissedRunGraceSeconds))
+            Column(nameof(CronJobEntity.ScheduleRevision))
         );
     }
 }

@@ -316,15 +316,20 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var candidates = await persistenceProvider
-            .GetEarliestCronDispatchCandidatesAsync(_MaxCronDispatchCandidates, cancellationToken)
-            .ConfigureAwait(false);
+        // The occurrence read no longer derives its filter from the definition read (an empty id set searches every
+        // definition per the provider contract), so the two are independent and overlap instead of serializing —
+        // matching how GetNextJobs already overlaps its cron and time-job reads. Both are uncached by construction,
+        // so serializing them would cost a guaranteed extra round trip on every wake on every node.
+        var candidatesTask = persistenceProvider.GetEarliestCronDispatchCandidatesAsync(
+            _MaxCronDispatchCandidates,
+            cancellationToken
+        );
+        var earliestOccurrenceTask = persistenceProvider.GetEarliestAvailableCronOccurrenceAsync([], cancellationToken);
 
-        // An empty id set searches every definition (provider contract). This path deliberately no longer knows the
-        // full definition set — enumerating it to build a filter is the load-everything read the projection replaced.
-        var earliestAvailableCronOccurrence = await persistenceProvider
-            .GetEarliestAvailableCronOccurrenceAsync([], cancellationToken)
-            .ConfigureAwait(false);
+        await Task.WhenAll(candidatesTask, earliestOccurrenceTask).ConfigureAwait(false);
+
+        var candidates = await candidatesTask.ConfigureAwait(false);
+        var earliestAvailableCronOccurrence = await earliestOccurrenceTask.ConfigureAwait(false);
 
         return await _EarliestCronJobGroupAsync(candidates, earliestAvailableCronOccurrence, cancellationToken)
             .ConfigureAwait(false);
@@ -544,7 +549,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         return new JobManagerDispatchContext(candidate.CronJobId)
         {
-            FunctionName = candidate.Function,
+            FunctionName = candidate.FunctionName,
             Expression = candidate.Expression,
             TimeZoneId = candidate.TimeZoneId,
             IsPaused = false,

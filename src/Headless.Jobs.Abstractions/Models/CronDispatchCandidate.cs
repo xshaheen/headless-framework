@@ -16,8 +16,9 @@ public sealed record CronDispatchCandidate
     /// <summary>Identifier of the cron definition.</summary>
     public required Guid CronJobId { get; init; }
 
-    /// <summary>Registered function name.</summary>
-    public required string Function { get; init; }
+    /// <summary>Registered function name. Named to match <see cref="JobManagerDispatchContext.FunctionName"/>, which
+    /// this projection is converted into once a candidate advances.</summary>
+    public required string FunctionName { get; init; }
 
     /// <summary>Six-field NCrontab expression. Evaluated only for a definition that actually advances.</summary>
     public required string Expression { get; init; }
