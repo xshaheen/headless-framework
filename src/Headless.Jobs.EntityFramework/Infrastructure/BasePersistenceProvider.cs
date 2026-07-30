@@ -1446,8 +1446,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 x.NextDueUtc,
                 StoreUtcNow = DateTime.UtcNow,
             })
-            .SingleAsync(cancellationToken)
+            .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // The definition can be deleted between the advance and this read-back. That is the same "this advance no
+        // longer applies" outcome a lost fence produces, so report it the same way rather than throwing out of the
+        // scheduler's poll.
+        if (committed is null)
+        {
+            return null;
+        }
 
         // Deliberately NOT invalidating the cron-expressions cache: its projection
         // (MappingExtensions.ForCronJobExpressions) carries no schedule-position field, so it cannot serve a stale

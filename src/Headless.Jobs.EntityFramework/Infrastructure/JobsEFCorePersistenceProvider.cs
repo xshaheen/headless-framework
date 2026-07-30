@@ -515,6 +515,33 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Read the committed schedule position back onto each result, the same way the pause and resume paths already
+        // re-read their definition. The watermark is stamped by the DATABASE clock inside the update statement, so the
+        // caller's definition instance cannot know it — and JobsManager publishes whatever this returns, so without
+        // this the edit path would broadcast an unset position while the store holds the rebased one.
+        var committedPositions = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => definitionIds.Contains(x.Id))
+            .Select(x => new
+            {
+                x.Id,
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+            })
+            .ToDictionaryAsync(x => x.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var result in results)
+        {
+            if (committedPositions.TryGetValue(result.Id, out var position))
+            {
+                result.ReconciledThroughUtc = position.ReconciledThroughUtc;
+                result.NextDueUtc = position.NextDueUtc;
+            }
+        }
+
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 

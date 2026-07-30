@@ -51,6 +51,14 @@ public class CronJobEntity : BaseJobEntity
     /// key the scheduler selects on; it is always derivable from the watermark and the definition, so it can be
     /// rebuilt whenever schedule interpretation changes.
     /// </summary>
+    /// <remarks>
+    /// Two values are reserved sentinels rather than real occurrence instants. <see langword="default"/> means the
+    /// position has not been initialized yet — a definition seeded before this field existed, or created by a path
+    /// that did not set it; the scheduler initializes it from the store's instant on the next wake rather than from
+    /// occurrence history, so no backlog is replayed. <see cref="DateTime.MaxValue"/> means the schedule has no
+    /// further occurrence (an exhausted or unparseable expression) and parks the definition beyond any wake instead
+    /// of leaving it permanently due.
+    /// </remarks>
     public virtual DateTime NextDueUtc { get; set; }
 
     /// <summary>
@@ -71,6 +79,11 @@ public class CronJobEntity : BaseJobEntity
     /// Policy applied when this definition enters recovery. Seeded from the job function attribute at creation and
     /// never reapplied afterwards, so any later value is an operator override.
     /// </summary>
+    /// <remarks>
+    /// Not yet honored by the scheduler. Misfire detection and the skip/coalesce recovery behavior this selects ship
+    /// in a later slice; until then the value is persisted and returned but changes nothing at runtime. The same
+    /// applies to <see cref="MissedRunGraceSeconds"/>.
+    /// </remarks>
     public virtual MissedRunPolicy OnMissedRun { get; set; } = MissedRunPolicy.Coalesce;
 
     /// <summary>

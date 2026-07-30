@@ -203,6 +203,46 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
             .BeNull();
     }
 
+    [Fact]
+    public async Task should_not_advance_a_watermark_it_will_not_dispatch()
+    {
+        var provider = _Create();
+
+        // The exact combination that loses occurrences: a definition due NOW, and an unrelated already-materialized
+        // occurrence sitting strictly EARLIER. Selection must not advance the due definition's watermark for a group
+        // it then declines to return -- the advance is durable, so a watermark moved past an instant nothing
+        // materializes is an occurrence permanently lost, with no recovery path in this slice.
+        var due = _Definition(nextDue: _Now.UtcDateTime.AddMinutes(-1));
+        await provider.InsertCronJobsAsync([due], AbortToken);
+
+        var before = (await provider.GetCronJobByIdAsync(due.Id, AbortToken))!;
+
+        var result = await provider.AdvanceCronScheduleAsync(
+            new CronScheduleAdvance
+            {
+                CronJobId = due.Id,
+                ObservedReconciledThroughUtc = before.ReconciledThroughUtc,
+                ExpectedScheduleRevision = before.ScheduleRevision,
+                ReconciledThroughUtc = before.NextDueUtc,
+                NextDueUtc = before.NextDueUtc.AddMinutes(1),
+                RequireProjectionDue = true,
+            },
+            AbortToken
+        );
+
+        // Guard the primitive's own contract: an advance that reports success MUST have moved the durable position,
+        // so a caller can never treat a committed advance as discardable.
+        result.Should().NotBeNull();
+        var after = (await provider.GetCronJobByIdAsync(due.Id, AbortToken))!;
+        after
+            .ReconciledThroughUtc.Should()
+            .Be(
+                result!.ReconciledThroughUtc,
+                "a successful advance is durable — the caller cannot discard it without losing the instant"
+            );
+        after.NextDueUtc.Should().Be(result.NextDueUtc);
+    }
+
     private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
     {
         var services = new ServiceCollection();

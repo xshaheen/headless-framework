@@ -353,9 +353,15 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             var earliestProjection = candidates.Candidates[0].NextDueUtc;
             wakeInstant = earliestProjection;
 
+            // Decide which group wins BEFORE advancing anything. The advance commits durable state: a watermark moved
+            // past an instant this method then declines to return is an occurrence nothing will ever materialize, and
+            // slice 1 has no recovery path to re-derive it. An already-materialized occurrence that sorts strictly
+            // earlier wins outright, so in that case nothing advances and the projection waits for the next wake.
+            var storedWinsOutright = earliestStored is not null && earliestStored.ExecutionTime < earliestProjection;
+
             // Due-ness compares two values from one server snapshot, so it is the store's decision, not this node's.
             // The advance re-asserts it atomically, so this comparison selects work rather than authorizing it.
-            if (earliestProjection <= candidates.StoreUtcNow)
+            if (!storedWinsOutright && earliestProjection <= candidates.StoreUtcNow)
             {
                 foreach (var candidate in candidates.Candidates)
                 {
@@ -424,11 +430,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
             if (dispatchInstant is not null)
             {
-                if (storedTime < dispatchInstant.Value)
-                {
-                    return (storedTime, [storedItem]);
-                }
-
+                // storedTime < dispatchInstant is unreachable by construction: storedWinsOutright above suppresses the
+                // advance entirely in that case, so reaching here means the stored occurrence is at or after the
+                // dispatched instant. Same instant merges into the group; later waits for the next wake, keeping its
+                // durable row untouched.
                 if (storedTime == dispatchInstant.Value)
                 {
                     dispatched!.Add(storedItem);
