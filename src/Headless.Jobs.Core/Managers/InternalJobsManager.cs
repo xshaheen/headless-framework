@@ -422,17 +422,27 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
             };
 
-            if (dispatchInstant is null || storedTime < dispatchInstant.Value)
+            if (dispatchInstant is not null)
             {
-                return (storedTime, [storedItem]);
+                if (storedTime < dispatchInstant.Value)
+                {
+                    return (storedTime, [storedItem]);
+                }
+
+                if (storedTime == dispatchInstant.Value)
+                {
+                    dispatched!.Add(storedItem);
+                }
+
+                return (dispatchInstant.Value, dispatched!.ToArray());
             }
 
-            if (storedTime == dispatchInstant.Value)
-            {
-                dispatched!.Add(storedItem);
-            }
+            // Nothing advanced this wake, so the stored occurrence is the only thing to claim. The wake instant is
+            // still whichever comes first: sleeping all the way to a stored occurrence while a projection falls due
+            // sooner would dispatch that projection late by the difference.
+            var wakeKey = wakeInstant < storedTime ? wakeInstant.Value : storedTime;
 
-            return (dispatchInstant.Value, dispatched!.ToArray());
+            return (wakeKey, [storedItem]);
         }
 
         if (dispatchInstant is not null)
