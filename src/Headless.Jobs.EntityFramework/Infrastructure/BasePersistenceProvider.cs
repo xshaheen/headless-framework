@@ -762,18 +762,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // still-leased running jobs survive a membership blip — once the (dead) node stops renewing, the lease lapses
         // and U3's stalled-reclaim recovers them within ≈ one lease TTL. Retry rows are released to Idle (InProgress
         // is invisible to the claim predicate, so they must be handed back, not left for the lease-expiry arm).
-        var released = await dbContext
+        // Split by attempt state: Idle/Queued rows never invoked user code so their budget is untouched, while an
+        // InProgress row is a STARTED attempt lost to node death — it consumes one retry-budget unit, per the
+        // NodeDeathPolicy.Retry contract (see ReclaimStalledTimeJobsAsync for the crash-loop rationale).
+        var releasedNotStarted = await dbContext
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.Idle
-                || x.Status == JobStatus.Queued
-                || (
-                    x.Status == JobStatus.InProgress
-                    && x.OnNodeDeath == NodeDeathPolicy.Retry
-                    && x.LockedUntil <= DateTime.UtcNow
-                )
-            )
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -784,6 +779,28 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        var releasedInterrupted = await dbContext
+            .Set<TTimeJob>()
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x =>
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.Retry
+                && x.LockedUntil <= DateTime.UtcNow
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        var released = releasedNotStarted + releasedInterrupted;
 
         // MarkFailed: non-idempotent job that must not retry on node death — terminal Failed, once the lease lapsed.
         var failed = await dbContext
@@ -994,6 +1011,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep, KTD6): a host-stop racing
         // the sweep must not tear down a per-policy transition mid-statement and revert the whole transaction.
+        // The Retry arm increments RetryCount: an InProgress row with a lapsed lease represents a STARTED attempt
+        // that was lost, and NodeDeathPolicy.Retry documents that such attempts count toward the retry budget.
+        // Without the increment a handler that reliably kills or wedges its host is reclaimed and re-run forever
+        // with a fresh budget each cycle; the executor's exhaustion gate terminalizes the row once the persisted
+        // count passes the budget.
         var released = await set.Where(x =>
                 x.Status == JobStatus.InProgress
                 && x.LockedUntil <= DateTime.UtcNow
@@ -1005,6 +1027,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
@@ -1373,19 +1396,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // Per-policy dead-node transition (#315, #316/U4) — mirrors ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
-        // occurrence survives a membership blip and is recovered by U3 once its lease lapses.
-        var released = await dbContext
+        // occurrence survives a membership blip and is recovered by U3 once its lease lapses. Split by attempt
+        // state: only the started (InProgress) Retry arm consumes a retry-budget unit.
+        var releasedNotStarted = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.Idle
-                || x.Status == JobStatus.Queued
-                || (
-                    x.Status == JobStatus.InProgress
-                    && x.OnNodeDeath == NodeDeathPolicy.Retry
-                    && x.LockedUntil <= DateTime.UtcNow
-                )
-            )
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -1396,6 +1412,28 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        var releasedInterrupted = await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x =>
+                x.Status == JobStatus.InProgress
+                && x.OnNodeDeath == NodeDeathPolicy.Retry
+                && x.LockedUntil <= DateTime.UtcNow
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        var released = releasedNotStarted + releasedInterrupted;
 
         var failed = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
@@ -1494,7 +1532,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
-        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync / KTD6).
+        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync / KTD6). The Retry arm
+        // increments RetryCount — a lapsed-lease InProgress occurrence is a started attempt that was lost, and it
+        // consumes one retry-budget unit (see ReclaimStalledTimeJobsAsync for the crash-loop rationale).
         var released = await set.Where(x =>
                 x.Status == JobStatus.InProgress
                 && x.LockedUntil <= DateTime.UtcNow
@@ -1506,6 +1546,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )

@@ -864,6 +864,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             switch (job.OnNodeDeath)
             {
+                // The Retry arm consumes one retry-budget unit (RetryCount + 1): a lapsed-lease InProgress row is
+                // a STARTED attempt that was lost — mirrors the EF reclaim so a crash-looping job cannot re-run
+                // forever with a fresh budget each cycle.
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         job.Id,
@@ -872,6 +875,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            t.RetryCount += 1;
                         }
                     ):
                     affected++;
@@ -1279,6 +1283,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (release)
             {
+                // Only a started (InProgress) attempt consumes a retry-budget unit; Idle/Queued rows never
+                // invoked user code — mirrors the EF dead-node split.
+                var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
                         job.Id,
@@ -1287,6 +1294,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            if (consumesBudget)
+                            {
+                                t.RetryCount += 1;
+                            }
                         }
                     )
                 )
@@ -1948,6 +1959,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             switch (occurrence.OnNodeDeath)
             {
+                // Started attempt lost to a lapsed lease — consumes one retry-budget unit (mirrors EF).
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         occurrence.Id,
@@ -1956,6 +1968,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            t.RetryCount += 1;
                         }
                     ):
                     affected++;
@@ -2120,6 +2133,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (release)
             {
+                // Only a started (InProgress) attempt consumes a retry-budget unit (mirrors the EF split).
+                var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
                         occurrence.Id,
@@ -2128,6 +2143,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.OwnerId = null;
                             o.LockedUntil = null;
                             o.Status = JobStatus.Idle;
+                            if (consumesBudget)
+                            {
+                                o.RetryCount += 1;
+                            }
                         }
                     )
                 )
