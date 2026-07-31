@@ -38,7 +38,10 @@ descending.
 `ErrorDescriptor` defaults to `ValidationSeverity.Error`, matching its role as an expected failure. Pass
 `ValidationSeverity.Warning` or `ValidationSeverity.Information` explicitly for non-error diagnostics. The
 parameter-bag constructor accepts any `IReadOnlyDictionary<string, object?>` and copies it defensively into a
-case-insensitive bag.
+case-insensitive bag. When parameters are known at construction time, pass one or more `(Key, Value)` tuples,
+or a `ReadOnlySpan<(string Key, object? Value)>`; both forms pre-size and snapshot the same bag. The direct tuple
+form uses `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array. Use
+`WithParam` when a parameter is discovered incrementally.
 
 The built-in result factories preserve the same structured error data as the exception path. `Conflict(...)`
 accepts a message, one descriptor, or many `ErrorDescriptor` instances; `Unauthorized(...)` and
@@ -81,8 +84,15 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 }
 
 var conflicts = ApiResult.Conflict(
-    new ErrorDescriptor("user:duplicate_email", "Email already exists"),
+    new ErrorDescriptor("user:duplicate_email", "Email already exists", ("email", email)),
     new ErrorDescriptor("user:duplicate_phone", "Phone already exists")
+);
+
+var contextualError = new ErrorDescriptor(
+    "user:conflict",
+    "User conflicts with existing data",
+    ("email", email),
+    ("tenantId", tenantId)
 );
 ```
 

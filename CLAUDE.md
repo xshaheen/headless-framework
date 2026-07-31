@@ -8,7 +8,7 @@
 It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
 
 **This is a greenfield project.**
-Prefer simpler, cleaner APIs even when that requires breaking changes. Do not preserve awkward compatibility layers unless explicitly requested.
+Prefer simpler, cleaner APIs even when that requires breaking changes. Breaking changes that materially improve correctness or performance are acceptable and recommended over compatibility shims unless explicitly requested otherwise.
 
 **Coverage targets:**
 - **Line coverage**: ≥85% (minimum: 80%)

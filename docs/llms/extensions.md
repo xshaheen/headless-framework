@@ -304,7 +304,7 @@ Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-
 
 ### Design Notes
 
-Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. The built-in result factories preserve exception-path data: conflict accepts one or many `ErrorDescriptor` values, authorization accepts descriptors, not-found accepts string/Guid/int/long keys, and validation accepts a field-keyed descriptor map. String-only validation uses `ApiResultErrorCodes.ValidationFailed`, and error collections are snapshotted. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); try-accessors return false and branch operations throw. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending**. The `…Async` `Map`/`Bind`/`Match` combinators include cancellation-aware overloads whose delegates receive the caller's token.
+Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. The built-in result factories preserve exception-path data: conflict accepts one or many `ErrorDescriptor` values, authorization accepts descriptors, not-found accepts string/Guid/int/long keys, and validation accepts a field-keyed descriptor map. `ErrorDescriptor` accepts one or more `(Key, Value)` tuples or a `ReadOnlySpan<(string Key, object? Value)>`, pre-sizes a case-insensitive parameter bag, and snapshots the input. Direct tuples use `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array; use `WithParam` for incrementally discovered values. String-only validation uses `ApiResultErrorCodes.ValidationFailed`, and error collections are snapshotted. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); try-accessors return false and branch operations throw. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending**. The `…Async` `Map`/`Bind`/`Match` combinators include cancellation-aware overloads whose delegates receive the caller's token.
 
 ### Installation
 
@@ -327,8 +327,15 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 }
 
 var conflicts = ApiResult.Conflict(
-    new ErrorDescriptor("user:duplicate_email", "Email already exists"),
+    new ErrorDescriptor("user:duplicate_email", "Email already exists", ("email", email)),
     new ErrorDescriptor("user:duplicate_phone", "Phone already exists")
+);
+
+var contextualError = new ErrorDescriptor(
+    "user:conflict",
+    "User conflicts with existing data",
+    ("email", email),
+    ("tenantId", tenantId)
 );
 
 var order = new OrderBy("CreatedAt");                    // ascending by default
