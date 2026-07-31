@@ -103,8 +103,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var now = TimeProvider.GetUtcNow();
-
         var baseQuery =
             timeJobIds.Length == 0
                 ? dbContext.Set<TTimeJob>()
@@ -113,6 +111,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // WhereReleasableBy, not the acquire predicate: the acquire arms also match unowned and lease-lapsed
         // FOREIGN rows, so the empty-id (release everything) form would sweep the whole cluster's claimable rows
         // and bump their UpdatedAt CAS tokens. Release is scoped to this owner's own not-yet-started claims.
+        // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic per row.
         await baseQuery
             .WhereReleasableBy(owner)
             .ExecuteUpdateAsync(
@@ -121,7 +120,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, _ => JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => now),
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -145,10 +144,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .Where(x => x.Id == functionContexts.JobId)
             .WhereOwnedBy(owner)
-            .ExecuteUpdateAsync(
-                setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow()),
-                cancellationToken
-            )
+            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContexts), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -184,10 +180,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         var affected = await rowsToUpdate
-            .ExecuteUpdateAsync(
-                setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow()),
-                cancellationToken
-            )
+            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContext), cancellationToken)
             .ConfigureAwait(false);
 
         if (affected == 0)

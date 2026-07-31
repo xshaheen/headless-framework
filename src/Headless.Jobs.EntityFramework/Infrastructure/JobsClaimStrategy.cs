@@ -267,15 +267,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         var context = dbContext.Set<TTimeJob>();
         var now = timeProvider.GetUtcNow();
-        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
         // nested projection).
+        // The due-time arm uses the DATABASE clock (EF translates DateTime.UtcNow), matching the lease arm in the
+        // same predicate — a node with a fast local clock must not claim jobs before they are due.
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .WhereCanFallbackClaimUsingDatabaseClock()
-            .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             // U5/KTD3: the fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
             // gated here too — claimable only once its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(context)
@@ -339,17 +340,17 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         var now = timeProvider.GetUtcNow();
-        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        // Due-time arm on the DATABASE clock, matching the lease arm (see ClaimTimedOutTimeJobsAsync).
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => !x.CronJob.IsPaused)
             .WhereCanFallbackClaimUsingDatabaseClock()
-            .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
             .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)

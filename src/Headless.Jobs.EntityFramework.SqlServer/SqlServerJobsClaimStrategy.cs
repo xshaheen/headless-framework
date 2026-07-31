@@ -155,7 +155,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
                 FROM {mapping.Table} AS root WITH ({readPastHints})
                 WHERE root.{mapping.ExecutionTime} IS NOT NULL
-                  AND root.{mapping.ExecutionTime} <= @fallbackThreshold
+                  AND root.{mapping.ExecutionTime} <= DATEADD(second, -1, @claimNow)
                   AND (root.{mapping.Status} = @idle
                        OR (root.{mapping.Status} = @queued
                            AND (root.{mapping.LockedUntil} IS NULL
@@ -172,7 +172,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    _DateTimeParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)),
                     new SqlParameter("idle", nameof(JobStatus.Idle)),
                     new SqlParameter("queued", nameof(JobStatus.Queued)),
                     new SqlParameter("retry", nameof(NodeDeathPolicy.Retry))
@@ -629,7 +628,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             WITH candidates AS (
                 SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence WITH ({readPastHints})
-                WHERE occurrence.{mapping.ExecutionTime} <= @fallbackThreshold
+                WHERE occurrence.{mapping.ExecutionTime} <= DATEADD(second, -1, @claimNow)
                   AND (occurrence.{mapping.Status} = @idle
                        OR (occurrence.{mapping.Status} = @queued
                            AND (occurrence.{mapping.LockedUntil} IS NULL
@@ -647,7 +646,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INNER JOIN candidates ON occurrence.{mapping.Id} = candidates.{mapping.Id};
             """;
 #pragma warning restore CA2100
-        command.Parameters.Add(_DateTimeParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)));
         command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));

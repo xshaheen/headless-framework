@@ -278,12 +278,15 @@ internal static class MappingExtensions
         {
             setters.SetProperty(x => x.ExecutionTime, functionContext.ExecutionTime);
         }
+
+        // UPDATED_AT ALWAYS — database clock (see UpdateTimeJob). Previously never stamped here, so an
+        // occurrence's UpdatedAt froze at its last claim for the whole execution lifecycle.
+        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
     }
 
     internal static void UpdateTimeJob<TTimeJob>(
         this UpdateSettersBuilder<TTimeJob> setters,
-        JobExecutionState functionContext,
-        DateTimeOffset updatedAt
+        JobExecutionState functionContext
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -337,7 +340,9 @@ internal static class MappingExtensions
             setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
         }
 
-        // UPDATED_AT ALWAYS
-        setters.SetProperty(x => x.UpdatedAt, updatedAt);
+        // UPDATED_AT ALWAYS — database clock, not a bound app-clock parameter: claims stamp UpdatedAt from the
+        // DB clock and the CAS claim compares it as an optimistic token, so a completion stamped by a lagging
+        // node's clock would make the column non-monotonic and unsound as a fence.
+        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
     }
 }
