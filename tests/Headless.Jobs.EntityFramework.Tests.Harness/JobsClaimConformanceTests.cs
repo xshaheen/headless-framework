@@ -702,6 +702,70 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task concurrent_cas_claims_of_one_row_have_exactly_one_winner()
+    {
+        // Adversarial repro for the portable CAS strategy: its optimistic gate is expressed as a subquery over the
+        // root row rather than a predicate on the updated row itself. Under READ COMMITTED, two claimants racing
+        // the SAME row must still resolve to exactly one winner (the loser's re-evaluated gate must fail after it
+        // unblocks on the winner's committed write). Round-loops because the interleaving is probabilistic — a
+        // single shot can trivially pass even when the gate is unsound.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var firstHost = fixture.BuildHost("cas-race-a", useNativeClaims: false);
+        using var secondHost = fixture.BuildHost("cas-race-b", useNativeClaims: false);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        await firstHost.StartAsync(ct);
+        await secondHost.StartAsync(ct);
+
+        try
+        {
+            var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var second = secondHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+
+            for (var round = 0; round < 30; round++)
+            {
+                var job = new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "cas-race",
+                    ExecutionTime = DateTime.UtcNow,
+                };
+                await first.AddTimeJobsAsync([job], ct);
+                var stored = await first.GetTimeJobByIdAsync(job.Id, ct);
+                var peeked = new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt };
+
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                async Task<TimeJobEntity[]> claimAsync(IJobPersistenceProvider<TimeJobEntity, CronJobEntity> p)
+                {
+                    await gate.Task;
+                    return await p.QueueTimeJobsAsync([peeked], ct).ToArrayAsync(ct);
+                }
+
+                var firstClaim = claimAsync(first);
+                var secondClaim = claimAsync(second);
+                gate.SetResult();
+                var claims = await Task.WhenAll(firstClaim, secondClaim);
+
+                var winners = claims.SelectMany(x => x).Count(x => x.Id == job.Id);
+                winners
+                    .Should()
+                    .Be(
+                        1,
+                        "round {0}: exactly one claimant may win a single-row CAS race — two winners means the "
+                            + "optimistic gate is not re-evaluated against the committed row",
+                        round
+                    );
+            }
+        }
+        finally
+        {
+            await Task.WhenAll(firstHost.StopAsync(ct), secondHost.StopAsync(ct));
+        }
+    }
+
     public virtual async Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         var ct = AbortToken;

@@ -260,6 +260,12 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task concurrent_cas_claims_of_one_row_have_exactly_one_winner()
+    {
+        return base.concurrent_cas_claims_of_one_row_have_exactly_one_winner();
+    }
+
+    [Fact]
     public override Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         return base.long_cron_claim_transaction_publishes_a_fresh_lease();
