@@ -3,6 +3,7 @@
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.Hosting;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.Dispatcher;
@@ -10,7 +11,8 @@ namespace Headless.Jobs.Dispatcher;
 internal sealed class JobsDispatcher(
     JobsTaskScheduler taskScheduler,
     JobsExecutionTaskHandler taskHandler,
-    IJobFunctionConcurrencyGate concurrencyGate
+    IJobFunctionConcurrencyGate concurrencyGate,
+    IHostApplicationLifetime? hostLifetime = null
 ) : IJobsDispatcher
 {
     public bool IsEnabled => true;
@@ -21,6 +23,13 @@ internal sealed class JobsDispatcher(
         {
             return;
         }
+
+        // The caller's token governs only admission (waiting for pool capacity). By dispatch time the row is
+        // already durably InProgress with a lease, so the running job must be owned by the HOST lifetime — an
+        // enqueuing HTTP request ending (cancelled, completed, or its recycled CTS disposed) must not cancel or
+        // silently skip a job the store says is running; that row would otherwise sit out its whole lease and be
+        // resolved by OnNodeDeath as if the node had died.
+        var executionToken = hostLifetime?.ApplicationStopping ?? CancellationToken.None;
 
         foreach (var context in contexts)
         {
@@ -47,7 +56,8 @@ internal sealed class JobsDispatcher(
                         }
                     },
                     context.CachedPriority,
-                    cancellationToken
+                    capacityCancellationToken: cancellationToken,
+                    executionCancellationToken: executionToken
                 )
                 .ConfigureAwait(false);
         }

@@ -486,12 +486,9 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                 ExecutionTime = occurrence.ExecutionTime,
             };
 
-            // Populate cached delegate and priority so the dispatcher can execute the job
-            if (_functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
-            {
-                context.CachedDelegate = tickerItem.Delegate;
-                context.CachedPriority = tickerItem.Priority;
-            }
+            // Canonical hydration: also stamps CachedMaxConcurrency, so an on-demand run acquires the same
+            // per-function concurrency gate as scheduler pickups instead of silently bypassing the limit.
+            JobsExecutionContext.CacheFunctionReferences(context, _functionRegistry);
 
             await _dispatcher.DispatchAsync([context], cancellationToken).ConfigureAwait(false);
         }
