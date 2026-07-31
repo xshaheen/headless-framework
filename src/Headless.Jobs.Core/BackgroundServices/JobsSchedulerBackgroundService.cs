@@ -108,6 +108,20 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 await _internalJobsManager
                     .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
                     .ConfigureAwait(false);
+
+                // This exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps
+                // running without a scheduler, so the cause must be visible in logs.
+                if (
+                    _ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested
+                )
+                {
+                    _logger.LogJobsSchedulerStoppedOnMembershipLoss();
+                }
+                else
+                {
+                    _logger.LogJobsSchedulerStoppedOnShutdown();
+                }
+
                 break;
             }
             catch (Exception ex)
@@ -258,4 +272,22 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _schedulerLoopCancellationTokenSource?.Dispose();
         base.Dispose();
     }
+}
+
+internal static partial class JobsSchedulerBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 3220,
+        Level = LogLevel.Warning,
+        Message = "Jobs scheduler loop stopped because local coordination membership was lost; "
+            + "no jobs will be claimed or dispatched by this node until the host restarts."
+    )]
+    public static partial void LogJobsSchedulerStoppedOnMembershipLoss(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3221,
+        Level = LogLevel.Information,
+        Message = "Jobs scheduler loop stopped for host shutdown."
+    )]
+    public static partial void LogJobsSchedulerStoppedOnShutdown(this ILogger logger);
 }

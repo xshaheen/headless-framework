@@ -18,6 +18,7 @@ internal sealed class JobsFallbackBackgroundService(
     IJobFunctionConcurrencyGate concurrencyGate,
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
+    IJobsOwnerIdentity ownerIdentity,
     ILogger<JobsFallbackBackgroundService> logger
 ) : BackgroundService
 {
@@ -31,7 +32,17 @@ internal sealed class JobsFallbackBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        // Fail-stop (R9), mirroring the main scheduler loop: the reclaim sweep applies cluster-wide terminal
+        // transitions (MarkFailed/Skip), so a node that lost coordination membership must stop sweeping other
+        // live nodes' rows — under StopMembershipOnly nothing else would stop this loop. On the in-memory path
+        // the token is None and never fires.
+        using var membershipLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            ownerIdentity.MembershipLostToken
+        );
+        var loopToken = membershipLinkedCts.Token;
+
+        while (!loopToken.IsCancellationRequested)
         {
             try
             {
@@ -39,7 +50,7 @@ internal sealed class JobsFallbackBackgroundService(
                 // skip queuing fallback work to avoid throwing and stopping the host.
                 if (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
+                    await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -47,9 +58,9 @@ internal sealed class JobsFallbackBackgroundService(
                 // a Retry row released to Idle here is picked up by RunTimedOutTickers in the same tick. Closes the
                 // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
                 // dead-node sweep.
-                await internalJobsManager.ReclaimStalledResources(stoppingToken).ConfigureAwait(false);
+                await internalJobsManager.ReclaimStalledResources(loopToken).ConfigureAwait(false);
 
-                var functions = await internalJobsManager.RunTimedOutTickers(stoppingToken).ConfigureAwait(false);
+                var functions = await internalJobsManager.RunTimedOutTickers(loopToken).ConfigureAwait(false);
 
                 if (functions.Length != 0)
                 {
@@ -81,7 +92,7 @@ internal sealed class JobsFallbackBackgroundService(
                                         isDue: true
                                     ),
                                     function.CachedPriority,
-                                    stoppingToken
+                                    loopToken
                                 )
                                 .ConfigureAwait(false);
                         }
@@ -93,16 +104,15 @@ internal sealed class JobsFallbackBackgroundService(
                         }
                     }
 
-                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), stoppingToken).ConfigureAwait(false);
+                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), loopToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
+                    await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
-                // Host is shutting down – exit gracefully.
                 break;
             }
 #pragma warning disable ERP022 // Background service must continue running even if individual operations fail.
@@ -111,9 +121,14 @@ internal sealed class JobsFallbackBackgroundService(
                 // Swallow unexpected exceptions so they don't bubble up
                 // and stop the host; wait a bit before retrying.
                 logger.LogJobsFallbackTickFailed(exception, _fallbackJobPeriod);
-                await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
+                await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
             }
 #pragma warning restore ERP022
+        }
+
+        if (ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+        {
+            logger.LogJobsFallbackStoppedOnMembershipLoss();
         }
     }
 
@@ -136,4 +151,12 @@ internal static partial class JobsFallbackBackgroundServiceLog
         Exception exception,
         TimeSpan fallbackPeriod
     );
+
+    [LoggerMessage(
+        EventId = 3201,
+        Level = LogLevel.Warning,
+        Message = "Jobs fallback service stopped because local coordination membership was lost; "
+            + "reclaim sweeps and timed-out re-dispatch no longer run on this node."
+    )]
+    public static partial void LogJobsFallbackStoppedOnMembershipLoss(this ILogger logger);
 }
