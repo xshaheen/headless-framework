@@ -110,8 +110,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 ? dbContext.Set<TTimeJob>()
                 : dbContext.Set<TTimeJob>().Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id));
 
+        // WhereReleasableBy, not the acquire predicate: the acquire arms also match unowned and lease-lapsed
+        // FOREIGN rows, so the empty-id (release everything) form would sweep the whole cluster's claimable rows
+        // and bump their UpdatedAt CAS tokens. Release is scoped to this owner's own not-yet-started claims.
         await baseQuery
-            .WhereCanAcquireUsingDatabaseClock(owner)
+            .WhereReleasableBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -1569,8 +1572,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     .Set<CronJobOccurrenceEntity<TCronJob>>()
                     .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id));
 
+        // See ReleaseAcquiredTimeJobsAsync: owner-scoped release predicate, never the cluster-wide acquire arms.
         await baseQuery
-            .WhereCanAcquireUsingDatabaseClock(owner)
+            .WhereReleasableBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter

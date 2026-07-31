@@ -112,8 +112,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// after a successful claim.
     /// </summary>
     /// <param name="timeJobIds">
-    /// The jobs to release. An <b>empty</b> array is not a no-op: it releases every row this node currently holds
-    /// in a releasable state.
+    /// The jobs to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c> row this node
+    /// has claimed but not started. Releasable means <c>Queued</c> AND owned by this node — <c>InProgress</c>
+    /// work, foreign or unowned rows, and <c>Idle</c> owned rows (a running chain's claimed descendants) are
+    /// never matched by either form.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release.</param>
     /// <returns>A task that completes when the release has been applied.</returns>
@@ -488,8 +490,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// owner and lease cleared. The cron mirror of <see cref="ReleaseAcquiredTimeJobsAsync"/>.
     /// </summary>
     /// <param name="occurrenceIds">
-    /// The occurrences to release. An <b>empty</b> array is not a no-op: it releases every occurrence this node
-    /// currently holds in a releasable state.
+    /// The occurrences to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c>
+    /// occurrence this node has claimed but not started. Releasable means <c>Queued</c> AND owned by this node —
+    /// <c>InProgress</c>, foreign, unowned, and <c>Idle</c> owned rows are never matched by either form.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release.</param>
     /// <returns>A task that completes when the release has been applied.</returns>

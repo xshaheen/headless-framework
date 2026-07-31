@@ -311,8 +311,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_timeJobs.TryGetValue(id, out var job))
             {
-                // Check if we can release (similar to WhereCanAcquire)
-                if (_CanAcquire(job))
+                // Release only this owner's claimed-but-not-started rows (the EF WhereReleasableBy mirror). The
+                // acquire predicate would also sweep foreign and unowned rows on the empty-id form, and Idle
+                // owned rows are running chains' descendants — stripping them would break continuations.
+                if (_IsReleasable(job.Status, job.OwnerId))
                 {
                     var updatedTicker = _CloneTicker(job);
                     updatedTicker.OwnerId = null;
@@ -329,6 +331,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         return Task.CompletedTask;
+    }
+
+    private bool _IsReleasable(JobStatus status, string? ownerId)
+    {
+        return status == JobStatus.Queued && string.Equals(ownerId, _ownerId, StringComparison.Ordinal);
     }
 
     public Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
@@ -1997,7 +2004,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
             {
-                if (_CanAcquireCronOccurrence(occurrence))
+                // Owner-scoped release, mirroring ReleaseAcquiredTimeJobsAsync (never the acquire predicate).
+                if (_IsReleasable(occurrence.Status, occurrence.OwnerId))
                 {
                     var updatedOccurrence = _CloneCronOccurrence(occurrence);
                     updatedOccurrence.OwnerId = null;

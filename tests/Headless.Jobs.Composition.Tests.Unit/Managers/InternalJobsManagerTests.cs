@@ -437,4 +437,96 @@ public sealed class InternalJobsManagerTests : TestBase
         childContext.TenantId.Should().Be("t-child");
         childContext.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-grand");
     }
+
+    [Fact]
+    public async Task release_acquired_resources_null_and_empty_both_release_everything_owned()
+    {
+        // The scheduler's fault path cannot know which rows a failed tick claimed, so both the null and the
+        // empty-batch forms must reach the providers as the (owner-scoped) release-everything call. Previously []
+        // short-circuited to a no-op and a faulted tick left its claims leased for a full LeaseDuration.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _ReleaseTestManager(provider);
+
+        await manager.ReleaseAcquiredResources(resources: null, AbortToken);
+
+        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+
+        provider.ClearReceivedCalls();
+
+        await manager.ReleaseAcquiredResources([], AbortToken);
+
+        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+    }
+
+    [Fact]
+    public async Task release_acquired_resources_with_resources_releases_only_the_listed_ids()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _ReleaseTestManager(provider);
+        var timeJobId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+
+        await manager.ReleaseAcquiredResources(
+            [_ReleaseState(timeJobId, JobType.TimeJob), _ReleaseState(occurrenceId, JobType.CronJobOccurrence)],
+            AbortToken
+        );
+
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Single() == occurrenceId), AbortToken);
+
+        provider.ClearReceivedCalls();
+
+        await manager.ReleaseAcquiredResources([_ReleaseState(timeJobId, JobType.TimeJob)], AbortToken);
+
+        // A one-type batch must not escalate the other type into the release-everything form.
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+        await provider
+            .DidNotReceive()
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+    }
+
+    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _ReleaseTestManager(
+        IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider
+    )
+    {
+        return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+                new DateTimeOffset(2026, 7, 17, 10, 0, 0, TimeSpan.Zero)
+            ),
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+    }
+
+    private static JobExecutionState _ReleaseState(Guid jobId, JobType type)
+    {
+        return new JobExecutionState
+        {
+            JobId = jobId,
+            FunctionName = "fn",
+            Type = type,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            RunCondition = RunCondition.OnSuccess,
+        };
+    }
 }

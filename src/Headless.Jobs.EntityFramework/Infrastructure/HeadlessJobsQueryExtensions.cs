@@ -286,4 +286,27 @@ public static class HeadlessJobsQueryExtensions
             && e.OwnerId == owner
         );
     }
+
+    /// <summary>
+    /// Selects the rows a release may return to <c>Idle</c>: <c>Queued</c> rows this owner claimed but has not
+    /// started. Never matches <c>InProgress</c> work, foreign or unowned rows, or <c>Idle</c> rows — chain
+    /// descendants sit <c>Idle</c> with the root's owner while the root runs, so a release (including the
+    /// release-everything empty-id form) stripping their owner would break the running chain's continuations.
+    /// A released root's still-stamped descendants self-heal: the next root claim re-stamps every idle descendant.
+    /// </summary>
+    public static IQueryable<TTimeJob> WhereReleasableBy<TTimeJob>(this IQueryable<TTimeJob> q, string owner)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e => e.Status == JobStatus.Queued && e.OwnerId == owner);
+    }
+
+    /// <inheritdoc cref="WhereReleasableBy{TTimeJob}(System.Linq.IQueryable{TTimeJob},string)"/>
+    public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereReleasableBy<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
+        string owner
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e => e.Status == JobStatus.Queued && e.OwnerId == owner);
+    }
 }

@@ -529,7 +529,12 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (resources is null)
+        // Null and empty both mean "release every row this owner claimed but has not started": the scheduler's
+        // fault path cannot know which rows a failed tick had already claimed, so it must be able to release
+        // without a list. Previously [] short-circuited to a no-op here (the fault path released nothing and the
+        // rows sat leased for a full LeaseDuration) while the providers treated [] as an UNSCOPED release — both
+        // sides now agree on the owner-scoped release-everything form.
+        if (resources is null || resources.Length == 0)
         {
             await Task.WhenAll(
                     persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync([], cancellationToken),
@@ -539,10 +544,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return;
         }
 
-        var cronJobIds =
-            resources.Length == 0
-                ? []
-                : resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
+        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
 
         if (cronJobIds.Length != 0)
         {
@@ -551,8 +553,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        var timeJobIds =
-            resources.Length == 0 ? [] : resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
         if (timeJobIds.Length != 0)
         {
