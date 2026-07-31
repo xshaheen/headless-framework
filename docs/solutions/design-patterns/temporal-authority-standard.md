@@ -98,7 +98,7 @@ Mechanics, per-provider SQL shapes, and the EF-translation caveats: see
 | | PostgreSQL | SQL Server |
 |---|---|---|
 | **Use** | `clock_timestamp()` (real time) | `SYSUTCDATETIME()` (`datetime2`, 100 ns) |
-| **Never** | `now()`, `CURRENT_TIMESTAMP` — **transaction-start time**, frozen for the transaction's life | `GETUTCDATE()` — returns `datetime`, **~3.33 ms** precision, rounded to 1/300 s |
+| **Never** | `now()`, `CURRENT_TIMESTAMP` — **transaction-start time**, frozen for the transaction's life (one narrow carve-out below) | `GETUTCDATE()` — returns `datetime`, **~3.33 ms** precision, rounded to 1/300 s |
 | Column | `timestamptz` | `datetime2(7)` |
 | Atomic claim | `FOR UPDATE SKIP LOCKED` + `UPDATE … RETURNING` | `UPDLOCK, READPAST, ROWLOCK` + `OUTPUT inserted.*` |
 
@@ -112,6 +112,38 @@ instants. `clock_timestamp()` advances *during* execution.
 > native SQL. This is self-consistent inside a single autocommit statement, and silently wrong the moment
 > the call is wrapped in a transaction. Prove provider translation with an integration test; never infer
 > it from LINQ.
+
+#### Carve-out: bounded-staleness position fields
+
+The "never inside a transaction" rule above is written for **lease deadlines**, where the error direction
+is unsafe: a deadline anchored to transaction-open is *shorter* than intended, so a second node can
+reclaim a row while its owner still believes it holds the lease — duplicate execution.
+
+A narrow class of ownership-adjacent timestamps tolerates the same staleness, and Jobs relies on this in
+`ResumeCronJobAsync` and `UpdateCronJobsAtomicallyAsync`, which stamp the cron **schedule watermark**
+(`ReconciledThroughUtc`) from the DB clock inside an already-open transaction. All four conditions must
+hold before treating a field this way:
+
+1. **The write is irreducibly multi-statement.** Those transitions must persist pause state, the schedule
+   revision, and a replacement occurrence together; splitting them to get autocommit would expose a window
+   where a resumed definition still carries its pre-pause position, which is a worse defect than the drift.
+2. **The error direction is benign.** A frozen `now()` makes the watermark *earlier* than true, so at worst
+   one boundary occurrence is reconsidered as pending. The opposite direction — skipping an occurrence —
+   is not reachable.
+3. **The magnitude is bounded by the transaction's own duration**, and the alternative is worse. The app
+   clock is the only other option and reintroduces *unbounded* node skew.
+4. **Nothing evaluates the field as an expiry predicate against a different node's clock.** The moment a
+   field decides ownership, it is a lease and this carve-out does not apply.
+
+Note the magnitude claim weakens with batch size: a loop inside one transaction sees `now()` frozen at
+transaction-open, so the Nth iteration's drift is however long the first N−1 round trips took, not the
+single-digit milliseconds a batch of one costs.
+
+The cron **dispatch advance** deliberately does *not* use this carve-out — it runs in autocommit and is
+guarded by `JobsDatabaseClockConformanceTests.schedule_advance_sql_is_owned_by_the_database_clock`, which
+fails if any schedule-position statement runs inside an explicit transaction. Introduced by the durable
+cron watermark work (#676); if you are adding a fifth site, re-check all four conditions rather than citing
+this precedent.
 
 ## 2. Elapsed time — a monotonic counter is the authority
 
