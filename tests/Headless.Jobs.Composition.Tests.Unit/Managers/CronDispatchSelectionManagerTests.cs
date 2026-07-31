@@ -187,7 +187,8 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
             Expression = "0 * * * * *",
             IsPaused = isPaused,
             ScheduleRevision = 0,
-            ReconciledThroughUtc = _Now.AddMinutes(-5),
+            // Exactly one pending instant, dispatched on time: these scenarios exercise NORMAL dispatch, not recovery.
+            ReconciledThroughUtc = _Now.AddSeconds(-30),
             NextDueUtc = nextDue,
             CreatedAt = new DateTimeOffset(_Now.AddHours(-1), TimeSpan.Zero),
             UpdatedAt = new DateTimeOffset(_Now.AddMinutes(-1), TimeSpan.Zero),

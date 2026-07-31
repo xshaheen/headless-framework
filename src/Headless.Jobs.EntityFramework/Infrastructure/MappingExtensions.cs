@@ -168,6 +168,10 @@ internal static class MappingExtensions
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
             RetryCount = e.RetryCount,
+            // R23: the recovery stamp rides every pickup/claim projection, so a coalesced run reclaimed after a
+            // restart still reports the instant it stands for. Dropping it here silently demotes it to an ordinary
+            // run — the RetryCount defect shape this repo has already paid for once.
+            RecoveredFromUtc = e.RecoveredFromUtc,
             ExecutionTime = e.ExecutionTime,
             OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
@@ -203,6 +207,8 @@ internal static class MappingExtensions
             // Retry enum default when re-queued.
             OnNodeDeath = e.OnNodeDeath,
             RetryCount = e.RetryCount,
+            // R23: see the sibling projection — the recovery stamp must survive this read too.
+            RecoveredFromUtc = e.RecoveredFromUtc,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
