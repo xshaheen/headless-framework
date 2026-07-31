@@ -421,6 +421,25 @@ internal sealed class JobsExecutionTaskHandler
                 return;
             }
 
+            // A claimed row whose function is absent from THIS node's registry (rolling deploy where the
+            // enqueuing node runs a newer build, or a function removed while rows referencing it remain)
+            // previously reached a null delegate and retried the NullReferenceException through the whole budget
+            // while holding a worker slot. Release the row instead of failing it: a node that HAS the
+            // registration can claim and run it — a local registry gap must not poison the job.
+            if (context.CachedDelegate is null)
+            {
+                if (!await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                _logger.LogJobFunctionNotRegisteredOnNode(context.JobId, context.FunctionName);
+                context.SetProperty(x => x.Status, JobStatus.Idle).SetProperty(x => x.ReleaseLock, value: true);
+                await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+                context.ResetUpdateProps();
+                return;
+            }
+
             // Crash-recovery exhaustion gate: every InProgress reclaim (stalled lease or node death, Retry
             // policy) consumed one budget unit for the interrupted attempt, so a row can resume with a persisted
             // RetryCount past its budget. Terminalize it here WITHOUT invoking the handler — otherwise a handler
@@ -1408,4 +1427,14 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string function
     );
+
+    [LoggerMessage(
+        EventId = 3114,
+        EventName = "JobFunctionNotRegisteredOnNode",
+        Level = LogLevel.Error,
+        Message = "Job {JobId} references function '{Function}' which is not registered on this node; the row was "
+            + "released for another node to claim. Ensure every scheduler node loads the assembly that declares the "
+            + "function (AddJobsDiscovery), or expect claim churn until one does."
+    )]
+    public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
 }

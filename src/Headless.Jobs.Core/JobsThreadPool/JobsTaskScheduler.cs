@@ -475,14 +475,17 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         {
             // Expected - task was cancelled
         }
-        // ERP022/RCS1075: Worker thread must continue running even if tasks fail.
-#pragma warning disable ERP022, RCS1075
-        catch (Exception)
+        // ERP022: Worker thread must continue running even if tasks fail.
+#pragma warning disable ERP022
+        catch (Exception exception)
         {
-            // Log error if needed, but don't crash the worker
-            // Errors are swallowed to prevent worker thread crashes
+            // Swallowed to keep the worker alive, but NEVER silently: everything after the admission's claim
+            // check is unprotected user-visible machinery (terminal-status writes, skip stamps, child recursion)
+            // — a vanished failure here means a job re-runs after lease lapse with zero log lines connecting the
+            // two runs.
+            _logger.WorkItemFaulted(exception);
         }
-#pragma warning restore ERP022, RCS1075
+#pragma warning restore ERP022
         finally
         {
             Interlocked.Decrement(ref _activeTasks);
@@ -570,13 +573,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         {
             // Expected - task was cancelled
         }
-        // ERP022/RCS1075: Scheduler must continue running even if task execution throws.
-#pragma warning disable ERP022, RCS1075
-        catch (Exception)
+        // ERP022: Scheduler must continue running even if task execution throws.
+#pragma warning disable ERP022
+        catch (Exception exception)
         {
-            // Errors are swallowed to prevent worker thread crashes.
+            // Swallowed to keep the dedicated thread alive, but never silently (see _ExecuteWorkAsync).
+            _logger.WorkItemFaulted(exception);
         }
-#pragma warning restore ERP022, RCS1075
+#pragma warning restore ERP022
         finally
         {
             _longRunningSlots.Release();
@@ -863,6 +867,15 @@ internal static partial class JobsTaskSchedulerLog
         Message = "Jobs worker slot {WorkerId} faulted outside user work; restart is rate-limited."
     )]
     public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
+
+    [LoggerMessage(
+        EventId = 3302,
+        EventName = "JobsWorkItemFaulted",
+        Level = LogLevel.Error,
+        Message = "A jobs work item faulted past the execution handler's own error handling; the worker continues. "
+            + "If this was a terminal-status write the job may re-run after its lease lapses."
+    )]
+    public static partial void WorkItemFaulted(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3301,
