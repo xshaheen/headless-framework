@@ -45,7 +45,9 @@ public sealed class ErrorDescriptorTests
 
         descriptor
             .Params.Should()
-            .BeEquivalentTo(new Dictionary<string, object?> { ["email"] = "a@b.com", ["tenantId"] = 42 });
+            .BeEquivalentTo(
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["email"] = "a@b.com", ["tenantId"] = 42 }
+            );
     }
 
     [Fact]
