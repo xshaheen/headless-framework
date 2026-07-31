@@ -503,6 +503,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE {mapping.ExecutionTime} = @executionTime AND {mapping.CronJobId} = @cronJobId
+                  AND {mapping.Status} IN (N'Idle', N'Queued', N'InProgress')
             );
             """;
 #pragma warning restore CA2100

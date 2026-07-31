@@ -652,6 +652,56 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_instant()
+    {
+        // Provider-parity guard: the live-status partial unique index (UQ_CronJobId_ExecutionTime) only dedups
+        // Idle/Queued/InProgress rows, so a terminal occurrence for (cron, instant) must not swallow a later
+        // claim of the same instant. PostgreSQL's ON CONFLICT targets the partial index and always agreed;
+        // SQL Server's NOT EXISTS dedup had no status filter and silently dropped the tick with no log.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("terminal-reinsert");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "create", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            // Whole-second instant so the equality dedup compares identically across providers' precision.
+            var executionTime = new DateTime(
+                DateTime.UtcNow.Ticks - (DateTime.UtcNow.Ticks % TimeSpan.TicksPerSecond),
+                DateTimeKind.Utc
+            ).AddMinutes(1);
+            await fixture.SeedCronOccurrenceAsync(
+                Guid.NewGuid(),
+                cronId,
+                (int)JobStatus.Skipped,
+                ownerId: null,
+                NodeDeathPolicy.Retry,
+                lockedUntil: null,
+                executionTime,
+                ct
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var context = new JobManagerDispatchContext(cronId) { FunctionName = "create", Expression = "* * * * *" };
+            var claimed = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
+                .ToArrayAsync(ct);
+
+            claimed.Should().ContainSingle("a terminal occurrence at the same instant must not swallow the cron tick");
+            (await fixture.CountCronOccurrencesAsync(ct))
+                .Should()
+                .Be(2, "the terminal row is history, not a dedup key");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         var ct = AbortToken;
