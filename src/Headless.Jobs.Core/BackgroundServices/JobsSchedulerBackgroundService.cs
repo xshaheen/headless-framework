@@ -263,6 +263,22 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     {
         _taskScheduler.Freeze();
         Interlocked.Exchange(ref _started, 0);
+
+        // Bounded drain BEFORE base.StopAsync cancels the execution token: in-flight jobs get the host's
+        // remaining shutdown budget to complete and write their terminal status, so a routine deploy stops being
+        // indistinguishable from node death (previously every running job was cancelled with no terminal write,
+        // sat out its lease, and was resolved by OnNodeDeath — including false Failed records for MarkFailed
+        // jobs that never misbehaved). cancellationToken fires when the host's ShutdownTimeout expires;
+        // stragglers are then cancelled cooperatively by base.StopAsync and recovered by the existing sweeps.
+        try
+        {
+            await _taskScheduler.WaitForRunningTasksAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown budget exhausted — fall through to cooperative cancellation of the remaining work.
+        }
+
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
