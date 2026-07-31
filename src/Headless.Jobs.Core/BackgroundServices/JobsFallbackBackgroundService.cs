@@ -57,8 +57,12 @@ internal sealed class JobsFallbackBackgroundService(
                     {
                         // U3: attach cached delegates to the whole hydrated tree, not just the grandchild level, so a
                         // chain deeper than three levels also executes its tail on the timed-out fallback path.
+                        // Runs before the dispatch sort below because it also stamps CachedPriority.
                         JobsExecutionContext.CacheFunctionReferences(function, functionRegistry);
+                    }
 
+                    foreach (var function in functions.OrderBy(x => x.CachedPriority.DispatchRank()))
+                    {
                         var semaphore = concurrencyGate.GetSemaphoreOrNull(
                             function.FunctionName,
                             function.CachedMaxConcurrency

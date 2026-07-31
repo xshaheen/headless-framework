@@ -132,7 +132,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         {
             if (_executionContext.Functions.Length != 0)
             {
-                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
+                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority.DispatchRank()))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
                         function.FunctionName,
