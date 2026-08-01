@@ -75,6 +75,31 @@ public sealed class EmailToMimeMessageConverterTests : TestBase
     }
 
     [Fact]
+    public async Task should_attach_only_the_sliced_bytes_when_memory_has_an_offset()
+    {
+        // The converter wraps the attachment's backing array instead of copying it, so a ReadOnlyMemory that is a
+        // slice of a larger array must still contribute exactly its own window — never the surrounding bytes.
+        var backing = new byte[] { 0xAA, 0xBB, 1, 2, 3, 4, 0xCC };
+
+        var request = new SendSingleEmailRequest
+        {
+            From = "from@example.com",
+            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Subject = "sliced attachment",
+            MessageText = "see attached",
+            Attachments = [new EmailRequestAttachment { Name = "slice.bin", File = backing.AsMemory(2, 4) }],
+        };
+
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
+
+        var attachment = message.Attachments.OfType<MimePart>().Single();
+        using var decoded = new MemoryStream();
+        await attachment.Content!.DecodeToAsync(decoded, AbortToken);
+
+        decoded.ToArray().Should().Equal((byte)1, (byte)2, (byte)3, (byte)4);
+    }
+
+    [Fact]
     public async Task should_rethrow_when_cancelled_during_attachment_build()
     {
         using var cts = new CancellationTokenSource();
