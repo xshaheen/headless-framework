@@ -221,7 +221,7 @@ Applications normally use a provider package and call `AddHeadlessCoordination(s
 
 ### Configuration
 
-Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWindow` must be at least two heartbeat intervals.
+Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
 ### Dependencies
 
@@ -350,6 +350,7 @@ Stores membership in Redis using Lua scripts and Redis server time.
 - Incarnation allocation uses persistent `INCR` counters.
 - Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
 - Heartbeats reject dead, gracefully left, and missing/pruned member payloads for the same incarnation.
+- Leave is a guarded no-op for an absent, pruned, or superseded-and-swept identity — it never materializes a member payload.
 - `:known` retains recently dead members so Dead is observable before cleanup.
 - `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
 - Generation counters are not purged by default.

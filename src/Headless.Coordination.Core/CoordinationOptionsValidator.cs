@@ -21,6 +21,15 @@ internal sealed partial class CoordinationOptionsValidator : AbstractValidator<C
         RuleFor(x => x.SuspicionThreshold).LessThan(x => x.DeadThreshold);
         RuleFor(x => x.DeadThreshold).GreaterThan(TimeSpan.Zero);
 
+        // Strict ordering alone admits HeartbeatInterval=14s / DeadThreshold=16s — one dropped packet or GC
+        // pause kills the node and triggers a cluster-wide reclaim of its work. Require the same style of
+        // margin the DeadRetentionWindow rule below enforces: at least three beat attempts inside the window.
+        RuleFor(x => x.DeadThreshold)
+            .Must((options, value) => value >= options.HeartbeatInterval * 3)
+            .WithMessage(
+                "DeadThreshold must be at least three times HeartbeatInterval so a single missed or slow heartbeat cannot kill the node."
+            );
+
         RuleFor(x => x.DeadRetentionWindow)
             .Must((options, value) => value >= options.HeartbeatInterval * 2)
             .WithMessage("DeadRetentionWindow must be at least twice HeartbeatInterval.");

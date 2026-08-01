@@ -14,6 +14,28 @@ namespace Tests;
 public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : TestBase
 {
     [Fact]
+    public async Task should_not_materialize_a_known_entry_when_leaving_an_absent_identity()
+    {
+        // IMembershipStore contract: leave of an absent/pruned/superseded-and-swept identity is a no-op. The
+        // unguarded leave script HSET a member payload here anyway — invisible to snapshots (the generation
+        // filter hides it) but retained in :known for the whole RedisKnownNodeRetention window and pinning the
+        // node's generation mirror against cleanup, a storage leak per phantom leave under restart churn.
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var knownKey = _KnownKey(cluster);
+
+        var phantom = new NodeIdentity(new NodeId("never-registered"), new NodeIncarnation(7));
+        await store.LeaveAsync(phantom, AbortToken);
+
+        (await db.HashExistsAsync(knownKey, phantom.ToString()))
+            .Should()
+            .BeFalse("leave must not create a member payload for an identity the store has never seen");
+    }
+
+    [Fact]
     public async Task should_prune_known_state_without_deleting_generation_counter()
     {
         var cluster = _Cluster();
