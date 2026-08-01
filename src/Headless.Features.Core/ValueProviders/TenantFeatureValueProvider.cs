@@ -45,12 +45,15 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
 
         var disposable = currentTenant.Change(providerKey);
 
-        var asyncDisposable = DisposableFactory.Create(() =>
-        {
-            disposable.Dispose();
+        var asyncDisposable = DisposableFactory.Create(
+            disposable,
+            static tenantScope =>
+            {
+                tenantScope.Dispose();
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         return Task.FromResult(asyncDisposable);
     }

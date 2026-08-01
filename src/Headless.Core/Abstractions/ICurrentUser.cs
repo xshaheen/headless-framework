@@ -89,7 +89,7 @@ public interface ICurrentUser
             }
         }
 
-        return matches is null ? [] : matches;
+        return matches ?? [];
     }
 }
 

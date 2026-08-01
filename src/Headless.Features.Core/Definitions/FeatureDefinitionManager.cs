@@ -43,7 +43,7 @@ public sealed class FeatureDefinitionManager(
 
         var snapshot = _featuresSnapshot;
 
-        if (snapshot is not null && snapshot.Matches(staticFeatures, dynamicFeatures))
+        if (snapshot?.Matches(staticFeatures, dynamicFeatures) == true)
         {
             return snapshot.Merged;
         }
@@ -74,7 +74,7 @@ public sealed class FeatureDefinitionManager(
 
         var snapshot = _groupsSnapshot;
 
-        if (snapshot is not null && snapshot.Matches(staticGroups, dynamicGroups))
+        if (snapshot?.Matches(staticGroups, dynamicGroups) == true)
         {
             return snapshot.Merged;
         }

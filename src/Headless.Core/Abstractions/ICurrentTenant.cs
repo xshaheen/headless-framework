@@ -96,20 +96,11 @@ public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) 
 
         currentTenantAccessor.Current = new TenantInformation(tenantId, name);
 
-        // Reset on dispose
-        return new ChangeScope(currentTenantAccessor, currentScope);
-    }
-
-    /// <summary>
-    /// Restores the tenant captured when the scope was opened. A dedicated type rather than a closure over
-    /// <see cref="DisposableFactory"/>: tenant switching sits on per-request and per-message paths, and the
-    /// closure form costs a display class, a delegate, and a wrapper on every change.
-    /// </summary>
-    private sealed class ChangeScope(ICurrentTenantAccessor accessor, TenantInformation? previous) : IDisposable
-    {
-        public void Dispose()
-        {
-            accessor.Current = previous;
-        }
+        // Tenant switching sits on per-request and per-message paths: the state-taking overload with a
+        // static lambda keeps the reset to a single allocation, unlike a closure over the accessor.
+        return DisposableFactory.Create(
+            (Accessor: currentTenantAccessor, Previous: currentScope),
+            static scope => scope.Accessor.Current = scope.Previous
+        );
     }
 }
