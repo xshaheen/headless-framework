@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Primitives;
+
 namespace Headless.Api.Resources;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Headless.Api.Resources;
 public static class GeneralErrorCodes
 {
     /// <summary>Caller is authenticated but not permitted to perform the operation. Maps to 403.</summary>
-    public const string Forbidden = "g:forbidden";
+    public const string Forbidden = ApiResultErrorCodes.Forbidden;
 
     /// <summary>
     /// The endpoint was configured with a request type that does not match the argument supplied to

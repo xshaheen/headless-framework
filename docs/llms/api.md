@@ -923,6 +923,7 @@ Provides consistent JSON serialization and validation for Minimal API endpoints 
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
+- `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata
 - API versioning integration
 - Endpoint discovery extensions
 
@@ -941,7 +942,11 @@ builder.AddHeadless().ConfigureMinimalApi();
 
 var app = builder.Build();
 
-app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id })).Validate<GetOrderRequest>();
+app.MapGet(
+    "/orders/{id:guid}",
+    async (Guid id, IOrderService service, IProblemDetailsCreator problems, CancellationToken ct) =>
+        (await service.GetAsync(id, ct)).ToHttpResult(problems)
+);
 
 app.Run();
 ```
@@ -959,6 +964,7 @@ No additional configuration required. Uses framework JSON settings automatically
 ### Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
+- Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual `.Produces(...)` calls
 
 ---
 
@@ -977,6 +983,7 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures
 - API versioning integration with API Explorer
 
 ### Installation
@@ -1004,13 +1011,13 @@ app.Run();
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
-public sealed class OrdersController : ApiControllerBase
+public sealed class OrdersController(IOrderService service, IProblemDetailsCreator problems) : ControllerBase
 {
     [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetAsync(int id, CancellationToken ct)
+    public async Task<ActionResult<Order>> GetAsync(int id, CancellationToken ct)
     {
-        var order = await _service.GetAsync(id, ct).ConfigureAwait(false);
-        return order is null ? NotFound() : Ok(order);
+        var result = await service.GetAsync(id, ct).ConfigureAwait(false);
+        return result.ToActionResult(this, problems);
     }
 }
 ```

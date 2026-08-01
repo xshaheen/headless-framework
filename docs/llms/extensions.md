@@ -65,7 +65,7 @@ For strongly-typed primitives **you define yourself**, use the source generator 
 ## Agent Instructions
 
 - Return `ApiResult<T>` / `ApiResult` from service methods for **expected** failures (not found, conflict, validation) instead of throwing. Use `Result<TValue, TError>` when you need a custom error type. Reserve exceptions for programmer errors and truly exceptional conditions.
-- Do **not** read `.Value` or `.Error` on a `default` `ApiResult<T>` / `Result<…>` — a default (uninitialized) instance is a failure with no error and throws on access. Always branch on `IsSuccess` / `TryGetValue` first.
+- Do **not** use a `default` `ApiResult` / `ApiResult<T>` — it is uninitialized, so both `IsSuccess` and `IsFailure` are false, try-accessors return false, and direct access or branch operations throw. Create results through `Ok`, `Fail`, or a typed factory.
 - Do **not** lazy-cache a computed property via the `field` keyword on any `record` in this package's result/error types (or your own). `ApiResultError.Code` / `Metadata` are deliberately computed on each read so structural record equality stays correct — a `field`-backed cache silently corrupts `Equals`/`GetHashCode`.
 - `Money` arithmetic is **scalar-only** for scaling: `*` and `/` take a `decimal` (e.g. `price * 1.15m`), not another `Money`. `+` and `-` take a `Money` and throw if the currency codes differ. There is no `Money × Money` multiply.
 - `MoneyAmount` is a plain `decimal` primitive with **no currency code**. Use `GetRounded()` for 2-decimal banker's rounding (`MidpointRounding.ToEven`). Use `Money` when you need an amount paired with a currency code.
@@ -87,7 +87,7 @@ For strongly-typed primitives **you define yourself**, use the source generator 
 
 ### Result pattern vs. exceptions
 
-The package models **expected** outcomes as values, not exceptions. `ApiResult` / `ApiResult<T>` carry either a value or an `ApiResultError`; `Result<TValue, TError>` / `Result<TError>` are the same idea with a caller-chosen error type. `ApiResultError` is an abstract `record` with a small closed hierarchy — `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError` — each exposing a machine-readable `Code` and a human `Message`. Factory shortcuts (`ApiResult<T>.NotFound(entity, key)`, `.Conflict(code, message)`, `.ValidationFailed(...)`, `.Forbidden(reason)`, `.Unauthorized()`) keep call sites terse, and `Match` / `Map` / `Bind` (plus their `…Async` variants) let you compose without unwrapping. Throw only for programmer errors; return a result for anything a caller is expected to handle. The `Headless.Exceptions` types (`EntityNotFoundException`, `ConflictException`) exist for the exception-based path when a layer genuinely needs to throw.
+The package models **expected** outcomes as values, not exceptions. `ApiResult` / `ApiResult<T>` carry either a value or an `ApiResultError`; `Result<TValue, TError>` / `Result<TError>` are the same idea with a caller-chosen error type. `ApiResultError` is an abstract `record` with a small closed hierarchy — `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError` — each exposing a machine-readable `Code` and a human `Message`. The built-in factories are data-compatible with the exception path: conflict results accept a message, one descriptor, or many `ErrorDescriptor` values; unauthorized/forbidden results preserve their descriptors; not-found accepts string/Guid/int/long keys; and validation accepts a field-keyed descriptor map. Message-only conflicts use `ApiResultErrorCodes.Default`, while string-only validation pairs use `ApiResultErrorCodes.ValidationFailed`. Throw only for programmer errors or truly exceptional conditions; return a result for anything a caller is expected to handle.
 
 ### Domain primitives and value objects
 
@@ -133,7 +133,7 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 - **`Money` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Money × Money` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Money` and `decimal`, and `Money` is a total order (mixed-code lists sort by code then amount). This shape prevents the nonsensical "money squared" result and keeps rounding centralized.
 - **`Money` ≠ `MoneyAmount`.** `MoneyAmount` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Money` when an amount must travel with its code. Do not treat `MoneyAmount` as currency-aware.
 - **`Range<T>` uses side-specific infinity semantics for `null` bounds.** A `null` `From` is unbounded below; a `null` `To` is unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare lower and upper bounds separately, so subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads still test a single point, so do not use `null` as a concrete point value.
-- **Result/error types are value-equal and free of equality-corrupting caches.** `ApiResultError` is an abstract `record`; its `Code` and `Metadata` are computed on each read rather than stored in a `field`-backed cache, because a lazily-assigned `field` participates in the compiler-generated record `Equals`/`GetHashCode` and silently breaks structural equality. A `default` `ApiResult<T>` / `Result<…>` is an uninitialized failure: reading `.Value` or `.Error` throws — branch on `IsSuccess` first.
+- **Result/error types are value-equal and free of equality-corrupting caches.** `ApiResultError` is an abstract `record`; computed `Code` and `Metadata` members are not lazy-cached in record backing fields. ApiResult factories snapshot error collections. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); the generic `Result<…>` types retain their guarded default-failure behavior.
 - **`KeyedAsyncLock` timeout returns `null`, is non-reentrant, and is sharded.** The timeout overload returns `null` instead of throwing when the wait elapses, so callers can degrade (skip work / serve stale). The internal semaphore dictionary is sharded into 8–64 stripes (~`ProcessorCount`) to cut contention, and per-key semaphores are reference-counted and removed at zero. Re-entering the same key without releasing deadlocks. The timeout overload takes a `TimeProvider`, so tests can drive it with `FakeTimeProvider`.
 - **`ParallelForEachAsync` is unordered; `ForEachAsync` is ordered.** `ParallelForEachAsync` delegates to `Parallel.ForEachAsync` (no result order guarantee) and defaults to `Environment.ProcessorCount` parallelism (`-1` = unlimited). `ForEachAsync` runs sequentially, preserves order, checks cancellation before each element, and offers index and per-item `CancellationToken` overloads. Pick deliberately.
 - **`RegexPatterns` are ReDoS-hardened.** Every pattern is source-generated with `RegexOptions.ExplicitCapture` and a 100 ms `MatchTimeout`, so adversarial input fails fast with `RegexMatchTimeoutException` instead of hanging. `EmailValidator` uses the HTML5 living-standard email pattern (a willful RFC 5321/5322 deviation that permits dot-less domains) with an opt-in `requireDotInDomainName`.
@@ -304,7 +304,7 @@ Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-
 
 ### Design Notes
 
-Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending** (a bare `new OrderBy("Name")` sorts ascending, matching the near-universal convention). `ExtraProperties` and `Locales` derive from `Dictionary<,>` (the established `IHasExtraProperties` pattern) and are `sealed`. `FullGeoCoordinate` takes only latitude/longitude in its constructor; the optional components (`Altitude`, `HorizontalAccuracy`, `VerticalAccuracy`, `Speed`, `Course`) are init-only and default to `double.NaN` (unknown). The `…Async` `Map`/`Bind`/`Match` combinators (`ApiResultAsyncExtensions`) include cancellation-aware overloads whose delegates take `(value, CancellationToken)` plus a trailing `CancellationToken`, so a caller's token flows into the continuation.
+Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. The built-in result factories preserve exception-path data: conflict accepts one or many `ErrorDescriptor` values, authorization accepts descriptors, not-found accepts string/Guid/int/long keys, and validation accepts a field-keyed descriptor map. `ErrorDescriptor` accepts one or more `(Key, Value)` tuples or a `ReadOnlySpan<(string Key, object? Value)>`, pre-sizes a case-insensitive parameter bag, and snapshots the input. Direct tuples use `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array; use `WithParam` for incrementally discovered values. String-only validation uses `ApiResultErrorCodes.ValidationFailed`, and error collections are snapshotted. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); try-accessors return false and branch operations throw. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending**. The `…Async` `Map`/`Bind`/`Match` combinators include cancellation-aware overloads whose delegates receive the caller's token.
 
 ### Installation
 
@@ -325,6 +325,18 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 
     return user; // implicit conversion from T to ApiResult<T>
 }
+
+var conflicts = ApiResult.Conflict(
+    new ErrorDescriptor("user:duplicate_email", "Email already exists", ("email", email)),
+    new ErrorDescriptor("user:duplicate_phone", "Phone already exists")
+);
+
+var contextualError = new ErrorDescriptor(
+    "user:conflict",
+    "User conflicts with existing data",
+    ("email", email),
+    ("tenantId", tenantId)
+);
 
 var order = new OrderBy("CreatedAt");                    // ascending by default
 var descending = new OrderBy("CreatedAt", Ascending: false);

@@ -4,7 +4,7 @@ using Headless.Primitives;
 
 namespace Tests.Primitives;
 
-public sealed class OpResultNonGenericTests
+public sealed class ApiResultNonGenericTests
 {
     [Fact]
     public void should_create_success_result()
@@ -15,7 +15,7 @@ public sealed class OpResultNonGenericTests
         // then
         result.IsSuccess.Should().BeTrue();
         result.IsFailure.Should().BeFalse();
-        result.Error.Should().BeNull();
+        result.Invoking(static value => value.Error).Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -60,6 +60,87 @@ public sealed class OpResultNonGenericTests
         // then
         failed.Should().BeFalse();
         error.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_not_report_an_error_for_default_result()
+    {
+        // given
+        var result = default(ApiResult);
+
+        // when
+        var failed = result.TryGetError(out var error);
+
+        // then
+        result.IsSuccess.Should().BeFalse();
+        result.IsFailure.Should().BeFalse();
+        failed.Should().BeFalse();
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_reject_null_failure_error()
+    {
+        // when
+        var action = () => ApiResult.Fail(null!);
+
+        // then
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_create_conflict_result_from_multiple_descriptors()
+    {
+        // given
+        var errors = new[]
+        {
+            new ErrorDescriptor("account:duplicate_email", "Email already exists"),
+            new ErrorDescriptor("account:duplicate_phone", "Phone already exists"),
+        };
+
+        // when
+        var result = ApiResult.Conflict(errors);
+
+        // then
+        result.Error.Should().BeOfType<ConflictError>().Which.Errors.Should().Equal(errors);
+    }
+
+    [Fact]
+    public void should_create_structured_validation_result()
+    {
+        // given
+        var descriptor = new ErrorDescriptor("g:must_be_not_empty", "Email is required");
+        var errors = new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
+        {
+            ["email"] = [descriptor],
+        };
+
+        // when
+        var result = ApiResult.ValidationFailed(errors);
+
+        // then
+        result
+            .Error.Should()
+            .BeOfType<ValidationError>()
+            .Which.Errors["email"]
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeSameAs(descriptor);
+    }
+
+    [Fact]
+    public void should_create_unauthorized_result_from_message_like_exception_constructor()
+    {
+        // when
+        var result = ApiResult.Unauthorized("Session expired", "auth:expired");
+
+        // then
+        result
+            .Error.Should()
+            .BeOfType<UnauthorizedError>()
+            .Which.Error.Should()
+            .BeEquivalentTo(new ErrorDescriptor("auth:expired", "Session expired"));
     }
 
     [Fact]
@@ -129,6 +210,18 @@ public sealed class OpResultNonGenericTests
     }
 
     [Fact]
+    public void should_create_message_only_conflict_like_exception_constructor()
+    {
+        // when
+        var result = ApiResult.Conflict("Email already exists");
+
+        // then
+        result.Error.Should().BeOfType<ConflictError>();
+        result.Error.Code.Should().Be(ApiResultErrorCodes.Default);
+        result.Error.Message.Should().Be("Email already exists");
+    }
+
+    [Fact]
     public void should_create_forbidden_result()
     {
         // when
@@ -178,14 +271,14 @@ public sealed class OpResultNonGenericTests
     [Fact]
     public void should_throw_invalid_operation_when_matching_failure_on_default_struct()
     {
-        // given - a default-initialized struct is a failure state carrying no error
+        // given - a default-initialized struct is neither success nor failure
         var result = default(ApiResult);
 
         // when
         var action = () => result.Match(() => "ok", _ => "err");
 
         // then - a clear InvalidOperationException, not a NullReferenceException
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.Should().BeFalse();
         action.Should().Throw<InvalidOperationException>();
     }
 

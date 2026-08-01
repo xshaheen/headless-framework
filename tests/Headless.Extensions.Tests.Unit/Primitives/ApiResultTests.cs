@@ -117,6 +117,77 @@ public sealed class ApiResultTests
     }
 
     [Fact]
+    public void should_not_report_an_error_for_default_result()
+    {
+        // given
+        var result = default(ApiResult<int>);
+
+        // when
+        var failed = result.TryGetError(out var error);
+
+        // then
+        result.IsSuccess.Should().BeFalse();
+        result.IsFailure.Should().BeFalse();
+        failed.Should().BeFalse();
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_create_conflict_result_from_multiple_descriptors()
+    {
+        // given
+        var errors = new[]
+        {
+            new ErrorDescriptor("account:duplicate_email", "Email already exists"),
+            new ErrorDescriptor("account:duplicate_phone", "Phone already exists"),
+        };
+
+        // when
+        var result = ApiResult<string>.Conflict(errors);
+
+        // then
+        result.Error.Should().BeOfType<ConflictError>().Which.Errors.Should().Equal(errors);
+    }
+
+    [Fact]
+    public void should_create_message_only_conflict_like_exception_constructor()
+    {
+        // when
+        var result = ApiResult<string>.Conflict("Email already exists");
+
+        // then
+        result.Error.Should().BeOfType<ConflictError>();
+        result.Error.Code.Should().Be(ApiResultErrorCodes.Default);
+        result.Error.Message.Should().Be("Email already exists");
+    }
+
+    [Fact]
+    public void should_create_unauthorized_result_from_error_descriptor()
+    {
+        // given
+        var error = new ErrorDescriptor("auth:expired", "Session expired");
+
+        // when
+        var result = ApiResult<string>.Unauthorized(error);
+
+        // then
+        result.Error.Should().BeOfType<UnauthorizedError>().Which.Error.Should().BeSameAs(error);
+    }
+
+    [Fact]
+    public void should_create_not_found_result_from_guid_key()
+    {
+        // given
+        var key = Guid.NewGuid();
+
+        // when
+        var result = ApiResult<string>.NotFound("User", key);
+
+        // then
+        result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be(key.ToString());
+    }
+
+    [Fact]
     public void should_match_success()
     {
         // given
@@ -308,14 +379,14 @@ public sealed class ApiResultTests
     [Fact]
     public void should_throw_invalid_operation_not_nre_when_accessing_error_on_default_struct()
     {
-        // given - a default-initialized struct is a failure state carrying no error
+        // given - a default-initialized struct is neither success nor failure
         var result = default(ApiResult<int>);
 
         // when
         var action = () => result.Error;
 
         // then - a clear InvalidOperationException, not a NullReferenceException
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.Should().BeFalse();
         action.Should().Throw<InvalidOperationException>();
     }
 
@@ -343,5 +414,31 @@ public sealed class ApiResultTests
 
         // then
         action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_invalid_operation_when_getting_fallback_from_default_struct()
+    {
+        // given
+        var result = default(ApiResult<int>);
+
+        // when
+        var action = () => result.GetValueOrDefault(42);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_return_fallback_from_initialized_failure()
+    {
+        // given
+        var result = ApiResult<int>.Conflict("No value");
+
+        // when
+        var value = result.GetValueOrDefault(42);
+
+        // then
+        value.Should().Be(42);
     }
 }
