@@ -58,7 +58,8 @@ internal sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupportedMimeType(format.DefaultMimeType);
         }
 
-        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken).ConfigureAwait(false);
+        var memoryStream = await _CreateCompressedStreamAsync(image, format, stream, cancellationToken)
+            .ConfigureAwait(false);
 
         if (memoryStream.Length < stream.Length)
         {
@@ -70,9 +71,16 @@ internal sealed class ImageSharpImageCompressorContributor(
         return ImageStreamCompressResult.Failed("The compressed image is larger than the original.");
     }
 
-    private async Task<Stream> _CreateCompressedStreamAsync(Image image, IImageFormat format, CancellationToken token)
+    private async Task<Stream> _CreateCompressedStreamAsync(
+        Image image,
+        IImageFormat format,
+        Stream source,
+        CancellationToken token
+    )
     {
-        var memoryStream = new MemoryStream();
+        // Compression only counts as a success when the output is strictly smaller than the source, so the source
+        // length is a hard upper bound on any output worth keeping — pre-size to it rather than regrowing from zero.
+        var memoryStream = EncodeBufferHelpers.CreateEncodeBuffer(source);
 
         try
         {
