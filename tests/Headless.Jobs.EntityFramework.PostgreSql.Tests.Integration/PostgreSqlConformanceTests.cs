@@ -266,6 +266,12 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task deleting_a_chain_root_removes_the_whole_descendant_tree()
+    {
+        return base.deleting_a_chain_root_removes_the_whole_descendant_tree();
+    }
+
+    [Fact]
     public override Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         return base.long_cron_claim_transaction_publishes_a_fresh_lease();

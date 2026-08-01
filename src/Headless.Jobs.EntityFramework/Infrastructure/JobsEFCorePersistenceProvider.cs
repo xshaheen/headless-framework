@@ -229,20 +229,43 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        var set = dbContext.Set<TTimeJob>();
 
-        // Load the entities to be deleted (including children for cascade delete)
-        var tickersToDelete = await dbContext
-            .Set<TTimeJob>()
-            .Include(x => x.Children)
-                .ThenInclude(x => x.Children) // Include grandchildren if needed
-            .Where(x => timeJobIds.Contains(x.Id))
-            .ToListAsync(cancellationToken)
+        // The self-referential parent FK is DeleteBehavior.NoAction, so deleting a chain root with live
+        // descendants violates the constraint — the previous root-only RemoveRange threw DbUpdateException out of
+        // a documented never-throws API for ANY chain root, and its two-level Include could not have covered
+        // deeper chains anyway. Collect the whole subtree frontier-by-frontier (chains are structurally capped at
+        // JobChain.MaxStructuralDepth, so the walk terminates) and delete deepest level first.
+        var levels = new List<Guid[]>();
+        var frontier = timeJobIds;
+
+        while (frontier.Length > 0)
+        {
+            levels.Add(frontier);
+            var current = frontier;
+            frontier = await set.Where(x =>
+                    x.ParentId != null && ((IEnumerable<Guid>)current).Contains(x.ParentId.Value)
+                )
+                .Select(x => x.Id)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // Remove using Entity Framework (respects cascade delete configuration)
-        dbContext.Set<TTimeJob>().RemoveRange(tickersToDelete);
+        var total = 0;
+        for (var i = levels.Count - 1; i >= 0; i--)
+        {
+            var ids = levels[i];
+            total += await set.Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
 
-        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return total;
     }
     #endregion
 

@@ -1206,7 +1206,6 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var count = 0;
         foreach (var id in jobIds)
         {
-            // Remove job and all its children (cascade delete)
             if (_timeJobs.TryRemove(id, out var removed))
             {
                 count++;
@@ -1218,18 +1217,29 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     _RemoveChildIndex(removed.ParentId.Value, removed.Id);
                 }
 
-                // Remove children
-                var childrenIds = _GetChildrenIds(id);
-
-                foreach (var childId in childrenIds)
+                // Remove the WHOLE descendant subtree, not just direct children: a one-level removal orphaned
+                // grandchildren whose parent-gate lookup could never resolve again — stranded Idle forever.
+                var pending = new Stack<Guid>();
+                foreach (var childId in _GetChildrenIds(id))
                 {
-                    if (_timeJobs.TryRemove(childId, out var child))
+                    pending.Push(childId);
+                }
+
+                while (pending.Count > 0)
+                {
+                    var descendantId = pending.Pop();
+                    foreach (var grandChildId in _GetChildrenIds(descendantId))
+                    {
+                        pending.Push(grandChildId);
+                    }
+
+                    if (_timeJobs.TryRemove(descendantId, out var descendant))
                     {
                         count++;
-                        _reconcileCandidates.TryRemove(childId, out _);
-                        if (child.ParentId.HasValue)
+                        _reconcileCandidates.TryRemove(descendantId, out _);
+                        if (descendant.ParentId.HasValue)
                         {
-                            _RemoveChildIndex(child.ParentId.Value, child.Id);
+                            _RemoveChildIndex(descendant.ParentId.Value, descendant.Id);
                         }
                     }
                 }

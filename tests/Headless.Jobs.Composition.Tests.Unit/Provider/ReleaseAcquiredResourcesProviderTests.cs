@@ -103,6 +103,28 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         foreign.Status.Should().Be(JobStatus.Queued);
     }
 
+    [Fact]
+    public async Task remove_time_jobs_removes_the_whole_descendant_subtree()
+    {
+        // One-level removal orphaned grandchildren whose parent-gate lookup could never resolve again —
+        // stranded Idle forever.
+        var (provider, _) = _Create();
+        var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        var child = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        child.ParentId = root.Id;
+        var grandChild = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        grandChild.ParentId = child.Id;
+        var greatGrandChild = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        greatGrandChild.ParentId = grandChild.Id;
+        await provider.AddTimeJobsAsync([root, child, grandChild, greatGrandChild], AbortToken);
+
+        var removed = await provider.RemoveTimeJobsAsync([root.Id], AbortToken);
+
+        removed.Should().Be(4, "the whole subtree is deleted, not just root and direct children");
+        (await provider.GetTimeJobByIdAsync(grandChild.Id, AbortToken)).Should().BeNull();
+        (await provider.GetTimeJobByIdAsync(greatGrandChild.Id, AbortToken)).Should().BeNull();
+    }
+
     private static (JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider, FakeTimeProvider Time) _Create(
         string nodeId = _NodeA
     )

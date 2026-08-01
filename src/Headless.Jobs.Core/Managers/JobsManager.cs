@@ -163,6 +163,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
             }
 
+            _EnsureValidRetries(entity.Retries, entity.Function);
+
             entity.ExecutionTime =
                 entity.ExecutionTime == null
                     ? timeProvider.GetUtcNow().UtcDateTime
@@ -266,6 +268,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
+
+        _EnsureValidRetries(entity.Retries, entity.Function);
 
         DateTime? nextOccurrence;
         try
@@ -562,6 +566,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
+    // Negative Retries produced a self-contradictory outcome: no retry ever ran, yet the exhausted callback
+    // fired announcing an exhausted budget. Reject at enqueue where the mistake is written.
+    private static void _EnsureValidRetries(int retries, string function)
+    {
+        if (retries < 0)
+        {
+            throw new JobValidatorException($"Retries must be >= 0 for function '{function}' but was {retries}.");
+        }
+    }
+
     private DateTime _ConvertUnspecifiedToUtc(DateTime dateTime)
     {
         try
@@ -683,6 +697,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                         errors.Add(ex.Message);
                     }
 
+                    continue;
+                }
+
+                if (entity.Retries < 0)
+                {
+                    (errors ??= []).Add(
+                        $"Retries must be >= 0 for function '{entity.Function}' but was {entity.Retries}."
+                    );
                     continue;
                 }
 

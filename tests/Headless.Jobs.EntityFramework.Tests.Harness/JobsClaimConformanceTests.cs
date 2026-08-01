@@ -702,6 +702,36 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task deleting_a_chain_root_removes_the_whole_descendant_tree()
+    {
+        // The self-referential parent FK is DeleteBehavior.NoAction, so the previous root-only RemoveRange threw
+        // DbUpdateException (surfacing as a 500 through the dashboard's never-throws delete API) for ANY chain
+        // root with live descendants. Deletion must remove the whole subtree, deepest level first.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var root = _CreateJobTree(DateTime.UtcNow.AddMinutes(5));
+            await persistence.AddTimeJobsAsync([root], ct);
+            var totalNodes = await fixture.CountTimeJobsAsync(ct);
+            totalNodes.Should().BeGreaterThan(1, "the seeded tree must actually have descendants");
+
+            var removed = await persistence.RemoveTimeJobsAsync([root.Id], ct);
+
+            removed.Should().Be(totalNodes, "every node of the tree is deleted, not just the root");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task concurrent_cas_claims_of_one_row_have_exactly_one_winner()
     {
         // Adversarial repro for the portable CAS strategy: its optimistic gate is expressed as a subquery over the
