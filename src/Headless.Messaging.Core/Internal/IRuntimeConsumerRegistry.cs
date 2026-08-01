@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
@@ -112,6 +113,13 @@ internal sealed class RuntimeConsumerRegistry(
     // T[] reference so the assignment is atomic; visibility is eventually consistent.
     private ImmutableArray<RuntimeConsumerRegistration> _registrations = [];
 
+    // Dispatch-side index over the same snapshot, rebuilt on every (rare) subscribe/unsubscribe so the
+    // per-message lookup is a hash hit instead of a scan with a capturing predicate.
+    private FrozenDictionary<RuntimeInvokerKey, IRuntimeMessageHandlerInvoker> _invokers = FrozenDictionary<
+        RuntimeInvokerKey,
+        IRuntimeMessageHandlerInvoker
+    >.Empty;
+
     public IReadOnlyList<ConsumerExecutorDescriptor> GetDescriptors()
     {
         // ReSharper disable once InconsistentlySynchronizedField
@@ -158,7 +166,7 @@ internal sealed class RuntimeConsumerRegistry(
                             Lane: lane
                         );
                     case RuntimeSubscriptionDuplicateBehavior.Replace:
-                        _registrations = _registrations.Remove(existing);
+                        _PublishSnapshot(_registrations.Remove(existing));
                         logger.DuplicateRuntimeSubscriptionReplaced(messageName, group, existing.HandlerId, handlerId);
                         break;
                     default:
@@ -181,7 +189,7 @@ internal sealed class RuntimeConsumerRegistry(
                 descriptor,
                 invoker
             );
-            _registrations = _registrations.Add(registration);
+            _PublishSnapshot(_registrations.Add(registration));
 
             return new RuntimeConsumerRegistrationResult(
                 RuntimeConsumerRegistrationStatus.Attached,
@@ -208,7 +216,7 @@ internal sealed class RuntimeConsumerRegistry(
                 return false;
             }
 
-            _registrations = _registrations.Remove(existing);
+            _PublishSnapshot(_registrations.Remove(existing));
             return true;
         }
     }
@@ -222,15 +230,35 @@ internal sealed class RuntimeConsumerRegistry(
     )
     {
         // ReSharper disable once InconsistentlySynchronizedField
-        var registration = _registrations.FirstOrDefault(x =>
-            x.Lane == lane
-            && string.Equals(x.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Group, group, StringComparison.Ordinal)
-            && string.Equals(x.HandlerId, handlerId, StringComparison.Ordinal)
-        );
+        if (_invokers.TryGetValue(new RuntimeInvokerKey(lane, messageName, group, handlerId), out var registered))
+        {
+            invoker = registered;
+            return true;
+        }
 
-        invoker = registration?.Invoker;
-        return invoker != null;
+        invoker = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Publishes a new registration snapshot and its dispatch index. Called under <c>_lock</c>; the two
+    /// fields are independent atomic reference writes because no reader needs them mutually consistent.
+    /// </summary>
+    private void _PublishSnapshot(ImmutableArray<RuntimeConsumerRegistration> registrations)
+    {
+        // Registration identity is unique on (lane, message name, group) — see the duplicate check in
+        // Register — so adding the handler id to the key cannot collide.
+        _invokers = registrations.ToFrozenDictionary(
+            static registration => new RuntimeInvokerKey(
+                registration.Lane,
+                registration.MessageName,
+                registration.Group,
+                registration.HandlerId
+            ),
+            static registration => registration.Invoker,
+            RuntimeInvokerKeyComparer.Instance
+        );
+        _registrations = registrations;
     }
 
     private string _ResolveMessageName(Type messageType, MessageLane lane, string? explicitMessageName)
@@ -332,6 +360,37 @@ internal sealed class RuntimeConsumerRegistry(
                 },
             ],
         };
+    }
+
+    /// <summary>Dispatch-index key; mirrors the comparer semantics the linear scan used to apply inline.</summary>
+    private readonly record struct RuntimeInvokerKey(
+        MessageLane Lane,
+        string MessageName,
+        string Group,
+        string HandlerId
+    );
+
+    private sealed class RuntimeInvokerKeyComparer : IEqualityComparer<RuntimeInvokerKey>
+    {
+        public static readonly RuntimeInvokerKeyComparer Instance = new();
+
+        public bool Equals(RuntimeInvokerKey x, RuntimeInvokerKey y)
+        {
+            return x.Lane == y.Lane
+                && string.Equals(x.MessageName, y.MessageName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Group, y.Group, StringComparison.Ordinal)
+                && string.Equals(x.HandlerId, y.HandlerId, StringComparison.Ordinal);
+        }
+
+        public int GetHashCode(RuntimeInvokerKey obj)
+        {
+            return HashCode.Combine(
+                obj.Lane,
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.MessageName),
+                StringComparer.Ordinal.GetHashCode(obj.Group),
+                StringComparer.Ordinal.GetHashCode(obj.HandlerId)
+            );
+        }
     }
 
     private sealed class RuntimeMessageHandlerInvoker<TMessage>(RuntimeConsumeHandler<TMessage> handler)
