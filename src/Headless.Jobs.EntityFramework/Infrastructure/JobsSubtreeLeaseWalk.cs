@@ -195,7 +195,7 @@ internal static class JobsSubtreeLeaseWalk
                 .ConfigureAwait(false);
 
             var leasedIds = new HashSet<Guid>(stillOurs);
-            frontier = leasedCandidates.Where(x => leasedIds.Contains(x.NodeId)).ToList();
+            frontier = [.. leasedCandidates.Where(x => leasedIds.Contains(x.NodeId))];
 
             foreach (var (nodeId, rootId) in frontier)
             {
