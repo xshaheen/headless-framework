@@ -1286,14 +1286,14 @@ internal sealed partial class PostgreSqlDataStorage(
                                 Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02 // the awaited ReadAsync above already buffered this
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the awaited ReadAsync above already buffered
                                 // row, so these accessors read memory and never block on I/O — matching the
                                 // sync accessors columns 0-4 already use.
                                 Added = reader.GetFieldValue<DateTimeOffset>(5),
                                 NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                                 LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                                 Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)

@@ -247,8 +247,7 @@ internal sealed class PublishMiddlewarePipeline(
             return false;
         }
 
-        return descriptorRegistry is null
-            || !descriptorRegistry.TryGetPublishDescriptors(context.MessageType, context.Lane, out _);
+        return descriptorRegistry?.TryGetPublishDescriptors(context.MessageType, context.Lane, out _) != true;
     }
 
     private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
