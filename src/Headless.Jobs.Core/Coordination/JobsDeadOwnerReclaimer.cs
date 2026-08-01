@@ -13,26 +13,21 @@ namespace Headless.Jobs.Coordination;
 /// operational-store resources owned by a dead node identity; the skip-in-flight policy lives inside
 /// <see cref="IInternalJobManager.ReleaseDeadNodeResources"/>.
 /// </summary>
-internal sealed class JobsDeadOwnerReclaimer : IDeadOwnerReclaimer
+internal sealed class JobsDeadOwnerReclaimer(
+    IInternalJobManager internalJobManager,
+    SchedulerOptionsBuilder optionsBuilder,
+    IOptions<CoordinationOptions>? coordinationOptions = null,
+    ILogger<JobsDeadOwnerReclaimer>? logger = null
+) : IDeadOwnerReclaimer
 {
-    private readonly IInternalJobManager _internalJobManager;
+    private readonly IInternalJobManager _internalJobManager = internalJobManager;
 
-    public JobsDeadOwnerReclaimer(
-        IInternalJobManager internalJobManager,
-        SchedulerOptionsBuilder optionsBuilder,
-        IOptions<CoordinationOptions>? coordinationOptions = null,
-        ILogger<JobsDeadOwnerReclaimer>? logger = null
-    )
-    {
-        _internalJobManager = internalJobManager;
-        ReconcileInterval = _ClampToDeadVisibilityWindow(
+    public TimeSpan ReconcileInterval { get; } =
+        _ClampToDeadVisibilityWindow(
             optionsBuilder.DeadNodeReconcileInterval,
             coordinationOptions?.Value,
             logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance
         );
-    }
-
-    public TimeSpan ReconcileInterval { get; }
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {
