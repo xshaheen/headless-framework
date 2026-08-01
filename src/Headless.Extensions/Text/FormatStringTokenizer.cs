@@ -41,8 +41,8 @@ internal static class FormatStringTokenizer
         return tokens;
     }
 
-    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _PlainTokenCache = new();
-    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _BracketedTokenCache = new();
+    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _PlainTokenCache = [];
+    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _BracketedTokenCache = [];
 
     private static ImmutableArray<FormatStringToken> _Tokenize(string format, bool includeBracketsForDynamicValues)
     {
