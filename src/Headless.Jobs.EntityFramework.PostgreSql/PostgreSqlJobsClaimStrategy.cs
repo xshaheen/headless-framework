@@ -554,7 +554,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 {mapping.OnNodeDeath} = @onNodeDeath
             FROM candidate, claim_clock
             WHERE occurrence.{mapping.Id} = candidate.{mapping.Id}
-            RETURNING occurrence.{mapping.Id};
+            RETURNING occurrence.{mapping.Id}, occurrence.{mapping.RecoveredFromUtc};
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", occurrence.Id));
@@ -565,8 +565,14 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now.UtcDateTime).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
-        var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return claimed is Guid
+        // R23: read the recovery stamp back out of the row rather than trusting the dispatch context to carry it. The
+        // durable row is the only authority for what a coalesced run stands for, and a caller that reconstructed the
+        // context from an id alone would otherwise silently demote it to an ordinary run.
+        DateTime? claimedRecoveredFrom = null;
+        var claimed = await _ReadClaimedIdAsync(command, x => claimedRecoveredFrom = x, cancellationToken)
+            .ConfigureAwait(false);
+
+        return claimed is not null
             ? new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = occurrence.Id,
@@ -578,6 +584,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 OnNodeDeath = item.OnNodeDeath,
                 UpdatedAt = now,
                 CreatedAt = occurrence.CreatedAt,
+                RecoveredFromUtc = claimedRecoveredFrom,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -790,5 +797,29 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     private static string _ParameterName(string prefix, int index)
     {
         return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    }
+
+    /// <summary>
+    /// Reads the claim's RETURNING row: the claimed id plus the durable recovery stamp. Replaces ExecuteScalar so the
+    /// stamp leaves the store with the claim rather than being reconstructed by the caller (R23).
+    /// </summary>
+    private static async Task<Guid?> _ReadClaimedIdAsync(
+        NpgsqlCommand command,
+        Action<DateTime?> onRecoveredFrom,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var id = reader.GetGuid(0);
+        var isNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
+        onRecoveredFrom(isNull ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
+
+        return id;
     }
 }

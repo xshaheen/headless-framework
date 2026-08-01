@@ -288,6 +288,8 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     RetryCount = occurrence.RetryCount,
                     RetryIntervals = occurrence.CronJob.RetryIntervals,
                     ExecutionTime = occurrence.ExecutionTime,
+                    // R23 site 1 of 2 (normal + recovery dispatch).
+                    RecoveredFromUtc = occurrence.RecoveredFromUtc,
                 }
             );
 
@@ -391,7 +393,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                         && earliestStored.ExecutionTime == tieGroup[index].NextDueUtc
                     )
                     {
-                        reuse[index] = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt);
+                        reuse[index] = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt)
+                        {
+                            RecoveredFromUtc = earliestStored.RecoveredFromUtc,
+                        };
                         storedConsumed = true;
                     }
                 }
@@ -462,7 +467,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
                 OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
-                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
+                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt)
+                {
+                    RecoveredFromUtc = earliestStored.RecoveredFromUtc,
+                },
             };
 
             if (dispatchInstant is not null)
@@ -628,7 +636,10 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             Retries = candidate.Retries,
             RetryIntervals = candidate.RetryIntervals,
             OnNodeDeath = candidate.OnNodeDeath,
-            NextCronOccurrence = new NextCronOccurrence(recovery.CoalescedRun.Id, recovery.CoalescedRun.CreatedAt),
+            NextCronOccurrence = new NextCronOccurrence(recovery.CoalescedRun.Id, recovery.CoalescedRun.CreatedAt)
+            {
+                RecoveredFromUtc = recovery.CoalescedRun.RecoveredFromUtc,
+            },
         };
     }
 
@@ -1108,6 +1119,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
                 ParentId = timedOutCronJob.CronJobId,
                 ExecutionTime = timedOutCronJob.ExecutionTime,
+                // R23 site 2 of 2 (fallback pickup of a stale occurrence — the reclaim-after-restart path, which is
+                // exactly where a coalesced run would otherwise forget what it stands for).
+                RecoveredFromUtc = timedOutCronJob.RecoveredFromUtc,
             };
 
             results.Add(functionContext);

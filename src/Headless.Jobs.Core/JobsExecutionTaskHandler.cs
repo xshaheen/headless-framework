@@ -73,6 +73,13 @@ internal sealed class JobsExecutionTaskHandler
         _retryPipeline = new JobsRetryPipeline(_retryOptions, timeProvider, logger);
     }
 
+    private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)
+    {
+        var lateness = startedAt - scheduledFor;
+
+        return lateness < TimeSpan.Zero ? TimeSpan.Zero : lateness;
+    }
+
     public Task ExecuteTaskAsync(JobExecutionState context, bool isDue, CancellationToken cancellationToken = default)
     {
         return _ExecuteTaskAsync(context, isDue, isChild: false, cancellationToken);
@@ -258,6 +265,12 @@ internal sealed class JobsExecutionTaskHandler
             Type = context.Type,
             IsDue = isDue,
             ScheduledFor = context.ExecutionTime,
+            RecoveredFromUtc = context.RecoveredFromUtc,
+            // Observational: how late this run actually started. Clamped at zero because a run can be observed to
+            // start fractionally BEFORE its scheduled instant when the store's clock and this node's differ by a few
+            // milliseconds, and no consumer expects negative lateness. For a recovery run this measures from the
+            // earliest missed instant, so it spans the outage rather than the dispatch delay.
+            Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
             CronOccurrenceOperations = new CronOccurrenceOperations(() =>
             {
                 if (context.Type == JobType.TimeJob)

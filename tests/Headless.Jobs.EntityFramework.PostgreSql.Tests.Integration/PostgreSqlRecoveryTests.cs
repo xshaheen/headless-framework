@@ -40,6 +40,18 @@ public sealed class PostgreSqlRecoveryTests(PostgreSqlJobsCoordinationFixture fi
     }
 
     [Fact]
+    public override Task direct_claim_preserves_the_recovery_stamp()
+    {
+        return base.direct_claim_preserves_the_recovery_stamp();
+    }
+
+    [Fact]
+    public override Task fallback_claim_preserves_the_recovery_stamp()
+    {
+        return base.fallback_claim_preserves_the_recovery_stamp();
+    }
+
+    [Fact]
     public override Task concurrent_recovery_of_one_backlog_produces_exactly_one_winner()
     {
         return base.concurrent_recovery_of_one_backlog_produces_exactly_one_winner();
