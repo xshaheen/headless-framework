@@ -11,6 +11,9 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
 
     public string Name { get; init; } = "Fake";
 
+    /// <summary>Number of batch reads served, so tests can assert the manager does not fan out per definition.</summary>
+    public int GetAllCallCount { get; private set; }
+
     public Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
         string? providerKey = null,
@@ -47,6 +50,8 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
         CancellationToken cancellationToken = default
     )
     {
+        GetAllCallCount++;
+
         return Task.FromResult(
             settings.Select(d => new SettingValue(d.Name, _values.GetValueOrDefault((d.Name, providerKey)))).ToList()
         );

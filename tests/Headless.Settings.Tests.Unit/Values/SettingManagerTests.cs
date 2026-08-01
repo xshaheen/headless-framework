@@ -299,6 +299,65 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_fall_back_for_non_inherited_setting()
+    {
+        // given — a non-inherited setting is only ever read from the head of the provider chain
+        const string providerName = "Account";
+        var definition = new SettingDefinition("Preferences.Locale", isInherited: false);
+
+        var accountProvider = new FakeSettingValueProvider { Name = providerName };
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Preferences.Locale", "ar-EG");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([accountProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(providerName, fallback: true, cancellationToken: AbortToken);
+
+        // then — the later provider's value is not inherited, so nothing resolves
+        result.Should().BeEmpty();
+        defaultProvider.GetAllCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_read_each_provider_once_regardless_of_definition_count()
+    {
+        // given — three definitions spanning both resolution modes across a two-provider chain
+        const string providerName = "Account";
+        List<SettingDefinition> definitions =
+        [
+            new("Setting1", isInherited: true),
+            new("Setting2", isInherited: true),
+            new("Setting3", isInherited: false),
+        ];
+
+        var accountProvider = new FakeSettingValueProvider { Name = providerName };
+        accountProvider.SetValue("Setting1", "value1");
+
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Setting2", "value2");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([accountProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(providerName, fallback: true, cancellationToken: AbortToken);
+
+        // then — values still resolve from the right providers
+        result.Should().HaveCount(2);
+        result
+            .Should()
+            .Contain(sv => sv.Name == "Setting1" && sv.Value == "value1" && sv.Provider!.Name == providerName);
+        result.Should().Contain(sv => sv.Name == "Setting2" && sv.Value == "value2" && sv.Provider!.Name == "Default");
+
+        // and each provider is read in batches, not once per definition: the head serves the non-inherited
+        // group and the inherited group, the fallback serves only what the head left unresolved.
+        accountProvider.GetAllCallCount.Should().Be(2);
+        defaultProvider.GetAllCallCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_throw_when_provider_name_null()
     {
         // when
