@@ -216,10 +216,11 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ConfigureAwait(false);
 
         var context = dbContext.Set<TTimeJob>();
-        var claimedRoots = new List<TimeJobEntity>(timeJobs.Length);
 
-        // Each root carries its own expected UpdatedAt, so the optimistic root claim stays one statement per root; the
-        // subtree lease and the claim-timestamp read that follow are batched over everything this call won.
+        // Claimed and yielded ONE root at a time on purpose: a consumer that stops enumerating (cancellation, host
+        // stop) must leave the remaining candidates unclaimed for the next sweep rather than stranding rows it will
+        // never execute under a lease. Pinned by
+        // compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep.
         foreach (var timeJob in timeJobs)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -227,19 +228,31 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
+            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (await _ClaimRootAsync(context, rootMatches, rootId, owner, cancellationToken).ConfigureAwait(false))
+            if (claimedIds.Count == 0)
             {
-                claimedRoots.Add(timeJob);
+                continue;
             }
-        }
 
-        foreach (
-            var claimed in await _LeaseAndStampClaimedTreesAsync(context, claimedRoots, owner, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            yield return claimed;
+            var claimTimestamps = await context
+                .AsNoTracking()
+                .Where(x => x.Id == rootId)
+                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
+            timeJob.OwnerId = owner;
+            timeJob.LockedUntil = claimTimestamps.LockedUntil;
+            timeJob.Status = JobStatus.Queued;
+
+            // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
+            // execute strictly the claimed set so nothing runs unclaimed.
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
+
+            yield return timeJob;
         }
     }
 
@@ -281,8 +294,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .AttachNonTimedDescendantsAsync(context.AsNoTracking(), timeJobsToUpdate, _maxChainDepth, cancellationToken)
             .ConfigureAwait(false);
 
-        var claimedRoots = new List<TimeJobEntity>(timeJobsToUpdate.Length);
-
+        // One root claimed and yielded per step (see ClaimTimeJobsAsync): abandoning the sweep must not leave rows
+        // leased that the caller never receives.
         foreach (var timeJob in timeJobsToUpdate)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -295,19 +308,30 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
                 .WhereCanFallbackClaimUsingDatabaseClock()
                 .WhereClaimableUnderParentTerminalGate(context);
+            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (await _ClaimRootAsync(context, rootMatches, rootId, owner, cancellationToken).ConfigureAwait(false))
+            if (claimedIds.Count == 0)
             {
-                claimedRoots.Add(timeJob);
+                continue;
             }
-        }
 
-        foreach (
-            var claimed in await _LeaseAndStampClaimedTreesAsync(context, claimedRoots, owner, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            yield return claimed;
+            var claimTimestamps = await context
+                .AsNoTracking()
+                .Where(x => x.Id == rootId)
+                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            timeJob.OwnerId = owner;
+            timeJob.LockedUntil = claimTimestamps.LockedUntil;
+            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
+            timeJob.Status = JobStatus.Queued;
+
+            // KTD2: prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
+
+            yield return timeJob;
         }
     }
 
@@ -537,11 +561,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
     }
 
-    /// <summary>
-    /// Claims a single root optimistically and reports whether this call won it. The non-timed descendants of every
-    /// root won by the call are leased afterwards, in one batched walk (<see cref="_LeaseAndStampClaimedTreesAsync"/>).
-    /// </summary>
-    private async Task<bool> _ClaimRootAsync(
+    private async Task<HashSet<Guid>> _ClaimTimeJobTreeAsync(
         DbSet<TTimeJob> context,
         IQueryable<TTimeJob> rootMatches,
         Guid rootId,
@@ -549,8 +569,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         CancellationToken cancellationToken
     )
     {
-        // R12/KTD2: this is step one of claiming the root plus its non-timed descendants down to MaxChainDepth. Two
-        // DB-clock lease invariants govern the pair (docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md):
+        // R12/KTD2: claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
+        // DB-clock lease invariants govern this (docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md):
         //
         //   (1) The root lease-DEADLINE write runs in AUTOCOMMIT with the DB-clock expression — NEVER inside an
         //       explicit transaction, which would freeze PostgreSQL's now() at transaction-open and silently shorten
@@ -580,35 +600,19 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             .ConfigureAwait(false);
 
-        return rootAffected > 0;
-    }
-
-    /// <summary>
-    /// Leases the non-timed subtree of every root this call claimed, reads back the persisted claim timestamps, and
-    /// prunes each peek-hydrated tree to what was actually leased. Both database steps run once for the whole batch
-    /// rather than once per root; the results are materialized before yielding, matching the native provider claim
-    /// strategies, which also stamp their whole batch before returning any of it.
-    /// </summary>
-    private async Task<TimeJobEntity[]> _LeaseAndStampClaimedTreesAsync(
-        DbSet<TTimeJob> context,
-        List<TimeJobEntity> claimedRoots,
-        string owner,
-        CancellationToken cancellationToken
-    )
-    {
-        if (claimedRoots.Count == 0)
+        if (rootAffected <= 0)
         {
             return [];
         }
 
-        var rootIds = claimedRoots.Select(x => x.Id).ToArray();
-
         // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the KTD2
-        // lease-deadline-copy discipline has exactly one relational implementation.
+        // lease-deadline-copy discipline has exactly one relational implementation. This path walks a single root at a
+        // time because it claims and yields incrementally; the walk batches across roots for callers that acquire a
+        // whole set at once.
         var claimedIdsByRoot = await JobsSubtreeLeaseWalk
             .LeaseNonTimedDescendantsAsync(
                 context,
-                rootIds,
+                [rootId],
                 owner,
                 _maxChainDepth,
                 OnFrontierBeforeLease,
@@ -616,41 +620,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             .ConfigureAwait(false);
 
-        var claimTimestamps = await context
-            .AsNoTracking()
-            .Where(x => ((IEnumerable<Guid>)rootIds).Contains(x.Id))
-            .Select(x => new
-            {
-                x.Id,
-                x.LockedUntil,
-                x.UpdatedAt,
-            })
-            .ToDictionaryAsync(x => x.Id, cancellationToken)
-            .ConfigureAwait(false);
-
-        var claimed = new List<TimeJobEntity>(claimedRoots.Count);
-
-        foreach (var timeJob in claimedRoots)
-        {
-            // A root that vanished between its claim and this read (hard delete) has nothing left to execute; drop it
-            // rather than failing the whole batch on its behalf.
-            if (!claimTimestamps.TryGetValue(timeJob.Id, out var timestamps))
-            {
-                continue;
-            }
-
-            timeJob.UpdatedAt = timestamps.UpdatedAt;
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = timestamps.LockedUntil;
-            timeJob.Status = JobStatus.Queued;
-
-            // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
-            // execute strictly the claimed set so nothing runs unclaimed.
-            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIdsByRoot[timeJob.Id]);
-
-            claimed.Add(timeJob);
-        }
-
-        return [.. claimed];
+        return claimedIdsByRoot[rootId];
     }
 }
