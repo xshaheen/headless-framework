@@ -452,6 +452,45 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             JobStatus.InProgress
         );
 
+        // Admission stamps one function at a time (JobsAdmissionWorkItem), so the single-resource shape is the hot one:
+        // it needs neither the type partitioning nor the stamped-id sets used to reconcile a mixed batch.
+        if (resources.Length == 1)
+        {
+            var only = resources[0];
+            var singleStamped =
+                only.Type == JobType.TimeJob
+                    ? await persistenceProvider
+                        .UpdateTimeJobsWithUnifiedContextAsync([only.JobId], unifiedFunctionContext, cancellationToken)
+                        .ConfigureAwait(false)
+                    : await persistenceProvider
+                        .UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                            [only.JobId],
+                            unifiedFunctionContext,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+            if (!singleStamped.Contains(only.JobId))
+            {
+                return [];
+            }
+
+            only.Status = JobStatus.InProgress;
+
+            if (only.Type == JobType.TimeJob)
+            {
+                await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(only).ConfigureAwait(false);
+            }
+            else
+            {
+                await notificationHubSender
+                    .UpdateCronOccurrenceFromExecutionState<TCronJob>(only)
+                    .ConfigureAwait(false);
+            }
+
+            return [only];
+        }
+
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
         var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
