@@ -661,7 +661,12 @@ internal sealed class SshBlobStorage(
                 return null;
             }
 
-            return serializer.Deserialize<Dictionary<string, string>>(buffer.ToArray());
+            // Deserialize straight out of the buffered bytes. The serializer reads ReadOnlyMemory, and GetBuffer is
+            // safe on a parameterless MemoryStream (always publicly visible), so ToArray would only add a second full
+            // copy of the sidecar payload.
+            var payload = buffer.GetBuffer().AsMemory(0, (int)buffer.Length);
+
+            return serializer.Deserialize<Dictionary<string, string>>(payload);
         }
     }
 
