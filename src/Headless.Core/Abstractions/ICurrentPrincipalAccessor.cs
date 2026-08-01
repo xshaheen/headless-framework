@@ -73,7 +73,20 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
         var parent = _currentPrincipal.Value;
         _currentPrincipal.Value = principal;
 
-        return DisposableFactory.Create(() => _currentPrincipal.Value = parent);
+        return new ChangeScope(_currentPrincipal, parent);
+    }
+
+    /// <summary>
+    /// Restores the principal slot captured when the scope was opened. A dedicated type rather than a closure
+    /// over <see cref="DisposableFactory"/>: principal switching sits on per-request and per-message paths,
+    /// and the closure form costs a display class, a delegate, and a wrapper on every change.
+    /// </summary>
+    private sealed class ChangeScope(AsyncLocal<ClaimsPrincipal?> slot, ClaimsPrincipal? parent) : IDisposable
+    {
+        public void Dispose()
+        {
+            slot.Value = parent;
+        }
     }
 }
 
