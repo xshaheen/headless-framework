@@ -2675,10 +2675,13 @@ public abstract class DataStorageTestsBase : TestBase
             }
         )
         {
+            // Refresh mirrors the production failure paths these fencing scenarios model, and exercises the
+            // wider SQL variant that also carries the Content assignment.
             var changed = received
                 ? await storage.ChangeReceiveRetryStateAsync(
                     stale,
                     state,
+                    MessageContentWrite.Refresh,
                     nextRetryAt,
                     lockedUntil: null,
                     originalRetries: 0,
@@ -2688,6 +2691,7 @@ public abstract class DataStorageTestsBase : TestBase
                 : await storage.ChangePublishRetryStateAsync(
                     stale,
                     state,
+                    MessageContentWrite.Refresh,
                     nextRetryAt,
                     lockedUntil: null,
                     originalRetries: 0,
@@ -2732,6 +2736,7 @@ public abstract class DataStorageTestsBase : TestBase
             ? await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Failed,
+                MessageContentWrite.Refresh,
                 nextRetryAt: _Now().AddMinutes(1),
                 lockedUntil: null,
                 originalRetries: 0,
@@ -2741,6 +2746,7 @@ public abstract class DataStorageTestsBase : TestBase
             : await storage.ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
+                MessageContentWrite.Refresh,
                 nextRetryAt: _Now().AddMinutes(1),
                 lockedUntil: null,
                 originalRetries: 0,

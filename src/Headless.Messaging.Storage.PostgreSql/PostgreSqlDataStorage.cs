@@ -153,6 +153,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
@@ -164,6 +165,7 @@ internal sealed partial class PostgreSqlDataStorage(
             _publishedTable,
             message,
             state,
+            contentWrite,
             transaction,
             nextRetryAt,
             lockedUntil,
@@ -176,6 +178,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -187,6 +190,7 @@ internal sealed partial class PostgreSqlDataStorage(
             _publishedTable,
             message,
             state,
+            contentWrite,
             transaction: null,
             nextRetryAt,
             lockedUntil,
@@ -243,6 +247,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -252,6 +257,7 @@ internal sealed partial class PostgreSqlDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -263,6 +269,7 @@ internal sealed partial class PostgreSqlDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -273,6 +280,7 @@ internal sealed partial class PostgreSqlDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -293,6 +301,7 @@ internal sealed partial class PostgreSqlDataStorage(
     private async ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
@@ -311,13 +320,14 @@ internal sealed partial class PostgreSqlDataStorage(
         // non-null NextRetryAt is "persisted for retry" and MUST remain mutable so the retry
         // processor can rewrite it on the next pickup. The plan's stricter form would block
         // that, breaking the persisted-retry flow.
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
         var sql =
-            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
+            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
 
-        object[] sqlParams =
+        object[] stateParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
-            new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
@@ -343,6 +353,10 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
+
+        object[] sqlParams = refreshContent
+            ? [new NpgsqlParameter("@Content", _RefreshContent(message)), .. stateParams]
+            : stateParams;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var affectedRows = await connection
@@ -899,6 +913,7 @@ internal sealed partial class PostgreSqlDataStorage(
         string tableName,
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DbTransaction? transaction,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
@@ -907,13 +922,14 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken
     )
     {
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
         var sql =
-            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
+            $"UPDATE {tableName} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
 
-        object[] sqlParams =
+        object[] stateParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
-            new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
@@ -938,6 +954,10 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
+
+        object[] sqlParams = refreshContent
+            ? [new NpgsqlParameter("@Content", _RefreshContent(message)), .. stateParams]
+            : stateParams;
 
         int affectedRows;
 
@@ -973,6 +993,18 @@ internal sealed partial class PostgreSqlDataStorage(
         }
 
         return affectedRows > 0;
+    }
+
+    /// <summary>
+    /// Re-serializes a mutated envelope and re-establishes the <c>Content == Serialize(Origin)</c> invariant on
+    /// the caller's in-memory copy, so a later retry pickup that reads the row sees what this write persisted.
+    /// </summary>
+    private string _RefreshContent(MediumMessage message)
+    {
+        var content = serializer.Serialize(message.Origin);
+        message.Content = content;
+
+        return content;
     }
 
     private async ValueTask<Guid?> _StoreReceivedMessage(
@@ -1254,16 +1286,14 @@ internal sealed partial class PostgreSqlDataStorage(
                                 Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
-                                NextRetryAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
-                                LockedUntil = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                    ? null
-                                    : await reader.GetFieldValueAsync<DateTimeOffset>(7, token).ConfigureAwait(false),
-                                Owner = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(8),
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02 // the awaited ReadAsync above already buffered this
+                                // row, so these accessors read memory and never block on I/O — matching the
+                                // sync accessors columns 0-4 already use.
+                                Added = reader.GetFieldValue<DateTimeOffset>(5),
+                                NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                                LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                                Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)

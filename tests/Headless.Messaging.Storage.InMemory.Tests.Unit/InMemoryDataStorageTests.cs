@@ -958,6 +958,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangePublishRetryStateAsync(
             message,
             StatusName.Failed,
+            MessageContentWrite.Refresh,
             nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
@@ -987,6 +988,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangeReceiveRetryStateAsync(
             message,
             StatusName.Failed,
+            MessageContentWrite.Refresh,
             nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
@@ -1058,6 +1060,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangePublishRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                MessageContentWrite.Preserve,
                 null,
                 null,
                 message.Retries,
@@ -1093,6 +1096,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                MessageContentWrite.Refresh,
                 null,
                 null,
                 message.Retries,
@@ -1120,6 +1124,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Failed,
+                MessageContentWrite.Refresh,
                 _fakeTimeProvider!.GetUtcNow(),
                 null,
                 originalRetries: 0,

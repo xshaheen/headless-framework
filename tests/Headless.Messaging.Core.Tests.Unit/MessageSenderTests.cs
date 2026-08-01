@@ -75,6 +75,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -86,6 +87,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -138,6 +140,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -176,6 +179,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -233,6 +237,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -298,6 +303,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -342,6 +348,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(value => value.HasValue),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(value => value == 0),
@@ -362,6 +369,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -414,6 +422,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -434,6 +443,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -488,6 +498,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -509,6 +520,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -552,6 +564,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -571,6 +584,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -607,6 +621,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -708,6 +723,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -767,6 +783,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -826,6 +843,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -854,6 +872,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 null,
                 null,
                 message.Retries,
@@ -871,6 +890,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -907,6 +927,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 null,
                 null,
                 message.Retries,
@@ -931,6 +952,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -962,6 +984,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 null,
                 null,
                 message.Retries,
@@ -1017,6 +1040,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
@@ -1049,6 +1073,7 @@ public sealed class MessageSenderTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(value => value.HasValue),
                 Arg.Is<DateTimeOffset?>(value => value == null),
                 Arg.Is(0),
@@ -1088,7 +1113,7 @@ public sealed class MessageSenderTests : TestBase
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, AbortToken);
+            .ChangePublishRetryStateAsync(default!, default, default, default, default, default, default, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
