@@ -258,6 +258,7 @@ The durable operational store (EF provider) uses `Headless.Coordination` for:
 - **Node identity**: the node owner stamped on job rows is `node@incarnation` (a store-allocated incarnation ID), not `Environment.MachineName`. K8s pod-collision handling via `POD_NAME`/`POD_NAMESPACE` is configured on `Headless.Coordination`, not on `SchedulerOptionsBuilder`.
 - **Dead-node recovery**: triggered by `Coordination` `NodeLeft` events plus a periodic liveness-snapshot reconcile (`DeadNodeReconcileInterval`, default 1 minute). Backend-neutral — works without Redis. Reclaim matches the dead `node@incarnation` exactly; it never touches rows owned by a restarted node's fresh incarnation.
 - **Fail-stop on membership loss**: if the local node loses coordination membership, the durable scheduler stops processing rather than stamping stale owners.
+- **Orphaned-owner sweep**: on the `DeadNodeReconcileInterval` cadence the fallback service also reclaims rows stamped by an owner identity absent from the liveness snapshot entirely — a superseded incarnation (never classified Dead, so the dead-node path cannot see it) or a dead identity pruned past retention. This is the only recovery path for owner-stamped `Idle`/`Queued` rows with no execution time (non-timed chain descendants) after a whole-cluster or single-node ungraceful restart.
 
 ### Commit-Coordinated Enqueue (Atomic Enqueue)
 

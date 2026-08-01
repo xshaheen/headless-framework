@@ -883,6 +883,11 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
+    }
+
     public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
     {
         var timeJobsTask = persistenceProvider.ReclaimStalledTimeJobsAsync(cancellationToken);

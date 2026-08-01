@@ -394,6 +394,26 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns the distinct owner identities currently stamped on non-terminal (<c>Idle</c>/<c>Queued</c>/
+    /// <c>InProgress</c>) time jobs and cron occurrences. The orphaned-owner sweep diffs this set against the
+    /// coordination liveness snapshot to recover rows whose owner identity can no longer be observed at all —
+    /// a superseded incarnation (its successor's registration instantly removes it from every snapshot, so it
+    /// is never classified <c>Dead</c>) or a dead identity already pruned past its retention window. Rows with
+    /// a <c>null</c> execution time (non-timed chain descendants) are matched by no other sweep in that state.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>Distinct non-null owner identity strings; empty when nothing is stamped.</returns>
+    /// <remarks>
+    /// Default implementation returns an empty set, which safely disables the orphaned-owner sweep for a
+    /// provider that has not opted in; durable providers should override with a storage-side distinct query.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Array.Empty<string>());
+    }
     #endregion
 
     #region Cron_TickerOccurrence_Core_Methods

@@ -983,6 +983,37 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    public async Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var timeJobOwners = await dbContext
+            .Set<TTimeJob>()
+            .Where(x =>
+                x.OwnerId != null
+                && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
+            )
+            .Select(x => x.OwnerId!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var occurrenceOwners = await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x =>
+                x.OwnerId != null
+                && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
+            )
+            .Select(x => x.OwnerId!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. timeJobOwners.Concat(occurrenceOwners).Distinct(StringComparer.Ordinal)];
+    }
+
     public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316/U3 gap-closer: reclaim InProgress rows whose lease lapsed (LockedUntil <= now) on ANY node — not

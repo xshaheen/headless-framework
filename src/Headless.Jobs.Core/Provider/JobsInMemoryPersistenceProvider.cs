@@ -829,6 +829,22 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
+    public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        static bool IsActive(JobStatus status) => status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+        var owners = _timeJobs
+            .Values.Where(x => x.OwnerId is not null && IsActive(x.Status))
+            .Select(x => x.OwnerId!)
+            .Concat(
+                _cronOccurrences.Values.Where(x => x.OwnerId is not null && IsActive(x.Status)).Select(x => x.OwnerId!)
+            )
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return Task.FromResult(owners);
+    }
+
     public Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316/U3 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per

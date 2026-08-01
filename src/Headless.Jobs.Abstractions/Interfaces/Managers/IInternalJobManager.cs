@@ -50,6 +50,9 @@ internal interface IInternalJobManager
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
 
+    /// <summary>Distinct owner identities stamped on non-terminal rows (see the provider SPI counterpart).</summary>
+    Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Reclaims jobs stuck <c>InProgress</c> whose lease lapsed, independent of node death (#316/U3). Runs on the
     /// fallback cadence so a job stalled on a still-live node is recovered within ≈ one lease TTL.

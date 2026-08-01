@@ -104,6 +104,29 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
     }
 
     [Fact]
+    public async Task get_active_owner_ids_returns_distinct_owners_of_non_terminal_rows_only()
+    {
+        var (provider, _) = _Create();
+        var mineQueued = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(5));
+        var mineInProgress = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(5));
+        var otherIdle = _TimeJob(JobStatus.Idle, _NodeB, _Now.UtcDateTime.AddMinutes(5));
+        var terminalOwned = _TimeJob(JobStatus.Failed, "gone@1", lockedUntil: null);
+        var unowned = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        await provider.AddTimeJobsAsync([mineQueued, mineInProgress, otherIdle, terminalOwned, unowned], AbortToken);
+        var cronOwned = _Occurrence(JobStatus.InProgress, "cron-owner@9");
+        await provider.InsertCronJobOccurrencesAsync([cronOwned], AbortToken);
+
+        var owners = await provider.GetActiveOwnerIdsAsync(AbortToken);
+
+        owners
+            .Should()
+            .BeEquivalentTo(
+                [_NodeA, _NodeB, "cron-owner@9"],
+                "terminal and unowned rows carry no reclaimable ownership"
+            );
+    }
+
+    [Fact]
     public async Task remove_time_jobs_removes_the_whole_descendant_subtree()
     {
         // One-level removal orphaned grandchildren whose parent-gate lookup could never resolve again —

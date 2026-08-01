@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
@@ -19,10 +20,12 @@ internal sealed class JobsFallbackBackgroundService(
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    ILogger<JobsFallbackBackgroundService> logger
+    ILogger<JobsFallbackBackgroundService> logger,
+    INodeMembership? membership = null
 ) : BackgroundService
 {
     private int _started;
+    private long _lastOrphanSweepTimestamp;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
     public override Task StartAsync(CancellationToken ct)
@@ -59,6 +62,7 @@ internal sealed class JobsFallbackBackgroundService(
                 // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
                 // dead-node sweep.
                 await internalJobsManager.ReclaimStalledResources(loopToken).ConfigureAwait(false);
+                await _ReclaimOrphanedOwnersAsync(loopToken).ConfigureAwait(false);
 
                 var functions = await internalJobsManager.RunTimedOutTickers(loopToken).ConfigureAwait(false);
 
@@ -132,6 +136,57 @@ internal sealed class JobsFallbackBackgroundService(
         }
     }
 
+    // Recovers rows stamped by an owner identity that can no longer be OBSERVED at all: a superseded
+    // incarnation (its successor's registration instantly filters it from every liveness snapshot, so it never
+    // classifies Dead and the dead-owner bridge never sees it) or a dead identity pruned past its retention
+    // window. Idle/Queued rows with a null ExecutionTime (non-timed chain descendants) are matched by no other
+    // sweep in that state — this reconcile is their only recovery path, per the coordination contract
+    // ("consumers must also periodically reconcile rows whose owner identity is not live").
+    //
+    // The snapshot is read BEFORE the stamped-owner scan: stamping requires established membership, so an owner
+    // stamped after this snapshot was taken is necessarily observable in the next one — absence can only mean
+    // superseded or pruned. Suspected and Dead-retained identities are present in the snapshot and deliberately
+    // excluded here (Dead belongs to the dead-owner bridge; Suspected may still be alive and renewing).
+    private async Task _ReclaimOrphanedOwnersAsync(CancellationToken cancellationToken)
+    {
+        if (membership is null)
+        {
+            // In-memory path: single-process ownership with no incarnations — nothing can be orphaned.
+            return;
+        }
+
+        if (
+            _lastOrphanSweepTimestamp != 0
+            && timeProvider.GetElapsedTime(_lastOrphanSweepTimestamp) < schedulerOptions.DeadNodeReconcileInterval
+        )
+        {
+            return;
+        }
+
+        _lastOrphanSweepTimestamp = timeProvider.GetTimestamp();
+
+        var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var observable = snapshot.Select(x => x.Identity.ToString()).ToHashSet(StringComparer.Ordinal);
+        var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var owner in stamped)
+        {
+            if (observable.Contains(owner))
+            {
+                continue;
+            }
+
+            // Protective self-exclusion for registration gaps; a registered self is in the snapshot anyway.
+            if (ownerIdentity.TryGetStampOwner(out var self) && string.Equals(owner, self, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            logger.LogJobsOrphanedOwnerReclaimed(owner);
+            await internalJobsManager.ReleaseDeadNodeResources(owner, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         Interlocked.Exchange(ref _started, 0);
@@ -159,4 +214,12 @@ internal static partial class JobsFallbackBackgroundServiceLog
             + "reclaim sweeps and timed-out re-dispatch no longer run on this node."
     )]
     public static partial void LogJobsFallbackStoppedOnMembershipLoss(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3202,
+        Level = LogLevel.Warning,
+        Message = "Reclaiming rows stamped by owner '{Owner}', which is no longer observable in the coordination "
+            + "liveness snapshot (superseded incarnation or pruned dead identity)."
+    )]
+    public static partial void LogJobsOrphanedOwnerReclaimed(this ILogger logger, string owner);
 }
