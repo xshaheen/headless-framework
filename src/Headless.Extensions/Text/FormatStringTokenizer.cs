@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+
 namespace Headless.Text;
 
 internal static class FormatStringTokenizer
@@ -14,11 +16,35 @@ internal static class FormatStringTokenizer
     /// If set to true, the dynamic value tokens will retain their enclosing curly braces.
     /// </param>
     /// <returns>
-    /// A list of tokens representing the parsed structure of the format string. Each token is categorized
-    /// as either a constant text or a dynamic value.
+    /// A read-only list of tokens representing the parsed structure of the format string. Each token is
+    /// categorized as either a constant text or a dynamic value. The result may be shared between callers,
+    /// so it must not be mutated; <see cref="FormatStringToken"/> is an immutable record.
     /// </returns>
     /// <exception cref="FormatException">Thrown if the format string contains invalid syntax, such as mismatched curly braces or nested dynamic value placeholders.</exception>
-    public static List<FormatStringToken> Tokenize(string format, bool includeBracketsForDynamicValues = false)
+    public static IReadOnlyList<FormatStringToken> Tokenize(string format, bool includeBracketsForDynamicValues = false)
+    {
+        var cache = includeBracketsForDynamicValues ? _BracketedTokenCache : _PlainTokenCache;
+
+        if (cache.TryGetValue(format, out var cached))
+        {
+            return cached;
+        }
+
+        var tokens = _Tokenize(format, includeBracketsForDynamicValues);
+
+        // Keyed on the string instance rather than its content: the hot callers tokenize a compile-time
+        // constant (a CompositeFormat's Format, always the same reference) on every cache-key parse and
+        // always hit, while a caller-built string is collected along with its entry instead of growing an
+        // unbounded cache keyed on untrusted input.
+        cache.AddOrUpdate(format, tokens);
+
+        return tokens;
+    }
+
+    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _PlainTokenCache = new();
+    private static readonly ConditionalWeakTable<string, IReadOnlyList<FormatStringToken>> _BracketedTokenCache = new();
+
+    private static ImmutableArray<FormatStringToken> _Tokenize(string format, bool includeBracketsForDynamicValues)
     {
         var tokens = new List<FormatStringToken>();
 
@@ -93,7 +119,7 @@ internal static class FormatStringTokenizer
             tokens.Add(new FormatStringToken(currentText.ToString(), FormatStringTokenType.ConstantText));
         }
 
-        return tokens;
+        return [.. tokens];
     }
 }
 

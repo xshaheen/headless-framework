@@ -54,7 +54,7 @@ public static class FormattedStringValueExtractor
 
         var formatTokens = FormatStringTokenizer.Tokenize(format);
 
-        if (formatTokens.IsNullOrEmpty())
+        if (formatTokens.Count == 0)
         {
             return new FormattedStringExtractionResult(string.IsNullOrEmpty(str));
         }
