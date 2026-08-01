@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -489,6 +488,9 @@ internal sealed class ConnectionScopedDistributedLock(
 
     private static double _GetRandomUnitDouble()
     {
-        return RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue;
+        // Poll jitter is a stampede heuristic, not a security primitive: nothing about lock correctness or lease
+        // identity depends on an attacker being unable to predict the next wake. Random.Shared is the cheap,
+        // lock-free, thread-safe source for that; the CSPRNG this replaced only cost entropy on every poll.
+        return Random.Shared.NextDouble();
     }
 }

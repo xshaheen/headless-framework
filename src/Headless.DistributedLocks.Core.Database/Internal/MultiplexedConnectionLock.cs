@@ -354,9 +354,18 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
     {
         private TLockCookie? _lockCookie = lockCookie;
         private IDatabaseConnectionMonitoringHandle? _monitoringHandle;
+        private string? _leaseId;
         private int _disposed;
 
-        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
+        /// <summary>
+        /// The lease identity required by <see cref="IDistributedLease"/>. Minted on first read rather than per
+        /// acquire: nothing in the multiplexed acquire path consumes it, so every uninspected lease was paying for a
+        /// GUID plus its 32-character formatting. The CAS publish keeps the value stable once any caller has read it —
+        /// a racing reader only discards its own candidate, and a string needs no disposal (unlike the monitoring
+        /// handle below, which is why that one cannot use this helper).
+        /// </summary>
+        public string LeaseId =>
+            LazyInitializer.EnsureInitialized(ref _leaseId, static () => Guid.NewGuid().ToString("N"));
 
         public long? FencingToken => null;
 
