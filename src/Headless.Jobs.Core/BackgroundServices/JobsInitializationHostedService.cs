@@ -5,6 +5,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -132,9 +133,17 @@ internal sealed class JobsInitializationHostedService(
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
+        // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
+        // setting, else the framework default. The threshold has to be identical on every node — if each provider
+        // resolved it from local configuration, two nodes could disagree about whether the same instant misfired.
         var functionsToSeed = functionRegistry
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
-            .Select(x => (x.Key, x.Value.CronExpression))
+            .Select(x => new CronSeedDefinition(
+                x.Key,
+                x.Value.CronExpression,
+                x.Value.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy,
+                _ResolveGraceSeconds(x.Value.MissedRunGraceSeconds, schedulerOptions.DefaultMissedRunGraceSeconds)
+            ))
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
@@ -184,6 +193,18 @@ internal sealed class JobsInitializationHostedService(
         {
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    // Zero or negative is not a usable threshold at either level: dispatch is always at or after its scheduled
+    // instant, so honouring it would classify routine lateness as a misfire.
+    private static int _ResolveGraceSeconds(int? fromAttribute, int schedulerWide)
+    {
+        if (fromAttribute is > 0)
+        {
+            return fromAttribute.Value;
+        }
+
+        return schedulerWide > 0 ? schedulerWide : JobsRecoveryDefaults.MissedRunGraceSeconds;
     }
 }
 

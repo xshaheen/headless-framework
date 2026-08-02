@@ -239,6 +239,83 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             .Be(JobStatus.Succeeded);
     }
 
+    public virtual async Task direct_claim_preserves_the_recovery_stamp()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-direct-claim");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-direct-claim",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var recovery = await persistence.ApplyCronRecoveryAsync(_Request(cronId, seeded, MissedRunPolicy.Coalesce), ct);
+        var coalesced = recovery!.CoalescedRun!;
+        var dispatch = new JobManagerDispatchContext(cronId)
+        {
+            FunctionName = "recovery-direct-claim",
+            Expression = "0 0 * * * *",
+            NextCronOccurrence = new NextCronOccurrence(coalesced.Id, coalesced.CreatedAt),
+        };
+
+        var claimed = await persistence
+            .QueueCronJobOccurrencesAsync((coalesced.ExecutionTime, [dispatch]), ct)
+            .ToArrayAsync(ct);
+
+        var occurrence = claimed.Should().ContainSingle().Which;
+        occurrence.Id.Should().Be(coalesced.Id);
+        occurrence
+            .RecoveredFromUtc.Should()
+            .BeCloseTo(seeded.NextDueUtc, TimeSpan.FromMicroseconds(1), "the direct claim projection must carry it");
+        await host.StopAsync(ct);
+    }
+
+    public virtual async Task fallback_claim_preserves_the_recovery_stamp()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-fallback-claim");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-fallback-claim",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var recovery = await persistence.ApplyCronRecoveryAsync(_Request(cronId, seeded, MissedRunPolicy.Coalesce), ct);
+
+        var claimed = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+
+        var occurrence = claimed.Should().ContainSingle().Which;
+        occurrence.Id.Should().Be(recovery!.CoalescedRun!.Id);
+        occurrence
+            .RecoveredFromUtc.Should()
+            .BeCloseTo(
+                seeded.NextDueUtc,
+                TimeSpan.FromMicroseconds(1),
+                "the restart/fallback projection must carry the durable stamp"
+            );
+        await host.StopAsync(ct);
+    }
+
     public virtual async Task concurrent_recovery_of_one_backlog_produces_exactly_one_winner()
     {
         var ct = AbortToken;

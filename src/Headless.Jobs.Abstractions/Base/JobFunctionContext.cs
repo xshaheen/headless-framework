@@ -52,6 +52,8 @@ public class JobFunctionContext
         RetryCount = other.RetryCount;
         IsDue = other.IsDue;
         ScheduledFor = other.ScheduledFor;
+        RecoveredFromUtc = other.RecoveredFromUtc;
+        Lateness = other.Lateness;
         FunctionName = other.FunctionName;
         CronOccurrenceOperations = other.CronOccurrenceOperations;
     }
@@ -78,6 +80,36 @@ public class JobFunctionContext
     /// <c>ExecutionTime</c>; for cron occurrences it equals the occurrence's <c>ExecutionTime</c>.
     /// </summary>
     public DateTime ScheduledFor { get; internal set; }
+
+    /// <summary>
+    /// For a run materialized by misfire recovery, the earliest missed instant it stands in for; <see langword="null"/>
+    /// for a normally dispatched run.
+    /// </summary>
+    /// <remarks>
+    /// Read from the occurrence rather than derived at execution time, because by then the definition's watermark has
+    /// already advanced past the backlog — a run reclaimed after a restart could not otherwise reconstruct what it
+    /// stands for.
+    /// <para>
+    /// A coalesced run represents every occurrence missed during the outage, not just this instant. Job code doing
+    /// incremental work should treat this as the lower bound of the window to process; the value is exact even when
+    /// the missed count was too large to enumerate, because it is the first occurrence after the watermark.
+    /// </para>
+    /// </remarks>
+    public DateTime? RecoveredFromUtc { get; internal set; }
+
+    /// <summary>Whether this run was materialized by misfire recovery rather than dispatched normally.</summary>
+    public bool IsRecoveryRun => RecoveredFromUtc is not null;
+
+    /// <summary>
+    /// How late this run started relative to <see cref="ScheduledFor"/>. Near zero for a normally dispatched run;
+    /// for a recovery run it measures from the earliest missed instant, so it spans the outage.
+    /// </summary>
+    /// <remarks>
+    /// Never negative: a run observed to start fractionally before its scheduled instant — possible when the store's
+    /// clock and this node's differ by a few milliseconds — reports <see cref="TimeSpan.Zero"/> rather than a negative
+    /// lateness that no consumer expects.
+    /// </remarks>
+    public TimeSpan Lateness { get; internal set; }
 
     /// <summary>The registered function name that identifies this job handler.</summary>
     public required string FunctionName { get; init; }

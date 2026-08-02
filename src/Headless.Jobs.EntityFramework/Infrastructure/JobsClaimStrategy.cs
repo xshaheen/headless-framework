@@ -502,6 +502,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 OwnerId = owner,
                 OnNodeDeath = item.OnNodeDeath,
                 CreatedAt = item.NextCronOccurrence.CreatedAt,
+                // R23: this reconstructs a row the store already holds, so the recovery stamp has to be carried in
+                // rather than re-read. Dropping it here demotes a coalesced run to an ordinary one at execution.
+                RecoveredFromUtc = item.NextCronOccurrence.RecoveredFromUtc,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             };
             claimableOccurrenceIds.Add(item.NextCronOccurrence.Id);

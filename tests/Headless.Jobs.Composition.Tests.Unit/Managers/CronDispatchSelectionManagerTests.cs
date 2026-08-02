@@ -149,6 +149,24 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         occurrences.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_dispatch_a_coalesced_recovery_with_its_persisted_stamp()
+    {
+        var (manager, provider) = _Create();
+        var definition = _Definition(nextDue: _Now.AddHours(-3));
+        definition.Expression = "0 0 * * * *";
+        definition.ReconciledThroughUtc = _Now.AddHours(-4);
+        definition.OnMissedRun = MissedRunPolicy.Coalesce;
+        definition.MissedRunGraceSeconds = 60;
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        var context = functions.Should().ContainSingle().Which;
+        context.ExecutionTime.Should().Be(_Now.AddHours(-3));
+        context.RecoveredFromUtc.Should().Be(_Now.AddHours(-3));
+    }
+
     private static (
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider

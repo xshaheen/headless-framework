@@ -9,6 +9,7 @@ using Headless.Jobs.Coordination;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -113,8 +114,10 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         await manager
             .Received(1)
             .MigrateDefinedCronJobs(
-                Arg.Is<(string, string)[]>(functions =>
-                    functions.Length == 1 && functions[0].Item1 == functionName && functions[0].Item2 == resolvedCron
+                Arg.Is<CronSeedDefinition[]>(functions =>
+                    functions.Length == 1
+                    && functions[0].Function == functionName
+                    && functions[0].Expression == resolvedCron
                 ),
                 AbortToken
             );
@@ -129,7 +132,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await _InvokeSeedAsync(manager, options, spyLock, AbortToken);
 
-        await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+        await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
         await spyLock
             .DidNotReceive()
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
@@ -145,7 +148,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await _InvokeSeedAsync(manager, options, lockProvider, AbortToken);
 
-        await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+        await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
         // Lease released on completion → the resource is free again for the next boot.
         (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource, AbortToken))
             .Should()
@@ -159,7 +162,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var lockProvider = _CreateLock(storage);
         var manager = Substitute.For<IInternalJobManager>();
         manager
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>())
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("seed boom"));
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
@@ -196,7 +199,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await manager
             .DidNotReceive()
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -214,7 +217,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await manager
             .DidNotReceive()
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -236,7 +239,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
         await manager
             .DidNotReceive()
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -257,7 +260,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await manager
             .DidNotReceive()
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -286,7 +289,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await manager
             .DidNotReceive()
-            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     // ----------------------------------------------------------------------------------------------------------------

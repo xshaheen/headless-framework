@@ -1333,13 +1333,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     #region Cron Job Methods
 
     public Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
+        CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow();
 
-        foreach (var (function, expression) in cronJobs)
+        foreach (var (function, expression, onMissedRun, missedRunGraceSeconds) in cronJobs)
         {
             // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
             // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
@@ -1395,6 +1395,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 CreatedAt = now,
                 UpdatedAt = now,
                 Request = [],
+                // KTD6: seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
+                // set later through ICronJobManager survives every redeploy and is an operator override by
+                // construction — which is why no provenance marker is persisted.
+                OnMissedRun = onMissedRun,
+                MissedRunGraceSeconds = missedRunGraceSeconds,
             };
 
             _cronJobs.TryAdd(id, cronJob);

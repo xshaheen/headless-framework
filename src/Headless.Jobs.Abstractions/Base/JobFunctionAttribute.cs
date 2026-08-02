@@ -87,4 +87,46 @@ public sealed class JobFunctionAttribute : Attribute
     /// <c>MaxConcurrency</c> setting.
     /// </summary>
     public int MaxConcurrency { get; }
+
+    /// <summary>
+    /// Recovery policy applied when this cron definition's schedule falls behind. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>
+    /// <b>Seeds the definition at creation only.</b> It is never reapplied when declared functions are reconciled at
+    /// startup, so a value later set through <c>ICronJobManager</c> stays in force across restarts and is an operator
+    /// override by construction — which is why no provenance marker is persisted. Leave unset to take the
+    /// scheduler-wide default.
+    /// <para>
+    /// Every comparable scheduler puts this knob on the mutable definition rather than in code: Hangfire has no
+    /// attribute at all, and Quartz has attributes available yet deliberately placed misfire handling on the persisted
+    /// trigger. This attribute declares an initial value; it is not the authority.
+    /// </para>
+    /// </remarks>
+    public MissedRunPolicy OnMissedRun
+    {
+        get => _onMissedRun ?? MissedRunPolicy.Coalesce;
+        set => _onMissedRun = value;
+    }
+
+    /// <summary>
+    /// Seconds of lateness tolerated before a single pending occurrence counts as a misfire. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>
+    /// Same seeding rule as <see cref="OnMissedRun"/>: creation only, never reapplied. Resolved once at creation from
+    /// this value, then the scheduler-wide setting, then the framework default, and persisted on the definition so
+    /// every node evaluates the same threshold — a locally configured value must never decide whether an instant
+    /// misfired, or two nodes would disagree about the same tick.
+    /// </remarks>
+    public int MissedRunGraceSeconds
+    {
+        get => _missedRunGraceSeconds ?? JobsRecoveryDefaults.MissedRunGraceSeconds;
+        set => _missedRunGraceSeconds = value;
+    }
+
+    // Attribute arguments cannot be nullable value types, so "unset" is tracked separately from the public
+    // non-nullable surface. The source generator reads these through the attribute's named arguments and emits only
+    // the ones actually written, which is what lets an unset knob fall through to the scheduler-wide default rather
+    // than silently pinning every definition to the framework default at creation.
+    private MissedRunPolicy? _onMissedRun;
+    private int? _missedRunGraceSeconds;
 }

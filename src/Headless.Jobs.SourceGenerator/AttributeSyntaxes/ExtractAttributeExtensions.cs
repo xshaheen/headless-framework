@@ -10,14 +10,16 @@ internal static class ExtractAttributeExtensions
         string? functionName,
         string? cronExpression,
         int taskPriority,
-        int maxConcurrency
+        int maxConcurrency,
+        int? onMissedRun,
+        int? missedRunGraceSeconds
     ) GetJobFunctionAttributeValues(this AttributeData attrData)
     {
         // If for some reason there is no ctor (should be rare), return defaults
         var ctor = attrData.AttributeConstructor;
         if (ctor == null)
         {
-            return (null, null, 0, 0);
+            return (null, null, 0, 0, null, null);
         }
 
         var parameters = ctor.Parameters;
@@ -57,6 +59,32 @@ internal static class ExtractAttributeExtensions
             }
         }
 
-        return (functionName, cronExpression, taskPriority, maxConcurrency);
+        // The recovery knobs are attribute PROPERTIES, not constructor parameters, so they arrive as named arguments.
+        // Reading them only when actually written is what distinguishes "unset" (fall through to the scheduler-wide
+        // default at creation) from "explicitly set to the framework default" — the property getters cannot express
+        // that difference because attribute arguments cannot be nullable value types.
+        int? onMissedRun = null;
+        int? missedRunGraceSeconds = null;
+
+        foreach (var named in attrData.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "OnMissedRun":
+                    if (named.Value.Value is int policyValue)
+                    {
+                        onMissedRun = policyValue;
+                    }
+                    break;
+                case "MissedRunGraceSeconds":
+                    if (named.Value.Value is int graceValue)
+                    {
+                        missedRunGraceSeconds = graceValue;
+                    }
+                    break;
+            }
+        }
+
+        return (functionName, cronExpression, taskPriority, maxConcurrency, onMissedRun, missedRunGraceSeconds);
     }
 }
