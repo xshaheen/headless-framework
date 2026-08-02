@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
@@ -63,6 +64,75 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
             .UpdateTickerAsync(
                 Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Idle && x.ReleaseLock),
                 CancellationToken.None
+            );
+    }
+
+    [Theory]
+    [InlineData(RunCondition.InProgress)]
+    [InlineData(RunCondition.OnSuccess)]
+    public async Task releases_an_unregistered_chain_child_when_its_condition_matches(RunCondition runCondition)
+    {
+        var updates = new ConcurrentQueue<(Guid JobId, JobStatus Status, bool ReleaseLock, CancellationToken Token)>();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var state = call.Arg<JobExecutionState>();
+                updates.Enqueue((state.JobId, state.Status, state.ReleaseLock, call.Arg<CancellationToken>()));
+                return Task.FromResult(1);
+            });
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var parent = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "registered-parent",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            CachedDelegate = (_, _, _) => Task.CompletedTask,
+        };
+        var child = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            ParentId = parent.JobId,
+            FunctionName = "not-on-this-node",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Idle,
+            RunCondition = runCondition,
+            // CachedDelegate deliberately left unset — the registry miss shape.
+        };
+        parent.TimeJobChildren.Add(child);
+
+        await handler.ExecuteTaskAsync(parent, isDue: false, cancellationToken: AbortToken);
+
+        updates
+            .Should()
+            .ContainSingle(update =>
+                update.JobId == child.JobId
+                && update.Status == JobStatus.Idle
+                && update.ReleaseLock
+                && update.Token == CancellationToken.None
             );
     }
 

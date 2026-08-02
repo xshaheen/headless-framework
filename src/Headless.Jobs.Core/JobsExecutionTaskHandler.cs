@@ -107,16 +107,13 @@ internal sealed class JobsExecutionTaskHandler
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
-                if (child.CachedDelegate != null)
+                if (child.RunCondition == RunCondition.InProgress)
                 {
-                    if (child.RunCondition == RunCondition.InProgress)
-                    {
-                        tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
-                    }
-                    else
-                    {
-                        childrenToRunAfter.Add(child);
-                    }
+                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                }
+                else
+                {
+                    childrenToRunAfter.Add(child);
                 }
             }
         }
