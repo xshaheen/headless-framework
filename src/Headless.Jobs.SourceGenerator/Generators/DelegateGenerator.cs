@@ -69,6 +69,8 @@ internal static class DelegateGenerator
         int functionPriority,
         int maxConcurrency,
         string cronExpression,
+        int? onMissedRun = null,
+        int? missedRunGraceSeconds = null,
         string? assemblyName = null,
         HashSet<string>? typeNameConflicts = null
     )
@@ -100,7 +102,21 @@ internal static class DelegateGenerator
             typeNameConflicts
         );
 
-        sb.AppendLine($"            }}), MaxConcurrency = {maxConcurrency} }});");
+        // Emit the recovery knobs ONLY when the attribute actually set them. Emitting a value for an unset knob would
+        // pin every definition to the framework default at creation and make the scheduler-wide setting unreachable.
+        var recoveryKnobs = "";
+
+        if (onMissedRun.HasValue)
+        {
+            recoveryKnobs += $", OnMissedRun = (MissedRunPolicy){onMissedRun.Value}";
+        }
+
+        if (missedRunGraceSeconds.HasValue)
+        {
+            recoveryKnobs += $", MissedRunGraceSeconds = {missedRunGraceSeconds.Value}";
+        }
+
+        sb.AppendLine($"            }}), MaxConcurrency = {maxConcurrency}{recoveryKnobs} }});");
 
         return sb.ToString();
     }

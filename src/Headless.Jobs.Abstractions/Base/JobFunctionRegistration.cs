@@ -47,4 +47,22 @@ public readonly record struct JobFunctionRegistration
     /// unbounded (governed only by the global scheduler concurrency limit).
     /// </summary>
     public required int MaxConcurrency { get; init; }
+
+    /// <summary>
+    /// Recovery policy to seed onto this function's cron definition when it is first created, or
+    /// <see langword="null"/> to take the scheduler-wide default. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>
+    /// Optional by the additive-only policy above: a consumer assembly compiled before this member existed still
+    /// registers successfully and reads as "unset". Seeds at creation only and is never reapplied during startup
+    /// reconciliation, so a value later set through <c>ICronJobManager</c> stays in force.
+    /// </remarks>
+    public MissedRunPolicy? OnMissedRun { get; init; }
+
+    /// <summary>
+    /// Misfire grace in seconds to seed onto this function's cron definition when it is first created, or
+    /// <see langword="null"/> to take the scheduler-wide default. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
+    public int? MissedRunGraceSeconds { get; init; }
 }

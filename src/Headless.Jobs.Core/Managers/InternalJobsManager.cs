@@ -1134,7 +1134,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     public async Task MigrateDefinedCronJobs(
-        (string, string)[] cronExpressions,
+        CronSeedDefinition[] cronExpressions,
         CancellationToken cancellationToken = default
     )
     {

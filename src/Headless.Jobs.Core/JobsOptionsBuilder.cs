@@ -307,6 +307,28 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
+    /// Recovery policy seeded onto cron definitions created without one on their <c>[JobFunction]</c> attribute.
+    /// Defaults to <see cref="MissedRunPolicy.Coalesce"/>.
+    /// </summary>
+    /// <remarks>
+    /// Read once when a definition is created and persisted on it. Changing this later does not retroactively alter
+    /// existing definitions -- deliberately, so a configuration edit on one node can never silently change how another
+    /// node recovers a schedule that is already running.
+    /// </remarks>
+    public MissedRunPolicy DefaultMissedRunPolicy { get; set; } = MissedRunPolicy.Coalesce;
+
+    /// <summary>
+    /// Misfire grace, in seconds, seeded onto cron definitions created without one on their <c>[JobFunction]</c>
+    /// attribute. Defaults to <see cref="JobsRecoveryDefaults.MissedRunGraceSeconds"/>.
+    /// </summary>
+    /// <remarks>
+    /// Resolved once at creation and persisted on the definition so every node evaluates the same threshold for it.
+    /// Zero or less falls back to the framework default: dispatch is always at or after its scheduled instant, so a
+    /// zero threshold would classify every tick delayed by a garbage collection as a misfire.
+    /// </remarks>
+    public int DefaultMissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
+
+    /// <summary>
     /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as
     /// <c>LockedUntil = now + LeaseDuration</c> on every claim. In-memory storage uses the injected
     /// <see cref="TimeProvider"/>; relational storage translates the claim expression to the database UTC clock so

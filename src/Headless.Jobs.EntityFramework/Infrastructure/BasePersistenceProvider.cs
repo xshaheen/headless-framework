@@ -1048,7 +1048,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     #region Core_Cron_Ticker_Methods
     public async Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
+        CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -1117,6 +1117,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 (
                     x.Function,
                     x.Expression,
+                    x.OnMissedRun,
+                    x.MissedRunGraceSeconds,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1125,7 +1127,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .OrderBy(x => x.Id)
             .ToArray();
 
-        foreach (var (function, expression, _) in orderedCronJobs)
+        foreach (var (function, expression, onMissedRun, missedRunGraceSeconds, _) in orderedCronJobs)
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
@@ -1164,6 +1166,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     CreatedAt = now,
                     UpdatedAt = now,
                     Request = [],
+                    // KTD6: seeded at CREATION only. The expression-changed branch above deliberately leaves these
+                    // alone, so a value set later through ICronJobManager survives every redeploy and is an operator
+                    // override by construction — which is why no provenance marker is persisted.
+                    OnMissedRun = onMissedRun,
+                    MissedRunGraceSeconds = missedRunGraceSeconds,
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
             }

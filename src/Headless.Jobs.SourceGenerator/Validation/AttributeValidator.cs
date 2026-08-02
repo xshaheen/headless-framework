@@ -14,7 +14,14 @@ internal static class AttributeValidator
     /// Validates all aspects of a JobFunction attribute and its usage.
     /// </summary>
     public static void ValidateJobFunctionAttribute(
-        (string? functionName, string? cronExpression, int taskPriority, int maxConcurrency) attributeValues,
+        (
+            string? functionName,
+            string? cronExpression,
+            int taskPriority,
+            int maxConcurrency,
+            int? onMissedRun,
+            int? missedRunGraceSeconds
+        ) attributeValues,
         MethodDeclarationSyntax methodDeclaration,
         string className,
         Location attributeLocation,

@@ -350,10 +350,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// application at runtime are not seeded rows and are never touched by this reconciliation.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
-        CancellationToken cancellationToken = default
-    );
+    Task MigrateDefinedCronJobsAsync(CronSeedDefinition[] cronJobs, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads every cron definition so the scheduler can compute the next occurrence for each expression. This is
