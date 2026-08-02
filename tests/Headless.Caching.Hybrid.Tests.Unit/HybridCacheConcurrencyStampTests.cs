@@ -30,7 +30,7 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
         FailSafeThrottleDuration = TimeSpan.FromSeconds(5),
     };
 
-    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2) _CreateCache()
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2) _CreateCache(HybridCacheOptions? options = null)
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -41,7 +41,13 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            options ?? new HybridCacheOptions(),
+            timeProvider: _timeProvider
+        );
 
         _disposables.Add(l1);
         _disposables.Add(l2Inner);
@@ -100,6 +106,31 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
         var result = await call;
 
         // then — the caller still gets the fresh value, but neither tier keeps it: the remove won the race
+        result.Value.Should().Be("v2");
+        (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("L1 must not be resurrected");
+        (await l2.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("L2 must not be resurrected");
+    }
+
+    [Fact]
+    public async Task should_not_resurrect_a_removed_key_from_l2_when_background_operations_are_enabled()
+    {
+        // given — background L2 operations are enabled and both tiers hold a stale entry, so the factory's
+        // concurrency stamp comes from L2
+        var (cache, l1, l2) = _CreateCache(new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true });
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.GetOrAddAsync(key, _ => new ValueTask<string?>("v1"), _FailSafeOptions, AbortToken);
+        await _WaitUntilAsync(async () => (await l2.GetAsync<string>(key, AbortToken)).HasValue);
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // when — a remove wins while the refresh factory is still running
+        var (call, release) = await _StartParkedFactoryAsync(cache, key, "v2");
+        await cache.RemoveAsync(key, AbortToken);
+        release.SetResult();
+        var result = await call;
+
+        // then — the L2 CAS fails before L1 is touched, despite background operations being enabled
         result.Value.Should().Be("v2");
         (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("L1 must not be resurrected");
         (await l2.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("L2 must not be resurrected");
@@ -192,5 +223,22 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
 
         _disposables.Clear();
         await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
+
+    private static async Task _WaitUntilAsync(Func<ValueTask<bool>> predicate)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("Background L2 operation did not complete within the budget.");
     }
 }

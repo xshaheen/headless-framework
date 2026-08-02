@@ -288,13 +288,15 @@ public sealed partial class HybridCache
         // its compare-and-set actually runs (a late factory must not resurrect a concurrently removed key).
         var (expectedL1Stamp, expectedL2Stamp) = _SplitStamp(entry.ExpectedConcurrencyStamp);
 
-        // Background path: the GetOrAdd factory write-through is the highest-value detach target. The factory
-        // already returned its value to the caller against L1, so the L2 mirror + peer publish add nothing to
-        // the caller's result. Write L1 synchronously (capturing the physical stamp the recovery replay verifies
-        // against), then detach the L2 write + recovery bookkeeping + publish under CancellationToken.None so a
-        // caller token going away cannot abandon the L2 mirror. The descriptor is already captured by value
-        // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
-        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
+        // Background path: the GetOrAdd factory write-through is the highest-value detach target. An L2-origin
+        // concurrency stamp must stay on the synchronous guarded-tier-first path below: committing L1 before the
+        // L2 CAS would resurrect a value when a concurrent remove wins the CAS, and this instance ignores its own
+        // invalidation message. For all other writes, write L1 synchronously (capturing the physical stamp the
+        // recovery replay verifies against), then detach the L2 write + recovery bookkeeping + publish under
+        // CancellationToken.None so a caller token going away cannot abandon the L2 mirror. The descriptor is
+        // already captured by value (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns
+        // immutable state.
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations && expectedL2Stamp is null)
         {
             var (localCommitted, localPhysicalStamp) = await _WriteSetEntryToLocalAsync(
                     key,
