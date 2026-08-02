@@ -540,6 +540,74 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_commit_past_skipped_offsets_when_processing_concurrently()
+    {
+        // given — a tombstone sits between two records. It is never dispatched to a handler, so the
+        // commit watermark has to account for it in the poll loop or the partition stalls on it.
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                var callIndex = Interlocked.Increment(ref consumeCallCount);
+
+                return callIndex switch
+                {
+                    1 => _CreateConsumeResult(100),
+                    2 => _CreateTombstoneResult(101),
+                    3 => _CreateConsumeResult(102),
+                    _ => waitAndReturnNull(),
+                };
+
+                static ConsumeResult<string, byte[]> waitAndReturnNull()
+                {
+                    Thread.Sleep(10);
+
+                    return null!;
+                }
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        client.OnMessageCallback = async (_, sender) => await client.CommitAsync(sender).ConfigureAwait(false);
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            // then — 103 is only reachable if the tombstone at 101 moved the watermark
+            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
     public async Task should_ignore_tracked_delivery_from_before_reassignment_when_commit_async()
     {
         // given
@@ -844,6 +912,15 @@ public sealed class KafkaConsumerClientTests : TestBase
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
             Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = [] },
+        };
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateTombstoneResult(long offset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
+            Message = new Message<string, byte[]> { Value = null!, Headers = [] },
         };
     }
 

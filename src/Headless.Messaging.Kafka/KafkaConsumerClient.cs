@@ -188,6 +188,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 if (consumerResult.IsPartitionEOF || consumerResult.Message.Value == null)
                 {
+                    // Neither result is dispatched to a handler, so their offsets never reach
+                    // CommitAsync. The concurrent-mode watermark still has to account for them or it
+                    // stops at the first one and the partition is never committed again.
+                    _ObserveUndispatched(consumerResult);
+
                     continue;
                 }
 
@@ -453,6 +458,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
+    private void _ObserveUndispatched(ConsumeResult<string, byte[]> consumerResult)
+    {
+        if (_offsetCommitTracker is null)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            _offsetCommitTracker.MarkObserved(consumerResult);
+        }
+    }
+
     private async Task _ConsumeAsync(KafkaDelivery delivery)
     {
         var consumerResult = delivery.ConsumerResult;
@@ -625,7 +643,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
-    private sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
+    internal sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
     {
         public const long UntrackedGeneration = -1;
 
@@ -636,7 +654,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         public bool IsTracked => Generation != UntrackedGeneration;
     }
 
-    private sealed class KafkaOffsetCommitTracker
+    /// <summary>
+    /// Tracks which offsets are still being handled per partition so concurrent handlers can only ever
+    /// commit a watermark that no in-flight delivery sits below.
+    /// </summary>
+    internal sealed class KafkaOffsetCommitTracker
     {
         private readonly Dictionary<TopicPartition, PartitionCommitState> _partitions = [];
 
@@ -649,20 +671,38 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
             }
 
-            var topicPartition = consumerResult.TopicPartition;
-
-            if (!_partitions.TryGetValue(topicPartition, out var state))
-            {
-                state = new PartitionCommitState();
-                _partitions.Add(topicPartition, state);
-            }
+            var state = _GetOrAddState(consumerResult.TopicPartition);
 
             if (state.NextCommitOffset is null || offset < state.NextCommitOffset.Value)
             {
                 state.NextCommitOffset = offset;
             }
 
+            state.PendingOffsets.Add(offset);
+            _Observe(state, offset, offset + 1);
+
             return new KafkaDelivery(consumerResult, state.Generation);
+        }
+
+        /// <summary>
+        /// Records an offset the poll loop saw but never dispatched — a tombstone, or an end-of-partition
+        /// marker. Those offsets never reach <see cref="MarkCommitted"/>, so the watermark has to learn
+        /// about them here or it stops at the first one.
+        /// </summary>
+        public void MarkObserved(ConsumeResult<string, byte[]> consumerResult)
+        {
+            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+            if (offset < 0)
+            {
+                return;
+            }
+
+            // An end-of-partition result already carries the log-end offset (the next offset that will be
+            // produced there), whereas a record carries its own offset.
+            var nextOffset = consumerResult.IsPartitionEOF ? offset : offset + 1;
+
+            _Observe(_GetOrAddState(consumerResult.TopicPartition), offset, nextOffset);
         }
 
         public void Reset(TopicPartition partition)
@@ -674,7 +714,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             state.Generation++;
             state.NextCommitOffset = null;
-            state.CompletedOffsets.Clear();
+            state.NextObservedOffset = 0;
+            state.IsReplaying = false;
+            state.PendingOffsets.Clear();
         }
 
         public List<TopicPartitionOffset> MarkCommitted(KafkaDelivery delivery)
@@ -692,28 +734,25 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return [];
             }
 
-            if (offset < nextCommitOffset)
+            state.PendingOffsets.Remove(offset);
+
+            // Everything below the lowest still-in-flight offset is done. With nothing in flight the
+            // watermark moves up to everything the poll loop has seen, which is what carries it over the
+            // offsets the broker never delivers — transaction control records, aborted batches under
+            // read_committed, and compaction holes — instead of stalling on them forever.
+            var candidate =
+                state.PendingOffsets.Count > 0
+                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    : state.NextObservedOffset;
+
+            if (candidate <= nextCommitOffset)
             {
                 return [];
             }
 
-            state.CompletedOffsets.Add(offset);
-            var advanced = false;
+            state.NextCommitOffset = candidate;
 
-            while (state.CompletedOffsets.Remove(nextCommitOffset))
-            {
-                nextCommitOffset++;
-                advanced = true;
-            }
-
-            if (!advanced)
-            {
-                return [];
-            }
-
-            state.NextCommitOffset = nextCommitOffset;
-
-            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextCommitOffset))];
+            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(candidate))];
         }
 
         public bool MarkRejected(KafkaDelivery delivery)
@@ -730,19 +769,74 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             var offset = consumerResult.TopicPartitionOffset.Offset.Value;
             state.Generation++;
-            state.NextCommitOffset = offset >= 0 ? offset : null;
-            state.CompletedOffsets.Clear();
+            state.PendingOffsets.Clear();
+
+            if (offset < 0)
+            {
+                state.NextCommitOffset = null;
+                state.NextObservedOffset = 0;
+                state.IsReplaying = false;
+
+                return true;
+            }
+
+            // The caller seeks back to this offset, so the range above it is about to be replayed and
+            // must not count as seen until the replay actually delivers it.
+            state.NextCommitOffset = offset;
+            state.NextObservedOffset = offset;
+            state.IsReplaying = true;
 
             return true;
+        }
+
+        private PartitionCommitState _GetOrAddState(TopicPartition topicPartition)
+        {
+            if (_partitions.TryGetValue(topicPartition, out var state))
+            {
+                return state;
+            }
+
+            state = new PartitionCommitState();
+            _partitions.Add(topicPartition, state);
+
+            return state;
+        }
+
+        private static void _Observe(PartitionCommitState state, long offset, long nextOffset)
+        {
+            if (state.IsReplaying)
+            {
+                if (offset > state.NextObservedOffset)
+                {
+                    // A delivery the poll loop already held when the reject seeked back. The replay will
+                    // hand out the whole range again, so it is not proof that the gap below is finished.
+                    return;
+                }
+
+                state.IsReplaying = false;
+            }
+
+            state.NextObservedOffset = Math.Max(state.NextObservedOffset, nextOffset);
         }
 
         private sealed class PartitionCommitState
         {
             public long Generation { get; set; }
 
+            /// <summary>The offset to commit, meaning the next offset this consumer would read.</summary>
             public long? NextCommitOffset { get; set; }
 
-            public SortedSet<long> CompletedOffsets { get; } = [];
+            /// <summary>
+            /// The offset the poll loop expects next: one past the highest delivery it has seen. Deliveries
+            /// are ordered within a partition, so nothing below this can still be on its way.
+            /// </summary>
+            public long NextObservedOffset { get; set; }
+
+            /// <summary>Whether a reject seeked back and the replay has not reached that offset yet.</summary>
+            public bool IsReplaying { get; set; }
+
+            /// <summary>Tracked deliveries that have not been committed yet, bounded by the group concurrency.</summary>
+            public SortedSet<long> PendingOffsets { get; } = [];
         }
     }
 }
