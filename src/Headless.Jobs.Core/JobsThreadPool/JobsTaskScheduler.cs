@@ -876,7 +876,7 @@ internal static partial class JobsTaskSchedulerLog
     public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
 
     [LoggerMessage(
-        EventId = 3302,
+        EventId = 3304,
         EventName = "JobsWorkItemFaulted",
         Level = LogLevel.Error,
         Message = "A jobs work item faulted past the execution handler's own error handling; the worker continues. "
