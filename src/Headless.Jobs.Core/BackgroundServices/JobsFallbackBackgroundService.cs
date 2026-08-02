@@ -143,10 +143,11 @@ internal sealed class JobsFallbackBackgroundService(
     // sweep in that state — this reconcile is their only recovery path, per the coordination contract
     // ("consumers must also periodically reconcile rows whose owner identity is not live").
     //
-    // The snapshot is read BEFORE the stamped-owner scan: stamping requires established membership, so an owner
-    // stamped after this snapshot was taken is necessarily observable in the next one — absence can only mean
-    // superseded or pruned. Suspected and Dead-retained identities are present in the snapshot and deliberately
-    // excluded here (Dead belongs to the dead-owner bridge; Suspected may still be alive and renewing).
+    // Read the stamped-owner set BEFORE liveness. Stamping requires established membership, so the later snapshot
+    // must observe every owner that became active before the scan; reading in the opposite order can classify a node
+    // that registers and stamps work between the reads as orphaned. Suspected and Dead-retained identities are
+    // present in the snapshot and deliberately excluded here (Dead belongs to the dead-owner bridge; Suspected may
+    // still be alive and renewing).
     private async Task _ReclaimOrphanedOwnersAsync(CancellationToken cancellationToken)
     {
         if (membership is null)
@@ -165,9 +166,10 @@ internal sealed class JobsFallbackBackgroundService(
 
         _lastOrphanSweepTimestamp = timeProvider.GetTimestamp();
 
+        var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var observable = snapshot.Select(x => x.Identity.ToString()).ToHashSet(StringComparer.Ordinal);
-        var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
+        List<string> orphanedOwners = [];
 
         foreach (var owner in stamped)
         {
@@ -182,9 +184,24 @@ internal sealed class JobsFallbackBackgroundService(
                 continue;
             }
 
-            logger.LogJobsOrphanedOwnerReclaimed(owner);
-            await internalJobsManager.ReleaseDeadNodeResources(owner, CancellationToken.None).ConfigureAwait(false);
+            orphanedOwners.Add(owner);
         }
+
+        if (orphanedOwners.Count == 0 || ownerIdentity.MembershipLostToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        foreach (var owner in orphanedOwners)
+        {
+            logger.LogJobsOrphanedOwnerReclaimed(owner);
+        }
+
+        // Final membership fence immediately before the must-complete durable transition. Once started, the release
+        // deliberately uses None so host shutdown cannot interrupt only part of the owner batch.
+        await internalJobsManager
+            .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

@@ -497,6 +497,32 @@ public sealed class InternalJobsManagerTests : TestBase
             .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task release_dead_node_resources_batch_attempts_every_owner_and_reconciles_once()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider
+            .ReleaseDeadNodeTimeJobResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        provider
+            .ReleaseDeadNodeOccurrenceResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        provider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<DateTime?>(null));
+        var manager = _ReleaseTestManager(provider);
+
+        await manager.ReleaseDeadNodeResources(["node-a@1", "node-b@1", "node-c@1"], AbortToken);
+
+        foreach (var owner in new[] { "node-a@1", "node-b@1", "node-c@1" })
+        {
+            await provider.Received(1).ReleaseDeadNodeTimeJobResourcesAsync(owner, AbortToken);
+            await provider.Received(1).ReleaseDeadNodeOccurrenceResourcesAsync(owner, AbortToken);
+        }
+
+        await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
+    }
+
     private static InternalJobsManager<FakeTimeJob, FakeCronJob> _ReleaseTestManager(
         IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider
     )

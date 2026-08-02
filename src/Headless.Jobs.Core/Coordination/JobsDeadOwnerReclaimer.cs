@@ -31,9 +31,8 @@ internal sealed class JobsDeadOwnerReclaimer(
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {
-        // Jobs releases per-owner resources, so a batch is a loop. KTD6 / IDeadOwnerReclaimer contract: a reclaim
-        // racing host shutdown must complete, so each write uses CancellationToken.None and does not re-thread the
-        // incoming token (matches MessagingDeadOwnerReclaimer). The bridge already hands us None; this hardens it.
+        // KTD6 / IDeadOwnerReclaimer contract: a reclaim racing host shutdown must complete, so the durable batch
+        // uses CancellationToken.None and does not re-thread the incoming token (matches MessagingDeadOwnerReclaimer).
         //
         // Intentionally NOT distributed-lock guarded (#267 review): the bridge marks each owner reclaimed *before*
         // calling us and only un-marks on a thrown exception, so a skip-on-contention that returned normally would
@@ -42,30 +41,9 @@ internal sealed class JobsDeadOwnerReclaimer(
         // predicates already make a repeated sweep touch zero rows, so a coarse lock would only remove redundant
         // concurrent sweeps on rare node deaths — never worth making this the correctness boundary it must not be.
         //
-        // Continue-on-error: one owner's transient failure must not skip the rest of the batch — on the relational
-        // providers the Dead state is visible for only tens of seconds, so an owner skipped this tick can age out of
-        // the snapshot before the next one. Failures aggregate and propagate so the bridge's retry stays intact.
-        List<Exception>? failures = null;
-
-        foreach (var owner in owners)
-        {
-            try
-            {
-                await _internalJobManager.ReleaseDeadNodeResources(owner, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
-        }
-
-        if (failures is not null)
-        {
-            throw new AggregateException(
-                "One or more dead-owner reclaims failed; the bridge will retry them.",
-                failures
-            );
-        }
+        // The manager continues past per-owner failures, aggregates them for bridge retry, and performs the global
+        // terminal-child reconciliation once for the whole disruption rather than once per dead owner.
+        await _internalJobManager.ReleaseDeadNodeResources(owners, CancellationToken.None).ConfigureAwait(false);
     }
 
     // Relational membership providers prune a dead identity DeadRetentionWindow after DeadThreshold, so Dead is

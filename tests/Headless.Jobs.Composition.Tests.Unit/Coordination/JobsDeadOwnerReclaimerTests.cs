@@ -19,20 +19,22 @@ public sealed class JobsDeadOwnerReclaimerTests : TestBase
         // never be reclaimed. Every owner must be attempted; failures aggregate so the bridge's retry stays intact.
         var manager = Substitute.For<IInternalJobManager>();
         manager
-            .ReleaseDeadNodeResources("node-b@1", Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new InvalidOperationException("store blip")));
-        manager
-            .ReleaseDeadNodeResources(Arg.Is<string>(x => x != "node-b@1"), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new AggregateException(new InvalidOperationException("store blip"))));
         var reclaimer = new JobsDeadOwnerReclaimer(manager, new SchedulerOptionsBuilder());
 
         var act = () => reclaimer.ReclaimAsync(["node-a@1", "node-b@1", "node-c@1"], AbortToken);
 
         var thrown = await act.Should().ThrowAsync<AggregateException>();
         thrown.Which.InnerExceptions.Should().ContainSingle().Which.Should().BeOfType<InvalidOperationException>();
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@1", CancellationToken.None);
-        await manager.Received(1).ReleaseDeadNodeResources("node-b@1", CancellationToken.None);
-        await manager.Received(1).ReleaseDeadNodeResources("node-c@1", CancellationToken.None);
+        await manager
+            .Received(1)
+            .ReleaseDeadNodeResources(
+                Arg.Is<IReadOnlyCollection<string>>(owners =>
+                    owners.SequenceEqual(new[] { "node-a@1", "node-b@1", "node-c@1" })
+                ),
+                CancellationToken.None
+            );
     }
 
     [Fact]

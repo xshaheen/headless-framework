@@ -307,14 +307,14 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
 
-        // KTD6: the reclaimer must call ReleaseDeadNodeResources with CancellationToken.None (not the incoming token)
-        // so a reclaim racing host shutdown still completes. Assert the exact token, not Arg.Any, to enforce that.
+        // KTD6: the reclaimer must call the batch release with CancellationToken.None (not the incoming token) so a
+        // reclaim racing host shutdown still completes. Assert the exact token, not Arg.Any, to enforce that.
         await manager
             .Received(1)
-            .ReleaseDeadNodeResources("node-a@1", Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
-        await manager
-            .Received(1)
-            .ReleaseDeadNodeResources("node-b@2", Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
+            .ReleaseDeadNodeResources(
+                Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { "node-a@1", "node-b@2" })),
+                Arg.Is<CancellationToken>(ct => ct == CancellationToken.None)
+            );
     }
 
     [Fact]
@@ -326,7 +326,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         // path stays lock-free (a skip-on-contention that returned normally would do exactly that).
         var manager = Substitute.For<IInternalJobManager>();
         manager
-            .ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("release boom"));
         var options = new SchedulerOptionsBuilder();
         var reclaimer = _CreateReclaimer(manager, options);
