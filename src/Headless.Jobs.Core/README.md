@@ -33,6 +33,8 @@ The in-memory provider uses the injected `TimeProvider` for pickup leases. The E
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.
 
+On the `DeadNodeReconcileInterval` cadence, the durable fallback also reclaims rows stamped by an owner identity that is absent from the liveness snapshot entirely, including superseded incarnations that were never classified dead and dead identities pruned past retention. This orphaned-owner sweep is the recovery path for owner-stamped `Idle`/`Queued` rows with no execution time, including non-timed chain descendants left behind after an ungraceful restart.
+
 Generated module initializers populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddJobsDiscovery(...)` assembly is loaded, then freezes that catalog exactly once. Repeated builds are idempotent; registrations attempted after discovery or freeze fail deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
 
 Each `IHost` receives its own immutable runtime registry projected from the canonical catalog and that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.

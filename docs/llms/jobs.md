@@ -1220,7 +1220,7 @@ if (isPermamentFailure)
 
 Overloads:
 - `TerminateExecutionException("message")` → final status `Skipped`
-- `TerminateExecutionException(JobStatus status, "message")` → explicit status
+- `TerminateExecutionException(JobStatus status, "message")` → explicit terminal status: `Succeeded`, `DueDone`, `Failed`, `Cancelled`, or `Skipped`; any other value throws `ArgumentOutOfRangeException`
 - Both overloads have a variant accepting an `innerException` for diagnostic details
 
 #### Cron Occurrence Skipping
