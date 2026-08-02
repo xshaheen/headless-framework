@@ -449,6 +449,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
+- Monitoring pagination uses zero-based `MessageQuery.CurrentPage` values, returns that value as `IndexPage.Index`, and normalizes negative values to zero.
 - TransportDirect publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
 
 ### Design Notes
