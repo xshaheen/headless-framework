@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import AuthHeader from '../common/AuthHeader.vue'
-import { useMessagingStore } from '@/stores/messagingStore'
+import { getProviderCapabilitiesDisplayState, useMessagingStore } from '@/stores/messagingStore'
 import type { Stats } from '@/stores/messagingStore'
 
 type BadgeColor = 'error' | 'info' | 'secondary'
@@ -44,8 +44,30 @@ const navigationLinks: NavLink[] = [
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)
 
 const messagingStore = useMessagingStore()
-const { isMetaLoaded, meta, metaError, stats } = storeToRefs(messagingStore)
+const { isMetaLoaded, isMetaLoading, meta, metaError, stats } = storeToRefs(messagingStore)
 const providerCapabilities = computed(() => meta.value.providerCapabilities)
+const providerCapabilitiesDisplayState = computed(() =>
+  getProviderCapabilitiesDisplayState(
+    isMetaLoaded.value,
+    isMetaLoading.value,
+    metaError.value,
+    providerCapabilities.value.length,
+  ),
+)
+const providerCapabilitiesSummary = computed(() => {
+  switch (providerCapabilitiesDisplayState.value) {
+    case 'loading':
+      return isMetaLoaded.value ? 'refreshing' : 'loading'
+    case 'refreshing':
+      return `${providerCapabilities.value.length} (refreshing)`
+    case 'error':
+      return 'unavailable'
+    case 'stale':
+      return `${providerCapabilities.value.length} (stale)`
+    default:
+      return providerCapabilities.value.length.toString()
+  }
+})
 const isProviderCapabilitiesOpen = ref(false)
 const { xs } = useDisplay()
 
@@ -175,16 +197,12 @@ function handleAuthLogout() {
             color="info"
             class="footer-chip provider-capabilities-trigger"
             prepend-icon="mdi-transit-connection-variant"
-            :aria-label="
-              isMetaLoaded
-                ? `Show provider capabilities (${providerCapabilities.length} entries)`
-                : 'Show provider capabilities (loading)'
-            "
+            :aria-label="`Show provider capabilities (${providerCapabilitiesSummary})`"
             aria-haspopup="dialog"
             :aria-expanded="isProviderCapabilitiesOpen"
             @click="isProviderCapabilitiesOpen = true"
           >
-            Capabilities: {{ isMetaLoaded ? providerCapabilities.length : 'loading' }}
+            Capabilities: {{ providerCapabilitiesSummary }}
           </v-btn>
           <v-chip
             v-if="switchedNode"
@@ -201,7 +219,7 @@ function handleAuthLogout() {
     </v-footer>
 
     <v-dialog v-model="isProviderCapabilitiesOpen" :fullscreen="xs" max-width="760" scrollable>
-      <v-card class="provider-capabilities" aria-live="polite">
+      <v-card class="provider-capabilities" aria-live="polite" :aria-busy="isMetaLoading">
         <v-toolbar color="transparent" class="provider-capabilities-toolbar px-2">
           <v-icon color="info" class="ml-2 mr-3">mdi-transit-connection-variant</v-icon>
           <div class="provider-capabilities-heading">
@@ -219,64 +237,108 @@ function handleAuthLogout() {
 
         <v-divider />
 
-        <v-card-text v-if="!isMetaLoaded" class="provider-capabilities-state">
+        <v-card-text
+          v-if="providerCapabilitiesDisplayState === 'loading'"
+          class="provider-capabilities-state"
+          role="status"
+        >
           <v-progress-circular indeterminate color="info" size="24" />
-          <span>Loading provider capabilities…</span>
+          <span>
+            {{
+              isMetaLoaded ? 'Refreshing provider capabilities…' : 'Loading provider capabilities…'
+            }}
+          </span>
         </v-card-text>
-        <v-card-text v-else-if="metaError" class="provider-capabilities-state">
+        <v-card-text
+          v-else-if="providerCapabilitiesDisplayState === 'error'"
+          class="provider-capabilities-state"
+          role="alert"
+        >
           <v-icon color="error">mdi-alert-circle-outline</v-icon>
           <span>{{ metaError }}</span>
           <v-btn
             size="small"
             variant="tonal"
             prepend-icon="mdi-refresh"
+            :loading="isMetaLoading"
+            :disabled="isMetaLoading"
             @click="messagingStore.fetchMeta()"
           >
             Retry
           </v-btn>
         </v-card-text>
         <v-card-text
-          v-else-if="providerCapabilities.length === 0"
+          v-else-if="providerCapabilitiesDisplayState === 'empty'"
           class="provider-capabilities-state"
         >
           <v-icon color="warning">mdi-connection</v-icon>
           <span>No messaging provider capabilities are registered.</span>
         </v-card-text>
-        <v-card-text v-else class="provider-capabilities-content">
-          <article
-            v-for="capability in providerCapabilities"
-            :key="`${capability.role}:${capability.provider}`"
-            class="provider-capability"
+        <template v-else>
+          <v-card-text
+            v-if="providerCapabilitiesDisplayState === 'refreshing'"
+            class="provider-capabilities-status"
+            role="status"
           >
-            <header class="provider-capability-header">
-              <div>
-                <span class="provider-capability-eyebrow">{{ capability.role }} provider</span>
-                <h2>{{ capability.provider }}</h2>
-              </div>
-            </header>
+            <v-progress-circular indeterminate color="info" size="18" width="2" />
+            <span>Refreshing provider capabilities. Showing the previous result.</span>
+          </v-card-text>
+          <v-card-text
+            v-else-if="providerCapabilitiesDisplayState === 'stale'"
+            class="provider-capabilities-status"
+            role="alert"
+          >
+            <v-icon color="error" size="20">mdi-alert-circle-outline</v-icon>
+            <span>{{ metaError }} Showing the previous result.</span>
+            <v-btn
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-refresh"
+              :loading="isMetaLoading"
+              :disabled="isMetaLoading"
+              @click="messagingStore.fetchMeta()"
+            >
+              Retry
+            </v-btn>
+          </v-card-text>
+          <v-card-text class="provider-capabilities-content">
+            <article
+              v-for="(capability, capabilityIndex) in providerCapabilities"
+              :key="`${capability.role}:${capability.provider}:${capabilityIndex}`"
+              class="provider-capability"
+            >
+              <header class="provider-capability-header">
+                <div>
+                  <span class="provider-capability-eyebrow">{{ capability.role }} provider</span>
+                  <h2>{{ capability.provider }}</h2>
+                </div>
+              </header>
 
-            <dl class="provider-capability-details">
-              <div v-if="capability.lanes.length > 0">
-                <dt>Delivery lanes</dt>
-                <dd>{{ capability.lanes.join(' + ') }}</dd>
-              </div>
-              <div v-if="capability.role === 'Transport'">
-                <dt>Topology</dt>
-                <dd>
-                  {{ capability.supportsIndependentLaneTopology ? 'Lane-isolated' : 'Shared' }}
-                </dd>
-              </div>
-              <div v-if="capability.role === 'Storage'">
-                <dt>Delayed scheduling</dt>
-                <dd>{{ capability.supportsDelayedScheduling ? 'Supported' : 'Not supported' }}</dd>
-              </div>
-              <div v-if="capability.role === 'Coordination'">
-                <dt>Capability</dt>
-                <dd>Cluster coordination</dd>
-              </div>
-            </dl>
-          </article>
-        </v-card-text>
+              <dl class="provider-capability-details">
+                <div v-if="capability.lanes.length > 0">
+                  <dt>Delivery lanes</dt>
+                  <dd>{{ capability.lanes.join(' + ') }}</dd>
+                </div>
+                <div v-if="capability.role === 'Transport'">
+                  <dt>Topology</dt>
+                  <dd>
+                    {{ capability.supportsIndependentLaneTopology ? 'Lane-isolated' : 'Shared' }}
+                  </dd>
+                </div>
+                <div v-if="capability.role === 'Storage'">
+                  <dt>Delayed scheduling</dt>
+                  <dd>
+                    {{ capability.supportsDelayedScheduling ? 'Supported' : 'Not supported' }}
+                  </dd>
+                </div>
+                <div v-if="capability.role === 'Coordination'">
+                  <dt>Capability</dt>
+                  <dd>Cluster coordination</dd>
+                </div>
+              </dl>
+            </article>
+          </v-card-text>
+        </template>
       </v-card>
     </v-dialog>
   </v-app>
@@ -530,6 +592,26 @@ function handleAuthLogout() {
   flex-wrap: wrap;
   gap: 12px;
   text-align: center;
+}
+
+.provider-capabilities-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  padding-bottom: 0;
+  color: #bdbdbd;
+  font-size: 0.82rem;
+}
+
+.provider-capabilities-status span {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.provider-capabilities-status .v-btn {
+  margin-inline-start: auto;
 }
 
 .provider-capabilities-content {
