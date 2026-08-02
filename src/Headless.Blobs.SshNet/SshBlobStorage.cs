@@ -266,11 +266,25 @@ internal sealed class SshBlobStorage(
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await using (
-                var sourceStream = await client
+            Stream sourceStream;
+
+            // Only the source open can answer "source not found" (the false contract). Destination-side path
+            // failures — a never-provisioned container, or a directory removed concurrently — are a different
+            // condition and must surface as themselves rather than be reported as a missing source.
+            try
+            {
+                sourceStream = await client
                     .OpenAsync(sourcePath, FileMode.Open, FileAccess.Read, cancellationToken)
-                    .ConfigureAwait(false)
-            )
+                    .ConfigureAwait(false);
+            }
+            catch (SftpPathNotFoundException ex)
+            {
+                logger.LogCopySourceNotFound(ex, sourcePath);
+
+                return false;
+            }
+
+            await using (sourceStream.ConfigureAwait(false))
             {
                 await _EnsureParentDirectoryAsync(client, destPath, cancellationToken).ConfigureAwait(false);
 
@@ -296,12 +310,6 @@ internal sealed class SshBlobStorage(
             }
 
             return true;
-        }
-        catch (SftpPathNotFoundException ex)
-        {
-            logger.LogCopySourceNotFound(ex, sourcePath);
-
-            return false;
         }
         finally
         {
@@ -714,8 +722,12 @@ internal sealed class SshBlobStorage(
 
             if (i == 0)
             {
-                throw new SftpPathNotFoundException(
-                    $"Blob container '{segment}' does not exist. Ensure it through IBlobContainerManager before uploading."
+                // The data plane never auto-creates the top-level container (same rule as the FileSystem provider,
+                // which throws DirectoryNotFoundException here too). The type matters: an SftpPathNotFoundException
+                // is indistinguishable from a genuine remote lookup miss, so a caller — or CopyAsync's own
+                // source-not-found handling — would misread this provisioning error as a missing blob.
+                throw new DirectoryNotFoundException(
+                    $"Blob container '{segment}' does not exist. Ensure it through IBlobContainerManager before writing."
                 );
             }
 
