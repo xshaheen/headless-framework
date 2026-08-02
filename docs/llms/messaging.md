@@ -286,7 +286,7 @@ The shipped immutable descriptors are the runtime authority, not this table or r
 
 | Provider | Topology change in this release | Executable evidence | Production handoff |
 | --- | --- | --- | --- |
-| AWS | Bus subscriber groups own distinct SQS queues subscribed to SNS | LocalStack fan-out, competition, isolation, IAM-policy shape, malformed deletion, and legacy drain/roll-forward | Inventory credentials and auto-provision rights; drain legacy queues; deploy consumers before publishers; recover by roll-forward reconciliation after first new publish |
+| AWS | Bus subscriber groups own distinct SQS queues subscribed to SNS | LocalStack fan-out, competition, isolation, IAM-policy shape, malformed deletion, and legacy drain/roll-forward | Apply the least-privilege handoff below; drain legacy queues; deploy consumers before publishers; recover by roll-forward reconciliation after first new publish |
 | Azure Service Bus | None | Credential-gated real namespace conformance | Existing topic/queue topology; no migration claim from local skips |
 | InMemory | None | Shared in-process conformance | Restart loses all state; never a production migration target |
 | Kafka | None; remains Queue-only | Testcontainers ownership, startup rejection, and bounded poison-offset advancement | No topology cutover; Bus configuration remains invalid |
@@ -294,6 +294,20 @@ The shipped immutable descriptors are the runtime authority, not this table or r
 | Pulsar | Lane-qualified topics and Bus subscriptions | Testcontainers group/replica/isolation, malformed terminal ACK, legacy drain, and roll-forward | Drain legacy subscriptions; verify topic creation; deploy consumers before publishers; retain legacy topics until reconciliation |
 | RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Testcontainers group/replica/isolation, malformed terminal reject, legacy drain, and roll-forward | Drain legacy queues to zero ready/unacknowledged; deploy consumers before publishers; retain legacy entities until reconciliation |
 | Redis | Pub/Sub surface removed; both lanes use lane-qualified Streams | Testcontainers routing, ownership, settlement, poison handling, and legacy cutover | Fence old Pub/Sub/stream users, drain or reconcile legacy traffic, deploy the package family in lockstep, and retain legacy resources through the abort window |
+
+#### AWS least-privilege handoff
+
+`AmazonSqsMessagingOptions.Credentials` (or the AWS SDK default credential chain) supplies one identity to runtime and topology calls; the provider has no separate provisioning credential or disable-auto-provision switch. Grant only the rows used by each deployed workload:
+
+| Workload / owner | Runtime actions | Provisioning and discovery actions | Resource scope |
+| --- | --- | --- | --- |
+| Bus publisher workload role | `sns:ListTopics`, `sns:Publish` | `sns:CreateTopic` when a `bus-*` topic is absent | `sns:ListTopics` requires `Resource: "*"`; scope create/publish to `arn:${Partition}:sns:${Region}:${Account}:bus-*` |
+| Queue publisher workload role | `sqs:SendMessage` | `sqs:CreateQueue` on first use in each process, including for a pre-created queue because the provider uses the idempotent create call to resolve its URL | Scope both actions to `arn:${Partition}:sqs:${Region}:${Account}:queue-*` |
+| Bus consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe` | Scope SNS actions to the exact generated `arn:${Partition}:sns:${Region}:${Account}:bus-*` topics and SQS actions to the exact generated `arn:${Partition}:sqs:${Region}:${Account}:bus-*` group queues |
+| Queue consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` on startup | Scope all actions to the consumer-owned `arn:${Partition}:sqs:${Region}:${Account}:queue-*` destinations |
+| SNS service principal; queue resource-policy owner is the Bus consumer deployment | `sqs:SendMessage` | None | The provider writes the Bus queue policy for principal `sns.amazonaws.com`, resource = that group queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
+
+The deployment owner owns the workload-role policies, the provider-created queue resource policy, the version fence, and retention of legacy entities. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, logical group, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
 
 Operational evidence above is executable broker evidence, not proof of a production deployment. The deployment owner must record producer/consumer versions, restart and auto-provision permissions, the version fence, measurable drain signal, abort criteria, and the chosen roll-forward reconciliation before rollout.
 
@@ -321,7 +335,7 @@ Every transport `Use{Provider}(...)` (except `UseInMemory()`, which has no optio
 - `Use{Provider}(Action<TOptions> configure)` — imperative configuration.
 - `Use{Provider}(Action<TOptions, IServiceProvider> configure)` — imperative configuration with access to the resolved service provider (for example to pull a secret, connection string, or credential from DI while configuring).
 
-Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `PulsarMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`, `RedisPubSubMessagingOptions`).
+Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `PulsarMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`).
 
 ### Storage Providers
 
@@ -1253,6 +1267,8 @@ Provides Azure Service Bus topic and queue transports.
 `PartitionKey(...)` is producer-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
 
 Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
+
+Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are terminally completed after sanitized logging to prevent poison redelivery. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 
 ### Installation
 

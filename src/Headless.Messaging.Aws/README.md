@@ -13,7 +13,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 - **SQS Consumer**: Receives both SNS-enveloped bus messages and direct queue messages.
 - **Auto-Provisioning**: Automatic queue and topic creation
 - **Malformed Message Handling**: Terminally deletes malformed SNS transport envelopes so they cannot create a visibility-timeout redelivery storm
-- **IAM Integration**: Queue policies grant `sqs:SendMessage` only to SNS and only from the subscribing topic ARN; provisioning failures name the required actions and resources
+- **SNS Delivery Policy**: SQS queue resource policies grant `sqs:SendMessage` only to SNS and only from the subscribing topic ARN; provisioning failures name the required actions and resources
 - **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
 - **Host-Cancellable Startup**: Consumer connection, topology provisioning, and subscription honor host shutdown.
 
@@ -26,6 +26,18 @@ Standard AWS entities remain the default. If a message name ends with `.fifo`, t
 SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
 
 Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
+
+`AmazonSqsMessagingOptions.Credentials` (or the AWS SDK default credential chain) supplies one identity to runtime and topology calls; there is no separate provisioning credential or disable-auto-provision switch. Grant only the actions used by each deployed workload:
+
+| Workload / owner | Runtime actions | Provisioning and discovery actions | Resource scope |
+| --- | --- | --- | --- |
+| Bus publisher workload role | `sns:ListTopics`, `sns:Publish` | `sns:CreateTopic` when a `bus-*` topic is absent | `sns:ListTopics` requires `Resource: "*"`; scope create/publish to `arn:${Partition}:sns:${Region}:${Account}:bus-*` |
+| Queue publisher workload role | `sqs:SendMessage` | `sqs:CreateQueue` on first use in each process, including for a pre-created queue because the provider uses the idempotent create call to resolve its URL | Scope both actions to `arn:${Partition}:sqs:${Region}:${Account}:queue-*` |
+| Bus consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe` | Scope SNS actions to the exact generated `arn:${Partition}:sns:${Region}:${Account}:bus-*` topics and SQS actions to the exact generated `arn:${Partition}:sqs:${Region}:${Account}:bus-*` group queues |
+| Queue consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` on startup | Scope all actions to the consumer-owned `arn:${Partition}:sqs:${Region}:${Account}:queue-*` destinations |
+| SNS service principal; queue resource-policy owner is the Bus consumer deployment | `sqs:SendMessage` | None | The provider writes the Bus queue policy for principal `sns.amazonaws.com`, resource = that group queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
+
+The deployment owner owns the workload-role policies, the provider-created queue resource policy, the version fence, and retention of legacy entities. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, logical group, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
 
 This topology replaces legacy unqualified topics and queues. Before deployment, stop old and new publishers, inventory producer/consumer versions plus SNS/SQS create/subscribe/policy permissions, drain legacy queues to zero visible/in-flight messages, and deploy consumers before publishers behind a version fence. Abort before the first lane-qualified publish if drain or provisioning fails. After publication begins, recover by rolling forward and reconciling legacy and lane-qualified queue counts; retain legacy entities until the deployment owner signs off.
 
@@ -80,7 +92,7 @@ options.Bus.ForMessage<OrderEvent>(message =>
 ## Side Effects
 
 - Creates SQS queues and SNS topics when they do not exist.
-- Configures IAM policies for bus queue access.
+- Configures SQS queue resource policies for SNS Bus delivery.
 - Establishes persistent connections to AWS services.
 - Queue-lane consumers subscribe directly to queue URLs and do not create the Bus group queue.
 - Malformed SNS transport envelopes are terminally deleted; handler failures remain eligible for externally configured SQS redrive.

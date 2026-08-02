@@ -115,6 +115,7 @@ options.EnableSubscriberParallelExecute = false;
 - Commit completes the message.
 - Reject abandons the message. Redelivery and dead-lettering follow entity lock and delivery settings.
 - Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
+- Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are terminally completed after sanitized logging to prevent poison redelivery. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 - `AutoProvision` creates topics, subscriptions, and rules when enabled.
 - `SubscribeAsync(...)` keeps subscription rules aligned with topic names and SQL filters.
 - Use `AzureServiceBusMessagingHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.
