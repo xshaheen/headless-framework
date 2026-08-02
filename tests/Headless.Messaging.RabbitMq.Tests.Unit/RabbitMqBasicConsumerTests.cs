@@ -478,6 +478,44 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
+    public async Task should_requeue_without_terminal_reject_when_custom_headers_builder_throws()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            throw new InvalidOperationException("bad header builder");
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (_, _) => Task.CompletedTask,
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumer-tag",
+            42ul,
+            false,
+            "test-exchange",
+            "test-routing-key",
+            _CreateProperties(),
+            "test-body"u8.ToArray(),
+            AbortToken
+        );
+
+        // then
+        await _channel.Received(1).BasicRejectAsync(42ul, true, Arg.Any<CancellationToken>());
+        await _channel.DidNotReceive().BasicRejectAsync(42ul, false, Arg.Any<CancellationToken>());
+        _loggedEvents
+            .Should()
+            .ContainSingle(e => e.Reason != null && e.Reason.Contains("rejected for retry", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task should_ack_message_when_channel_open()
     {
         // given

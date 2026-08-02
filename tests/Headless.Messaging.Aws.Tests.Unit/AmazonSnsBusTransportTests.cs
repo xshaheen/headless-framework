@@ -207,11 +207,12 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+        var expectedTopicName = AwsPhysicalAddress.BusTopic("order.created.fifo");
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
             .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-order-created.fifo" });
+            .Returns(new CreateTopicResponse { TopicArn = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
@@ -237,7 +238,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
             .Received(1)
             .CreateTopicAsync(
                 Arg.Is<CreateTopicRequest>(r =>
-                    r.Name == "bus-order-created.fifo"
+                    r.Name == expectedTopicName
                     && r.Attributes["FifoTopic"] == "true"
                     && r.Attributes["ContentBasedDeduplication"] == "true"
                 ),
@@ -357,11 +358,12 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+        var expectedTopicName = AwsPhysicalAddress.BusTopic("my.topic:name");
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-my-topic_name" });
+            .Returns(new CreateTopicResponse { TopicArn = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
@@ -383,8 +385,8 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        // Dots become dashes, colons become underscores
-        await snsClient.Received(1).CreateTopicAsync("bus-my-topic_name", Arg.Any<CancellationToken>());
+        // Normalized characters retain a stable discriminator so distinct logical names remain distinct.
+        await snsClient.Received(1).CreateTopicAsync(expectedTopicName, Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -10,10 +10,10 @@ internal static class NatsPhysicalAddress
     public static string Subject(MessageLane lane, string logicalSubject) => $"headless.{_Lane(lane)}.{logicalSubject}";
 
     public static string Stream(MessageLane lane, string normalizedLogicalStream) =>
-        TransportNaming.Normalize($"headless-{_Lane(lane)}-{normalizedLogicalStream}");
+        TransportNaming.NormalizeDistinct($"headless-{_Lane(lane)}-{normalizedLogicalStream}");
 
     public static string Durable(MessageLane lane, string groupName, string logicalSubject) =>
-        TransportNaming.Normalize(
+        TransportNaming.NormalizeDistinct(
             lane switch
             {
                 MessageLane.Bus => $"bus-{groupName}-{logicalSubject}",

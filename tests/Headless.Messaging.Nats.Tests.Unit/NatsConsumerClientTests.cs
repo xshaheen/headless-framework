@@ -165,7 +165,7 @@ public sealed class NatsConsumerClientTests : TestBase
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", MessageLane.Bus)
             .Should()
-            .Be("bus-payments-orders_created");
+            .StartWith("bus-payments-orders_created_");
     }
 
     [Fact]
@@ -174,7 +174,20 @@ public sealed class NatsConsumerClientTests : TestBase
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", MessageLane.Queue)
             .Should()
-            .Be("queue-orders_created");
+            .StartWith("queue-orders_created_");
+    }
+
+    [Fact]
+    public void should_disambiguate_stream_and_durable_names_changed_by_normalization()
+    {
+        NatsPhysicalAddress
+            .Stream(MessageLane.Bus, "orders.created")
+            .Should()
+            .NotBe(NatsPhysicalAddress.Stream(MessageLane.Bus, "orders_created"));
+        NatsPhysicalAddress
+            .Durable(MessageLane.Bus, "sales.east", "orders.created")
+            .Should()
+            .NotBe(NatsPhysicalAddress.Durable(MessageLane.Bus, "sales_east", "orders_created"));
     }
 
     // NextBackoff tests
@@ -518,6 +531,90 @@ public sealed class NatsConsumerClientTests : TestBase
         loggedArgs.Should().NotBeNull();
         loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
         loggedArgs.Reason.Should().Contain("nak failed");
+    }
+
+    [Fact]
+    public async Task should_nak_without_ack_when_custom_headers_builder_throws()
+    {
+        // given
+        var options = MsOptions.Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = "nats://localhost:4222",
+                CustomHeadersBuilder = (_, _, _) => throw new InvalidOperationException("bad header builder"),
+            }
+        );
+
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns(_CreateHeaders());
+
+        var nakCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                nakCalled.TrySetResult();
+                return ValueTask.CompletedTask;
+            });
+
+        var consumer = Substitute.For<INatsJSConsumer>();
+        var callCount = 0;
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                }
+
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, token)
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static (task, _) =>
+                            {
+                                task.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            null,
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            0,
+            options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            // when
+            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then
+            await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+            await msg.DidNotReceive().AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]

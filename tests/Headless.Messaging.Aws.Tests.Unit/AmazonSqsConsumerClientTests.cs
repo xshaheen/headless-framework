@@ -117,6 +117,20 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         errorLogs.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(0, 30_000)]
+    [InlineData(500, 26_250)]
+    [InlineData(1000, 22_500)]
+    public void should_generate_retry_jitter_within_thirty_second_ceiling(int jitterPermille, int expectedMilliseconds)
+    {
+        var delay = AmazonSqsConsumerClient.CalculateNextBackoff(TimeSpan.FromSeconds(30), jitterPermille);
+
+        delay
+            .Should()
+            .Be(TimeSpan.FromMilliseconds(expectedMilliseconds))
+            .And.BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+    }
+
     [Fact]
     public async Task should_not_create_group_queue_when_queue_intent_subscribe()
     {

@@ -231,19 +231,18 @@ internal sealed class RedisConsumerClient(
                 }
                 catch (Exception ex)
                 {
-                    logger.InvalidRedisEntry(ex, entry.Id, stream.Key, position, groupId);
+                    var errorContext = _CreateMalformedEntryErrorContext(ex, entry);
+                    logger.InvalidRedisEntry(errorContext.Exception, entry.Id, stream.Key, position, groupId);
 
                     var logArgs = new LogMessageEventArgs
                     {
                         LogType = MqLogType.RedisConsumeError,
-                        Reason = ex.ToString(),
+                        Reason = errorContext.Exception.Message,
                     };
 
                     try
                     {
-                        var onError = options.Value.OnConsumeError?.Invoke(
-                            new RedisMessagingOptions.ConsumeErrorContext(ex, entry)
-                        );
+                        var onError = options.Value.OnConsumeError?.Invoke(errorContext);
 
                         await (onError ?? Task.CompletedTask).ConfigureAwait(false);
                     }
@@ -277,6 +276,30 @@ internal sealed class RedisConsumerClient(
                 logger.RedisEntryDelivered(entry.Id, positionName);
             }
         }
+    }
+
+    private static RedisMessagingOptions.ConsumeErrorContext _CreateMalformedEntryErrorContext(
+        Exception exception,
+        StreamEntry entry
+    )
+    {
+        var entryId = entry.Id.ToString();
+        Exception safeException = exception switch
+        {
+            RedisConsumeMissingHeadersException => new RedisConsumeMissingHeadersException(entryId),
+            RedisConsumeMissingBodyException => new RedisConsumeMissingBodyException(entryId),
+            RedisConsumeInvalidHeadersException => new RedisConsumeInvalidHeadersException(
+                entryId,
+                new InvalidDataException("The Redis message headers could not be parsed.")
+            ),
+            RedisConsumeInvalidBodyException => new RedisConsumeInvalidBodyException(
+                entryId,
+                new InvalidDataException("The Redis message body could not be parsed.")
+            ),
+            _ => new InvalidDataException($"Redis entry [{entryId}] contains a malformed Messaging envelope."),
+        };
+
+        return new RedisMessagingOptions.ConsumeErrorContext(safeException, new StreamEntry(entry.Id, []));
     }
 
     private void _ObserveBackgroundHandler(Task task)

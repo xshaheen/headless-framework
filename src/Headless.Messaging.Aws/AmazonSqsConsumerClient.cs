@@ -279,13 +279,19 @@ internal sealed class AmazonSqsConsumerClient(
 
     private static TimeSpan _NextBackoff(TimeSpan current)
     {
+        return CalculateNextBackoff(current, RandomNumberGenerator.GetInt32(0, 1001));
+    }
+
+    internal static TimeSpan CalculateNextBackoff(TimeSpan current, int jitterPermille)
+    {
         // Floor at 200ms, ceiling at 30s — jittered exponential backoff for transient SQS errors.
         var floor = TimeSpan.FromMilliseconds(200);
         var ceiling = TimeSpan.FromSeconds(30);
         var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
         var capped = doubled > ceiling ? ceiling : doubled;
-        var jitterMs = RandomNumberGenerator.GetInt32(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
-        return capped + TimeSpan.FromMilliseconds(jitterMs);
+        var jitterWindowTicks = Math.Min(capped.Ticks - floor.Ticks, capped.Ticks / 4);
+        var jitterTicks = jitterWindowTicks * Math.Clamp(jitterPermille, 0, 1000) / 1000;
+        return capped - TimeSpan.FromTicks(jitterTicks);
     }
 
     private InvalidOperationException _CreateProvisioningFailure(string stage, AmazonServiceException exception)

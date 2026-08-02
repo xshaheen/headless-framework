@@ -121,6 +121,15 @@ public sealed class PulsarTransportTests : TestBase
     }
 
     [Fact]
+    public void should_disambiguate_subscription_names_changed_by_normalization()
+    {
+        PulsarPhysicalAddress
+            .Subscription(MessageLane.Bus, "sales.east")
+            .Should()
+            .NotBe(PulsarPhysicalAddress.Subscription(MessageLane.Bus, "sales_east"));
+    }
+
+    [Fact]
     public async Task should_propagate_cancellation()
     {
         // given

@@ -26,7 +26,7 @@ internal static class PulsarPhysicalAddress
     public static string Subscription(MessageLane lane, string groupName) =>
         lane switch
         {
-            MessageLane.Bus => $"headless-bus-{TransportNaming.Normalize(groupName)}",
+            MessageLane.Bus => $"headless-bus-{TransportNaming.NormalizeDistinct(groupName)}",
             MessageLane.Queue => "headless-queue",
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };

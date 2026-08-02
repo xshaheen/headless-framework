@@ -273,7 +273,7 @@ internal sealed class NatsConsumerClient(
         foreach (var streamGroup in streamGroups)
         {
             var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
-            var groupName = TransportNaming.Normalize(name);
+            var groupName = name;
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
             foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
@@ -693,10 +693,10 @@ internal sealed class NatsConsumerClient(
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
     {
-        TransportMessage message;
+        Dictionary<string, string?> headers;
         try
         {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
             if (msg.Headers is { Count: > 0 } natsHeaders)
             {
@@ -707,8 +707,16 @@ internal sealed class NatsConsumerClient(
             }
 
             headers[Headers.Group] = name;
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
+            return;
+        }
 
-            if (_natsOptions.CustomHeadersBuilder is not null)
+        if (_natsOptions.CustomHeadersBuilder is not null)
+        {
+            try
             {
                 var metadata = msg.Metadata;
                 var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
@@ -717,21 +725,31 @@ internal sealed class NatsConsumerClient(
                     headers[customHeader.Key] = customHeader.Value;
                 }
             }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason =
+                            $"NATS custom headers builder failed; message negatively acknowledged: {ex.GetType().Name}",
+                    }
+                );
 
+                await RejectAsync(msg).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
             _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, msg.Data);
         }
         catch (Exception ex)
         {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Malformed NATS transport envelope terminally acknowledged: {ex.GetType().Name}",
-                }
-            );
-
-            await msg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
             return;
         }
 
@@ -744,6 +762,22 @@ internal sealed class NatsConsumerClient(
             );
 
         await onMessage(message, msg).ConfigureAwait(false);
+    }
+
+    private async Task _TerminallyAcknowledgeMalformedEnvelopeAsync(
+        INatsJSMsg<ReadOnlyMemory<byte>> msg,
+        Exception exception
+    )
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason = $"Malformed NATS transport envelope terminally acknowledged: {exception.GetType().Name}",
+            }
+        );
+
+        await msg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)

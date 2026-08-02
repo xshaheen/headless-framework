@@ -29,18 +29,24 @@ internal static class AwsPhysicalAddress
         const string fifoSuffix = ".fifo";
         var isFifo = value.IsAwsFifoName();
         var core = isFifo ? value[..^fifoSuffix.Length] : value;
-        core = core.Replace('.', '-').Replace(':', '_');
+        var normalizedCore = core.Replace('.', '-').Replace(':', '_');
 
         var suffix = isFifo ? fifoSuffix : string.Empty;
-        var qualified = $"{lane}-{core}{suffix}";
-        if (qualified.Length <= maxLength)
+        var qualified = $"{lane}-{normalizedCore}{suffix}";
+        var normalizationChangedIdentity = !string.Equals(core, normalizedCore, StringComparison.Ordinal);
+        if (!normalizationChangedIdentity && qualified.Length <= maxLength)
         {
             return qualified;
         }
 
-        var hash = qualified.ToSha256()[..12];
+        // The hash is derived from the pre-normalized identity so distinct logical names cannot collapse
+        // onto the same broker resource after replacing AWS-incompatible characters.
+        var hash = $"{lane}-{core}{suffix}".ToSha256()[..12];
         var availableCoreLength = maxLength - lane.Length - hash.Length - suffix.Length - 2;
-        var truncatedCore = core[..availableCoreLength].TrimEnd('-', '_');
-        return $"{lane}-{truncatedCore}-{hash}{suffix}";
+        var boundedCore =
+            normalizedCore.Length > availableCoreLength
+                ? normalizedCore[..availableCoreLength].TrimEnd('-', '_')
+                : normalizedCore;
+        return $"{lane}-{boundedCore}-{hash}{suffix}";
     }
 }

@@ -734,6 +734,82 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_seek_without_commit_when_custom_headers_builder_throws()
+    {
+        // given
+        var throwingOptions = Options.Create(
+            new KafkaMessagingOptions
+            {
+                Servers = "localhost:9092",
+                CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),
+            }
+        );
+
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        var seekCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(5)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
+                    };
+                }
+
+                throw new OperationCanceledException();
+            });
+
+        consumer.When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>())).Do(_ => seekCalled.TrySetResult());
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            throwingOptions,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+#pragma warning disable AsyncFixer04
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+#pragma warning restore AsyncFixer04
+        try
+        {
+            // when
+            await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then
+            consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup observes the expected mocked cancellation.
+            catch
+            {
+                // Best-effort cleanup only.
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    [Fact]
     public async Task should_terminally_commit_when_required_header_is_missing()
     {
         // given

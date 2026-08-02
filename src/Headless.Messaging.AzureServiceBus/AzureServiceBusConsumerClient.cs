@@ -304,10 +304,24 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
     {
+        Dictionary<string, string?> headers;
+        try
+        {
+            headers = _ConvertHeaders(arg.Message);
+        }
+        catch (Exception exception)
+        {
+            _LogMalformedEnvelope(exception);
+            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+
+        _ApplyCustomHeaders(arg.Message, headers);
+
         TransportMessage context;
         try
         {
-            context = _ConvertMessage(arg.Message);
+            context = _CreateTransportMessage(arg.Message, headers);
         }
         catch (Exception exception)
         {
@@ -336,10 +350,24 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
     {
+        Dictionary<string, string?> headers;
+        try
+        {
+            headers = _ConvertHeaders(arg.Message);
+        }
+        catch (Exception exception)
+        {
+            _LogMalformedEnvelope(exception);
+            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+
+        _ApplyCustomHeaders(arg.Message, headers);
+
         TransportMessage context;
         try
         {
-            context = _ConvertMessage(arg.Message);
+            context = _CreateTransportMessage(arg.Message, headers);
         }
         catch (Exception exception)
         {
@@ -542,7 +570,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     #region private methods
 
-    private TransportMessage _ConvertMessage(ServiceBusReceivedMessage message)
+    private Dictionary<string, string?> _ConvertHeaders(ServiceBusReceivedMessage message)
     {
         var headers = message.ApplicationProperties.ToDictionary(
             x => x.Key,
@@ -552,6 +580,11 @@ internal sealed class AzureServiceBusConsumerClient(
 
         headers[Headers.Group] = subscriptionName;
 
+        return headers;
+    }
+
+    private void _ApplyCustomHeaders(ServiceBusReceivedMessage message, Dictionary<string, string?> headers)
+    {
         if (_asbOptions.CustomHeadersBuilder != null)
         {
             var customHeaders = _asbOptions.CustomHeadersBuilder(message, serviceProvider);
@@ -565,7 +598,13 @@ internal sealed class AzureServiceBusConsumerClient(
                 }
             }
         }
+    }
 
+    private static TransportMessage _CreateTransportMessage(
+        ServiceBusReceivedMessage message,
+        Dictionary<string, string?> headers
+    )
+    {
         _ValidateRequiredHeaders(headers);
         return new TransportMessage(headers, message.Body);
     }

@@ -9,8 +9,18 @@ public sealed class TopicNormalizerTests
     [Fact]
     public void should_lane_qualify_bus_topic_and_queue_destination()
     {
-        AwsPhysicalAddress.BusTopic("orders.created").Should().Be("bus-orders-created");
-        AwsPhysicalAddress.QueueDestination("orders.created").Should().Be("queue-orders-created");
+        AwsPhysicalAddress.BusTopic("orders-created").Should().Be("bus-orders-created");
+        AwsPhysicalAddress.QueueDestination("orders-created").Should().Be("queue-orders-created");
+    }
+
+    [Theory]
+    [InlineData("orders.created", "orders-created")]
+    [InlineData("orders:created", "orders_created")]
+    public void should_disambiguate_bus_and_queue_names_changed_by_normalization(string first, string second)
+    {
+        AwsPhysicalAddress.BusTopic(first).Should().NotBe(AwsPhysicalAddress.BusTopic(second));
+        AwsPhysicalAddress.QueueDestination(first).Should().NotBe(AwsPhysicalAddress.QueueDestination(second));
+        AwsPhysicalAddress.BusGroupQueue(first).Should().NotBe(AwsPhysicalAddress.BusGroupQueue(second));
     }
 
     [Fact]

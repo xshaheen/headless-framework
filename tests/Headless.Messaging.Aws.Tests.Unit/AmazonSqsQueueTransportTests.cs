@@ -92,11 +92,12 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
         await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
+        var expectedQueueName = AwsPhysicalAddress.QueueDestination("order.created");
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
-            .CreateQueueAsync("queue-order-created", Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/queue-order-created" });
+            .CreateQueueAsync(expectedQueueName, Arg.Any<CancellationToken>())
+            .Returns(new CreateQueueResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
         sqsClient
             .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResponse { MessageId = "msg-123" });
@@ -116,11 +117,11 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await sqsClient.Received(1).CreateQueueAsync("queue-order-created", Arg.Any<CancellationToken>());
+        await sqsClient.Received(1).CreateQueueAsync(expectedQueueName, Arg.Any<CancellationToken>());
         await sqsClient
             .Received(1)
             .SendMessageAsync(
-                Arg.Is<SendMessageRequest>(r => r.QueueUrl == "https://sqs.local/queue-order-created"),
+                Arg.Is<SendMessageRequest>(r => r.QueueUrl == $"https://sqs.local/{expectedQueueName}"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -131,11 +132,12 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
         await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
+        var expectedQueueName = AwsPhysicalAddress.QueueDestination("order.created.fifo");
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
             .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/queue-order-created.fifo" });
+            .Returns(new CreateQueueResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
         sqsClient
             .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResponse { MessageId = "msg-123" });
@@ -161,7 +163,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
             .Received(1)
             .CreateQueueAsync(
                 Arg.Is<CreateQueueRequest>(r =>
-                    r.QueueName == "queue-order-created.fifo"
+                    r.QueueName == expectedQueueName
                     && r.Attributes["FifoQueue"] == "true"
                     && r.Attributes["ContentBasedDeduplication"] == "true"
                 ),
