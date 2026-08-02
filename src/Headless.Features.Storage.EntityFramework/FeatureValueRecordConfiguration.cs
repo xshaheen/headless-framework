@@ -21,13 +21,23 @@ internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions opt
         b.Property(x => x.ProviderName).HasMaxLength(FeatureValueRecordConstants.ProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(FeatureValueRecordConstants.ProviderKeyMaxLength).IsRequired(false);
 
+        // PostgreSQL and SQLite treat NULLs as distinct in a unique index, so a single index over the
+        // nullable ProviderKey would let concurrent inserts create duplicate NULL-key rows.
+        // Mirror the raw PostgreSql/SqlServer initializers: one index per key nullability, same names.
         b.HasIndex(x => new
             {
                 x.Name,
                 x.ProviderName,
                 x.ProviderKey,
             })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"ProviderKey\" IS NOT NULL")
+            .HasDatabaseName($"IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey");
+
+        b.HasIndex(x => new { x.Name, x.ProviderName })
+            .IsUnique()
+            .HasFilter("\"ProviderKey\" IS NULL")
+            .HasDatabaseName($"IX_{options.FeatureValuesTableName}_Name_ProviderName_NullProviderKey");
 
         b.HasIndex(x => new { x.ProviderName, x.ProviderKey });
     }
