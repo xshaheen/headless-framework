@@ -45,7 +45,7 @@ The whole chain executes in-process under the root's single pickup lease. If the
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes that flag immediately before user code and then on `CancellationObservationInterval`, using the same owner/status fence as lease renewal.
 
-Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant. The paused interval is never replayed; catch-up and misfire policy are outside this contract.
+Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant, and rebases the definition's schedule watermark to the resume instant — which is what keeps the paused interval from being replayed once misfire recovery exists. Catch-up is no longer outside this contract: see [Misfire recovery](#misfire-recovery).
 
 Each host owns an independent execution-cancellation registry. Durable cancellation, host shutdown, and lease loss are distinct causes tied to one opaque execution handle. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Lease loss and cooperative host shutdown leave the row `InProgress` for recovery; an uncooperative handler keeps its natural success/failure result while `CancelRequested` remains audit data. An unrelated `OperationCanceledException` remains a failure and follows retry policy.
 
@@ -56,6 +56,103 @@ Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise
 Jobs uses reusable Polly.Core `ResiliencePipeline` instances for runtime retry execution. `JobsRetryOptions.RetryStrategy` is the public Polly configuration surface, while `Retries`, `RetryCount`, and `RetryIntervals` remain the durable authority. `RetryCount` is persisted before every wait; lease renewal stays active across attempts and delays, and a lost lease cancels the pipeline and fences terminal writes. Per-row `RetryIntervals` override Polly delay generation and reuse their last value when shorter than `Retries`. Polly configuration and delegates are never serialized.
 
 There is no `app.UseJobs()` call — the scheduler starts automatically through the `IHostedService` registrations added by `AddHeadlessJobs`.
+
+## Misfire recovery
+
+A cron definition carries a durable **schedule watermark** — the instant through which its schedule has been
+reconciled — plus a **projection** of the first occurrence after it. The watermark records what was *accounted for*
+rather than what was promised, so it stays true when a rule change invalidates the derived projection, and a skip
+advances it without anything firing.
+
+That record is what makes a missed occurrence detectable at all. Before it, reconciliation state lived only as an
+in-memory sleep timer: a process that died mid-sleep left no trace, and on restart simply recomputed from the current
+time. The occurrence was gone with nothing to notice it had ever been due.
+
+### When a definition enters recovery
+
+An instant is **pending** when it falls at or before now and the watermark has not passed it — whether or not an
+occurrence row exists for it. A definition enters recovery when more than one instant is pending, or when its single
+pending instant is older than that definition's grace threshold.
+
+The grace threshold separates ordinary lateness from a genuine miss. It defaults to 60 seconds (matching Quartz) and
+is resolved once at creation and persisted **per definition**, so every node evaluates the same threshold. A locally
+configured value must never decide whether an instant misfired, or two nodes would disagree about the same tick.
+
+### Policies
+
+| Policy | Behaviour |
+|---|---|
+| `Coalesce` (default) | Materializes exactly **one** run for the whole missed window, reporting the earliest missed instant as its scheduled instant. |
+| `Skip` | Materializes **no** run and simply carries the watermark past the backlog. |
+
+Both leave the watermark at the recovery instant, so a resolved backlog is never reconsidered. A schedule whose
+interval is shorter than the scheduler's wake latency will legitimately re-enter recovery on the following wake —
+that is the correct outcome, not a fault.
+
+The default matches what Hangfire, Quartz, and systemd independently converged on. Bounded catch-up — replaying more
+than one missed occurrence — is deliberately not offered.
+
+Recovery never runs an instant twice and never leaves two live occurrences for one instant. An occurrence already
+executing or already finished is stepped past untouched; one that has not begun executing is either repurposed as the
+coalesced run or transitioned to `Skipped`.
+
+### Configuring it
+
+```csharp
+// Declared in code: seeds the definition when it is first created.
+[JobFunction("reports.nightly", "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
+public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+```
+
+```csharp
+// Scheduler-wide defaults for definitions that declare neither.
+builder.ConfigureScheduler(scheduler =>
+{
+    scheduler.DefaultMissedRunPolicy = MissedRunPolicy.Coalesce;
+    scheduler.DefaultMissedRunGraceSeconds = 60;
+});
+```
+
+**The persisted value is the authority.** The attribute seeds a definition only when it is created and is never
+reapplied during startup reconciliation, so a value later changed through `ICronJobManager.UpdateAsync` stays in force
+across restarts and redeploys. That single rule is what makes an operator override self-evident without persisting a
+provenance marker — and it means changing the attribute in code does **not** change an existing definition.
+
+### What an executing job sees
+
+```csharp
+public async Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken)
+{
+    if (context.IsRecoveryRun)
+    {
+        // One coalesced run stands in for EVERY occurrence missed during the outage, not just this instant.
+        // Treat RecoveredFromUtc as the lower bound of the window to process.
+        await ProcessSinceAsync(context.RecoveredFromUtc!.Value, cancellationToken);
+        return;
+    }
+
+    await ProcessSinceAsync(context.ScheduledFor, cancellationToken);
+}
+```
+
+`Lateness` reports how late the run actually started. For a recovery run it measures from the earliest missed instant,
+so it spans the outage rather than the dispatch delay. It never goes negative.
+
+### Schedule-interpretation drift
+
+An expression and a timezone identifier can stay byte-identical while the instant they resolve to moves — a tzdata
+update shifts a zone's transitions, or the cron library changes how it reads a field. Each definition therefore stores
+an opaque **evaluation fingerprint** of the rules its projection was derived under; only equality is meaningful.
+
+A background sweep rebases definitions whose fingerprint no longer matches, independently of whether their projection
+is due. That independence is the point: a rule change that moves an occurrence *earlier* hides behind the stale later
+projection, so a sweep keyed on due-ness would skip exactly the definitions that need it. The rebase anchors the new
+projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
+replayed as a misfire.
+
+Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
+always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
+counting at a ceiling, and "at least 1000" calls for a different response than "exactly 1000".
 
 ## Installation
 

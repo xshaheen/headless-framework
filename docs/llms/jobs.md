@@ -17,6 +17,12 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
     - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
     - [Tenant Propagation](#tenant-propagation)
+- [Misfire recovery](#misfire-recovery)
+    - [When a definition enters recovery](#when-a-definition-enters-recovery)
+    - [Policies](#policies)
+    - [Configuring it](#configuring-it)
+    - [What an executing job sees](#what-an-executing-job-sees)
+    - [Schedule-interpretation drift](#schedule-interpretation-drift)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
     - [Problem Solved](#problem-solved)
@@ -149,7 +155,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - `EnqueueOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
 - Author multi-step workflows with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(payload | descriptor)`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. See [Typed Job Chains](#typed-job-chains).
 - For multi-tenant hosts, enable Jobs tenancy through the root tenancy seam: `AddHeadlessTenancy(t => t.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue()))`. Time jobs then capture the ambient tenant at schedule time and restore it around every execution attempt. Pass `EnqueueOptions.TenantId` to override capture, or `EnqueueOptions.IsSystemJob = true` for a deliberate tenantless job. Cron is always system-scope — never give a cron definition a tenant; fan out explicit-tenant time jobs from application code. See [Tenant Propagation](#tenant-propagation).
-- `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and never performs catch-up replay.
+- `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and rebases the watermark to the resume instant, so the paused interval is never replayed as missed.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
 - Managers remain supported: inject `ITimeJobManager<TTimeJob>` / `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
@@ -388,6 +394,103 @@ public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
 
 The framework owns no tenant enumeration, `ITenantStore`, per-tenant cron rows, or per-tenant cron expressions — fan-out is application code by design (`IReportService` and `IAppTenantDirectory` above are application-owned).
 
+## Misfire recovery
+
+A cron definition carries a durable **schedule watermark** — the instant through which its schedule has been
+reconciled — plus a **projection** of the first occurrence after it. The watermark records what was *accounted for*
+rather than what was promised, so it stays true when a rule change invalidates the derived projection, and a skip
+advances it without anything firing.
+
+That record is what makes a missed occurrence detectable at all. Before it, reconciliation state lived only as an
+in-memory sleep timer: a process that died mid-sleep left no trace, and on restart simply recomputed from the current
+time. The occurrence was gone with nothing to notice it had ever been due.
+
+### When a definition enters recovery
+
+An instant is **pending** when it falls at or before now and the watermark has not passed it — whether or not an
+occurrence row exists for it. A definition enters recovery when more than one instant is pending, or when its single
+pending instant is older than that definition's grace threshold.
+
+The grace threshold separates ordinary lateness from a genuine miss. It defaults to 60 seconds (matching Quartz) and
+is resolved once at creation and persisted **per definition**, so every node evaluates the same threshold. A locally
+configured value must never decide whether an instant misfired, or two nodes would disagree about the same tick.
+
+### Policies
+
+| Policy | Behaviour |
+|---|---|
+| `Coalesce` (default) | Materializes exactly **one** run for the whole missed window, reporting the earliest missed instant as its scheduled instant. |
+| `Skip` | Materializes **no** run and simply carries the watermark past the backlog. |
+
+Both leave the watermark at the recovery instant, so a resolved backlog is never reconsidered. A schedule whose
+interval is shorter than the scheduler's wake latency will legitimately re-enter recovery on the following wake —
+that is the correct outcome, not a fault.
+
+The default matches what Hangfire, Quartz, and systemd independently converged on. Bounded catch-up — replaying more
+than one missed occurrence — is deliberately not offered.
+
+Recovery never runs an instant twice and never leaves two live occurrences for one instant. An occurrence already
+executing or already finished is stepped past untouched; one that has not begun executing is either repurposed as the
+coalesced run or transitioned to `Skipped`.
+
+### Configuring it
+
+```csharp
+// Declared in code: seeds the definition when it is first created.
+[JobFunction("reports.nightly", "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
+public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+```
+
+```csharp
+// Scheduler-wide defaults for definitions that declare neither.
+builder.ConfigureScheduler(scheduler =>
+{
+    scheduler.DefaultMissedRunPolicy = MissedRunPolicy.Coalesce;
+    scheduler.DefaultMissedRunGraceSeconds = 60;
+});
+```
+
+**The persisted value is the authority.** The attribute seeds a definition only when it is created and is never
+reapplied during startup reconciliation, so a value later changed through `ICronJobManager.UpdateAsync` stays in force
+across restarts and redeploys. That single rule is what makes an operator override self-evident without persisting a
+provenance marker — and it means changing the attribute in code does **not** change an existing definition.
+
+### What an executing job sees
+
+```csharp
+public async Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken)
+{
+    if (context.IsRecoveryRun)
+    {
+        // One coalesced run stands in for EVERY occurrence missed during the outage, not just this instant.
+        // Treat RecoveredFromUtc as the lower bound of the window to process.
+        await ProcessSinceAsync(context.RecoveredFromUtc!.Value, cancellationToken);
+        return;
+    }
+
+    await ProcessSinceAsync(context.ScheduledFor, cancellationToken);
+}
+```
+
+`Lateness` reports how late the run actually started. For a recovery run it measures from the earliest missed instant,
+so it spans the outage rather than the dispatch delay. It never goes negative.
+
+### Schedule-interpretation drift
+
+An expression and a timezone identifier can stay byte-identical while the instant they resolve to moves — a tzdata
+update shifts a zone's transitions, or the cron library changes how it reads a field. Each definition therefore stores
+an opaque **evaluation fingerprint** of the rules its projection was derived under; only equality is meaningful.
+
+A background sweep rebases definitions whose fingerprint no longer matches, independently of whether their projection
+is due. That independence is the point: a rule change that moves an occurrence *earlier* hides behind the stale later
+projection, so a sweep keyed on due-ness would skip exactly the definitions that need it. The rebase anchors the new
+projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
+replayed as a misfire.
+
+Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
+always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
+counting at a ceiling, and "at least 1000" calls for a different response than "exactly 1000".
+
 ## Choosing a Provider
 
 The base EF package is the compatibility layer. Native claim packages optimize pickup without changing the scheduler contract, lease rules, descendant stamping, or fallback-window behavior.
@@ -513,7 +616,7 @@ var resumeAccepted = await scheduler.ResumeCronAsync(recurringId, ct);
 
 All facade methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
 
-Cron control is durable and definition-specific. Pause returns `true` only when it atomically marks the definition and skips pending `Idle` / `Queued` occurrences; it never cancels `InProgress` work. Resume returns `true` only when it wins the schedule-revision fence and creates exactly one next occurrence strictly after the resume time. It never replays the paused interval. `TimeZoneId` accepts IANA identifiers only; null falls back to the scheduler-global timezone, while occurrence persistence remains UTC with deterministic gap/overlap handling.
+Cron control is durable and definition-specific. Pause returns `true` only when it atomically marks the definition and skips pending `Idle` / `Queued` occurrences; it never cancels `InProgress` work. Resume returns `true` only when it wins the schedule-revision fence and creates exactly one next occurrence strictly after the resume time. It never replays the paused interval — resume rebases the schedule watermark to the resume instant, so misfire recovery sees no backlog for the paused span. `TimeZoneId` accepts IANA identifiers only; null falls back to the scheduler-global timezone, while occurrence persistence remains UTC with deterministic gap/overlap handling.
 
 ### Configuration
 
@@ -572,7 +675,7 @@ Claiming a chained time job leases its non-timed descendants down to the configu
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
 
-Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule-revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant. The paused interval is never replayed; catch-up and misfire policy are outside this contract.
+Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule-revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant, and rebases the definition's schedule watermark to the resume instant — which is what keeps the paused interval from being replayed once misfire recovery exists. Catch-up is no longer outside this contract: see [Misfire recovery](#misfire-recovery).
 
 Relational consumers must apply the Jobs migrations for `TimeJobs.CancelRequested`, `CronJobs.TimeZoneId`, `CronJobs.IsPaused`, `CronJobs.ScheduleRevision`, and the live-state cron-occurrence unique index before deployment. Quiesce every scheduler node sharing the store while the occurrence index is replaced because the reference PostgreSQL and SQL Server migrations use blocking index DDL. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom-schema applications own the equivalent migration. Custom persistence providers must implement the new atomic pause, resume, and definition-update SPI before upgrading.
 
