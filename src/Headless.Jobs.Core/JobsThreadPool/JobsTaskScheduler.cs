@@ -55,6 +55,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly SoftSchedulerNotifyDebounce _notifyDebounce;
 
+    internal CancellationToken ExecutionCancellationToken => _shutdownCts.Token;
+
     public JobsTaskScheduler(
         int maxConcurrency,
         TimeProvider timeProvider,
@@ -697,6 +699,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 
         return true;
+    }
+
+    internal Task CancelExecutionsAsync()
+    {
+        return _shutdownCts.CancelAsync();
     }
 
     public async ValueTask DisposeAsync()

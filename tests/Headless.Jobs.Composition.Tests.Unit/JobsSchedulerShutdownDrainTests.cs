@@ -7,8 +7,10 @@ using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -76,6 +78,82 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         await service.StopAsync(shutdownBudget.Token).WaitAsync(_waitBudget);
 
         release.TrySetResult();
+    }
+
+    [Fact]
+    public async Task generic_host_drains_immediate_work_before_cancelling_its_execution_lifetime()
+    {
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .GetNextJobs(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((Timeout.InfiniteTimeSpan, Array.Empty<JobExecutionState>())));
+        manager
+            .RunTimedOutTickers(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
+        manager.ReclaimStalledResources(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
+        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+
+        JobStatus? persistedStatus = null;
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                persistedStatus = callInfo.Arg<JobExecutionState>().Status;
+                return Task.FromResult(1);
+            });
+
+        using var host = new HostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
+                services.AddHeadlessJobs();
+                services.AddSingleton(manager);
+            })
+            .Build();
+        await host.StartAsync(AbortToken);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executionTokenWasCancelled = false;
+        var context = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "immediate-drain",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            RunCondition = RunCondition.OnSuccess,
+            CachedDelegate = async (_, _, cancellationToken) =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+                executionTokenWasCancelled = cancellationToken.IsCancellationRequested;
+            },
+        };
+
+        await host.Services.GetRequiredService<IJobsDispatcher>().DispatchAsync([context], AbortToken);
+        await started.Task.WaitAsync(_waitBudget);
+
+        var applicationStopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stoppingRegistration = host
+            .Services.GetRequiredService<IHostApplicationLifetime>()
+            .ApplicationStopping.Register(() => applicationStopping.TrySetResult());
+        var stop = host.StopAsync(AbortToken);
+        await applicationStopping.Task.WaitAsync(_waitBudget, AbortToken);
+
+        stop.IsCompleted.Should().BeFalse("the Generic Host must allow immediate work to use its drain budget");
+        executionTokenWasCancelled.Should().BeFalse("ApplicationStopping must not cancel immediate work before drain");
+
+        release.TrySetResult();
+        await stop.WaitAsync(_waitBudget);
+
+        executionTokenWasCancelled.Should().BeFalse();
+        context.Status.Should().Be(JobStatus.Succeeded);
+        persistedStatus.Should().Be(JobStatus.Succeeded, "terminal status must be written during graceful drain");
     }
 
     private static JobsSchedulerBackgroundService _Service(JobsTaskScheduler taskScheduler)

@@ -9,7 +9,6 @@ using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -32,12 +31,7 @@ public sealed class JobsDispatcherTests : TestBase
         await using var serviceProvider = services.BuildServiceProvider();
         var handler = _Handler(serviceProvider, manager);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
-        var dispatcher = new JobsDispatcher(
-            taskScheduler,
-            handler,
-            new JobFunctionConcurrencyGate(),
-            hostLifetime: null
-        );
+        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
 
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -66,10 +60,9 @@ public sealed class JobsDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task dispatched_job_is_still_cancelled_by_host_shutdown()
+    public async Task dispatched_job_is_cancelled_when_the_scheduler_execution_lifetime_ends()
     {
-        // Separating the tokens must not detach immediate-dispatch jobs from the host: ApplicationStopping is the
-        // execution token when a host lifetime is available, so shutdown still cancels a running job.
+        // Separating admission from execution must not detach immediate jobs from scheduler shutdown.
         var manager = _HealthyManager();
         var services = new ServiceCollection();
         services.AddSingleton(manager);
@@ -77,10 +70,7 @@ public sealed class JobsDispatcherTests : TestBase
         var handler = _Handler(serviceProvider, manager);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
 
-        using var stoppingCts = new CancellationTokenSource();
-        var hostLifetime = Substitute.For<IHostApplicationLifetime>();
-        hostLifetime.ApplicationStopping.Returns(stoppingCts.Token);
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate(), hostLifetime);
+        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
 
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var observed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -105,10 +95,10 @@ public sealed class JobsDispatcherTests : TestBase
         await dispatcher.DispatchAsync([context], AbortToken);
         await started.Task.WaitAsync(_waitBudget);
 
-        await stoppingCts.CancelAsync();
+        await taskScheduler.CancelExecutionsAsync();
 
         var observedCancellation = await observed.Task.WaitAsync(_waitBudget);
-        observedCancellation.Should().BeTrue("host shutdown must still reach immediate-dispatch jobs");
+        observedCancellation.Should().BeTrue("scheduler shutdown must still reach immediate-dispatch jobs");
     }
 
     private static IInternalJobManager _HealthyManager()
