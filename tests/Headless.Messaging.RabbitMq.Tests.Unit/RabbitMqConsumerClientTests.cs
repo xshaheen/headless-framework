@@ -586,6 +586,59 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task resume_async_is_noop_when_paused_before_listening_started()
+    {
+        // given — the register pre-pauses a client while the circuit is open, which lands before
+        // ListeningAsync has built the consumer. ConnectAsync has already populated the queue list.
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+        await client.PauseAsync(AbortToken);
+
+        // when
+        await client.ResumeAsync(AbortToken);
+
+        // then — registering here would pass a null consumer to the broker; ListeningAsync owns the
+        // registration once it passes the gate
+        _channel
+            .ReceivedCalls()
+            .Should()
+            .NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
+    public async Task should_re_register_consumers_when_resumed_after_listening_started()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        _channel.IsClosed.Returns(false);
+        using var cts = new CancellationTokenSource();
+
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            _CountBasicConsumeCalls().Should().Be(1);
+
+            // when
+            await client.PauseAsync(AbortToken);
+            await client.ResumeAsync(AbortToken);
+
+            // then — the consumer built by ListeningAsync is registered again after the cancel
+            _channel
+                .ReceivedCalls()
+                .Should()
+                .Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+            _CountBasicConsumeCalls().Should().Be(2);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    [Fact]
     public async Task should_wait_for_resume_when_listening_async_group_is_paused_before_startup()
     {
         // given
@@ -618,11 +671,17 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 .ReceivedCalls()
                 .Should()
                 .Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+            _CountBasicConsumeCalls().Should().Be(1, "the resumed startup registers exactly once");
         }
         finally
         {
             await cts.CancelAsync();
             await listeningTask; // Should complete gracefully — no OperationCanceledException
         }
+    }
+
+    private int _CountBasicConsumeCalls()
+    {
+        return _channel.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
     }
 }

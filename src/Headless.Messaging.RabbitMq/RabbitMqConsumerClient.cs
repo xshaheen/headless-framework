@@ -124,7 +124,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
-        _consumer = new RabbitMqBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel!,
             _groupConcurrent,
             _groupName,
@@ -136,19 +136,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         try
         {
-            foreach (var queueName in _queueNames)
-            {
-                var consumerTag = await _channel!
-                    .BasicConsumeAsync(queueName, autoAck: false, _consumer, cancellationToken)
-                    .ConfigureAwait(false);
-                _consumerTags.Add(consumerTag);
-            }
+            await _StartConsumingAsync(consumer, cancellationToken).ConfigureAwait(false);
 
             _ready.TrySetResult();
         }
         catch (TimeoutException ex)
         {
-            await _consumer
+            await consumer
                 .HandleChannelShutdownAsync(
                     null!,
                     new ShutdownEventArgs(
@@ -202,12 +196,23 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        foreach (var consumerTag in _consumerTags)
-        {
-            await _channel!.BasicCancelAsync(consumerTag, cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        _consumerTags.Clear();
+        try
+        {
+            foreach (var consumerTag in _consumerTags)
+            {
+                await _channel!
+                    .BasicCancelAsync(consumerTag, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            _consumerTags.Clear();
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -224,13 +229,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         // Re-register consumer after transitioning so the broker is
         // delivering messages when the gate unblocks waiters.
-        foreach (var queueName in _queueNames)
-        {
-            var consumerTag = await _channel!
-                .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
-                .ConfigureAwait(false);
-            _consumerTags.Add(consumerTag);
-        }
+        await _ResumeConsumingAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync()
@@ -310,6 +309,67 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         finally
         {
             _semaphore.Release();
+        }
+    }
+
+    private async Task _StartConsumingAsync(RabbitMqBasicConsumer consumer, CancellationToken cancellationToken)
+    {
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // Publishing the consumer under the same lock that registers it is what makes a concurrent
+            // resume safe: it either finds no consumer yet and leaves the work here, or finds the tags
+            // this call already registered.
+            _consumer = consumer;
+
+            await _ConsumeQueuesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private async Task _ResumeConsumingAsync(CancellationToken cancellationToken)
+    {
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // The register pre-pauses a client while the circuit is open, which can land before
+            // ListeningAsync has built its consumer. Releasing the gate is then the whole job — the
+            // pending ListeningAsync registers with the broker itself once it gets through.
+            if (_consumer is null)
+            {
+                return;
+            }
+
+            await _ConsumeQueuesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private async Task _ConsumeQueuesAsync(CancellationToken cancellationToken)
+    {
+        // Startup and resume can be racing right after the gate opens. Tags left over from an earlier
+        // registration mean the other path already consumed these queues, and registering again would
+        // leave the broker with duplicate consumers and double the prefetch.
+        if (_consumerTags.Count > 0)
+        {
+            return;
+        }
+
+        foreach (var queueName in _queueNames)
+        {
+            var consumerTag = await _channel!
+                .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
+                .ConfigureAwait(false);
+
+            _consumerTags.Add(consumerTag);
         }
     }
 
