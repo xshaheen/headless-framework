@@ -14,7 +14,7 @@ Provides EF Core repository implementations for setting values and definitions u
 - EF repositories for `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository`
 - `SettingsStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing
-- Value uniqueness declared as a pair of filtered unique indexes — `(Name, ProviderName, ProviderKey) WHERE "ProviderKey" IS NOT NULL` and `(Name, ProviderName) WHERE "ProviderKey" IS NULL` — matching the raw-DDL providers, so global (NULL-key) values stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite)
+- Value uniqueness declared as a pair of filtered unique indexes — `(Name, ProviderName, ProviderKey) WHERE "ProviderKey" IS NOT NULL` and `(Name, ProviderName) WHERE "ProviderKey" IS NULL` — matching the raw-DDL providers, so global (NULL-key) values stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite). Requires a relational provider with partial-index support (PostgreSQL, SQL Server, SQLite); providers without it (e.g. MySQL/MariaDB) need a replacement uniqueness strategy via a custom entity configuration
 
 ## Design Notes
 

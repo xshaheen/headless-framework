@@ -14,7 +14,7 @@ Provides EF Core repository implementations for permission grants, permission de
 - `EfPermissionGrantRepository<TContext>` — EF repository for `IPermissionGrantRepository`
 - `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
 - Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
-- Grant uniqueness declared as a pair of filtered unique indexes — `(TenantId, Name, ProviderName, ProviderKey) WHERE "TenantId" IS NOT NULL` and `(Name, ProviderName, ProviderKey) WHERE "TenantId" IS NULL` — matching the raw-DDL providers, so host (NULL-tenant) grants stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite)
+- Grant uniqueness declared as a pair of filtered unique indexes — `(TenantId, Name, ProviderName, ProviderKey) WHERE "TenantId" IS NOT NULL` and `(Name, ProviderName, ProviderKey) WHERE "TenantId" IS NULL` — matching the raw-DDL providers, so host (NULL-tenant) grants stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite). Requires a relational provider with partial-index support (PostgreSQL, SQL Server, SQLite); providers without it (e.g. MySQL/MariaDB) need a replacement uniqueness strategy via a custom entity configuration
 
 ## Design Notes
 
