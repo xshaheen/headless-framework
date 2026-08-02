@@ -1,0 +1,77 @@
+name: Azure Service Bus Conformance
+
+# Azure Service Bus has no local emulator with the broker semantics this suite proves. The credential lives in a
+# protected environment, so this workflow intentionally runs only after a reviewer dispatches it for a trusted ref.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  HUSKY: 0
+
+jobs:
+  azure-service-bus-conformance:
+    name: "Azure Service Bus conformance"
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
+
+    environment:
+      name: "Azure Service Bus Conformance"
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Setup nuget cache"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Require Azure Service Bus credential"
+        env:
+          HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING: ${{ secrets.HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING }}
+        run: test -n "${HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING}"
+        shell: bash
+
+      - name: "Restore"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+
+      - name: "Build"
+        run: make build-project-no-restore PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+
+      # The preflight makes a skip-only result impossible: the fixture skips only when this credential is absent.
+      - name: "Run Azure Service Bus conformance scenarios"
+        env:
+          HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING: ${{ secrets.HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING }}
+        run: >-
+          make test-project-fast
+          TEST_PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
+          TEST_FILTER='--filter-class *ProviderConformanceEvidenceTests'
+        shell: bash

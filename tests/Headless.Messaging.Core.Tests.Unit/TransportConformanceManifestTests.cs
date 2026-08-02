@@ -107,6 +107,85 @@ public sealed class TransportConformanceManifestTests : TestBase
     }
 
     [Fact]
+    public void should_reject_supported_scenario_without_executable_test_binding()
+    {
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
+
+        var errors = TransportConformanceTestBindings.GetValidationErrors(profile, []);
+
+        errors.Should().ContainSingle(error => error.Contains("QueueRoundTrip", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_reject_binding_to_non_test_method()
+    {
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
+        var binding = new TransportConformanceTestBinding(
+            TransportConformanceScenario.QueueRoundTrip,
+            typeof(EvidenceTarget),
+            nameof(EvidenceTarget.not_a_test)
+        );
+
+        var errors = TransportConformanceTestBindings.GetValidationErrors(profile, [binding]);
+
+        errors.Should().ContainSingle(error => error.Contains("not an xUnit test", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_accept_binding_to_discoverable_test()
+    {
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
+        var binding = new TransportConformanceTestBinding(
+            TransportConformanceScenario.QueueRoundTrip,
+            typeof(TransportConformanceManifestTests),
+            nameof(should_keep_the_committed_manifest_valid)
+        );
+
+        TransportConformanceTestBindings.GetValidationErrors(profile, [binding]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_execute_bound_supported_scenario()
+    {
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
+        var target = new EvidenceTarget();
+        var binding = new TransportConformanceTestBinding(
+            TransportConformanceScenario.QueueRoundTrip,
+            typeof(EvidenceTarget),
+            nameof(EvidenceTarget.executable_test)
+        );
+
+        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, [binding], _ => target);
+
+        target.Executed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_binding_to_unconditionally_skipped_test()
+    {
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
+        var binding = new TransportConformanceTestBinding(
+            TransportConformanceScenario.QueueRoundTrip,
+            typeof(EvidenceTarget),
+            nameof(EvidenceTarget.skipped_test)
+        );
+
+        var errors = TransportConformanceTestBindings.GetValidationErrors(profile, [binding]);
+
+        errors.Should().ContainSingle(error => error.Contains("unconditionally skipped", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_require_bounded_malformed_envelope_evidence()
     {
         var profile = TransportConformanceProfile.CreateDisabled("Example") with { MalformedEnvelopeBound = null };
@@ -238,5 +317,28 @@ public sealed class TransportConformanceManifestTests : TestBase
 
         return directory?.FullName
             ?? throw new InvalidOperationException("Could not locate repository root from test output directory.");
+    }
+
+    private sealed class EvidenceTarget
+    {
+        public bool Executed { get; private set; }
+
+        public void not_a_test() { }
+
+        [EvidenceTarget.FactAttribute]
+        public async Task executable_test()
+        {
+            await Task.Yield();
+            Executed = true;
+        }
+
+        [EvidenceTarget.FactAttribute(Skip = "not executable")]
+        public void skipped_test() { }
+
+        [AttributeUsage(AttributeTargets.Method)]
+        private sealed class FactAttribute : Attribute
+        {
+            public string? Skip { get; set; }
+        }
     }
 }

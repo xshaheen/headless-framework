@@ -136,35 +136,66 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     [Fact]
     public async Task should_drain_legacy_stream_before_lane_cutover_and_reconcile_forward()
     {
-        var legacyStream = $"legacy-{Guid.NewGuid():N}"[..29];
-        var logicalName = $"orders-{Guid.NewGuid():N}"[..29];
+        var logicalName = $"legacy-{Guid.NewGuid():N}"[..29];
+        var legacyStream = logicalName;
+        var legacyGroup = $"legacy-group-{Guid.NewGuid():N}"[..30];
+        var legacyMessageId = $"legacy-{Guid.NewGuid():N}";
         await fixture.EnsureStreamAsync(legacyStream, logicalName);
 
-        var connection = await fixture.GetConnectionAsync();
-        var js = new NatsJSContext(connection);
-        await js.PublishAsync(
-            logicalName,
-            "legacy"u8.ToArray(),
-            serializer: NatsRawSerializer<byte[]>.Default,
-            cancellationToken: AbortToken
-        );
-        var legacyConsumer = await js.CreateOrUpdateConsumerAsync(
-            legacyStream,
-            new ConsumerConfig($"drain-{Guid.NewGuid():N}"[..30])
-            {
-                FilterSubject = logicalName,
-                DeliverPolicy = ConsumerConfigDeliverPolicy.All,
-                AckPolicy = ConsumerConfigAckPolicy.Explicit,
-            },
-            AbortToken
-        );
-        var legacyDelivery = await legacyConsumer.NextAsync(
-            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-            opts: new NatsJSNextOpts { Expires = TimeSpan.FromSeconds(5) },
-            cancellationToken: AbortToken
-        );
-        legacyDelivery.Should().NotBeNull("the deployment fence must observe and drain legacy backlog");
-        await legacyDelivery!.AckAsync(new AckOpts { DoubleAck = true }, AbortToken);
+        await using (
+            var abortedConsumer = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "nats",
+                "queue",
+                fixture.ConnectionString,
+                logicalName,
+                legacyGroup,
+                legacyMessageId,
+                AbortToken
+            )
+        )
+        {
+            await PreviousMessagingPackageProbe.ProduceAsync(
+                "nats",
+                "queue",
+                fixture.ConnectionString,
+                logicalName,
+                legacyGroup,
+                legacyMessageId,
+                AbortToken
+            );
+            await abortedConsumer.WaitUntilReceivedAsync(AbortToken);
+
+            var connection = await fixture.GetConnectionAsync();
+            var js = new NatsJSContext(connection);
+            var durable = $"queue-{logicalName}";
+            var pending = await js.GetConsumerAsync(legacyStream, durable, AbortToken);
+            pending.Info.NumAckPending.Should().Be(1, "the drain fence must observe unsettled previous-version work");
+
+            await abortedConsumer.AbortAsync(AbortToken);
+            abortedConsumer.HasExited.Should().BeTrue("the version fence stops the old process before cutover");
+        }
+
+        await using (
+            var drainConsumer = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "nats",
+                "queue",
+                fixture.ConnectionString,
+                logicalName,
+                legacyGroup,
+                legacyMessageId,
+                AbortToken
+            )
+        )
+        {
+            await drainConsumer.WaitUntilReceivedAsync(AbortToken);
+            await drainConsumer.CommitAsync(AbortToken);
+            drainConsumer.HasExited.Should().BeTrue("the old consumer must exit before new topology is provisioned");
+        }
+
+        var nats = new NatsJSContext(await fixture.GetConnectionAsync());
+        var drained = await nats.GetConsumerAsync(legacyStream, $"queue-{logicalName}", AbortToken);
+        drained.Info.NumAckPending.Should().Be(0);
+        drained.Info.NumPending.Should().Be(0, "zero pending and zero ack-pending is the cutover drain signal");
 
         await using var bus = await fixture.CreateLaneSessionAsync(
             MessageLane.Bus,
@@ -193,14 +224,21 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         await queue.Consumer.CommitAsync(queueDelivery.SettlementValue, AbortToken);
         (await bus.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
 
-        var postCutoverLegacyDelivery = await legacyConsumer.NextAsync(
-            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-            opts: new NatsJSNextOpts { Expires = TimeSpan.FromSeconds(1) },
-            cancellationToken: AbortToken
-        );
-        postCutoverLegacyDelivery
-            .Should()
-            .BeNull("lane-qualified publication is roll-forward-only and must not return to the legacy subject");
+        await bus.StopAsync(TimeSpan.FromSeconds(2));
+        await using var restartedBus = await bus.CreateReplacementAsync(AbortToken);
+        await restartedBus.StartAsync(cancellationToken: AbortToken);
+        (await bus.PublishAsync(_Message(logicalName, MessageLane.Bus), AbortToken)).Succeeded.Should().BeTrue();
+        var restartedDelivery = await restartedBus.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await restartedBus.Consumer.CommitAsync(restartedDelivery.SettlementValue, AbortToken);
+
+        var reconciled = await nats.GetConsumerAsync(legacyStream, $"queue-{logicalName}", AbortToken);
+        reconciled.Info.NumAckPending.Should().Be(0);
+        reconciled
+            .Info.NumPending.Should()
+            .Be(
+                0,
+                "after first lane-qualified publish recovery is roll-forward and must not repopulate legacy topology"
+            );
     }
 
     private static TransportMessage _Message(string logicalName, MessageLane lane) =>

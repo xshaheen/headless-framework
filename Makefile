@@ -9,6 +9,7 @@ SOLUTION ?= headless-framework.slnx
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
+MESSAGING_PREVIOUS_VERSION_PROBE ?= tests/Headless.Messaging.PreviousVersionProbe/Headless.Messaging.PreviousVersionProbe.csproj
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
@@ -29,6 +30,13 @@ TEST_ARGS ?= --no-progress
 TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
+MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= \
+	tests/Headless.Messaging.Aws.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Aws.Tests.Integration.dll \
+	tests/Headless.Messaging.Kafka.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Kafka.Tests.Integration.dll \
+	tests/Headless.Messaging.Nats.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Nats.Tests.Integration.dll \
+	tests/Headless.Messaging.Pulsar.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Pulsar.Tests.Integration.dll \
+	tests/Headless.Messaging.RabbitMq.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.RabbitMq.Tests.Integration.dll \
+	tests/Headless.Messaging.Redis.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Redis.Tests.Integration.dll
 MSBUILD_ARGS ?=
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
 DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
@@ -212,6 +220,22 @@ ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS)
 
+.PHONY: ci-messaging-conformance-evidence
+ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
+	@mkdir -p "$(TEST_RESULTS_DIR)/messaging-conformance-evidence"
+	@set -eu; for module in $(MESSAGING_CONFORMANCE_EVIDENCE_MODULES); do \
+		$(DOTNET) test --test-modules "$$module" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/messaging-conformance-evidence" --max-parallel-test-modules 1 $(TEST_ARGS) --filter-class '*ProviderConformanceEvidenceTests'; \
+	done
+
+.PHONY: build-messaging-previous-version-probe
+build-messaging-previous-version-probe: ## Restore and build the isolated Messaging 0.11.0 cutover producer/consumer probe.
+	$(DOTNET) restore "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
+		--configfile "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))NuGet.config" --locked-mode
+	$(DOTNET) build "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
+		--configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:minimal -nologo
+	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify nats
+	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify redis
+
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
@@ -359,11 +383,12 @@ verify-messaging-package-compatibility: pack ## Compile old/new Messaging packag
 		exit 1; \
 	fi; \
 	sed -n '1,240p' "$$log"; \
-	rg -q 'NU1605' "$$log" || (echo "SelectedMixed failed without the expected NU1605 downgrade boundary." && exit 1)
+	./scripts/verify-messaging-mixed-downgrade.sh "$$log" "0.11.0" "$$version"
 
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
 	./tests/scripts/verify-packages-tests.sh
+	./tests/scripts/verify-messaging-mixed-downgrade-tests.sh
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.
