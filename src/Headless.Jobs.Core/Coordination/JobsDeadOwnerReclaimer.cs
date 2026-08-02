@@ -11,7 +11,7 @@ namespace Headless.Jobs.Coordination;
 /// <summary>
 /// Jobs reclaim sink for the shared <see cref="DeadOwnerRecoveryBridge{TReclaimer}"/>. Releases the
 /// operational-store resources owned by a dead node identity; the skip-in-flight policy lives inside
-/// <see cref="IInternalJobManager.ReleaseDeadNodeResources"/>.
+/// <see cref="IInternalJobManager.ReleaseDeadNodeResources(IReadOnlyCollection{string}, CancellationToken)"/>.
 /// </summary>
 internal sealed class JobsDeadOwnerReclaimer(
     IInternalJobManager internalJobManager,
