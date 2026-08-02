@@ -682,6 +682,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
     private int _CountBasicConsumeCalls()
     {
-        return _channel.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+        return _channel
+            .ReceivedCalls()
+            .Count(c =>
+                string.Equals(c.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
+            );
     }
 }

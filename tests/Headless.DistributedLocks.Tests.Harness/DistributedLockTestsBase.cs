@@ -713,7 +713,7 @@ public abstract class DistributedLockTestsBase : TestBase
 
         var lostToken = handle.LostToken;
         var lostCallbackFired = 0;
-        using var registration = lostToken.Register(() => Interlocked.Exchange(ref lostCallbackFired, 1));
+        await using var registration = lostToken.Register(() => Interlocked.Exchange(ref lostCallbackFired, 1));
 
         await handle.ReleaseAsync();
         await handle.DisposeAsync();

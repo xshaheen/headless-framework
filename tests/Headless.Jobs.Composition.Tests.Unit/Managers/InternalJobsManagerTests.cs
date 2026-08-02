@@ -474,8 +474,8 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(new[] { first, second });
-        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<CronJobEntity>());
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([first, second]);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
@@ -490,7 +490,7 @@ public sealed class InternalJobsManagerTests : TestBase
 
         functions.Select(x => x.JobId).Should().Equal(first.Id, second.Id);
         // Best-effort means best-effort: the claims stand, so nothing is released back to Idle.
-        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredTimeJobsAsync(default!, default);
+        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredTimeJobsAsync(default!, AbortToken);
     }
 
     /// <summary>
@@ -520,8 +520,8 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(new[] { claimed });
-        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<CronJobEntity>());
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([claimed]);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
@@ -532,7 +532,12 @@ public sealed class InternalJobsManagerTests : TestBase
         var act = () => manager.GetNextJobs(AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == claimed.Id));
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<Guid[]>(ids => ids.Single() == claimed.Id),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     private static async IAsyncEnumerable<TimeJobEntity> _ClaimThenFail(TimeJobEntity claimed)
