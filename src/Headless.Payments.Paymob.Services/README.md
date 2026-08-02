@@ -23,7 +23,7 @@ Higher-level service layer for Paymob CashIn and CashOut with typed per-channel 
 - `IPaymobCashInFeesCalculator` / `PaymobCashInFeesCalculator` — fee arithmetic (no network calls):
   - `CalculateDeductFees(amount)` — total gateway fee deducted from the transaction
   - `CalculateDeductFeesAndTax(amount)` — breakdown into fee and VAT tax
-  - `AddFeesForNet(net)` — gross amount to charge so the merchant receives exactly `net`
+  - `AddFeesForNet(net)` — gross amount to charge so the merchant receives at least `net` (rounded up to a whole unit, so it can over-cover by up to 1)
   - `CalcFeesForNet(net)` — fee portion only for the same inverse calculation
 - `PaymobTransactionResponseCodes` — constants for card response codes (0 = approved, etc.)
 - `PaymobRiskDeclineCodes` — constants for Paymob FMS risk decline codes (111–301)

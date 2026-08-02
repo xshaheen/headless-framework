@@ -45,7 +45,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
@@ -72,7 +72,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
@@ -98,7 +98,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(errorBody));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var act = () => broker.DisburseAsync(request, AbortToken);
 
         // then
@@ -122,7 +122,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithBody(budgetJson));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
@@ -140,7 +140,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.TooManyRequests).WithBody("throttled"));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var act = () => broker.GetBudgetAsync(AbortToken);
 
         // then
@@ -196,7 +196,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .RespondWith(Response.Create().WithBody(responseBody));
 
         // when
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.GetTransactionsAsync(ids, isBankTransactions: true, page: 3, AbortToken);
 
         // then
@@ -212,7 +212,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
     {
         // given
         var (authenticator, _) = _SetupAuthenticator();
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
 
         // when
         var act = () => broker.GetTransactionsAsync([], isBankTransactions: false, page: 1, AbortToken);
@@ -227,7 +227,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
     {
         // given
         var (authenticator, _) = _SetupAuthenticator();
-        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator);
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
 
         // when
         var act = () => broker.GetTransactionsAsync(["tx-1"], isBankTransactions: false, page: 0, AbortToken);
