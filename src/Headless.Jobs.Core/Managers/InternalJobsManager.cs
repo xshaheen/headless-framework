@@ -203,14 +203,69 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     {
         var results = new List<JobExecutionState>();
 
-        await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobsAsync(minTimeJobs, cancellationToken))
+        try
         {
-            results.Add(_BuildQueuedTimeJobContext(updatedTimeJob));
+            await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobsAsync(minTimeJobs, cancellationToken))
+            {
+                results.Add(_BuildQueuedTimeJobContext(updatedTimeJob));
 
-            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
+                await _NotifyBestEffortAsync(
+                        () => notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob),
+                        updatedTimeJob.Id
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            await _ReleaseAbandonedClaimsAsync(results).ConfigureAwait(false);
+            throw;
         }
 
         return [.. results];
+    }
+
+    // Dashboard notifications are pure observability, but they are awaited INSIDE the claim enumeration: letting one
+    // propagate would abandon rows the claim strategy already committed as Queued+leased, and no node can re-claim
+    // those until the lease lapses (~LeaseDuration of added latency per incident). So a send failure is logged and
+    // swallowed. Cancellation is not special-cased: these senders take no token, so an OperationCanceledException
+    // from one is a foreign/internal cancellation, and the enumerator's own cancellation checks still stop the loop.
+    private async Task _NotifyBestEffortAsync(Func<Task> send, Guid jobId)
+    {
+        try
+        {
+            await send().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Observability-only side effect: logged, not rethrown.
+        catch (Exception exception)
+        {
+            logger.LogClaimNotificationFailed(exception, jobId);
+        }
+#pragma warning restore ERP022
+    }
+
+    // Returns rows this node claimed but will never dispatch because the claim enumeration aborted part-way. The
+    // scheduler's catch-all cannot do this for us: those rows were never yielded, so they are in no execution context.
+    // CancellationToken.None because the abort is frequently the caller's own cancellation (host shutdown) and the
+    // release must still happen — this mirrors the scheduler's shutdown release. Best-effort: a failure here must not
+    // replace the original exception (the fallback sweep reclaims the rows once their lease lapses).
+    private async Task _ReleaseAbandonedClaimsAsync(List<JobExecutionState> claimed)
+    {
+        if (claimed.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await ReleaseAcquiredResources([.. claimed], CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Recovery side effect: logged, not rethrown — the original failure must surface.
+        catch (Exception exception)
+        {
+            logger.LogAbandonedClaimReleaseFailed(exception, claimed.Count);
+        }
+#pragma warning restore ERP022
     }
 
     private JobExecutionState _BuildQueuedTimeJobContext(TimeJobEntity timeJob)
@@ -269,38 +324,42 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     {
         var results = new List<JobExecutionState>();
 
-        await foreach (
-            var occurrence in persistenceProvider
-                .QueueCronJobOccurrencesAsync(minCronJob, cancellationToken)
-                .ConfigureAwait(false)
-        )
+        try
         {
-            results.Add(
-                new JobExecutionState
-                {
-                    ParentId = occurrence.CronJobId,
-                    FunctionName = occurrence.CronJob.Function,
-                    JobId = occurrence.Id,
-                    Type = JobType.CronJobOccurrence,
-                    Retries = occurrence.CronJob.Retries,
-                    RetryCount = occurrence.RetryCount,
-                    RetryIntervals = occurrence.CronJob.RetryIntervals,
-                    ExecutionTime = occurrence.ExecutionTime,
-                }
-            );
+            await foreach (
+                var occurrence in persistenceProvider
+                    .QueueCronJobOccurrencesAsync(minCronJob, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                results.Add(
+                    new JobExecutionState
+                    {
+                        ParentId = occurrence.CronJobId,
+                        FunctionName = occurrence.CronJob.Function,
+                        JobId = occurrence.Id,
+                        Type = JobType.CronJobOccurrence,
+                        Retries = occurrence.CronJob.Retries,
+                        RetryCount = occurrence.RetryCount,
+                        RetryIntervals = occurrence.CronJob.RetryIntervals,
+                        ExecutionTime = occurrence.ExecutionTime,
+                    }
+                );
 
-            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
+                await _NotifyBestEffortAsync(
+                        () =>
+                            occurrence.CreatedAt == occurrence.UpdatedAt
+                                ? notificationHubSender.AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
+                                : notificationHubSender.UpdateCronOccurrenceAsync(occurrence.CronJobId, occurrence),
+                        occurrence.Id
+                    )
                     .ConfigureAwait(false);
             }
-            else if (notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .UpdateCronOccurrenceAsync(occurrence.CronJobId, occurrence)
-                    .ConfigureAwait(false);
-            }
+        }
+        catch (Exception)
+        {
+            await _ReleaseAbandonedClaimsAsync(results).ConfigureAwait(false);
+            throw;
         }
 
         return [.. results];
@@ -808,39 +867,54 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     {
         var results = new List<JobExecutionState>();
 
-        await foreach (
-            var timedOutTimeJob in persistenceProvider
-                .QueueTimedOutTimeJobsAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
+        try
         {
-            results.Add(_BuildQueuedTimeJobContext(timedOutTimeJob));
-
-            await notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
-        }
-
-        await foreach (
-            var timedOutCronJob in persistenceProvider
-                .QueueTimedOutCronJobOccurrencesAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            var functionContext = new JobExecutionState
+            await foreach (
+                var timedOutTimeJob in persistenceProvider
+                    .QueueTimedOutTimeJobsAsync(cancellationToken)
+                    .ConfigureAwait(false)
+            )
             {
-                FunctionName = timedOutCronJob.CronJob.Function,
-                JobId = timedOutCronJob.Id,
-                Type = JobType.CronJobOccurrence,
-                Retries = timedOutCronJob.CronJob.Retries,
-                RetryCount = timedOutCronJob.RetryCount,
-                RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
-                ParentId = timedOutCronJob.CronJobId,
-                ExecutionTime = timedOutCronJob.ExecutionTime,
-            };
+                results.Add(_BuildQueuedTimeJobContext(timedOutTimeJob));
 
-            results.Add(functionContext);
-            await notificationHubSender
-                .UpdateCronOccurrenceFromExecutionState<TCronJob>(functionContext)
-                .ConfigureAwait(false);
+                await _NotifyBestEffortAsync(
+                        () => notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob),
+                        timedOutTimeJob.Id
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            await foreach (
+                var timedOutCronJob in persistenceProvider
+                    .QueueTimedOutCronJobOccurrencesAsync(cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                var functionContext = new JobExecutionState
+                {
+                    FunctionName = timedOutCronJob.CronJob.Function,
+                    JobId = timedOutCronJob.Id,
+                    Type = JobType.CronJobOccurrence,
+                    Retries = timedOutCronJob.CronJob.Retries,
+                    RetryCount = timedOutCronJob.RetryCount,
+                    RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
+                    ParentId = timedOutCronJob.CronJobId,
+                    ExecutionTime = timedOutCronJob.ExecutionTime,
+                };
+
+                results.Add(functionContext);
+
+                await _NotifyBestEffortAsync(
+                        () => notificationHubSender.UpdateCronOccurrenceFromExecutionState<TCronJob>(functionContext),
+                        functionContext.JobId
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            await _ReleaseAbandonedClaimsAsync(results).ConfigureAwait(false);
+            throw;
         }
 
         return [.. results];
@@ -982,5 +1056,25 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         Guid jobId
+    );
+
+    [LoggerMessage(
+        EventId = 3216,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} was claimed, but its dashboard notification failed. The claim is unaffected and the "
+            + "job still runs; only the dashboard view is stale."
+    )]
+    public static partial void LogClaimNotificationFailed(this ILogger logger, Exception exception, Guid jobId);
+
+    [LoggerMessage(
+        EventId = 3217,
+        Level = LogLevel.Warning,
+        Message = "Releasing {ClaimedCount} job(s) claimed before the claim enumeration aborted failed; they stay "
+            + "leased until the lease lapses and the fallback sweep reclaims them."
+    )]
+    public static partial void LogAbandonedClaimReleaseFailed(
+        this ILogger logger,
+        Exception exception,
+        int claimedCount
     );
 }
