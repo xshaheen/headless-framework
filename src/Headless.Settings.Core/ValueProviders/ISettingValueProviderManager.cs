@@ -10,7 +10,11 @@ namespace Headless.Settings.ValueProviders;
 /// <summary>Manages the ordered list of registered <see cref="ISettingValueReadProvider"/> instances.</summary>
 public interface ISettingValueProviderManager
 {
-    /// <summary>Gets the ordered list of registered setting value providers, highest priority last.</summary>
+    /// <summary>
+    /// Gets the registered setting value providers ordered by descending priority (user, tenant, global,
+    /// configuration, default). Readers walk the list forward and take the first non-null value, so the
+    /// entries after a requested provider are its fallback chain.
+    /// </summary>
     IReadOnlyList<ISettingValueReadProvider> Providers { get; }
 }
 
@@ -41,6 +45,8 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
     /// <exception cref="InvalidOperationException">Two or more registered providers share the same <see cref="ISettingValueReadProvider.Name"/>.</exception>
     private List<ISettingValueReadProvider> _GetProviders()
     {
+        // Registration lists providers lowest priority first (see Setup._AddCoreValueProvider); readers
+        // expect the opposite, so the resolved list is reversed once here.
         var providers = _options
             .ValueProviders.Select(type => (ISettingValueReadProvider)_serviceProvider.GetRequiredService(type))
             .Reverse()

@@ -22,7 +22,9 @@ Provides the full settings management implementation including hierarchical valu
 
 ## Design Notes
 
-Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all.
+Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. `ISettingValueProviderManager.Providers` exposes the reversed (highest priority first) list, which every read path walks forward, taking the first non-null value.
+
+Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving provider is store-backed (`Global`, `Tenant`, `User`). A plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is on every read path.
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
