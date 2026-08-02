@@ -78,10 +78,10 @@ public sealed class SettingManager(
             {
                 var settingDefinition = definitionMap[settingValue.Name];
 
-                // Only store-backed values are ciphertext; default and configuration values are plaintext
-                // and decrypting them would throw — same rule as _CoreGetOrDefaultAsync.
+                // Only providers that persist manager-encrypted writes hold ciphertext; plaintext sources
+                // (defaults, configuration) would throw on decrypt — same rule as _CoreGetOrDefaultAsync.
                 var value =
-                    settingDefinition.IsEncrypted && provider is StoreSettingValueProvider
+                    settingDefinition.IsEncrypted && provider.StoresEncryptedValues
                         ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
                         : settingValue.Value;
 
@@ -174,10 +174,10 @@ public sealed class SettingManager(
                 resolvedProviderKey = providerKey;
             }
 
-            // Decrypt only what a store actually persisted as ciphertext: with fallback the winning value can
-            // come from configuration or the definition default, which are plaintext — same rule as
+            // Decrypt only what a provider actually persisted as ciphertext: with fallback the winning value
+            // can come from configuration or the definition default, which are plaintext — same rule as
             // _CoreGetOrDefaultAsync.
-            if (value is not null && setting.IsEncrypted && resolvedProvider is StoreSettingValueProvider)
+            if (value is not null && setting.IsEncrypted && resolvedProvider is { StoresEncryptedValues: true })
             {
                 value = encryptionService.Decrypt(setting, value);
             }
@@ -327,7 +327,7 @@ public sealed class SettingManager(
                 continue;
             }
 
-            if (definition.IsEncrypted && provider is StoreSettingValueProvider)
+            if (definition.IsEncrypted && provider.StoresEncryptedValues)
             {
                 value = encryptionService.Decrypt(definition, value);
             }

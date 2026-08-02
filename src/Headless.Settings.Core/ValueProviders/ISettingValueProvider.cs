@@ -10,6 +10,16 @@ public interface ISettingValueReadProvider
     /// <summary>Gets the unique name of this provider.</summary>
     string Name { get; }
 
+    /// <summary>
+    /// Whether values this provider returns for encrypted definitions are ciphertext produced by the
+    /// manager's encryption pipeline. The manager encrypts before every provider write, so any provider
+    /// that persists those writes MUST return <see langword="true"/> so reads are decrypted; sources
+    /// that surface plaintext the manager never wrote (configuration, definition defaults) keep the
+    /// default <see langword="false"/>. The concrete type is irrelevant — a custom writable provider
+    /// that does not derive from <see cref="StoreSettingValueProvider"/> still stores ciphertext.
+    /// </summary>
+    bool StoresEncryptedValues => false;
+
     /// <summary>Returns the stored value for <paramref name="setting"/>, or <see langword="null"/> if none is set.</summary>
     /// <param name="setting">The setting definition to look up.</param>
     /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier). Provider implementations determine how this is used.</param>
@@ -36,6 +46,13 @@ public interface ISettingValueReadProvider
 /// <summary>Provides read and write access to setting values from a named source.</summary>
 public interface ISettingValueProvider : ISettingValueReadProvider
 {
+    /// <summary>
+    /// Writable providers persist what <c>SettingManager.SetAsync</c> hands them, which is ciphertext for
+    /// encrypted definitions — so reads must decrypt by default. Override to <see langword="false"/> only
+    /// for a writable provider whose values bypass the manager's encryption pipeline.
+    /// </summary>
+    bool ISettingValueReadProvider.StoresEncryptedValues => true;
+
     /// <summary>Persists <paramref name="value"/> for <paramref name="setting"/> scoped to <paramref name="providerKey"/>.</summary>
     /// <param name="setting">The setting definition to update.</param>
     /// <param name="value">The new value to store.</param>

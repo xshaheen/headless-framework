@@ -336,7 +336,7 @@ public sealed class SettingManagerTests : TestBase
         var settings = new HashSet<string>(StringComparer.Ordinal) { "Smtp.Password" };
         var definition = new SettingDefinition("Smtp.Password", defaultValue: "changeme", isEncrypted: true);
 
-        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        var defaultProvider = new FakeReadOnlySettingValueProvider { Name = "Default" };
         defaultProvider.SetValue("Smtp.Password", "changeme");
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
@@ -365,6 +365,29 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
         _valueProviderManager.Providers.Returns([storeProvider]);
+        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["Smtp.Password"].Value.Should().Be("plain-data");
+        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+    }
+
+    [Fact]
+    public async Task should_decrypt_custom_writable_provider_values_in_batch()
+    {
+        // given SetAsync encrypts before every writable-provider write, so a custom ISettingValueProvider
+        // that does NOT derive from StoreSettingValueProvider still holds ciphertext and must be decrypted.
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Smtp.Password" };
+        var definition = new SettingDefinition("Smtp.Password", isEncrypted: true);
+
+        var customProvider = new FakeSettingValueProvider { Name = "Custom" };
+        customProvider.SetValue("Smtp.Password", "encrypted-data");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([customProvider]);
         _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
 
         // when
@@ -441,7 +464,7 @@ public sealed class SettingManagerTests : TestBase
         store.GetOrDefaultAsync("Smtp.Password", "Store", null, AbortToken).Returns((string?)null);
         var storeProvider = new FakeStoreSettingValueProvider(store);
 
-        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        var defaultProvider = new FakeReadOnlySettingValueProvider { Name = "Default" };
         defaultProvider.SetValue("Smtp.Password", "changeme");
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
