@@ -163,7 +163,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
             }
 
-            _EnsureValidRetries(entity.Retries, entity.Function);
+            _EnsureValidRetries(entity);
 
             entity.ExecutionTime =
                 entity.ExecutionTime == null
@@ -578,6 +578,35 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
+    private static void _EnsureValidRetries(TTimeJob root)
+    {
+        var errors = new List<string>();
+        var pending = new Stack<TTimeJob>();
+        pending.Push(root);
+
+        while (pending.TryPop(out var job))
+        {
+            if (job.Retries < 0)
+            {
+                errors.Add(
+                    FormattableString.Invariant(
+                        $"Retries must be >= 0 for function '{job.Function}' but was {job.Retries}."
+                    )
+                );
+            }
+
+            foreach (var child in job.Children.Reverse())
+            {
+                pending.Push(child);
+            }
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
     private DateTime _ConvertUnspecifiedToUtc(DateTime dateTime)
     {
         try
@@ -702,13 +731,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     continue;
                 }
 
-                if (entity.Retries < 0)
+                try
                 {
-                    (errors ??= []).Add(
-                        FormattableString.Invariant(
-                            $"Retries must be >= 0 for function '{entity.Function}' but was {entity.Retries}."
-                        )
-                    );
+                    _EnsureValidRetries(entity);
+                }
+                catch (JobValidatorException ex)
+                {
+                    (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
                     continue;
                 }
 
@@ -826,6 +855,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
             _StampJob(entity, now, assignId: false);
+
+            try
+            {
+                _EnsureValidRetries(entity.Retries, entity.Function);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                continue;
+            }
 
             DateTime? nextOccurrence;
             try
