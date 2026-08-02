@@ -6,6 +6,7 @@ import { useForm } from '@/composables/useCustomForm'
 import { jobsService } from '@/http/services/jobsService'
 import { timeJobService } from '@/http/services/timeJobService'
 import { formatTime } from '@/utilities/dateTimeParser'
+import { formatJsonForDisplay } from '@/utilities/json-format'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { vMaska } from 'maska/vue'
 
@@ -42,21 +43,11 @@ watch(
 
 const setRequestData = async () => {
   await getJobRequestData.requestAsync(props.dialogProps.id, 1).then((res) => {
-    const formattedJson = formatJsonForDisplay(res.result!, false)
+    const formattedJson = formatJsonForDisplay(res.result)
 
     if (formattedJson == undefined) setFieldValue('requestData', '')
     else setFieldValue('requestData', formattedJson)
   })
-}
-
-const formatJsonForDisplay = (json: string, isHtml: boolean = false) => {
-  if (json == null) return undefined
-  try {
-    const formatted = JSON.stringify(JSON.parse(json), null, 2)
-    return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch {
-    return undefined
-  }
 }
 
 const parseUtcToDisplayDateTime = (utcString: string) => {
@@ -203,7 +194,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
       else
         setFieldValue(
           'requestData',
-          formatJsonForDisplay(getJobRequestData.response.value?.result ?? '', false)!,
+          formatJsonForDisplay(getJobRequestData.response.value?.result) ?? '',
         )
 
       update(value)
@@ -415,7 +406,7 @@ defineExpose({
                 </v-card-item>
 
                 <v-card-text>
-                  <div v-html="formatJsonForDisplay(getFieldValue('exampleData'), true)"></div>
+                  <div class="json-preview">{{ formatJsonForDisplay(getFieldValue('exampleData')) }}</div>
                 </v-card-text>
               </v-card>
             </v-container>
@@ -536,9 +527,7 @@ defineExpose({
                       v-bind="bindField('requestData')"
                       label="Request Data"
                       variant="outlined"
-                      :disabled="
-                        formatJsonForDisplay(getFieldValue('exampleData'), false) == undefined
-                      "
+                      :disabled="formatJsonForDisplay(getFieldValue('exampleData')) == undefined"
                     />
                   </v-col>
                   <v-col cols="6" v-if="!getFieldValue('ignoreDateTime')">
@@ -593,6 +582,12 @@ defineExpose({
   </div>
 </template>
 <style scoped>
+/* Keeps the JSON indentation without rendering it as HTML. */
+.json-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* For Chrome, Safari, Edge, Opera */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {

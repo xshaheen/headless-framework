@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { jobsService } from '@/http/services/jobsService'
+import { formatJsonForDisplay } from '@/utilities/json-format'
 import { computed, toRef, watch, type PropType } from 'vue'
 
 const getJobRequestData = jobsService.getRequestData()
@@ -16,14 +17,9 @@ const props = defineProps({
   },
 })
 
-const formattedJson = computed(() => {
-  try {
-    const formatted = JSON.stringify(JSON.parse(getJobRequestData.response.value?.result ?? ''), null, 2);
-    return formatted.replace(/\n/g, "<br>").replace(/ /g, "&nbsp;");
-  } catch {
-    return "Invalid JSON";
-  }
-});
+const formattedJson = computed(
+  () => formatJsonForDisplay(getJobRequestData.response.value?.result) ?? 'Invalid JSON',
+);
 
 watch(
   () => props.dialogProps.id,
@@ -52,7 +48,7 @@ const emit = defineEmits<{
         <v-card-title>Request Data</v-card-title>
         <v-card-text>
           <v-sheet v-if="getJobRequestData.response.value?.result" class="json-container">
-            <pre v-html="formattedJson"></pre>
+            <pre>{{ formattedJson }}</pre>
           </v-sheet>
           <v-sheet v-else class="no-data">No request data is defined</v-sheet>
         </v-card-text>

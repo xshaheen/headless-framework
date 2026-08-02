@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { parseJsonSafe } from '@/utilities/jsonBig'
+import { escapeHtml } from '@/utilities/html-escape'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export type MessageLane = 'Bus' | 'Queue'
@@ -129,7 +130,7 @@ const isException = computed(() => contentKind.value?.type === 'structured')
 const isPlain = computed(() => contentKind.value?.type === 'plain')
 
 function highlightJson(jsonStr: string): string {
-  const html = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const html = escapeHtml(jsonStr)
   return html.replace(
     /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
     (match) => {
@@ -149,11 +150,12 @@ function highlightJson(jsonStr: string): string {
 const formattedJsonHtml = computed(() => {
   if (!props.message?.content) return ''
   const { parsed, isJson } = parseJsonSafe(props.message.content)
-  if (!isJson) return props.message.content
+  // Bound with v-html, so the raw-content fallbacks must be escaped too.
+  if (!isJson) return escapeHtml(props.message.content)
   try {
     return highlightJson(JSON.stringify(parsed, null, 2))
   } catch {
-    return props.message.content
+    return escapeHtml(props.message.content)
   }
 })
 
