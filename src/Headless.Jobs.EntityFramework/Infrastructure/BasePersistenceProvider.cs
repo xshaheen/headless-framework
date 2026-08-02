@@ -1324,6 +1324,79 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    public async Task<CronDispatchCandidates?> GetStaleFingerprintDefinitionsAsync(
+        IReadOnlyCollection<string> currentFingerprints,
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var known = currentFingerprints.ToArray();
+
+        // Selects on STALENESS, never on due-ness — a rule change that moves an occurrence earlier hides behind the
+        // stale later projection, so the definitions that most need rebasing are exactly the ones a due-ness query
+        // would skip. Backed by IX_CronJobs_EvaluationFingerprint. A null fingerprint is a definition positioned
+        // before fingerprinting existed and is swept in for the same treatment.
+        var rows = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused)
+            .Where(x => x.EvaluationFingerprint == null || !known.Contains(x.EvaluationFingerprint))
+            .OrderBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new
+            {
+                x.Id,
+                x.Function,
+                x.Expression,
+                x.TimeZoneId,
+                x.ScheduleRevision,
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.Retries,
+                x.RetryIntervals,
+                x.OnNodeDeath,
+                x.MissedRunGraceSeconds,
+                x.OnMissedRun,
+                x.EvaluationFingerprint,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Length == 0)
+        {
+            return null;
+        }
+
+        return new CronDispatchCandidates
+        {
+            StoreUtcNow = rows[0].StoreUtcNow,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    FunctionName = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                    MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                    OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
+                }),
+            ],
+        };
+    }
+
     public async Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
         CronRecoveryRequest request,
         CancellationToken cancellationToken = default
@@ -1531,6 +1604,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 x.OnNodeDeath,
                 x.MissedRunGraceSeconds,
                 x.OnMissedRun,
+                x.EvaluationFingerprint,
                 StoreUtcNow = DateTime.UtcNow,
             })
             .ToArrayAsync(cancellationToken)
@@ -1560,6 +1634,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     OnNodeDeath = x.OnNodeDeath,
                     MissedRunGraceSeconds = x.MissedRunGraceSeconds,
                     OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
                 }),
             ],
         };
@@ -1602,13 +1677,17 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // `advance` would put a property access on the record inside the tree for EF to translate.
         var reconciledThroughUtc = advance.ReconciledThroughUtc;
         var nextDueUtc = advance.NextDueUtc;
+        var fingerprint = advance.EvaluationFingerprint;
 
         var affected = await fenced
             .ExecuteUpdateAsync(
                 setter =>
                     setter
                         .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc)
+                        // Null leaves the persisted value alone, so an ordinary dispatch advance does not have to know
+                        // or restate the fingerprint just to move the watermark.
+                        .SetProperty(x => x.EvaluationFingerprint, x => fingerprint ?? x.EvaluationFingerprint),
                 cancellationToken
             )
             .ConfigureAwait(false);

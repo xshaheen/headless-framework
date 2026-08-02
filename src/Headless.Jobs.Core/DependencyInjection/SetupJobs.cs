@@ -197,6 +197,8 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
+            // KTD7: its own service, because it selects on staleness — the opposite criterion from dispatch.
+            services.AddHostedService<JobsFingerprintSweepBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<JobsExecutionCancellationRegistry>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();

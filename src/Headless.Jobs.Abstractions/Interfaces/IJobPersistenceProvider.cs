@@ -466,6 +466,32 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
+    /// Reads definitions whose persisted evaluation fingerprint differs from <paramref name="currentFingerprints"/>,
+    /// independently of whether their projection is due.
+    /// </summary>
+    /// <param name="currentFingerprints">
+    /// Every fingerprint the running evaluator currently produces, across the timezones it knows about. A definition
+    /// whose fingerprint is absent from this set — or null — is a <i>candidate</i>; the caller confirms staleness by
+    /// recomputing for that definition's own timezone, so an unknown timezone yields a wasted read rather than a
+    /// missed rebase.
+    /// </param>
+    /// <param name="limit">Maximum definitions to return in one sweep pass.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>Candidate definitions with the store instant they were read against; <see langword="null"/> when none.</returns>
+    /// <remarks>
+    /// Selection is deliberately the OPPOSITE criterion from dispatch. A rule change that moves an occurrence
+    /// <i>earlier</i> is hidden behind the stale later projection, so a sweep keyed on due-ness would never see the
+    /// definitions that most need rebasing — which is why this is its own read and its own hosted service rather than
+    /// a branch inside the scheduler loop.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronDispatchCandidates?> GetStaleFingerprintDefinitionsAsync(
+        IReadOnlyCollection<string> currentFingerprints,
+        int limit,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Recovers the time jobs held by a node that coordination has declared dead, applying each row's
     /// <c>OnNodeDeath</c> policy: <c>Retry</c> → released to <c>Idle</c>, <c>MarkFailed</c> → <c>Failed</c>,
     /// <c>Skip</c> → <c>Skipped</c>.

@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
@@ -29,6 +30,17 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     // R1/KTD1: start-tick of the last stranded-child sweep. long.MinValue means "never run", so the first poll after
     // startup always sweeps and a host that starts with an already-stranded child does not wait out an interval.
     private long _lastStrandedSweepTicks = long.MinValue;
+
+    // Resolved from the container rather than taken as a constructor parameter: the recovery and rebase paths are the
+    // only consumers, and threading a new required dependency through every construction site (including tests that
+    // legitimately do not care about telemetry) would be churn for one optional signal. Null in hosts that register no
+    // instrumentation, which is a supported configuration.
+    private IJobsInstrumentation? _instrumentation;
+
+    private IJobsInstrumentation? _ResolveInstrumentation()
+    {
+        return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
+    }
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
@@ -551,6 +563,9 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     ReconciledThroughUtc = storeUtcNow,
                     NextDueUtc = firstOccurrence ?? DateTime.MaxValue,
+                    // Stamped with the position it describes, so the sweep can tell a definition positioned under
+                    // current rules from one carrying no record of how it was positioned at all.
+                    EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                 },
                 cancellationToken
             )
@@ -607,17 +622,17 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return null;
         }
 
-        logger.LogCronRecoveryApplied(
-            candidate.CronJobId,
-            candidate.FunctionName,
-            candidate.OnMissedRun.ToString(),
-            pending.PendingCount,
-            pending.CountSaturated,
-            earliestMissedUtc,
-            pending.LatestPendingUtc ?? earliestMissedUtc,
-            storeUtcNow,
-            recovery.SkippedOccurrenceCount
-        );
+        _ResolveInstrumentation()
+            ?.LogCronRecoveryApplied(
+                candidate.CronJobId,
+                candidate.FunctionName,
+                candidate.OnMissedRun,
+                pending.PendingCount,
+                pending.CountSaturated,
+                earliestMissedUtc,
+                pending.LatestPendingUtc ?? earliestMissedUtc,
+                recovery.SkippedOccurrenceCount
+            );
 
         if (recovery.CoalescedRun is null)
         {
@@ -1133,6 +1148,104 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return [.. results];
     }
 
+    public async Task<int> RebaseStaleFingerprintsAsync(int limit, CancellationToken cancellationToken = default)
+    {
+        // The set of fingerprints this evaluator currently produces, across every timezone the registry declares plus
+        // the scheduler-wide fallback. A definition outside this set is a CANDIDATE, not proven stale — a runtime
+        // definition may name a timezone no declared function uses, so each candidate is confirmed below by
+        // recomputing for its own zone. Erring this way costs a wasted read; the opposite would miss a rebase.
+        var knownFingerprints = new HashSet<string>(StringComparer.Ordinal)
+        {
+            cronScheduleCache.ComputeEvaluationFingerprint(timeZoneId: null),
+        };
+
+        var candidates = await persistenceProvider
+            .GetStaleFingerprintDefinitionsAsync(knownFingerprints, limit, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (candidates is null)
+        {
+            return 0;
+        }
+
+        var rebased = 0;
+
+        foreach (var candidate in candidates.Candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var current = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId);
+
+            if (string.Equals(candidate.EvaluationFingerprint, current, StringComparison.Ordinal))
+            {
+                // A candidate only because its zone was outside the known set — its rules are in fact current.
+                continue;
+            }
+
+            if (await _RebaseAsync(candidate, current, candidates.StoreUtcNow, cancellationToken).ConfigureAwait(false))
+            {
+                rebased++;
+            }
+        }
+
+        return rebased;
+    }
+
+    /// <summary>
+    /// Re-derives one definition's projection under current rules and refreshes its fingerprint, in a single
+    /// compare-and-advance so a pause, resume, or edit racing the sweep wins instead of being clobbered.
+    /// </summary>
+    private async Task<bool> _RebaseAsync(
+        CronDispatchCandidate candidate,
+        string currentFingerprint,
+        DateTime storeUtcNow,
+        CancellationToken cancellationToken
+    )
+    {
+        // Derived from the watermark so no interval is skipped, then anchored at or after the store instant so a tick
+        // the changed rules moved into the past is NOT replayed as a misfire. That anchoring is the difference between
+        // surfacing a rule change and manufacturing a backlog out of one.
+        var anchor = candidate.ReconciledThroughUtc > storeUtcNow ? candidate.ReconciledThroughUtc : storeUtcNow;
+        var rebased = cronScheduleCache.GetNextOccurrenceOrDefault(candidate.Expression, anchor, candidate.TimeZoneId);
+
+        var advanced = await persistenceProvider
+            .AdvanceCronScheduleAsync(
+                new CronScheduleAdvance
+                {
+                    CronJobId = candidate.CronJobId,
+                    ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = candidate.ScheduleRevision,
+                    // The watermark does NOT move: nothing was reconciled, only re-interpreted. Moving it would
+                    // silently declare the span between it and now as accounted for.
+                    ReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    NextDueUtc = rebased ?? DateTime.MaxValue,
+                    EvaluationFingerprint = currentFingerprint,
+                    // Never gated on due-ness: a rule change that moves an occurrence earlier is invisible behind the
+                    // stale later projection, which is exactly the case this sweep exists for.
+                    RequireProjectionDue = false,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (advanced is null)
+        {
+            // A pause, resume, or edit committed first. Its transition is newer and already carries a correct
+            // position, so losing here is the right outcome — the next sweep re-reads whatever it left.
+            return false;
+        }
+
+        _ResolveInstrumentation()
+            ?.LogCronFingerprintRebased(
+                candidate.CronJobId,
+                candidate.FunctionName,
+                candidate.NextDueUtc,
+                advanced.NextDueUtc
+            );
+
+        return true;
+    }
+
     public async Task MigrateDefinedCronJobs(
         CronSeedDefinition[] cronExpressions,
         CancellationToken cancellationToken = default
@@ -1257,30 +1370,6 @@ internal static partial class InternalJobsManagerLog
             + "fallback sweep's set-based reconcile instead. Scheduling continues."
     )]
     public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
-
-    // MissedCount is a lower bound whenever CountSaturated is true — the walk stops at the evaluation ceiling rather
-    // than enumerating an unbounded backlog. The two are logged together so an operator can tell "exactly 3 missed"
-    // from "at least 1000 missed"; reporting a saturated count as exact is the misreading this pairing prevents.
-    [LoggerMessage(
-        EventId = 3220,
-        Level = LogLevel.Warning,
-        Message = "Cron definition {CronJobId} ({Function}) fell behind and was recovered with policy {Policy}: "
-            + "{MissedCount} missed occurrence(s) (lower bound: {CountSaturated}) spanning {EarliestMissedUtc:O} to "
-            + "{LatestMissedUtc:O}; watermark advanced to {RecoveredThroughUtc:O} and {SkippedCount} pending "
-            + "occurrence(s) were skipped."
-    )]
-    public static partial void LogCronRecoveryApplied(
-        this ILogger logger,
-        Guid cronJobId,
-        string function,
-        string policy,
-        int missedCount,
-        bool countSaturated,
-        DateTime earliestMissedUtc,
-        DateTime latestMissedUtc,
-        DateTime recoveredThroughUtc,
-        int skippedCount
-    );
 
     [LoggerMessage(
         EventId = 3215,

@@ -34,6 +34,17 @@ public sealed record CronScheduleAdvance
     public required DateTime NextDueUtc { get; init; }
 
     /// <summary>
+    /// Fingerprint of the rules the new projection was derived under, or <see langword="null"/> to leave the persisted
+    /// value untouched.
+    /// </summary>
+    /// <remarks>
+    /// Written with the position rather than separately, so the two can never disagree: a projection is only ever
+    /// meaningful alongside the rules that produced it, and a fingerprint refreshed independently would claim a
+    /// position was current under rules it was never derived under.
+    /// </remarks>
+    public string? EvaluationFingerprint { get; init; }
+
+    /// <summary>
     /// Whether the advance additionally requires the observed projection to be due against the <i>store's</i> clock.
     /// </summary>
     /// <remarks>

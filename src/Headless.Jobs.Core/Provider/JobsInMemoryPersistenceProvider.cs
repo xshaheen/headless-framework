@@ -1422,6 +1422,50 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(job is null ? null : _CloneCronJob(job));
     }
 
+    public Task<CronDispatchCandidates?> GetStaleFingerprintDefinitionsAsync(
+        IReadOnlyCollection<string> currentFingerprints,
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var known = currentFingerprints.ToHashSet(StringComparer.Ordinal);
+
+        var candidates = _cronJobs
+            .Values.Where(x =>
+                !x.IsPaused && (x.EvaluationFingerprint is null || !known.Contains(x.EvaluationFingerprint))
+            )
+            .OrderBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new CronDispatchCandidate
+            {
+                CronJobId = x.Id,
+                FunctionName = x.Function,
+                Expression = x.Expression,
+                TimeZoneId = x.TimeZoneId,
+                ScheduleRevision = x.ScheduleRevision,
+                ReconciledThroughUtc = x.ReconciledThroughUtc,
+                NextDueUtc = x.NextDueUtc,
+                Retries = x.Retries,
+                RetryIntervals = x.RetryIntervals,
+                OnNodeDeath = x.OnNodeDeath,
+                MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                OnMissedRun = x.OnMissedRun,
+                EvaluationFingerprint = x.EvaluationFingerprint,
+            })
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            return Task.FromResult<CronDispatchCandidates?>(null);
+        }
+
+        return Task.FromResult<CronDispatchCandidates?>(
+            new CronDispatchCandidates { Candidates = candidates, StoreUtcNow = _timeProvider.GetUtcNow().UtcDateTime }
+        );
+    }
+
     public Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
         CronRecoveryRequest request,
         CancellationToken cancellationToken = default
@@ -1568,6 +1612,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 OnNodeDeath = x.OnNodeDeath,
                 MissedRunGraceSeconds = x.MissedRunGraceSeconds,
                 OnMissedRun = x.OnMissedRun,
+                EvaluationFingerprint = x.EvaluationFingerprint,
             })
             .ToArray();
 
@@ -1617,6 +1662,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
+            updated.EvaluationFingerprint = advance.EvaluationFingerprint ?? updated.EvaluationFingerprint;
             _cronJobs[advance.CronJobId] = updated;
 
             // Read back off the stored instance rather than echoing the request, so this provider's result is

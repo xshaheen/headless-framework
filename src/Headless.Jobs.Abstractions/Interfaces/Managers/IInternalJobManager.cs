@@ -47,6 +47,12 @@ internal interface IInternalJobManager
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
     Task MigrateDefinedCronJobs(CronSeedDefinition[] cronExpressions, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rebases every cron definition whose persisted evaluation fingerprint no longer matches the running evaluator,
+    /// and reports how many were rebased.
+    /// </summary>
+    Task<int> RebaseStaleFingerprintsAsync(int limit, CancellationToken cancellationToken = default);
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
 

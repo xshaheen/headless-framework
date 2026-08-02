@@ -318,6 +318,24 @@ public sealed class SchedulerOptionsBuilder
     public MissedRunPolicy DefaultMissedRunPolicy { get; set; } = MissedRunPolicy.Coalesce;
 
     /// <summary>
+    /// How often the evaluation-fingerprint sweep looks for definitions whose schedule-interpretation rules changed.
+    /// Defaults to one hour.
+    /// </summary>
+    /// <remarks>
+    /// Rules change on the timescale of an OS package update, not a scheduler tick, so this is deliberately long. The
+    /// sweep also runs once at startup, which is when a fingerprint is most likely to have gone stale.
+    /// </remarks>
+    public TimeSpan FingerprintSweepInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>Maximum definitions the fingerprint sweep rebases per pass. Defaults to 100.</summary>
+    /// <remarks>
+    /// A tzdata update invalidates every definition in the affected zone at once, so the first sweep after one can
+    /// have a large working set. Bounding each pass keeps that from becoming one long transaction-heavy burst;
+    /// the remainder is picked up on the next pass.
+    /// </remarks>
+    public int FingerprintSweepBatchSize { get; set; } = 100;
+
+    /// <summary>
     /// Misfire grace, in seconds, seeded onto cron definitions created without one on their <c>[JobFunction]</c>
     /// attribute. Defaults to <see cref="JobsRecoveryDefaults.MissedRunGraceSeconds"/>.
     /// </summary>

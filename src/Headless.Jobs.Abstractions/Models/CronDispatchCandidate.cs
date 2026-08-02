@@ -52,6 +52,13 @@ public sealed record CronDispatchCandidate
 
     /// <summary>The definition's persisted recovery policy, applied when its watermark falls behind.</summary>
     public required MissedRunPolicy OnMissedRun { get; init; }
+
+    /// <summary>
+    /// Fingerprint of the rules this definition's projection was derived under, or <see langword="null"/> when it was
+    /// positioned before fingerprinting existed. Compared for equality only; a mismatch means the same expression and
+    /// timezone would now resolve to a different instant.
+    /// </summary>
+    public string? EvaluationFingerprint { get; init; }
 }
 
 /// <summary>
