@@ -37,6 +37,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `FencingToken` is a per-resource monotonic grant counter for stale-write rejection. It is distinct from `LeaseId`, which remains the opaque ownership token used for renew/release equality. It is `null` when the backend or lock type does not support fencing.
 - `DistributedLockInfo.LeaseId` may be `null` when the backend can prove a resource is locked but cannot expose the current holder identity on the inspection path.
 - `LostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `CanObserveLoss` to disambiguate). It is an observability signal. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
+- `LostToken` reports **loss only**, never ordinary teardown. An explicit `ReleaseAsync()` or dispose stops the monitor (or, for connection-scoped providers, drops the connection watch) without cancelling the token, so callbacks registered on it do not fire on the success path of an `await using`. Every provider owes this; it is pinned by the cross-provider conformance suite.
 - `ThrowIfLost()` is a self-fencing convenience for hot paths: it throws `LockHandleLostException` when `LostToken` has fired.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 

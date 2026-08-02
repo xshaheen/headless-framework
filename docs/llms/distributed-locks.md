@@ -364,14 +364,14 @@ Two further consequences of the semaphore's lease shape:
 
 ## Choosing a Provider
 
-Use InMemory when all contenders are inside one process. Use Redis when you operate Redis and need efficiency locks (mutex, reader-writer, or semaphore) with atomic Lua scripts. Use Postgres when the protected state already lives in PostgreSQL or when session/transaction-coupled advisory locks are the right primitive. Use SQL Server when the protected state already lives in SQL Server or when native `sp_getapplock` server-side blocking is the right primitive. Do not use distributed locks for correctness locks on protected state mutations without stale-write rejection through `FencingToken` or transaction-coupled locking.
+Use InMemory when all contenders are inside one process. Use Redis when you operate Redis and need efficiency locks (mutex, reader-writer, or semaphore) with atomic Lua scripts. Use Postgres when the protected state already lives in PostgreSQL or when session/transaction-coupled advisory locks are the right primitive. Use SQL Server when the protected state already lives in SQL Server or when transaction-coupled `sp_getapplock` is the right primitive. Do not use distributed locks for correctness locks on protected state mutations without stale-write rejection through `FencingToken` or transaction-coupled locking.
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
 | `Headless.DistributedLocks.InMemory` | Tests, local development, or single-instance apps need the real lock abstractions without Redis. | More than one process, node, container, or app instance can contend for the same resource. | No infrastructure; coordination and fencing state disappear with the process. |
 | `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores (or semaphore composites), PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim), and a composite over N resources pins N connections for the hold. Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
 | `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; Redis fencing is best-effort unless the fence key is retained. |
-| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, native server-side blocking, durable sequence fencing, or transaction-coupled locks. | You need semaphores (or semaphore composites), upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, a composite over N resources pins N connections for the hold, and waiters block inside SQL Server. |
+| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, durable sequence fencing, or transaction-coupled locks (which do block server-side). | You need semaphores (or semaphore composites), upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, a composite over N resources pins N connections for the hold, and a contended session-scoped acquire polls at ~100ms rather than blocking inside SQL Server. |
 
 ---
 
@@ -408,6 +408,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
 - `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`, including for composite leases.
 - `LostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`; `ThrowIfLost()` implements the common fail-stop check.
+- `LostToken` reports **loss only**, never ordinary teardown. An explicit `ReleaseAsync()` or dispose stops the monitor (or, for connection-scoped providers, drops the connection watch) without cancelling the token, so callbacks registered on it do not fire on the success path of an `await using`. Every provider owes this; it is pinned by the cross-provider conformance suite.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
 ### Installation
@@ -880,7 +881,7 @@ SQL Server `sp_getapplock` provider for mutex and reader-writer distributed lock
 
 ### Problem Solved
 
-Coordinates work across nodes using SQL Server application locks, with native server-side blocking and transaction-coupled locking available for data mutations already protected by a SQL Server transaction.
+Coordinates work across nodes using SQL Server application locks, with transaction-coupled locking available for data mutations already protected by a SQL Server transaction.
 
 ### Key Features
 
@@ -894,9 +895,9 @@ Coordinates work across nodes using SQL Server application locks, with native se
 ### Design Notes
 
 - Standard provider locks are session-scoped: the holding `SqlConnection` must stay open until release. Do not return that connection to arbitrary pooling code while the lock is held.
-- SQL Server blocks waiters inside `sp_getapplock @LockTimeout`; there is no push-notification channel and no provider polling loop for contended acquires. The provider still receives a no-op release signal to satisfy its constructor contract; under server-side blocking that signal is never invoked.
+- The session-scoped provider does **not** block inside SQL Server: every acquire attempt issues `sp_getapplock` with a zero `@LockTimeout` (one non-blocking try), so a contended acquire is paced by the provider's own retry loop at the jittered ~100ms polling cadence until the acquire timeout elapses. The loop is driven by the in-process polling release signal, which wakes a same-process waiter immediately when the holder releases; SQL Server offers no cheap cross-process release channel, so waiters in other processes are served by the polling fallback. (Server-side blocking applies only to the transaction-coupled API below, which passes a real acquire timeout to `@LockTimeout`.)
 - Session-scoped locks have no TTL. `RenewAsync(...)` returns `true` and `GetExpirationAsync(...)` returns `null`. Consistent with the connection-scoped disposal contract (no GC finalizer reclaim), a leaked, undisposed handle strands its connection, applock, and liveness-probe timer until the provider is disposed — always `await using` the handle.
-- Connection-death detection backs the handle's lost token with two signals: the connection's `StateChange` event (clean disconnects) and an active bounded-timeout liveness probe (a periodic `SELECT 1`) that catches a silent half-open connection where `StateChange` alone never fires. This mirrors the intent of the multiplexing-engine providers' `ConnectionMonitor`, which this raw-`SqlConnection` storage cannot reuse directly.
+- Connection-death detection backs the handle's lost token with two signals: the connection's `StateChange` event (clean disconnects) and an active bounded-timeout liveness probe (a periodic `SELECT 1`) that catches a silent half-open connection where `StateChange` alone never fires. This mirrors the intent of the multiplexing-engine providers' `ConnectionMonitor`, which this raw-`SqlConnection` storage cannot reuse directly. An explicit release detaches both signals *without* cancelling the lost token; only genuine connection death — or provider teardown while the lock is still held — cancels it.
 - `IsLockedAsync(...)`, `IsReadLockedAsync(...)`, `IsWriteLockedAsync(...)`, and reader counts inspect SQL Server lock state for a specific resource. `GetLockIdAsync(...)`, `GetLockInfoAsync(...)`, `ListActiveLocksAsync(...)`, and `GetActiveLocksCountAsync(...)` report only handles owned by the current provider instance because SQL Server application locks do not expose Headless lock ids for remote sessions.
 - Reader counts are presence-only for remote holders: `APPLOCK_TEST` reports the current lock mode but no holder count, so `GetReaderCountAsync(...)`/`GetLocksCountAsync(...)` count local holders exactly but collapse any number of remote shared readers to `1`. Treat the remote value as held / not-held. (The Postgres provider counts `pg_locks` rows and reports exact cross-process counts — a deliberate per-backend difference.)
 - Transaction-coupled locking is the safest primitive for SQL Server data mutations: commit or rollback releases the lock, and no explicit release is issued. The transaction API takes a `string` resource, whereas the Postgres advisory-lock API takes a typed `PostgreSqlAdvisoryLockKey`; the asymmetry is primitive-driven (`sp_getapplock` is string-keyed, `pg_advisory_xact_lock` keys on a `bigint`). Both encode `KeyPrefix + resource` identically to the session provider, so the two APIs mutually exclude on the same logical resource.
@@ -965,5 +966,5 @@ options.EnableFencing = true;
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
+- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

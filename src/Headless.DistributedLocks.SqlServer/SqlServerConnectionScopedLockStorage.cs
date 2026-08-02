@@ -15,10 +15,11 @@ namespace Headless.DistributedLocks.SqlServer;
 /// <remarks>
 /// <para>
 /// This storage does <em>not</em> block server-side (<see cref="BlocksServerSide"/> is
-/// <see langword="false"/>). The provider's retry/wait loop calls <see cref="TryAcquireAsync"/> with
-/// <see cref="TimeSpan.Zero"/> and relies on the <see cref="IReleaseSignal"/> (a
-/// <see cref="NullReleaseSignal"/> for SQL Server, since SQL Server blocks natively, making the loop
-/// unreachable in practice).
+/// <see langword="false"/>): every <see cref="TryAcquireAsync"/> call passes <see cref="TimeSpan.Zero"/>
+/// as <c>@LockTimeout</c>, so it is a single non-blocking attempt. Contended acquires are therefore
+/// paced by the provider's own retry/wait loop and its <see cref="IReleaseSignal"/> — the in-process
+/// polling signal — not by <c>sp_getapplock</c> blocking. (The separate transaction-coupled API on
+/// <see cref="SqlServerDistributedLock"/> does pass a real acquire timeout and blocks server-side.)
 /// </para>
 /// <para>
 /// Connection-loss monitoring is implemented via two complementary signals: the connection's
@@ -48,8 +49,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// <inheritdoc/>
     /// <remarks>
     /// Always <see langword="false"/> for SQL Server. Lock contention is resolved by the caller's retry
-    /// loop (via <see cref="NullReleaseSignal"/>), not by server-side blocking inside
-    /// <see cref="TryAcquireAsync"/>.
+    /// loop (paced by the registered <see cref="IReleaseSignal"/>), not by server-side blocking inside
+    /// <see cref="TryAcquireAsync"/>, which always issues a zero-timeout single attempt.
     /// </remarks>
     public bool BlocksServerSide => false;
 
@@ -192,6 +193,9 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         }
         finally
         {
+            // Clean release: the caller asked for it, so the lock was not lost and DisposeAsync leaves
+            // ConnectionLostToken uncancelled. Cancelling here would fire every consumer's LostToken
+            // registration on the success path of an ordinary `await using`.
             await held.DisposeAsync().ConfigureAwait(false);
         }
     }
@@ -297,7 +301,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// <summary>
     /// Releases all held locks by disposing each <see cref="HeldLock"/> and its associated
     /// <see cref="SqlConnection"/>. Sets <c>_disposed</c> before iterating so concurrent acquires detect
-    /// teardown and drop any lock they just obtained.
+    /// teardown and drop any lock they just obtained. Any lock still held at this point is dropped without
+    /// its holder asking, so each one's <c>LostToken</c> is cancelled.
     /// </summary>
     /// <exception cref="AggregateException">Thrown when one or more <see cref="HeldLock"/> disposals fail; all locks are attempted regardless.</exception>
     public async ValueTask DisposeAsync()
@@ -312,7 +317,9 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         {
             try
             {
-                await held.DisposeAsync().ConfigureAwait(false);
+                // Still-registered here means still held: a released lock has already been removed from
+                // the registry by ReleaseAsync. Signal loss rather than silently pulling the applock.
+                await held.DisposeAsLostAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -551,7 +558,31 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             _connectionGate.Release();
         }
 
-        public async ValueTask DisposeAsync()
+        /// <summary>
+        /// Tears the held lock down without claiming loss: closes the connection and disposes the probe
+        /// timer, leaving <see cref="ConnectionLostToken"/> uncancelled. This is the clean-teardown path
+        /// (explicit release, or an acquire that never handed the handle to a caller). A clean release is
+        /// not lease loss, so <c>LostToken</c> registrations must not fire — mirroring the core
+        /// <c>DistributedLockHandleBase</c>, which stops its monitor on release, and the Postgres
+        /// connection-scoped path, which disposes its registration without cancelling it.
+        /// </summary>
+        public ValueTask DisposeAsync()
+        {
+            return _DisposeAsync(signalLost: false);
+        }
+
+        /// <summary>
+        /// Tears the held lock down as a <em>loss</em>: cancels <see cref="ConnectionLostToken"/> before
+        /// closing the connection. Used when the provider itself is being torn down while this lock is
+        /// still held — the applock goes away without its holder asking, which is exactly what
+        /// <c>LostToken</c> exists to report.
+        /// </summary>
+        public ValueTask DisposeAsLostAsync()
+        {
+            return _DisposeAsync(signalLost: true);
+        }
+
+        private async ValueTask _DisposeAsync(bool signalLost)
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {
@@ -563,8 +594,15 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 await _probeTimer.DisposeAsync().ConfigureAwait(false);
             }
 
+            // Unsubscribe before closing the connection so the imminent StateChange to Closed is not
+            // mistaken for connection death.
             Connection.StateChange -= OnStateChanged;
-            await _lostTokenSource.CancelAsync().ConfigureAwait(false);
+
+            if (signalLost)
+            {
+                await _lostTokenSource.CancelAsync().ConfigureAwait(false);
+            }
+
             _lostTokenSource.Dispose();
             _connectionGate.Dispose();
             await Connection.DisposeAsync().ConfigureAwait(false);

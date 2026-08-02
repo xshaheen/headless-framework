@@ -2,7 +2,7 @@
 
 ## Problem Solved
 
-Coordinates work across nodes using SQL Server application locks, with native server-side blocking and transaction-coupled locking available for data mutations already protected by a SQL Server transaction.
+Coordinates work across nodes using SQL Server application locks, with transaction-coupled locking available for data mutations already protected by a SQL Server transaction.
 
 ## Key Features
 
@@ -16,9 +16,9 @@ Coordinates work across nodes using SQL Server application locks, with native se
 ## Design Notes
 
 - Standard provider locks are session-scoped: the holding `SqlConnection` must stay open until release. Do not return that connection to arbitrary pooling code while the lock is held.
-- SQL Server blocks waiters inside `sp_getapplock @LockTimeout`; there is no push-notification channel and no provider polling loop for contended acquires. The provider still receives a no-op release signal to satisfy its constructor contract; under server-side blocking that signal's `WaitAsync`/`PublishAsync` are never invoked.
+- The session-scoped provider does **not** block inside SQL Server: every acquire attempt issues `sp_getapplock` with a zero `@LockTimeout` (one non-blocking try), so a contended acquire is paced by the provider's own retry loop at the jittered ~100ms polling cadence until the acquire timeout elapses. The loop is driven by the in-process polling release signal, which wakes a same-process waiter immediately when the holder releases; SQL Server offers no cheap cross-process release channel, so waiters in other processes are served by the polling fallback. (Server-side blocking applies only to the transaction-coupled API below, which passes a real acquire timeout to `@LockTimeout`.)
 - Session-scoped locks have no TTL. `RenewAsync(...)` returns `true` and `GetExpirationAsync(...)` returns `null`. The handle owns a live `SqlConnection`, so disposing it (directly or via `await using`) is the contract. Consistent with the connection-scoped disposal contract there is no GC finalizer reclaim, so a leaked, undisposed handle strands its connection (and the held applock and liveness-probe timer) until the provider is disposed.
-- Connection-death detection backs the handle's lost token with two signals: the connection's `StateChange` event (clean disconnects) and an active bounded-timeout liveness probe (`SELECT 1` on a periodic cadence) that catches a silent half-open connection — a network drop with no RST where `StateChange` alone never fires until the next real query. This mirrors the intent of the multiplexing-engine providers' `ConnectionMonitor`, which this raw-`SqlConnection` storage cannot reuse directly.
+- Connection-death detection backs the handle's lost token with two signals: the connection's `StateChange` event (clean disconnects) and an active bounded-timeout liveness probe (`SELECT 1` on a periodic cadence) that catches a silent half-open connection — a network drop with no RST where `StateChange` alone never fires until the next real query. This mirrors the intent of the multiplexing-engine providers' `ConnectionMonitor`, which this raw-`SqlConnection` storage cannot reuse directly. An explicit release detaches both signals *without* cancelling the lost token; only genuine connection death — or provider teardown while the lock is still held — cancels it.
 - `IsLockedAsync(...)`, `IsReadLockedAsync(...)`, `IsWriteLockedAsync(...)`, and reader counts inspect SQL Server lock state for a specific resource. `GetLockIdAsync(...)`, `GetLockInfoAsync(...)`, `ListActiveLocksAsync(...)`, and `GetActiveLocksCountAsync(...)` report only handles owned by the current provider instance because SQL Server application locks do not expose Headless lock ids for remote sessions.
 - Reader counts are presence-only for remote holders. `sp_getapplock`/`APPLOCK_TEST` expose the current lock mode but no holder count, so `GetReaderCountAsync(...)`/`GetLocksCountAsync(...)` count local (same-process) holders exactly but collapse any number of remote shared readers to `1`. Treat the remote value as held / not-held, not an exact count. (The Postgres provider counts `pg_locks` rows directly and does report exact cross-process counts — a deliberate per-backend difference.)
 - Transaction-coupled locking is the safest primitive for SQL Server data mutations: commit or rollback releases the lock, and no explicit release is issued.
@@ -88,5 +88,5 @@ options.EnableFencing = true;
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
+- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.
