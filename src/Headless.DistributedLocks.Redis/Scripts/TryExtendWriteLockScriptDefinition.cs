@@ -13,6 +13,10 @@ internal sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition
 
     private TryExtendWriteLockScriptDefinition()
         : base(
+            // An empty @expires means "infinite" (Timeout.InfiniteTimeSpan normalizes to a null TTL,
+            // which writers are allowed to hold). It must PERSIST the key: leaving the previous finite
+            // TTL armed while returning 1 would report a non-expiring lease that still expires, letting
+            // a second writer in while the first is inside its critical section.
             """
             if redis.call('get', @writerKey) ~= @leaseId then
               return 0
@@ -20,6 +24,8 @@ internal sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition
 
             if (@expires ~= nil and @expires ~= '') then
               redis.call('pexpire', @writerKey, @expires)
+            else
+              redis.call('persist', @writerKey)
             end
 
             return 1
