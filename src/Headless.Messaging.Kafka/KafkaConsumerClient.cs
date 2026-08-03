@@ -460,14 +460,38 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     private void _ObserveUndispatched(ConsumeResult<string, byte[]> consumerResult)
     {
-        if (_offsetCommitTracker is null)
-        {
-            return;
-        }
-
         lock (_lock)
         {
-            _offsetCommitTracker.MarkObserved(consumerResult);
+            var consumerClient = _consumerClient;
+
+            if (consumerClient is null || !_OwnsPartition(consumerResult.TopicPartition))
+            {
+                return;
+            }
+
+            List<TopicPartitionOffset> committableOffsets;
+
+            if (_offsetCommitTracker is null)
+            {
+                var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+                if (offset < 0)
+                {
+                    return;
+                }
+
+                var nextOffset = consumerResult.IsPartitionEOF ? offset : offset + 1;
+                committableOffsets = [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextOffset))];
+            }
+            else
+            {
+                committableOffsets = _offsetCommitTracker.MarkObserved(consumerResult);
+            }
+
+            if (committableOffsets.Count > 0)
+            {
+                consumerClient.Commit(committableOffsets);
+            }
         }
     }
 
@@ -686,23 +710,46 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         /// <summary>
         /// Records an offset the poll loop saw but never dispatched — a tombstone, or an end-of-partition
-        /// marker. Those offsets never reach <see cref="MarkCommitted"/>, so the watermark has to learn
-        /// about them here or it stops at the first one.
+        /// marker — and returns the highest commit offset that does not pass an in-flight delivery.
         /// </summary>
-        public void MarkObserved(ConsumeResult<string, byte[]> consumerResult)
+        public List<TopicPartitionOffset> MarkObserved(ConsumeResult<string, byte[]> consumerResult)
         {
             var offset = consumerResult.TopicPartitionOffset.Offset.Value;
 
             if (offset < 0)
             {
-                return;
+                return [];
             }
+
+            var state = _GetOrAddState(consumerResult.TopicPartition);
+            var isInitialObservation = state.NextCommitOffset is null;
+            state.NextCommitOffset ??= offset;
 
             // An end-of-partition result already carries the log-end offset (the next offset that will be
             // produced there), whereas a record carries its own offset.
             var nextOffset = consumerResult.IsPartitionEOF ? offset : offset + 1;
 
-            _Observe(_GetOrAddState(consumerResult.TopicPartition), offset, nextOffset);
+            if (!_Observe(state, offset, nextOffset))
+            {
+                return [];
+            }
+
+            var candidate =
+                state.PendingOffsets.Count > 0
+                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    : state.NextObservedOffset;
+            var nextCommitOffset = state.NextCommitOffset.Value;
+
+            // The first EOF observation is itself a useful commit even though its offset is already the
+            // next offset to read. Subsequent observations at the same frontier need no duplicate commit.
+            if (candidate < nextCommitOffset || (candidate == nextCommitOffset && !isInitialObservation))
+            {
+                return [];
+            }
+
+            state.NextCommitOffset = candidate;
+
+            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(candidate))];
         }
 
         public void Reset(TopicPartition partition)
@@ -802,7 +849,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return state;
         }
 
-        private static void _Observe(PartitionCommitState state, long offset, long nextOffset)
+        private static bool _Observe(PartitionCommitState state, long offset, long nextOffset)
         {
             if (state.IsReplaying)
             {
@@ -810,13 +857,15 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 {
                     // A delivery the poll loop already held when the reject seeked back. The replay will
                     // hand out the whole range again, so it is not proof that the gap below is finished.
-                    return;
+                    return false;
                 }
 
                 state.IsReplaying = false;
             }
 
             state.NextObservedOffset = Math.Max(state.NextObservedOffset, nextOffset);
+
+            return true;
         }
 
         private sealed class PartitionCommitState

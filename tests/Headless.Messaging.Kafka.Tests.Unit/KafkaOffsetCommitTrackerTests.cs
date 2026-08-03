@@ -100,6 +100,36 @@ public sealed class KafkaOffsetCommitTrackerTests : TestBase
     }
 
     [Fact]
+    public void should_commit_trailing_tombstone_when_no_delivery_remains()
+    {
+        // given
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        tracker.MarkCommitted(tracker.Track(_Record(10)));
+
+        // when
+        var committable = tracker.MarkObserved(_Tombstone(11));
+
+        // then
+        _OffsetsOf(committable).Should().Equal([12]);
+    }
+
+    [Fact]
+    public void should_not_commit_trailing_tombstone_past_lower_in_flight_delivery()
+    {
+        // given
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        var inFlight = tracker.Track(_Record(10));
+
+        // when
+        var whileInFlight = tracker.MarkObserved(_Tombstone(11));
+        var afterCompletion = tracker.MarkCommitted(inFlight);
+
+        // then
+        whileInFlight.Should().BeEmpty();
+        _OffsetsOf(afterCompletion).Should().Equal([12]);
+    }
+
+    [Fact]
     public void should_advance_watermark_to_log_end_offset_when_partition_eof_is_observed()
     {
         // given
@@ -111,6 +141,19 @@ public sealed class KafkaOffsetCommitTrackerTests : TestBase
         var committable = tracker.MarkCommitted(delivery);
 
         // then — the EOF result already carries the next offset to read, so it is not incremented
+        _OffsetsOf(committable).Should().Equal([15]);
+    }
+
+    [Fact]
+    public void should_commit_log_end_offset_when_eof_is_the_only_observation()
+    {
+        // given
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+
+        // when
+        var committable = tracker.MarkObserved(_EndOfPartition(15));
+
+        // then
         _OffsetsOf(committable).Should().Equal([15]);
     }
 
@@ -173,6 +216,23 @@ public sealed class KafkaOffsetCommitTrackerTests : TestBase
         // then
         afterStaleCompletion.Should().BeEmpty("the delivery was fetched before the seek");
         _OffsetsOf(afterReplayedCompletion).Should().Equal([51], "51..54 have not been replayed yet");
+    }
+
+    [Fact]
+    public void should_ignore_trailing_observation_fetched_before_rejected_offset_is_replayed()
+    {
+        // given
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        var rejected = tracker.Track(_Record(50));
+        tracker.MarkRejected(rejected);
+
+        // when
+        var staleObservation = tracker.MarkObserved(_Tombstone(55));
+        var replayedObservation = tracker.MarkObserved(_Tombstone(50));
+
+        // then
+        staleObservation.Should().BeEmpty();
+        _OffsetsOf(replayedObservation).Should().Equal([51]);
     }
 
     [Fact]

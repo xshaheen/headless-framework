@@ -607,6 +607,90 @@ public sealed class KafkaConsumerClientTests : TestBase
         }
     }
 
+    [Theory]
+    [InlineData(false, 1, 101)]
+    [InlineData(true, 1, 100)]
+    [InlineData(false, 2, 101)]
+    [InlineData(true, 2, 100)]
+    public async Task should_commit_trailing_undispatched_offset_when_listening_async(
+        bool isPartitionEof,
+        int concurrency,
+        long expectedOffset
+    )
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = isPartitionEof ? _CreateEndOfPartitionResult(100) : _CreateTombstoneResult(100);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                cts.Token.WaitHandle.WaitOne();
+
+                return null!;
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        var commitObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+
+                commitObserved.TrySetResult();
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            checked((byte)concurrency),
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var callbackCount = 0;
+        client.OnMessageCallback = (_, _) =>
+        {
+            Interlocked.Increment(ref callbackCount);
+
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        // when — Consume is a synchronous Kafka API. Run the poll loop on a worker so the trailing-only
+        // fake can block after its marker without preventing this test from observing the commit.
+        var listeningTask = Task.Run(
+            async () => await client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token),
+            CancellationToken.None
+        );
+
+        try
+        {
+            await commitObserved.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then
+            committedOffsets.Should().Equal([expectedOffset]);
+            Volatile.Read(ref callbackCount).Should().Be(0);
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
     [Fact]
     public async Task should_ignore_tracked_delivery_from_before_reassignment_when_commit_async()
     {
@@ -921,6 +1005,19 @@ public sealed class KafkaConsumerClientTests : TestBase
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
             Message = new Message<string, byte[]> { Value = null!, Headers = [] },
+        };
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateEndOfPartitionResult(long logEndOffset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset(
+                "orders.created",
+                new Partition(0),
+                new Offset(logEndOffset)
+            ),
+            IsPartitionEOF = true,
         };
     }
 
