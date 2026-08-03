@@ -354,7 +354,9 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
     {
         private TLockCookie? _lockCookie = lockCookie;
         private IDatabaseConnectionMonitoringHandle? _monitoringHandle;
+#pragma warning disable IDE0032 // Use auto property — the field is passed by ref to LazyInitializer below; an auto property has no ref-addressable backing field.
         private string? _leaseId;
+#pragma warning restore IDE0032
         private int _disposed;
 
         /// <summary>

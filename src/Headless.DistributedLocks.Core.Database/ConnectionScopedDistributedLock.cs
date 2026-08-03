@@ -486,6 +486,7 @@ internal sealed class ConnectionScopedDistributedLock(
         return activity;
     }
 
+#pragma warning disable CA5394 // Non-security poll jitter; keep Random.Shared on the hot path.
     private static double _GetRandomUnitDouble()
     {
         // Poll jitter is a stampede heuristic, not a security primitive: nothing about lock correctness or lease
@@ -493,4 +494,5 @@ internal sealed class ConnectionScopedDistributedLock(
         // lock-free, thread-safe source for that; the CSPRNG this replaced only cost entropy on every poll.
         return Random.Shared.NextDouble();
     }
+#pragma warning restore CA5394
 }
