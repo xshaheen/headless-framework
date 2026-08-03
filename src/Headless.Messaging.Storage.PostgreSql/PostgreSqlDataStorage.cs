@@ -1286,9 +1286,9 @@ internal sealed partial class PostgreSqlDataStorage(
                                 Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the awaited ReadAsync above already buffered
-                                // row, so these accessors read memory and never block on I/O — matching the
-                                // sync accessors columns 0-4 already use.
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
+                                // the large Content column synchronously, so these remaining small columns
+                                // cannot add blocking this row has not already paid for.
                                 Added = reader.GetFieldValue<DateTimeOffset>(5),
                                 NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                                 LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
