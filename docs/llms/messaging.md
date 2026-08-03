@@ -449,6 +449,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
+- Monitoring pagination uses zero-based `MessageQuery.CurrentPage` values, returns that value as `IndexPage.Index`, and normalizes negative values to zero.
 - TransportDirect publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
 
 ### Design Notes
@@ -820,7 +821,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 
 ### Transport-Specific Ordering
 
-- **Kafka**: Messages with same partition key are strictly ordered within partitions. With concurrent consumers, Headless commits offsets only through the contiguous completed watermark for each partition, so a fast high offset does not acknowledge lower in-flight messages.
+- **Kafka**: Messages with same partition key are strictly ordered within partitions. With concurrent consumers, Headless commits offsets only up to the lowest offset still in flight for each partition, so a fast high offset does not acknowledge lower in-flight messages.
 - **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
 - **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
@@ -1342,7 +1343,7 @@ Provides Kafka Queue-lane transport for partitioned, consumer-group processing.
 
 ### Design Notes
 
-Kafka supports only the Queue lane in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only through the contiguous completed offset watermark per partition; a completed high offset does not commit past lower in-flight offsets. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer.
+Kafka supports only the Queue lane in this package. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only to the lowest offset still in flight for that partition; a completed high offset does not commit past lower in-flight offsets. Offsets the broker never hands to the application — transaction control records, aborted batches under `read_committed`, compaction holes, and tombstones — do not hold that watermark back, because ordered per-partition delivery proves they can never arrive later. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer.
 
 ### Installation
 

@@ -60,7 +60,8 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_ProviderKey" ON settings."SettingValues" ("Name", "ProviderName", "ProviderKey");
+CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_ProviderKey" ON settings."SettingValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_NullProviderKey" ON settings."SettingValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
 END IF;
 END $EF$;
 

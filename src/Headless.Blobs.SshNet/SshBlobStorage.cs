@@ -37,7 +37,7 @@ namespace Headless.Blobs.SshNet;
 /// stream without buffering; seekable streams are rewound to position 0 first.
 /// </para>
 /// </remarks>
-internal sealed class SshBlobStorage(
+internal sealed partial class SshBlobStorage(
     SftpClientPool pool,
     IBlobNamingNormalizer normalizer,
     IJsonSerializer serializer,
@@ -245,69 +245,6 @@ internal sealed class SshBlobStorage(
     #endregion
 
     #region Move / Copy
-
-    public async ValueTask<bool> CopyAsync(
-        BlobLocation source,
-        BlobLocation destination,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var (sourcePath, sourceSidecar) = _ResolvePaths(source);
-        var (destPath, destSidecar) = _ResolvePaths(destination);
-
-        if (string.Equals(sourcePath, destPath, StringComparison.Ordinal))
-        {
-            // A resolved self-copy is a no-op: opening destPath with FileMode.Create would truncate the source.
-            return true;
-        }
-
-        logger.LogCopyingBlob(sourcePath, destPath);
-
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await using (
-                var sourceStream = await client
-                    .OpenAsync(sourcePath, FileMode.Open, FileAccess.Read, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                await _EnsureParentDirectoryAsync(client, destPath, cancellationToken).ConfigureAwait(false);
-
-                await using var destStream = await client
-                    .OpenAsync(destPath, FileMode.Create, FileAccess.Write, cancellationToken)
-                    .ConfigureAwait(false);
-
-                await sourceStream.CopyToAsync(destStream, cancellationToken).ConfigureAwait(false);
-            }
-
-            // Move the sidecar with the blob. If the source has no sidecar, drop any stale destination sidecar so the
-            // copied blob does not inherit the previous occupant's metadata.
-            var sourceMetadata = await _ReadSidecarAsync(client, sourceSidecar, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (sourceMetadata is not null)
-            {
-                await _WriteSidecarAsync(client, destSidecar, sourceMetadata, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await _DeleteFileIfExistsAsync(client, destSidecar, cancellationToken).ConfigureAwait(false);
-            }
-
-            return true;
-        }
-        catch (SftpPathNotFoundException ex)
-        {
-            logger.LogCopySourceNotFound(ex, sourcePath);
-
-            return false;
-        }
-        finally
-        {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
-        }
-    }
 
     public async ValueTask<bool> MoveAsync(
         BlobLocation source,
@@ -714,8 +651,12 @@ internal sealed class SshBlobStorage(
 
             if (i == 0)
             {
-                throw new SftpPathNotFoundException(
-                    $"Blob container '{segment}' does not exist. Ensure it through IBlobContainerManager before uploading."
+                // The data plane never auto-creates the top-level container (same rule as the FileSystem provider,
+                // which throws DirectoryNotFoundException here too). The type matters: an SftpPathNotFoundException
+                // is indistinguishable from a genuine remote lookup miss, so a caller — or CopyAsync's own
+                // source-not-found handling — would misread this provisioning error as a missing blob.
+                throw new DirectoryNotFoundException(
+                    $"Blob container '{segment}' does not exist. Ensure it through IBlobContainerManager before writing."
                 );
             }
 

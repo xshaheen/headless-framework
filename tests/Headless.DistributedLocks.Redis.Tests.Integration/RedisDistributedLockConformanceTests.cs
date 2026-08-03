@@ -63,4 +63,10 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     {
         return base.should_keep_composite_resources_when_disposed_without_release();
     }
+
+    [Fact]
+    public override Task should_not_fire_handle_lost_token_on_clean_release()
+    {
+        return base.should_not_fire_handle_lost_token_on_clean_release();
+    }
 }

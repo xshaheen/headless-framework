@@ -687,6 +687,44 @@ public abstract class DistributedLockTestsBase : TestBase
         handle!.LostToken.Should().Be(CancellationToken.None);
     }
 
+    /// <summary>
+    /// A clean release is not lease loss. Consumers register on <see cref="IDistributedLease.LostToken"/>
+    /// to abort protected work when the lock is genuinely gone, so an ordinary release must leave that
+    /// token uncancelled — otherwise every successful <c>await using</c> raises a spurious loss alarm.
+    /// Every provider that can observe loss owes this behavior, so it is pinned here rather than per provider.
+    /// </summary>
+    public virtual async Task should_not_fire_handle_lost_token_on_clean_release()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(30),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
+        );
+
+        handle.CanObserveLoss.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        var lostToken = handle.LostToken;
+        var lostCallbackFired = 0;
+        await using var registration = lostToken.Register(() => Interlocked.Exchange(ref lostCallbackFired, 1));
+
+        await handle.ReleaseAsync();
+        await handle.DisposeAsync();
+
+        Volatile
+            .Read(ref lostCallbackFired)
+            .Should()
+            .Be(0, "an explicit release is not lease loss and must not fire LostToken registrations");
+        lostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
     public virtual async Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
     {
         // Provider-level smoke test using real timers with a generous budget so wall-clock jitter

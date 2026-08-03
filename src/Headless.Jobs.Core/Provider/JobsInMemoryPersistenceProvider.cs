@@ -1193,35 +1193,35 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
         var count = 0;
-        foreach (var id in jobIds)
+
+        // Deletes the WHOLE subtree, not just the direct children — parity with the EF provider, where a surviving
+        // grandchild is either permanently unreachable (non-timed) or escapes the parent-terminal gate (timed). The
+        // visited set keeps a corrupted parent cycle from looping forever.
+        var visited = new HashSet<Guid>(jobIds);
+        var pending = new Stack<Guid>(jobIds);
+
+        while (pending.TryPop(out var id))
         {
-            // Remove job and all its children (cascade delete)
-            if (_timeJobs.TryRemove(id, out var removed))
+            foreach (var childId in _GetChildrenIds(id))
             {
-                count++;
-                _reconcileCandidates.TryRemove(id, out _);
-
-                // Clean children index
-                if (removed.ParentId.HasValue)
+                if (visited.Add(childId))
                 {
-                    _RemoveChildIndex(removed.ParentId.Value, removed.Id);
+                    pending.Push(childId);
                 }
+            }
 
-                // Remove children
-                var childrenIds = _GetChildrenIds(id);
+            if (!_timeJobs.TryRemove(id, out var removed))
+            {
+                continue;
+            }
 
-                foreach (var childId in childrenIds)
-                {
-                    if (_timeJobs.TryRemove(childId, out var child))
-                    {
-                        count++;
-                        _reconcileCandidates.TryRemove(childId, out _);
-                        if (child.ParentId.HasValue)
-                        {
-                            _RemoveChildIndex(child.ParentId.Value, child.Id);
-                        }
-                    }
-                }
+            count++;
+            _reconcileCandidates.TryRemove(id, out _);
+
+            // Clean children index
+            if (removed.ParentId.HasValue)
+            {
+                _RemoveChildIndex(removed.ParentId.Value, removed.Id);
             }
         }
 

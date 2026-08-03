@@ -16,8 +16,9 @@ public sealed class SettingManagementProvidersOptions
     public TypeList<ISettingDefinitionProvider> DefinitionProviders { get; } = [];
 
     /// <summary>
-    /// Gets the ordered list of <see cref="ISettingValueReadProvider"/> types used to resolve setting values.
-    /// Providers are consulted in list order until one returns a value.
+    /// Gets the ordered list of <see cref="ISettingValueReadProvider"/> types used to resolve setting values,
+    /// lowest priority first — the last entry wins. <see cref="SettingValueProviderManager"/> reverses this
+    /// list so readers consult providers highest priority first.
     /// </summary>
     public TypeList<ISettingValueReadProvider> ValueProviders { get; } = [];
 

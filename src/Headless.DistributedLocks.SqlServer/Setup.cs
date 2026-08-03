@@ -157,11 +157,17 @@ public static class SetupSqlServerDistributedLocks
         services.AddInitializerHostedService<SqlServerDistributedLocksStorageInitializer>();
         services.AddSingletonOptionValue<DistributedLockOptions>();
 
+        // The storage issues sp_getapplock with a zero @LockTimeout (one non-blocking attempt per call), so a
+        // contended acquire is paced entirely by the provider's own retry loop. That loop's only delay is this
+        // signal's WaitAsync, and SQL Server has no cheap cross-process release channel to push a wake through:
+        // the in-process polling signal is the correct fit. It wakes a same-process waiter the moment the holder
+        // releases and otherwise honours the jittered ~100ms polling fallback, instead of spinning the loop with
+        // no delay and hammering the connection pool.
+        services.TryAddSingleton<IReleaseSignal>(sp => new PollingReleaseSignal(sp.GetRequiredService<TimeProvider>()));
+
         services.TryAddSingleton(sp => new ConnectionScopedDistributedLock(
             sp.GetRequiredService<IConnectionScopedLockStorage>(),
-            // SQL Server blocks contended acquires server-side (BlocksServerSide), so the provider's wait loop and
-            // the release signal are unreachable; a no-op signal satisfies the constructor contract.
-            new NullReleaseSignal(),
+            sp.GetRequiredService<IReleaseSignal>(),
             sp.GetRequiredService<DistributedLockOptions>(),
             sp.GetRequiredService<IGuidGenerator>(),
             sp.GetRequiredService<TimeProvider>(),

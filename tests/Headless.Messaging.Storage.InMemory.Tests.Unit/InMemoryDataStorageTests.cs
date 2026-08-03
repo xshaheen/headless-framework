@@ -243,6 +243,62 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public async Task should_page_messages_from_a_zero_based_index()
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var first = await storage.StoreMessageAsync("paging", CreateMessage(), cancellationToken: AbortToken);
+        var second = await storage.StoreMessageAsync("paging", CreateMessage(), cancellationToken: AbortToken);
+        var monitoring = storage.GetMonitoringApi();
+
+        var firstPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 1,
+            },
+            AbortToken
+        );
+        var secondPage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 1,
+                PageSize = 1,
+            },
+            AbortToken
+        );
+        var negativePage = await monitoring.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = -1,
+                PageSize = 1,
+            },
+            AbortToken
+        );
+
+        // Page zero is the first page: both rows are reachable through indexes 0 and 1.
+        firstPage.Index.Should().Be(0);
+        firstPage.TotalItems.Should().Be(2);
+        secondPage.Index.Should().Be(1);
+        firstPage
+            .Items.Concat(secondPage.Items)
+            .Select(x => x.StorageId)
+            .Should()
+            .BeEquivalentTo([first.StorageId, second.StorageId]);
+
+        // A negative index reads the first page instead of throwing.
+        negativePage.Index.Should().Be(0);
+        negativePage
+            .Items.Should()
+            .ContainSingle()
+            .Which.StorageId.Should()
+            .Be(firstPage.Items.Should().ContainSingle().Subject.StorageId);
+    }
+
+    [Fact]
     public async Task should_return_bounded_deterministic_unknown_lane_pages_without_content()
     {
         _EnsureInitialized();

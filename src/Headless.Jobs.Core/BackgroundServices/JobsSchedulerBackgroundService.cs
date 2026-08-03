@@ -194,7 +194,14 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             _executionContext.NotifyCoreAction(ex.ToString(), CoreNotifyActionType.NotifyHostExceptionMessage);
         }
 
-        await _internalJobsManager.ReleaseAcquiredResources([], CancellationToken.None).ConfigureAwait(false);
+        // The claimed-but-undispatched rows live in the execution context, exactly as in the two cancellation arms
+        // above. Passing [] here released nothing at all (ReleaseAcquiredResources skips both provider calls for an
+        // empty non-null array), so every claim held at the time of an unexpected failure stayed leased until it
+        // lapsed. Rows abandoned mid-claim-enumeration are released by the manager at the source instead — they never
+        // reach an execution context.
+        await _internalJobsManager
+            .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     public void RestartIfNeeded(DateTime? dateTime)

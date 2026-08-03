@@ -9,7 +9,9 @@ namespace Headless.Settings;
 /// <summary>
 /// EF Core configuration for <see cref="SettingValueRecord"/>, mapping the entity to the
 /// table and schema specified by <see cref="SettingsStorageOptions"/> and enforcing column
-/// length constraints and a unique index on (<c>Name</c>, <c>ProviderName</c>, <c>ProviderKey</c>).
+/// length constraints plus a pair of filtered unique indexes on
+/// (<c>Name</c>, <c>ProviderName</c>, <c>ProviderKey</c>) that also covers a <see langword="null"/>
+/// <c>ProviderKey</c>.
 /// </summary>
 /// <param name="options">Storage options that supply the table name and schema.</param>
 internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions options)
@@ -25,12 +27,22 @@ internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions opt
         b.Property(x => x.ProviderName).HasMaxLength(SettingValueRecordConstants.ProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(SettingValueRecordConstants.ProviderKeyMaxLength).IsRequired(false);
 
+        // PostgreSQL and SQLite treat NULLs as distinct in a unique index, so a single index over the
+        // nullable ProviderKey would let concurrent inserts create duplicate global (NULL-key) rows.
+        // Mirror the raw PostgreSql/SqlServer initializers: one index per key nullability, same names.
         b.HasIndex(x => new
             {
                 x.Name,
                 x.ProviderName,
                 x.ProviderKey,
             })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"ProviderKey\" IS NOT NULL")
+            .HasDatabaseName($"IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey");
+
+        b.HasIndex(x => new { x.Name, x.ProviderName })
+            .IsUnique()
+            .HasFilter("\"ProviderKey\" IS NULL")
+            .HasDatabaseName($"IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey");
     }
 }

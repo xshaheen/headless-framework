@@ -201,11 +201,14 @@ internal sealed class RedisDistributedReadWriteLockStorage(
     /// Atomically refreshes the TTL of the caller's exclusive write lease by issuing PEXPIRE on the
     /// writer key when its current value matches <paramref name="leaseId"/>. Uses
     /// <see cref="TryExtendWriteLockScriptDefinition"/> — a Lua script that compares the stored value
-    /// then conditionally applies PEXPIRE.
+    /// then applies PEXPIRE, or PERSIST when the new lease is infinite.
     /// </summary>
     /// <param name="resource">The logical resource name. Must not contain <c>{</c> or <c>}</c>.</param>
     /// <param name="leaseId">The lease id of the write lease to extend. Must not contain <c>:</c>.</param>
-    /// <param name="ttl">New TTL from now. When <see langword="null"/>, PEXPIRE is not called.</param>
+    /// <param name="ttl">
+    /// New TTL from now. When <see langword="null"/> the writer lease becomes non-expiring: any TTL
+    /// left on the writer key is cleared (PERSIST). Writers may hold infinite leases; readers may not.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation before the Redis round-trip is issued.</param>
     /// <returns><see langword="true"/> when the stored writer id matches and the TTL was extended; <see langword="false"/> when the lease is no longer held.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="leaseId"/> is <see langword="null"/>.</exception>

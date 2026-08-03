@@ -226,4 +226,10 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
     {
         return base.should_fire_handle_lost_token_when_lock_holding_connection_dies();
     }
+
+    [Fact]
+    public override Task should_not_fire_handle_lost_token_on_clean_release()
+    {
+        return base.should_not_fire_handle_lost_token_on_clean_release();
+    }
 }
