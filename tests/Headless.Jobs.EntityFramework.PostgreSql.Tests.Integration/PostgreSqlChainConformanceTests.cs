@@ -62,6 +62,18 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task immediate_acquire_attributes_each_root_subtree_in_one_batched_walk()
+    {
+        return base.immediate_acquire_attributes_each_root_subtree_in_one_batched_walk();
+    }
+
+    [Fact]
+    public override Task batched_lease_walk_drops_the_fence_failed_root_and_keeps_the_other_subtree()
+    {
+        return base.batched_lease_walk_drops_the_fence_failed_root_and_keeps_the_other_subtree();
+    }
+
+    [Fact]
     public override Task bounded_sweep_drains_a_large_mismatched_backlog_without_starving_on_matching_children()
     {
         return base.bounded_sweep_drains_a_large_mismatched_backlog_without_starving_on_matching_children();

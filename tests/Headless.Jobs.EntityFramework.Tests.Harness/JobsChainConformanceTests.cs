@@ -504,6 +504,177 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// R12/KTD2 (batched multi-root walk). The immediate-dispatch acquire leases the subtrees of EVERY root it
+    /// acquired in ONE walk — a single discovery SELECT and frontier re-read per depth level serve the whole batch —
+    /// so each discovered descendant must be attributed back to the root whose lease it inherits. Two roots of
+    /// DIFFERING depth make the attribution observable: the shallow root runs out of children at the level the deep
+    /// root is still descending, and the claimed sets are what
+    /// <c>PruneToClaimedSet</c> prunes each hydrated tree to. A mis-attributed node would be pruned out of the tree
+    /// that actually owns it, hydrated-but-unclaimed — the exact shape that fails the executor's lease fence and
+    /// strands the node Idle forever.
+    /// </summary>
+    public virtual async Task immediate_acquire_attributes_each_root_subtree_in_one_batched_walk()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-immediate-batch");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // No executionTime anywhere: both roots are immediately due and every descendant is a non-timed
+            // continuation. Root A is two levels deep, root B is three — so level 2 of the walk carries only root B.
+            var builderA = JobChain.Start(_Payload("a-root"));
+            builderA.Root.Then(_Payload("a-child"));
+            var rootAId = await scheduler.EnqueueAsync(builderA.Build(), ct);
+
+            var builderB = JobChain.Start(_Payload("b-root"));
+            var bChild = builderB.Root.Then(_Payload("b-child"));
+            bChild.Then(_Payload("b-grandchild"));
+            var rootBId = await scheduler.EnqueueAsync(builderB.Build(), ct);
+
+            var childAId = (await _ChildrenAsync(rootAId, ct)).Single().Id;
+            var childBId = (await _ChildrenAsync(rootBId, ct)).Single().Id;
+            var grandchildBId = (await _ChildrenAsync(childBId, ct)).Single().Id;
+
+            var acquired = await persistence.AcquireImmediateTimeJobsAsync([rootAId, rootBId], ct);
+            acquired.Should().HaveCount(2, "both roots are immediately due and unclaimed");
+
+            var treeA = acquired.Single(x => x.Id == rootAId);
+            var treeB = acquired.Single(x => x.Id == rootBId);
+
+            // The decisive attribution assertion: each returned tree is pruned to ITS OWN claimed set.
+            _FlattenIds(treeA)
+                .Should()
+                .BeEquivalentTo(
+                    new[] { rootAId, childAId },
+                    "the shallow root's claimed set is exactly its own subtree"
+                );
+            _FlattenIds(treeB)
+                .Should()
+                .BeEquivalentTo(
+                    new[] { rootBId, childBId, grandchildBId },
+                    "the deep root keeps descending after the shallow root leaves the shared frontier"
+                );
+
+            // Every descendant carries ITS OWN root's owner and exact deadline (KTD2 invariant 2), never the sibling
+            // root's — the lease UPDATE stays correlated per root even though discovery is batched.
+            var rootARow = await _ReadNodeAsync(rootAId, ct);
+            var rootBRow = await _ReadNodeAsync(rootBId, ct);
+            rootARow.Status.Should().Be(JobStatus.InProgress);
+            rootBRow.Status.Should().Be(JobStatus.InProgress);
+
+            var childARow = await _ReadNodeAsync(childAId, ct);
+            childARow.OwnerId.Should().Be(rootARow.OwnerId);
+            childARow.LockedUntil.Should().Be(rootARow.LockedUntil, "a descendant copies its own root's deadline");
+            childARow.Status.Should().Be(JobStatus.Idle);
+
+            var childBRow = await _ReadNodeAsync(childBId, ct);
+            childBRow.OwnerId.Should().Be(rootBRow.OwnerId);
+            childBRow.LockedUntil.Should().Be(rootBRow.LockedUntil);
+
+            var grandchildBRow = await _ReadNodeAsync(grandchildBId, ct);
+            grandchildBRow.OwnerId.Should().Be(rootBRow.OwnerId, "the batched walk must reach root B's second level");
+            grandchildBRow.LockedUntil.Should().Be(rootBRow.LockedUntil);
+            grandchildBRow.Status.Should().Be(JobStatus.Idle);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// R4/KTD4 × the batched walk. One root's ownership fence fails mid-walk (its lease is expired through the KTD4
+    /// seam, between the shared discovery SELECT and the per-root lease UPDATEs) while the other root's still holds.
+    /// The failing root must drop out of the walk with its claimed set bounded to itself and NOT ONE descendant
+    /// leased, while the healthy root keeps descending and gets its whole subtree attributed to it. Driven against the
+    /// walk directly because the seam sits between two statements inside a single acquire call; the roots are seeded
+    /// in the already-claimed state that acquire hands the walk.
+    /// </summary>
+    public virtual async Task batched_lease_walk_drops_the_fence_failed_root_and_keeps_the_other_subtree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        // Not started: the walk is driven directly with a fixed owner, so no coordination membership is needed and the
+        // recovery bridge cannot race the leases under test.
+        using var host = fixture.BuildHost("walk-batch-fence");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        const string owner = "walk@1";
+
+        // Healthy root keeps a two-level non-timed tail so the walk must survive a whole extra level after the other
+        // root drops out; the fence-failed root has one child that must stay untouched.
+        var healthyRoot = _NewJob("walk-healthy", executionTime: null);
+        var healthyChild = _NewChild(healthyRoot.Id, RunCondition.OnSuccess, executionTime: null);
+        var healthyGrandchild = _NewChild(healthyChild.Id, RunCondition.OnSuccess, executionTime: null);
+        var fencedRoot = _NewJob("walk-fenced", executionTime: null);
+        var fencedChild = _NewChild(fencedRoot.Id, RunCondition.OnSuccess, executionTime: null);
+        await persistence.AddTimeJobsAsync([healthyRoot, healthyChild, healthyGrandchild, fencedRoot, fencedChild], ct);
+
+        // The walk's precondition: both roots are ALREADY claimed by this owner with a live lease.
+        await _ForceClaimedAsync(healthyRoot.Id, owner, DateTime.UtcNow.AddMinutes(5), ct);
+        await _ForceClaimedAsync(fencedRoot.Id, owner, DateTime.UtcNow.AddMinutes(5), ct);
+
+        var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
+        await using var dbContext = await factory.CreateDbContextAsync(ct);
+
+        var claimedIdsByRoot = await JobsSubtreeLeaseWalk.LeaseNonTimedDescendantsAsync(
+            dbContext.Set<TimeJobEntity>(),
+            [healthyRoot.Id, fencedRoot.Id],
+            owner,
+            SchedulerOptionsBuilder.DefaultMaxChainDepth,
+            async () =>
+            {
+                // Expire ONLY the fenced root's lease, so its EXISTS(root owned by me, lease unexpired) fails while
+                // the healthy root's fence still passes.
+                await using var seamConnection = fixture.CreateConnection();
+                await seamConnection.OpenAsync(ct);
+                await _SqlAsync(
+                    seamConnection,
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;",
+                    ("@past", DateTime.UtcNow.AddMinutes(-5)),
+                    ("@id", fencedRoot.Id)
+                );
+            },
+            ct
+        );
+
+        claimedIdsByRoot[healthyRoot.Id]
+            .Should()
+            .BeEquivalentTo(
+                new[] { healthyRoot.Id, healthyChild.Id, healthyGrandchild.Id },
+                "one root losing its lease must not truncate another root's walk"
+            );
+        claimedIdsByRoot[fencedRoot.Id]
+            .Should()
+            .BeEquivalentTo(
+                new[] { fencedRoot.Id },
+                "the fenced root's claim is bounded to itself — the caller prunes its hydrated tree to that set"
+            );
+
+        // The decisive durable contract: no descendant of the fenced root was leased (no split ownership), and the
+        // healthy root's whole subtree carries ITS deadline.
+        var fencedChildRow = await _ReadNodeAsync(fencedChild.Id, ct);
+        fencedChildRow.Status.Should().Be(JobStatus.Idle);
+        fencedChildRow.OwnerId.Should().BeNull("a descendant must never be leased when its root's fence fails");
+
+        var healthyRootRow = await _ReadNodeAsync(healthyRoot.Id, ct);
+        var healthyChildRow = await _ReadNodeAsync(healthyChild.Id, ct);
+        healthyChildRow.OwnerId.Should().Be(owner);
+        healthyChildRow.LockedUntil.Should().Be(healthyRootRow.LockedUntil);
+
+        var healthyGrandchildRow = await _ReadNodeAsync(healthyGrandchild.Id, ct);
+        healthyGrandchildRow.OwnerId.Should().Be(owner, "the healthy root descends past the level the other root died");
+        healthyGrandchildRow.LockedUntil.Should().Be(healthyRootRow.LockedUntil);
+    }
+
+    /// <summary>
     /// R2/KTD3/KTD6: the poll-time safety-net sweep bounds its SELECTION at one batch, so a large stranded backlog
     /// drains monotonically across sweeps — and a full page of MATCHING (release-side) children, which this skip-only
     /// path never mutates, can never fill the page and starve the mismatched rows it must skip. Seeds a backlog wider
@@ -1241,6 +1412,26 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
 
         return children;
+    }
+
+    /// <summary>
+    /// Forces a row into the ALREADY-CLAIMED state the subtree lease walk is handed: InProgress, owned by
+    /// <paramref name="ownerId" />, with a live lease. Raw SQL because the entity's status/owner setters are internal.
+    /// </summary>
+    private async Task _ForceClaimedAsync(Guid id, string ownerId, DateTime lockedUntil, CancellationToken ct)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(ct);
+        await _SqlAsync(
+            connection,
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
+                + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;",
+            ("@status", JobStatus.InProgress.ToString()),
+            ("@ownerId", ownerId),
+            ("@lockedUntil", lockedUntil),
+            ("@updatedAt", DateTime.UtcNow),
+            ("@id", id)
+        );
     }
 
     /// <summary>Forces a row into InProgress with a lapsed lease under a foreign owner (simulates a dead node's claim).</summary>
