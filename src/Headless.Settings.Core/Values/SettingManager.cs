@@ -215,7 +215,9 @@ public sealed class SettingManager(
             }
         }
 
-        return orderedValues;
+        // The spread wraps the list in the compiler's throw-on-mutate read-only view, matching the previous
+        // implementation's return shape — callers must not be able to downcast and mutate manager state.
+        return [.. orderedValues];
     }
 
     /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>

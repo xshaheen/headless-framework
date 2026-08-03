@@ -22,6 +22,11 @@ public interface ISettingValueReadProvider
     );
 
     /// <summary>Returns the stored values for all <paramref name="settings"/>.</summary>
+    /// <remarks>
+    /// Must agree with <see cref="GetOrDefaultAsync"/>: a setting resolvable through the single-value read must
+    /// resolve identically through the batch, and vice versa. <c>SettingManager</c> routes by-provider bulk reads
+    /// through this member, so a stubbed implementation silently drops those settings from bulk results.
+    /// </remarks>
     /// <param name="settings">The setting definitions to look up.</param>
     /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
     /// <param name="cancellationToken">The abort token.</param>
