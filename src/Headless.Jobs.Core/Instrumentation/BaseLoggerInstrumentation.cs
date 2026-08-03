@@ -45,6 +45,39 @@ internal abstract partial class JobsBaseLoggerInstrumentation(ILogger logger, IJ
         logger.JobSkipped(functionName, jobId, reason);
     }
 
+    public virtual void LogCronRecoveryApplied(
+        Guid cronJobId,
+        string functionName,
+        MissedRunPolicy policy,
+        int missedCount,
+        bool countIsLowerBound,
+        DateTime earliestMissedUtc,
+        DateTime latestMissedUtc,
+        int skippedOccurrenceCount
+    )
+    {
+        logger.CronRecoveryApplied(
+            cronJobId,
+            functionName,
+            policy.ToString(),
+            missedCount,
+            countIsLowerBound,
+            earliestMissedUtc,
+            latestMissedUtc,
+            skippedOccurrenceCount
+        );
+    }
+
+    public virtual void LogCronFingerprintRebased(
+        Guid cronJobId,
+        string functionName,
+        DateTime previousNextDueUtc,
+        DateTime rebasedNextDueUtc
+    )
+    {
+        logger.CronFingerprintRebased(cronJobId, functionName, previousNextDueUtc, rebasedNextDueUtc);
+    }
+
     public virtual void LogSeedingDataStarted(string seedingDataType)
     {
         logger.SeedingDataStarted(seedingDataType, InstanceIdentifier);
@@ -115,6 +148,42 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Message = "Jobs Job skipped: {Function} ({JobId}) - {Reason}"
     )]
     public static partial void JobSkipped(this ILogger logger, string function, Guid jobId, string reason);
+
+    // MissedCount and CountIsLowerBound are emitted as a PAIR on purpose: "1000 missed" and "at least 1000 missed"
+    // call for different operator responses, and nothing downstream can recover the distinction once it is lost.
+    [LoggerMessage(
+        EventId = 3240,
+        Level = LogLevel.Warning,
+        Message = "Cron {Function} ({CronJobId}) fell behind and was resolved by policy {Policy}: {MissedCount} "
+            + "missed occurrence(s) (lower bound: {CountIsLowerBound}) spanning {EarliestMissedUtc:O} to "
+            + "{LatestMissedUtc:O}; {SkippedOccurrenceCount} pending occurrence(s) retired."
+    )]
+    public static partial void CronRecoveryApplied(
+        this ILogger logger,
+        Guid cronJobId,
+        string function,
+        string policy,
+        int missedCount,
+        bool countIsLowerBound,
+        DateTime earliestMissedUtc,
+        DateTime latestMissedUtc,
+        int skippedOccurrenceCount
+    );
+
+    [LoggerMessage(
+        EventId = 3241,
+        Level = LogLevel.Warning,
+        Message = "Cron {Function} ({CronJobId}) was positioned under schedule-interpretation rules that have since "
+            + "changed; projection rebased from {PreviousNextDueUtc:O} to {RebasedNextDueUtc:O}. The expression and "
+            + "timezone are unchanged — only how they resolve."
+    )]
+    public static partial void CronFingerprintRebased(
+        this ILogger logger,
+        Guid cronJobId,
+        string function,
+        DateTime previousNextDueUtc,
+        DateTime rebasedNextDueUtc
+    );
 
     [LoggerMessage(
         EventId = 1005,
