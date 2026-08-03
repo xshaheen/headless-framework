@@ -1395,75 +1395,93 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Select(x => x.Id)
             .ToArray();
 
-        // A live row takes precedence over a terminal one sharing the instant, so pick the non-terminal occupant first.
-        var atEarliest = inWindow
-            .Where(x => x.ExecutionTime == request.EarliestMissedUtc)
-            .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
-            .FirstOrDefault();
-
         CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
         var repurposedId = Guid.Empty;
 
         if (request.Policy is MissedRunPolicy.Coalesce)
         {
-            if (atEarliest is null)
+            // R18 owes the backlog exactly one run; R7 forbids duplicating an instant an executing or terminal row
+            // already accounts for. Reconciled by walking the missed instants in schedule order and materializing at
+            // the FIRST unaccounted-for one — an occupied instant is stepped past (AE9, AE10), never duplicated, and
+            // only a fully-accounted-for backlog produces no run at all.
+            foreach (var missedInstant in request.MissedInstantsUtc)
             {
-                coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                // A live row takes precedence over a terminal one sharing the instant.
+                var atInstant = inWindow
+                    .Where(x => x.ExecutionTime == missedInstant)
+                    .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
+                    .FirstOrDefault();
+
+                if (atInstant is null)
                 {
-                    Id = request.CoalescedOccurrenceId,
-                    CronJobId = cronJobId,
-                    Status = JobStatus.Idle,
-                    OwnerId = null,
-                    LockedUntil = null,
-                    ExecutionTime = request.EarliestMissedUtc,
-                    RecoveredFromUtc = request.EarliestMissedUtc,
-                    OnNodeDeath = request.OnNodeDeath,
-                    CreatedAt = request.OperationTimeUtc,
-                    UpdatedAt = request.OperationTimeUtc,
-                };
+                    coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                    {
+                        Id = request.CoalescedOccurrenceId,
+                        CronJobId = cronJobId,
+                        Status = JobStatus.Idle,
+                        OwnerId = null,
+                        LockedUntil = null,
+                        ExecutionTime = missedInstant,
+                        RecoveredFromUtc = missedInstant,
+                        OnNodeDeath = request.OnNodeDeath,
+                        CreatedAt = request.OperationTimeUtc,
+                        UpdatedAt = request.OperationTimeUtc,
+                    };
 
-                await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                dbContext.Entry(coalescedRun).State = EntityState.Detached;
-            }
-            else if (atEarliest.Status is JobStatus.Idle or JobStatus.Queued)
-            {
-                // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition already
-                // requires OwnerId == owner, so a prior owner that was holding this row simply fails that predicate
-                // and drops it — no new machinery, and no cost on the normal execution path.
-                repurposedId = atEarliest.Id;
+                    await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    dbContext.Entry(coalescedRun).State = EntityState.Detached;
+                    break;
+                }
 
-                await occurrences
-                    .Where(x => x.Id == repurposedId)
-                    .ExecuteUpdateAsync(
-                        setter =>
-                            setter
-                                .SetProperty(x => x.Status, JobStatus.Idle)
-                                .SetProperty(x => x.OwnerId, _ => null)
-                                .SetProperty(x => x.LockedUntil, _ => null)
-                                .SetProperty(x => x.RecoveredFromUtc, request.EarliestMissedUtc)
-                                .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                if (atInstant.Status is JobStatus.Idle or JobStatus.Queued)
                 {
-                    Id = atEarliest.Id,
-                    CronJobId = cronJobId,
-                    Status = JobStatus.Idle,
-                    OwnerId = null,
-                    LockedUntil = null,
-                    ExecutionTime = request.EarliestMissedUtc,
-                    RecoveredFromUtc = request.EarliestMissedUtc,
-                    OnNodeDeath = request.OnNodeDeath,
-                    CreatedAt = atEarliest.CreatedAt,
-                    UpdatedAt = request.OperationTimeUtc,
-                };
-            }
+                    // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition
+                    // already requires OwnerId == owner, so a prior owner that was holding this row simply fails
+                    // that predicate and drops it — no new machinery, and no cost on the normal execution path.
+                    //
+                    // The status predicate makes this a CAS rather than a blind write: the window read above takes
+                    // no lock, so the row can begin executing between the read and this statement. Zero rows
+                    // affected means exactly that — the instant is now accounted for, and the walk steps past it.
+                    var candidateId = atInstant.Id;
+                    var repurposed = await occurrences
+                        .Where(x => x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.RecoveredFromUtc, missedInstant)
+                                    .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
 
-            // Otherwise the earliest missed instant is occupied by a row that is executing or already finished. It has
-            // accounted for that instant, so recovery steps past it rather than creating a duplicate (AE9, AE10).
+                    if (repurposed == 0)
+                    {
+                        continue;
+                    }
+
+                    repurposedId = atInstant.Id;
+                    coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                    {
+                        Id = atInstant.Id,
+                        CronJobId = cronJobId,
+                        Status = JobStatus.Idle,
+                        OwnerId = null,
+                        LockedUntil = null,
+                        ExecutionTime = missedInstant,
+                        RecoveredFromUtc = missedInstant,
+                        OnNodeDeath = request.OnNodeDeath,
+                        CreatedAt = atInstant.CreatedAt,
+                        UpdatedAt = request.OperationTimeUtc,
+                    };
+                    break;
+                }
+
+                // Executing or terminal: the instant is accounted for — step past it (AE9, AE10).
+            }
         }
 
         // Everything else not yet executing in the window is retired: under skip because nothing may run, under
@@ -1473,8 +1491,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (toSkip.Length > 0)
         {
+            // Same CAS discipline as the repurpose: a row that began executing since the unlocked window read fails
+            // the status predicate and is left alone rather than blindly stamped Skipped over a running execution.
             skippedCount = await occurrences
-                .Where(x => toSkip.Contains(x.Id))
+                .Where(x => toSkip.Contains(x.Id) && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
                 .ExecuteUpdateAsync(
                     setter =>
                         setter

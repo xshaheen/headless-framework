@@ -129,6 +129,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         DateTime? latest = null;
         var count = 0;
         var cursor = reconciledThroughUtc;
+        var instants = new List<DateTime>();
 
         while (count < ceiling)
         {
@@ -142,6 +143,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             earliest ??= next.Value;
             latest = next.Value;
             cursor = next.Value;
+            instants.Add(next.Value);
             count++;
         }
 
@@ -165,6 +167,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             LatestPendingUtc = latest,
             PendingCount = count,
             CountSaturated = saturated,
+            PendingInstantsUtc = instants,
             IsRecovery = isRecovery,
         };
     }

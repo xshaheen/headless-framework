@@ -149,6 +149,62 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
         stored.Status.Should().Be(JobStatus.Idle);
     }
 
+    /// <summary>
+    /// R18 over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
+    /// for that instant only. The rest of the backlog still gets its one run, materialized at the next
+    /// unaccounted-for missed instant — not abandoned wholesale.
+    /// </summary>
+    public virtual async Task coalesce_steps_past_an_occupied_earliest_instant_to_the_next_missed_instant()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-step-past");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-step-past",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var secondMissed = seeded.NextDueUtc.AddHours(1);
+
+        // The earliest missed instant already ran to completion (a resume-created row the fallback picked up).
+        var finishedId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            finishedId,
+            cronId,
+            (int)JobStatus.Succeeded,
+            ownerId: null,
+            NodeDeathPolicy.Retry,
+            lockedUntil: null,
+            seeded.NextDueUtc,
+            ct
+        );
+
+        var result = await persistence.ApplyCronRecoveryAsync(
+            _Request(cronId, seeded, MissedRunPolicy.Coalesce, [seeded.NextDueUtc, secondMissed]),
+            ct
+        );
+
+        result!.CoalescedRun.Should().NotBeNull("the later tick was genuinely missed even though the earliest ran");
+        result.CoalescedRun!.ExecutionTime.Should().BeCloseTo(secondMissed, TimeSpan.FromMicroseconds(1));
+        result.CoalescedRun.RecoveredFromUtc.Should().NotBeNull();
+        result
+            .CoalescedRun.RecoveredFromUtc!.Value.Should()
+            .BeCloseTo(secondMissed, TimeSpan.FromMicroseconds(1), "the run stands for the first unaccounted instant");
+
+        var rows = await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct);
+        rows.Should().HaveCount(2);
+        rows.Single(x => x.Id == finishedId).Status.Should().Be(JobStatus.Succeeded, "left undisturbed");
+    }
+
     /// <summary>AE9: an occurrence another node is executing is left alone and its instant is not duplicated.</summary>
     public virtual async Task recovery_leaves_an_executing_occurrence_untouched()
     {
@@ -289,7 +345,8 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
     private static CronRecoveryRequest _Request(
         Guid cronJobId,
         (DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded,
-        MissedRunPolicy policy
+        MissedRunPolicy policy,
+        DateTime[]? missedInstants = null
     ) =>
         new()
         {
@@ -300,6 +357,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             NextDueUtc = _RecoveryInstant(seeded).AddHours(1),
             Policy = policy,
             EarliestMissedUtc = seeded.NextDueUtc,
+            MissedInstantsUtc = missedInstants ?? [seeded.NextDueUtc],
             CoalescedOccurrenceId = Guid.NewGuid(),
             OnNodeDeath = NodeDeathPolicy.Retry,
             OperationTimeUtc = DateTimeOffset.UtcNow,

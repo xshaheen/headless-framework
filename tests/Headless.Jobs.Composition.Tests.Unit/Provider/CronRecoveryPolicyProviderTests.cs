@@ -236,7 +236,8 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
 
     private static CronRecoveryRequest _Request(
         FakeCronJob definition,
-        MissedRunPolicy policy = MissedRunPolicy.Coalesce
+        MissedRunPolicy policy = MissedRunPolicy.Coalesce,
+        DateTime[]? missedInstants = null
     ) =>
         new()
         {
@@ -247,6 +248,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             NextDueUtc = _RecoveredThrough.AddMinutes(30),
             Policy = policy,
             EarliestMissedUtc = _EarliestMissed,
+            MissedInstantsUtc = missedInstants ?? [_EarliestMissed],
             CoalescedOccurrenceId = Guid.NewGuid(),
             OnNodeDeath = NodeDeathPolicy.Retry,
             OperationTimeUtc = _Now,
@@ -275,6 +277,68 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             CreatedAt = _Now.AddDays(-1),
             UpdatedAt = _Now.AddHours(-4),
         };
+
+    /// <summary>
+    /// R18 over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
+    /// for that instant only. The rest of the backlog still gets its one run, materialized at the next
+    /// unaccounted-for missed instant — not abandoned wholesale.
+    /// </summary>
+    [Fact]
+    public async Task should_coalesce_at_the_next_missed_instant_when_the_earliest_is_occupied()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        var finished = _Occurrence(definition.Id, _EarliestMissed, JobStatus.Succeeded);
+        await provider.InsertCronJobOccurrencesAsync([finished], AbortToken);
+
+        var result = await provider.ApplyCronRecoveryAsync(
+            _Request(definition, missedInstants: [_EarliestMissed, _SecondMissed]),
+            AbortToken
+        );
+
+        result.Should().NotBeNull();
+        result!.CoalescedRun.Should().NotBeNull("the 16:00 tick was genuinely missed even though 15:00 already ran");
+        result.CoalescedRun!.ExecutionTime.Should().Be(_SecondMissed);
+        result
+            .CoalescedRun.RecoveredFromUtc.Should()
+            .Be(_SecondMissed, "the run stands for the backlog from the first unaccounted-for instant");
+
+        var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
+        occurrences.Should().HaveCount(2);
+        occurrences.Single(x => x.Id == finished.Id).Status.Should().Be(JobStatus.Succeeded, "left undisturbed");
+    }
+
+    /// <summary>
+    /// The degenerate case of the step-past walk: when EVERY missed instant is accounted for by executing or
+    /// terminal rows, there is genuinely nothing to recover and no run is materialized.
+    /// </summary>
+    [Fact]
+    public async Task should_materialize_nothing_when_every_missed_instant_is_occupied()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync(
+            [
+                _Occurrence(definition.Id, _EarliestMissed, JobStatus.Succeeded),
+                _Occurrence(definition.Id, _SecondMissed, JobStatus.InProgress, _Owner),
+            ],
+            AbortToken
+        );
+
+        var result = await provider.ApplyCronRecoveryAsync(
+            _Request(definition, missedInstants: [_EarliestMissed, _SecondMissed]),
+            AbortToken
+        );
+
+        result.Should().NotBeNull();
+        result!.CoalescedRun.Should().BeNull("every missed instant already ran or is running");
+
+        var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
+        occurrences.Should().HaveCount(2, "nothing was materialized and nothing was disturbed");
+        occurrences.Single(x => x.ExecutionTime == _SecondMissed).Status.Should().Be(JobStatus.InProgress);
+    }
 
     private static CronJobOccurrenceEntity<FakeCronJob> _Occurrence(
         Guid definitionId,

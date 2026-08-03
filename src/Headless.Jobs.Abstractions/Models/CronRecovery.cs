@@ -35,10 +35,20 @@ public sealed record CronRecoveryRequest
     public required MissedRunPolicy Policy { get; init; }
 
     /// <summary>
-    /// First occurrence after the observed watermark. The coalesced run's scheduled instant and its durable recovery
-    /// stamp, and exact even when the backlog count saturated, because it is the first instant the walk visits.
+    /// First occurrence after the observed watermark. The coalesced run's preferred scheduled instant and durable
+    /// recovery stamp, and exact even when the backlog count saturated, because it is the first instant the walk
+    /// visits.
     /// </summary>
     public required DateTime EarliestMissedUtc { get; init; }
+
+    /// <summary>
+    /// Every missed instant the evaluation walk visited, in schedule order — the first element is
+    /// <see cref="EarliestMissedUtc"/>, and the list is bounded by the evaluation ceiling. Coalesce materializes its
+    /// run at the FIRST of these not already accounted for by an executing or terminal occurrence (R7 steps past an
+    /// occupied instant; R18 still owes the backlog a run when later instants were genuinely missed). Transient
+    /// input only — never persisted (KD13).
+    /// </summary>
+    public required IReadOnlyList<DateTime> MissedInstantsUtc { get; init; }
 
     /// <summary>Identifier to use when the coalesced run has to be created rather than repurposed.</summary>
     public required Guid CoalescedOccurrenceId { get; init; }
@@ -57,8 +67,10 @@ public sealed record CronRecoveryResult<TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     /// <summary>
-    /// The single run standing in for the backlog, or <see langword="null"/> under skip — and also under coalesce when
-    /// the earliest missed instant was already occupied, since a second row there would duplicate it.
+    /// The single run standing in for the backlog, or <see langword="null"/> under skip — and under coalesce only
+    /// when EVERY missed instant is already accounted for by an executing or terminal occurrence. Its
+    /// <c>ExecutionTime</c> is the earliest unaccounted-for instant, which is later than the earliest missed
+    /// instant when recovery stepped past occupied ones.
     /// </summary>
     public CronJobOccurrenceEntity<TCronJob>? CoalescedRun { get; init; }
 

@@ -1453,57 +1453,68 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 )
                 .ToArray();
 
-            // A live row takes precedence over a terminal one sharing the instant.
-            var atEarliest = inWindow
-                .Where(x => x.ExecutionTime == request.EarliestMissedUtc)
-                .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
-                .FirstOrDefault();
-
             CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
             var repurposedId = Guid.Empty;
 
             if (request.Policy is MissedRunPolicy.Coalesce)
             {
-                if (atEarliest is null)
+                // R18 owes the backlog exactly one run; R7 forbids duplicating an instant an executing or terminal
+                // row already accounts for. Walk the missed instants in schedule order and materialize at the FIRST
+                // unaccounted-for one — an occupied instant is stepped past (AE9, AE10), never duplicated, and only
+                // a fully-accounted-for backlog produces no run at all. Mirrors the relational provider.
+                foreach (var missedInstant in request.MissedInstantsUtc)
                 {
-                    var created = new CronJobOccurrenceEntity<TCronJob>
+                    // A live row takes precedence over a terminal one sharing the instant.
+                    var atInstant = inWindow
+                        .Where(x => x.ExecutionTime == missedInstant)
+                        .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
+                        .FirstOrDefault();
+
+                    if (atInstant is null)
                     {
-                        Id = request.CoalescedOccurrenceId,
-                        CronJobId = request.CronJobId,
-                        Status = JobStatus.Idle,
-                        OwnerId = null,
-                        LockedUntil = null,
-                        ExecutionTime = request.EarliestMissedUtc,
-                        RecoveredFromUtc = request.EarliestMissedUtc,
-                        OnNodeDeath = request.OnNodeDeath,
-                        CreatedAt = request.OperationTimeUtc,
-                        UpdatedAt = request.OperationTimeUtc,
-                        // Execution reads Function off this navigation; the relational provider gets it from an
-                        // Include on the claim read, so attach it here to keep the two providers interchangeable.
-                        CronJob = current,
-                    };
+                        var created = new CronJobOccurrenceEntity<TCronJob>
+                        {
+                            Id = request.CoalescedOccurrenceId,
+                            CronJobId = request.CronJobId,
+                            Status = JobStatus.Idle,
+                            OwnerId = null,
+                            LockedUntil = null,
+                            ExecutionTime = missedInstant,
+                            RecoveredFromUtc = missedInstant,
+                            OnNodeDeath = request.OnNodeDeath,
+                            CreatedAt = request.OperationTimeUtc,
+                            UpdatedAt = request.OperationTimeUtc,
+                            // Execution reads Function off this navigation; the relational provider gets it from an
+                            // Include on the claim read, so attach it here to keep the two providers interchangeable.
+                            CronJob = current,
+                        };
 
-                    _cronOccurrences[created.Id] = created;
-                    coalescedRun = _CloneCronOccurrence(created);
-                }
-                else if (atEarliest.Status is JobStatus.Idle or JobStatus.Queued)
-                {
-                    // KTD5: clearing the owner is the whole mechanism — the claim path's in-progress transition
-                    // requires OwnerId == owner, so the prior owner fails that predicate and drops the row.
-                    repurposedId = atEarliest.Id;
-                    var repurposed = _CloneCronOccurrence(atEarliest);
-                    repurposed.Status = JobStatus.Idle;
-                    repurposed.OwnerId = null;
-                    repurposed.LockedUntil = null;
-                    repurposed.RecoveredFromUtc = request.EarliestMissedUtc;
-                    repurposed.UpdatedAt = request.OperationTimeUtc;
-                    repurposed.CronJob ??= current;
-                    _cronOccurrences[repurposed.Id] = repurposed;
-                    coalescedRun = _CloneCronOccurrence(repurposed);
-                }
+                        _cronOccurrences[created.Id] = created;
+                        coalescedRun = _CloneCronOccurrence(created);
+                        break;
+                    }
 
-                // Otherwise the instant is occupied by a row that is executing or already finished; it has accounted
-                // for that instant, so recovery steps past rather than duplicating it.
+                    if (atInstant.Status is JobStatus.Idle or JobStatus.Queued)
+                    {
+                        // KTD5: clearing the owner is the whole mechanism — the claim path's in-progress transition
+                        // requires OwnerId == owner, so the prior owner fails that predicate and drops the row.
+                        // Unlike the relational provider no re-check CAS is needed: the per-definition lock already
+                        // serializes this against every status transition.
+                        repurposedId = atInstant.Id;
+                        var repurposed = _CloneCronOccurrence(atInstant);
+                        repurposed.Status = JobStatus.Idle;
+                        repurposed.OwnerId = null;
+                        repurposed.LockedUntil = null;
+                        repurposed.RecoveredFromUtc = missedInstant;
+                        repurposed.UpdatedAt = request.OperationTimeUtc;
+                        repurposed.CronJob ??= current;
+                        _cronOccurrences[repurposed.Id] = repurposed;
+                        coalescedRun = _CloneCronOccurrence(repurposed);
+                        break;
+                    }
+
+                    // Executing or terminal: the instant is accounted for — step past it (AE9, AE10).
+                }
             }
 
             var skippedCount = 0;

@@ -29,11 +29,18 @@ internal readonly record struct CronPendingEvaluation
     public bool CountSaturated { get; init; }
 
     /// <summary>
+    /// Every pending instant the walk visited, in schedule order — the first element is
+    /// <see cref="EarliestPendingUtc"/>. Bounded by the evaluation ceiling. Coalesce recovery walks this list to
+    /// find the earliest instant not already accounted for by an executing or terminal occurrence.
+    /// </summary>
+    public IReadOnlyList<DateTime> PendingInstantsUtc { get; init; }
+
+    /// <summary>
     /// Whether this backlog is a misfire: more than one pending instant, or a single one older than the definition's
     /// grace threshold. Decided from the watermark, never from a complete count.
     /// </summary>
     public bool IsRecovery { get; init; }
 
     /// <summary>Nothing pending — the schedule is fully reconciled as of the evaluated instant.</summary>
-    public static CronPendingEvaluation None => new();
+    public static CronPendingEvaluation None => new() { PendingInstantsUtc = [] };
 }

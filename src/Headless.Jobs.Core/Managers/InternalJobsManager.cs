@@ -594,6 +594,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                     NextDueUtc = nextAfterRecovery ?? DateTime.MaxValue,
                     Policy = candidate.OnMissedRun,
                     EarliestMissedUtc = earliestMissedUtc,
+                    MissedInstantsUtc = pending.PendingInstantsUtc,
                     CoalescedOccurrenceId = guidGenerator.Create(),
                     OnNodeDeath = candidate.OnNodeDeath,
                     OperationTimeUtc = timeProvider.GetUtcNow(),
@@ -622,8 +623,17 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
         if (recovery.CoalescedRun is null)
         {
-            // Skip materialized nothing, or coalesce found the earliest missed instant already occupied by a row that
-            // is running or has finished. Either way there is nothing for this wake to claim.
+            // Skip materialized nothing, or coalesce found every missed instant already accounted for by executing or
+            // terminal rows. Either way there is nothing for this wake to claim.
+            return null;
+        }
+
+        if (recovery.CoalescedRun.ExecutionTime != earliestMissedUtc)
+        {
+            // Coalesce stepped past the occupied earliest instant, so the run's instant no longer matches this
+            // wake's dispatch key and the keyed claim would find zero rows. The run is durably Idle at a past
+            // instant — exactly the shape the timed-out sweep claims (~1s), the same path that already recovers a
+            // coalesced run whose caller crashed after commit. Deliberately deferred rather than re-keyed.
             return null;
         }
 

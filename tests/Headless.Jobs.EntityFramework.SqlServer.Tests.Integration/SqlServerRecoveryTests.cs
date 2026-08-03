@@ -44,4 +44,10 @@ public sealed class SqlServerRecoveryTests(SqlServerJobsCoordinationFixture fixt
     {
         return base.concurrent_recovery_of_one_backlog_produces_exactly_one_winner();
     }
+
+    [Fact]
+    public override Task coalesce_steps_past_an_occupied_earliest_instant_to_the_next_missed_instant()
+    {
+        return base.coalesce_steps_past_an_occupied_earliest_instant_to_the_next_missed_instant();
+    }
 }
