@@ -502,6 +502,160 @@ public abstract class DataStorageTestsBase : TestBase
         }
     }
 
+    public virtual Task should_preserve_persisted_envelope_when_published_transition_declares_preserve()
+    {
+        return _ShouldPreservePersistedEnvelopeAsync(received: false);
+    }
+
+    public virtual Task should_preserve_persisted_envelope_when_received_transition_declares_preserve()
+    {
+        return _ShouldPreservePersistedEnvelopeAsync(received: true);
+    }
+
+    public virtual Task should_refresh_persisted_envelope_when_published_transition_declares_refresh()
+    {
+        return _ShouldRefreshPersistedEnvelopeAsync(received: false);
+    }
+
+    public virtual Task should_refresh_persisted_envelope_when_received_transition_declares_refresh()
+    {
+        return _ShouldRefreshPersistedEnvelopeAsync(received: true);
+    }
+
+    /// <summary>
+    /// <see cref="MessageContentWrite.Preserve"/> promises the stored envelope is left alone. A caller that
+    /// mutated its own <c>Origin</c> without asking for a rewrite must therefore see none of that mutation in
+    /// the row — the providers that persist serialized bytes get this for free, so this pins the providers
+    /// that keep a live envelope to the same contract.
+    /// </summary>
+    private async Task _ShouldPreservePersistedEnvelopeAsync(bool received)
+    {
+        if (!Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not expose the monitoring API needed to read the persisted envelope back");
+        }
+
+        // given — a stored row and the exact envelope bytes storage holds for it
+        var storage = GetStorage();
+        var stored = received
+            ? await storage.StoreReceivedMessageAsync(
+                "content-preserve",
+                "content-preserve-group",
+                CreateMessage(),
+                AbortToken
+            )
+            : await storage.StoreMessageAsync("content-preserve", CreateMessage(), cancellationToken: AbortToken);
+
+        var persistedContent = stored.Content;
+
+        // when — the caller stamps its envelope the way the failure paths do, but declares Preserve
+        stored.Origin.AddOrUpdateException(new InvalidOperationException("preserve-probe"));
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var changed = received
+            ? await storage.ChangeReceiveStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                nextRetryAt,
+                cancellationToken: AbortToken
+            )
+            : await storage.ChangePublishStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                nextRetryAt: nextRetryAt,
+                cancellationToken: AbortToken
+            );
+
+        // then — the transition landed, but the unwritten mutation never reached the row
+        changed.Should().BeTrue("the transition must succeed against a fresh, non-terminal row");
+
+        var roundTripped = received
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken)
+            : await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+
+        roundTripped.Should().NotBeNull("the row must persist after a successful state change");
+        roundTripped!
+            .NextRetryAt.Should()
+            .NotBeNull("the state transition must still be persisted")
+            .And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+        roundTripped.Content.Should().Be(persistedContent, "Preserve must leave the stored envelope byte-identical");
+        roundTripped
+            .Origin.Headers.Should()
+            .NotContainKey(
+                MessagingHeaders.Exception,
+                "a mutation the caller never asked storage to write must not leak into the row"
+            );
+    }
+
+    /// <summary>
+    /// <see cref="MessageContentWrite.Refresh"/> is what the failure paths use after stamping the exception
+    /// onto <c>Origin</c>. It must push that mutation all the way into the row and re-sync the caller's
+    /// <c>Content</c>, so the next pickup reads an envelope that agrees with its own bytes.
+    /// </summary>
+    private async Task _ShouldRefreshPersistedEnvelopeAsync(bool received)
+    {
+        if (!Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not expose the monitoring API needed to read the persisted envelope back");
+        }
+
+        // given — a stored row and the exact envelope bytes storage holds for it
+        var storage = GetStorage();
+        var stored = received
+            ? await storage.StoreReceivedMessageAsync(
+                "content-refresh",
+                "content-refresh-group",
+                CreateMessage(),
+                AbortToken
+            )
+            : await storage.StoreMessageAsync("content-refresh", CreateMessage(), cancellationToken: AbortToken);
+
+        var persistedContent = stored.Content;
+
+        // when — the caller stamps the exception onto Origin and declares Refresh, as the failure paths do
+        stored.Origin.AddOrUpdateException(new InvalidOperationException("refresh-probe"));
+        var expectedContent = GetSerializer().Serialize(stored.Origin);
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var changed = received
+            ? await storage.ChangeReceiveStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                nextRetryAt,
+                cancellationToken: AbortToken
+            )
+            : await storage.ChangePublishStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                nextRetryAt: nextRetryAt,
+                cancellationToken: AbortToken
+            );
+
+        // then — the mutated envelope is what storage now holds, on the row and on the caller's copy
+        changed.Should().BeTrue("the transition must succeed against a fresh, non-terminal row");
+        expectedContent
+            .Should()
+            .NotBe(persistedContent, "the probe must actually change the envelope, or this test proves nothing");
+        stored.Content.Should().Be(expectedContent, "Refresh must re-sync the caller's Content with its Origin");
+
+        var roundTripped = received
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken)
+            : await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+
+        roundTripped.Should().NotBeNull("the row must persist after a successful state change");
+        roundTripped!.Content.Should().Be(expectedContent, "Refresh must persist the mutated envelope");
+        roundTripped
+            .Origin.Headers.Should()
+            .ContainKey(
+                MessagingHeaders.Exception,
+                "the persisted Origin must agree with the Content that Refresh just wrote"
+            )
+            .WhoseValue.Should()
+            .Be(nameof(InvalidOperationException));
+    }
+
     public virtual async Task should_change_publish_state_to_delayed()
     {
         // Skip if storage doesn't support delayed scheduling
