@@ -172,6 +172,12 @@ internal sealed partial class InMemoryDataStorage(
         }
 
         var content = serializer.Serialize(message.Origin);
+
+        // Unlike the relational providers — whose row IS the serialized content — this provider keeps a
+        // live Origin beside Content, so refreshing only Content would hand the next pickup an envelope
+        // whose headers disagree with its bytes. Clone for the reason _ToSnapshot clones on the way out:
+        // the caller goes on mutating its own copy after this write.
+        stored.Origin = _CloneOrigin(message.Origin);
         stored.Content = content;
         message.Content = content;
     }
@@ -487,7 +493,7 @@ internal sealed partial class InMemoryDataStorage(
         {
             StorageId = stored.StorageId,
             Name = name,
-            Origin = stored.Origin,
+            Origin = _CloneOrigin(stored.Origin),
             Content = stored.Content,
             Lane = stored.Lane,
             Retries = stored.Retries,
@@ -628,7 +634,7 @@ internal sealed partial class InMemoryDataStorage(
             {
                 StorageId = id,
                 Group = group,
-                Origin = message.Origin,
+                Origin = _CloneOrigin(message.Origin),
                 Name = name,
                 Content = content,
                 Lane = message.Lane,
@@ -742,7 +748,7 @@ internal sealed partial class InMemoryDataStorage(
                     );
                 }
 
-                existing.Origin = message.Origin;
+                existing.Origin = _CloneOrigin(message.Origin);
                 existing.Content = serialized;
                 existing.Lane = message.Lane;
                 // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
@@ -824,7 +830,7 @@ internal sealed partial class InMemoryDataStorage(
         ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {
             StorageId = mdMessage.StorageId,
-            Origin = mdMessage.Origin,
+            Origin = _CloneOrigin(mdMessage.Origin),
             Lane = mdMessage.Lane,
             Group = group,
             Name = name,
@@ -1024,18 +1030,23 @@ internal sealed partial class InMemoryDataStorage(
             && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
+    /// <summary>
+    /// Copies an envelope crossing the store boundary in either direction. Caller mutations (e.g.
+    /// <c>AddOrUpdateException</c> before a write the terminal-row guard then rejects) must not leak into the
+    /// stored Origin, and a stored Origin must not drift under a caller that keeps editing its copy. The
+    /// payload value is shared by reference — payload semantics treat it as immutable.
+    /// </summary>
+    private static Message _CloneOrigin(Message origin)
+    {
+        return new Message(new Dictionary<string, string?>(origin.Headers, StringComparer.Ordinal), origin.Value);
+    }
+
     private static MediumMessage _ToSnapshot(MemoryMessage m)
     {
         return new()
         {
             StorageId = m.StorageId,
-            // Clone the Origin's Headers dictionary so caller mutations (e.g., AddOrUpdateException
-            // before a write that the terminal-row guard then rejects) cannot leak back into the
-            // stored Origin. Value is shared by reference — payload semantics treat it as immutable.
-            Origin = new Message(
-                new Dictionary<string, string?>(m.Origin.Headers, StringComparer.Ordinal),
-                m.Origin.Value
-            ),
+            Origin = _CloneOrigin(m.Origin),
             Content = m.Content,
             Added = m.Added,
             ExpiresAt = m.ExpiresAt,
