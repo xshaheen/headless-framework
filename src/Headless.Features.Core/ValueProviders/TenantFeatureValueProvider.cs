@@ -2,15 +2,15 @@
 
 using Headless.Abstractions;
 using Headless.Core;
-using Headless.Features.Models;
 using Headless.Features.Values;
 
 namespace Headless.Features.ValueProviders;
 
 /// <summary>
-/// Feature value provider that resolves values scoped to the current tenant.
-/// <see cref="HandleContextAsync"/> temporarily switches the active tenant when a specific
-/// <c>providerKey</c> is supplied, allowing cross-tenant feature reads.
+/// Feature value provider that resolves values scoped to a tenant: an explicit <c>providerKey</c> when the
+/// caller supplies one, otherwise the ambient tenant from <see cref="ICurrentTenant"/>.
+/// <see cref="HandleContextAsync"/> additionally switches the active tenant so code that reads the ambient
+/// tenant (rather than the key) observes the requested one.
 /// </summary>
 [PublicAPI]
 public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurrentTenant currentTenant)
@@ -58,17 +58,11 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
         return Task.FromResult(asyncDisposable);
     }
 
-    /// <summary>Returns the feature value for the current tenant, ignoring <paramref name="providerKey"/> in favour of the active tenant identifier.</summary>
-    /// <param name="feature">The feature definition to look up.</param>
-    /// <param name="providerKey">Unused; the active tenant ID from <see cref="ICurrentTenant"/> is always used.</param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The stored string value for the current tenant, or <see langword="null"/> if not set.</returns>
-    public override Task<string?> GetOrDefaultAsync(
-        FeatureDefinition feature,
-        string? providerKey,
-        CancellationToken cancellationToken = default
-    )
+    /// <summary>Returns <paramref name="providerKey"/> when explicitly supplied, otherwise falls back to the current tenant identifier.</summary>
+    /// <param name="providerKey">An explicit tenant key, or <see langword="null"/> to use the ambient tenant.</param>
+    /// <returns>The resolved tenant key, or <see langword="null"/> when no tenant is active.</returns>
+    protected override string? NormalizeProviderKey(string? providerKey)
     {
-        return Store.GetOrDefaultAsync(feature.Name, Name, currentTenant.Id, cancellationToken);
+        return providerKey ?? currentTenant.Id;
     }
 }

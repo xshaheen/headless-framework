@@ -38,14 +38,19 @@ internal sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupported();
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
+        var (decoded, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
             return ImageStreamCompressResult.NotSupported(error);
         }
 
-        Debug.Assert(image is not null);
+        Debug.Assert(decoded is not null);
+
+        // The decoded image owns pooled pixel buffers that only Dispose returns to the allocator; every exit path
+        // below must release them. No returned result references the image — only the encoded output stream.
+        using var image = decoded;
+
         var format = image.Metadata.DecodedImageFormat;
 
         if (format is null)

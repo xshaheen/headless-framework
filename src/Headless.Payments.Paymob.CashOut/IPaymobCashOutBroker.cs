@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Payments.Paymob.CashOut.Internals;
 using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Urls;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Payments.Paymob.CashOut;
 
@@ -26,7 +27,8 @@ namespace Headless.Payments.Paymob.CashOut;
 /// </para>
 /// <para>
 /// Registered as scoped by <c>SetupPaymobCashOut.AddPaymobCashOut</c>; the underlying
-/// <c>HttpClient</c> is injected by the typed-client factory.
+/// <c>HttpClient</c> is injected by the typed-client factory. Every request URL is composed
+/// from <c>PaymobCashOutOptions.ApiBaseUrl</c>, so the client needs no <c>BaseAddress</c>.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -88,21 +90,26 @@ public interface IPaymobCashOutBroker
     );
 }
 
-internal sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
-    : IPaymobCashOutBroker
+internal sealed class PaymobCashOutBroker(
+    HttpClient httpClient,
+    IPaymobCashOutAuthenticator authenticator,
+    IOptionsMonitor<PaymobCashOutOptions> options
+) : IPaymobCashOutBroker
 {
+    private PaymobCashOutOptions Options => options.CurrentValue;
+
     public async Task<CashOutTransaction> DisburseAsync(
         CashOutDisburseRequest request,
         CancellationToken cancellationToken = default
     )
     {
         var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var requestUrl = Url.Combine(httpClient.BaseAddress?.ToString()!, "disburse");
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "disburse");
 
         using var requestMessage = new HttpRequestMessage();
 
         requestMessage.Method = HttpMethod.Post;
-        requestMessage.RequestUri = new Uri(requestUrl);
+        requestMessage.RequestUri = new Uri(requestUrl, UriKind.Absolute);
         requestMessage.Content = JsonContent.Create(request, options: CashOutJsonOptions.JsonOptions);
         requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -129,7 +136,7 @@ internal sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutA
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
-        request.RequestUri = new Uri("budget/inquire/", UriKind.Relative);
+        request.RequestUri = new Uri(Url.Combine(Options.ApiBaseUrl, "budget/inquire/"), UriKind.Absolute);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -163,7 +170,7 @@ internal sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutA
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
-        request.RequestUri = "transaction/inquire/"
+        request.RequestUri = Url.Combine(Options.ApiBaseUrl, "transaction/inquire/")
             .SetQueryParam("page", page.ToString(CultureInfo.InvariantCulture))
             .ToUri();
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);

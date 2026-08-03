@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -9,10 +8,12 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, IAsyncDisposable
 {
-    private readonly ConcurrentBag<AsyncLazyRedisConnection> _connections = [];
+    // Fixed slots rather than a bag: a slot whose connect attempt failed has to be replaced in place,
+    // because Lazy caches the faulted task for the lifetime of the instance.
+    private readonly AsyncLazyRedisConnection[] _connections;
+    private readonly Lock _evictionLock = new();
 
     private readonly ILoggerFactory _loggerFactory;
-    private readonly SemaphoreSlim _poolLock = new(1);
     private readonly RedisMessagingOptions _redisOptions;
     private int _isDisposed;
     private bool _poolAlreadyConfigured;
@@ -21,7 +22,12 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
     {
         _redisOptions = options.Value;
         _loggerFactory = loggerFactory;
-        _Init();
+        _connections = new AsyncLazyRedisConnection[_redisOptions.ConnectionPoolSize];
+
+        for (var index = 0; index < _connections.Length; index++)
+        {
+            _connections[index] = _CreateConnection();
+        }
     }
 
     private AsyncLazyRedisConnection? QuietConnection =>
@@ -37,7 +43,6 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         }
 
         _DisposeCreatedConnections();
-        _poolLock.Dispose();
 
         GC.SuppressFinalize(this);
     }
@@ -50,7 +55,6 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         }
 
         await _DisposeCreatedConnectionsAsync().ConfigureAwait(false);
-        _poolLock.Dispose();
 
         GC.SuppressFinalize(this);
     }
@@ -76,16 +80,13 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
             return createdConnection.Connection;
         }
 
-        foreach (var lazy in _connections)
+        for (var index = 0; index < _connections.Length; index++)
         {
-            if (!lazy.IsValueCreated)
-            {
-                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
-            }
+            var lazy = Volatile.Read(ref _connections[index]);
 
-            if (lazy.CreatedConnection is not { } createdConnection)
+            if (!lazy.IsValueCreated || lazy.CreatedConnection is not { } createdConnection)
             {
-                return (await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
+                return (await _ResolveAsync(index, lazy, cancellationToken).ConfigureAwait(false)).Connection;
             }
 
             if (createdConnection.ConnectionCapacity == 0)
@@ -94,42 +95,89 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
             }
         }
 
-        var selected = _connections
-            .OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue)
-            .First();
+        var selectedIndex = _SelectLeastLoadedIndex();
 
-        return (await selected.GetValueAsync(cancellationToken).ConfigureAwait(false)).Connection;
+        return (
+            await _ResolveAsync(selectedIndex, Volatile.Read(ref _connections[selectedIndex]), cancellationToken)
+                .ConfigureAwait(false)
+        ).Connection;
     }
 
-    private void _Init()
+    private async Task<RedisConnection> _ResolveAsync(
+        int index,
+        AsyncLazyRedisConnection lazy,
+        CancellationToken cancellationToken
+    )
     {
         try
         {
-            // _Init runs from the constructor, which cannot be async, so the pool lock is taken synchronously.
-            // WaitAsync (MA0045) has no async caller to flow to here.
-#pragma warning disable MA0045
-            _poolLock.Wait();
-#pragma warning restore MA0045
+            return await lazy.GetValueAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            _EvictFaulted(index, lazy);
 
-            if (!_connections.IsEmpty)
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Replaces a slot whose connect attempt failed. <see cref="Lazy{T}"/> caches the faulted task for the
+    /// lifetime of the instance, so without this a single unreachable-Redis window at startup makes every
+    /// later caller rethrow that same failure until the process restarts.
+    /// </summary>
+    private void _EvictFaulted(int index, AsyncLazyRedisConnection faulted)
+    {
+        if (Volatile.Read(ref _isDisposed) != 0 || !faulted.IsValueCreated)
+        {
+            return;
+        }
+
+        var connectTask = faulted.Value;
+
+        // A cancelled wait is the caller's own token, not a broken connection: the attempt may still be
+        // in flight and shared with other callers, so only a completed failure evicts.
+        if (!connectTask.IsCompleted || connectTask.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        // Whoever observes the failure first installs the replacement; the rest share it rather than each
+        // opening a connection of their own. Only the failure path takes this lock.
+        lock (_evictionLock)
+        {
+            if (!ReferenceEquals(_connections[index], faulted))
             {
                 return;
             }
 
-            for (var i = 0; i < _redisOptions.ConnectionPoolSize; i++)
-            {
-                var connection = new AsyncLazyRedisConnection(
-                    _redisOptions,
-                    _loggerFactory.CreateLogger<AsyncLazyRedisConnection>()
-                );
+            Volatile.Write(ref _connections[index], _CreateConnection());
+        }
+    }
 
-                _connections.Add(connection);
+    private int _SelectLeastLoadedIndex()
+    {
+        var selectedIndex = 0;
+        var lowestCapacity = long.MaxValue;
+
+        for (var index = 0; index < _connections.Length; index++)
+        {
+            var capacity =
+                Volatile.Read(ref _connections[index]).CreatedConnection?.ConnectionCapacity ?? long.MaxValue;
+
+            if (capacity < lowestCapacity)
+            {
+                lowestCapacity = capacity;
+                selectedIndex = index;
             }
         }
-        finally
-        {
-            _poolLock.Release();
-        }
+
+        return selectedIndex;
+    }
+
+    private AsyncLazyRedisConnection _CreateConnection()
+    {
+        return new AsyncLazyRedisConnection(_redisOptions, _loggerFactory.CreateLogger<AsyncLazyRedisConnection>());
     }
 
     private void _DisposeCreatedConnections()

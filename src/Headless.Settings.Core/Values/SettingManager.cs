@@ -60,7 +60,7 @@ public sealed class SettingManager(
 
         var processedNames = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var provider in valueProviderManager.Providers.Reverse())
+        foreach (var provider in valueProviderManager.Providers)
         {
             var supportedDefinitions = settingDefinitions
                 .Where(x =>
@@ -77,11 +77,15 @@ public sealed class SettingManager(
             foreach (var settingValue in notNullValues)
             {
                 var settingDefinition = definitionMap[settingValue.Name];
-                var value = settingDefinition.IsEncrypted
-                    ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
-                    : settingValue.Value;
 
-                // Highest-priority provider wins (providers iterated in reverse == priority order).
+                // Only providers that persist manager-encrypted writes hold ciphertext; plaintext sources
+                // (defaults, configuration) would throw on decrypt — same rule as _CoreGetOrDefaultAsync.
+                var value =
+                    settingDefinition.IsEncrypted && provider.StoresEncryptedValues
+                        ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
+                        : settingValue.Value;
+
+                // Providers are ordered highest priority first, so the first non-null value wins.
                 if (resolvedValues.TryGetValue(settingValue.Name, out var existing) && existing is null)
                 {
                     resolvedValues[settingValue.Name] = value;
@@ -164,7 +168,7 @@ public sealed class SettingManager(
             {
                 if (resolved.TryGetValue(setting.Name, out var value))
                 {
-                    _AddSettingValue(settingValues, setting, value, provider.Name, providerKey, providerName);
+                    _AddSettingValue(settingValues, setting, value, provider, providerKey);
                 }
             }
         }
@@ -193,7 +197,7 @@ public sealed class SettingManager(
             {
                 if (resolved.TryGetValue(setting.Name, out var value))
                 {
-                    _AddSettingValue(settingValues, setting, value, provider.Name, pk, providerName);
+                    _AddSettingValue(settingValues, setting, value, provider, pk);
                 }
                 else
                 {
@@ -241,19 +245,11 @@ public sealed class SettingManager(
         Dictionary<string, SettingValue> settingValues,
         SettingDefinition setting,
         string? value,
-        string resolvedProviderName,
-        string? resolvedProviderKey,
-        string requestedProviderName
+        ISettingValueReadProvider resolvedProvider,
+        string? resolvedProviderKey
     )
     {
-        if (
-            setting.IsEncrypted
-            && !string.Equals(
-                requestedProviderName,
-                DefaultValueSettingValueProvider.ProviderName,
-                StringComparison.Ordinal
-            )
-        )
+        if (setting.IsEncrypted && resolvedProvider.StoresEncryptedValues)
         {
             value = encryptionService.Decrypt(setting, value);
         }
@@ -263,7 +259,7 @@ public sealed class SettingManager(
             settingValues[setting.Name] = new SettingValue(
                 setting.Name,
                 value,
-                new SettingValueProvider(resolvedProviderName, resolvedProviderKey)
+                new SettingValueProvider(resolvedProvider.Name, resolvedProviderKey)
             );
         }
     }
@@ -400,7 +396,7 @@ public sealed class SettingManager(
                 continue;
             }
 
-            if (definition.IsEncrypted && provider is StoreSettingValueProvider)
+            if (definition.IsEncrypted && provider.StoresEncryptedValues)
             {
                 value = encryptionService.Decrypt(definition, value);
             }

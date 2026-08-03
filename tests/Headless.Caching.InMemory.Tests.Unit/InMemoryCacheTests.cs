@@ -1837,6 +1837,147 @@ public sealed class InMemoryCacheTests : TestBase
 
     #endregion
 
+    #region Physically-expired resident entries
+
+    // Physical eviction is lazy: an entry past its absolute expiration stays in the dictionary until a value read
+    // or a maintenance sweep reaps it, and the sweep only runs off cache activity. Every mutation that inspects
+    // the resident value must therefore treat such an entry as a MISS — matching Redis, whose key is already gone
+    // when the equivalent INCRBY / CAS / ZADD runs. The envelope helper plants exactly that state (resident but
+    // expired) without depending on when a background sweep happens to fire.
+
+    private void _PlantExpiredEntry(InMemoryCache cache, string key, object? value)
+    {
+        var expiredAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
+        _ReplaceEntryEnvelope(cache, key, value, logicalExpiresAt: expiredAt, physicalExpiresAt: expiredAt);
+
+        // Precondition: the entry really is still resident (this throws when the key is absent).
+        _GetEntryEnvelope(cache, key).PhysicalExpiresAt.Should().Be(expiredAt);
+    }
+
+    [Fact]
+    public async Task should_restart_long_increment_from_scratch_when_resident_entry_is_expired()
+    {
+        // given — a rate-limit counter that outlived its window but has not been reaped
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 100L);
+
+        // when
+        var result = await cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(1), AbortToken);
+
+        // then — the window resets instead of resuming from the stale 100
+        result.Should().Be(1L);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+        cached.Value.Should().Be(1L);
+    }
+
+    [Fact]
+    public async Task should_restart_double_increment_from_scratch_when_resident_entry_is_expired()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 100.5);
+
+        // when
+        var result = await cache.IncrementAsync(key, 1.5, TimeSpan.FromMinutes(1), AbortToken);
+
+        // then
+        result.Should().Be(1.5);
+        var cached = await cache.GetAsync<double>(key, AbortToken);
+        cached.Value.Should().Be(1.5);
+    }
+
+    [Fact]
+    public async Task should_ignore_expired_baseline_in_set_if_higher()
+    {
+        // given — a stale baseline that would otherwise reject every lower value forever
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 100L);
+
+        // when
+        var result = await cache.SetIfHigherAsync(key, 5L, TimeSpan.FromMinutes(1), AbortToken);
+
+        // then — treated as absent, so the value is stored and returned like a first write
+        result.Should().Be(5L);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+        cached.Value.Should().Be(5L);
+    }
+
+    [Fact]
+    public async Task should_ignore_expired_baseline_in_set_if_lower()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 1L);
+
+        // when
+        var result = await cache.SetIfLowerAsync(key, 50L, TimeSpan.FromMinutes(1), AbortToken);
+
+        // then
+        result.Should().Be(50L);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+        cached.Value.Should().Be(50L);
+    }
+
+    [Fact]
+    public async Task should_not_remove_if_equal_when_resident_entry_is_expired()
+    {
+        // given — the stale value still matches what the caller expects
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 42);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync(key, 42, AbortToken);
+
+        // then — the CAS sees a miss, and the expired entry is reaped on the way out
+        result.Should().BeFalse();
+        (await cache.ExistsAsync(key, AbortToken)).Should().BeFalse();
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_start_a_fresh_set_when_resident_set_entry_is_expired()
+    {
+        // given — an expired entry whose value is not a set at all (a counter under a reused key)
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        _PlantExpiredEntry(cache, key, 42L);
+
+        // when — previously this threw because the stale non-set value was type-checked
+        var added = await cache.SetAddAsync(key, ["first"], TimeSpan.FromMinutes(1), AbortToken);
+
+        // then
+        added.Should().Be(1);
+        var members = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        members.Value.Should().BeEquivalentTo(["first"]);
+    }
+
+    [Fact]
+    public async Task should_report_no_set_removals_when_resident_set_entry_is_expired()
+    {
+        // given — a set whose members are all past their expiry, still resident
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var expiredAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
+        _PlantExpiredEntry(
+            cache,
+            key,
+            new Dictionary<string, DateTime?>(StringComparer.Ordinal) { ["member"] = expiredAt }
+        );
+
+        // when
+        var removed = await cache.SetRemoveAsync(key, ["member"], expiration: null, AbortToken);
+
+        // then — nothing live was removed, matching Redis on an already-dropped key
+        removed.Should().Be(0);
+    }
+
+    #endregion
+
     #region RemoveAllAsync
 
     [Fact]

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Rewrite;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
@@ -19,10 +20,29 @@ namespace Headless.Api.Middlewares;
 /// (See Google's comments at http://googlewebmastercentral.blogspot.co.uk/2010/04/to-slash-or-not-to-slash.html
 /// and Bing's at http://blogs.bing.com/webmaster/2012/01/26/moving-content-think-301-not-relcanonical).
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Ordering requirement</b> — register this rule AFTER <c>UseRouting()</c>, ideally through
+/// <see cref="Headless.Api.SetupCanonicalUrl.UseRedirectToCanonicalUrl(Microsoft.AspNetCore.Builder.IApplicationBuilder)"/>.
+/// The <see cref="Headless.Api.Filters.NoTrailingSlashAttribute"/> and
+/// <see cref="Headless.Api.Filters.NoLowercaseQueryStringAttribute"/> opt-outs are read from endpoint metadata,
+/// which only exists once <c>EndpointRoutingMiddleware</c> has matched the request.
+/// </para>
+/// <para>
+/// Requests with no routed endpoint — either because the rule runs before routing, or because nothing matched —
+/// are left untouched: the rule cannot tell whether such a request opted out, and redirecting anyway would
+/// corrupt values the endpoint asked to preserve (for example a case-sensitive OAuth <c>state</c> parameter).
+/// A one-time warning is logged the first time this happens so a misordered pipeline is visible in the logs.
+/// </para>
+/// </remarks>
 [PublicAPI]
-public sealed class RedirectToCanonicalUrlRule : IRule
+public sealed partial class RedirectToCanonicalUrlRule : IRule
 {
     private const char _SlashCharacter = '/';
+
+    // Fires at most once per rule instance (one registration = one pipeline position) to avoid log spam on
+    // every unmatched request. 0 = not yet warned, 1 = warned.
+    private int _endpointUnavailableWarningEmitted;
 
     /// <summary>
     /// Initializes the rule, reading <see cref="AppendTrailingSlash"/> and <see cref="LowercaseUrls"/>
@@ -94,9 +114,22 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     {
         Argument.IsNotNull(context);
 
+        var endpoint = context.HttpContext.GetEndpoint();
+
+        // Every canonicalization below is opt-out-able through endpoint metadata, which is populated by
+        // EndpointRoutingMiddleware. Without a routed endpoint the opt-outs are invisible rather than absent,
+        // so treating the URL as canonical is the only answer that cannot violate them.
+        if (endpoint is null)
+        {
+            _WarnEndpointUnavailable(context);
+            canonicalUrl = null;
+
+            return true;
+        }
+
         // Cache attribute lookups to avoid O(n) metadata scans on each check
-        var hasNoTrailingSlash = _HasAttribute<NoTrailingSlashAttribute>(context);
-        var hasNoLowercaseQueryString = _HasAttribute<NoLowercaseQueryStringAttribute>(context);
+        var hasNoTrailingSlash = endpoint.Metadata.GetMetadata<NoTrailingSlashAttribute>() is not null;
+        var hasNoLowercaseQueryString = endpoint.Metadata.GetMetadata<NoLowercaseQueryStringAttribute>() is not null;
 
         var isCanonical = true;
 
@@ -188,19 +221,39 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     }
 
     /// <summary>
-    /// Determines whether the specified action or its controller has the attribute with the specified type
-    /// <typeparamref name="T"/>.
+    /// Logs, at most once per rule instance, that canonicalization was skipped because the request carried no
+    /// routed endpoint — the signal that the rule is registered before <c>UseRouting()</c>.
     /// </summary>
-    /// <typeparam name="T">The type of the attribute.</typeparam>
     /// <param name="context">The <see cref="RewriteContext" />.</param>
-    /// <returns><see langword="true"/> if a <typeparamref name="T"/> attribute is specified, otherwise <see langword="false"/>.</returns>
-    private static bool _HasAttribute<T>(RewriteContext context)
-        where T : class
+    private void _WarnEndpointUnavailable(RewriteContext context)
     {
-        Argument.IsNotNull(context);
+        // Only RewriteMiddleware populates RewriteContext.Logger, so it is absent when the rule is driven
+        // directly (tests, custom hosts) despite the non-nullable annotation.
+        ILogger? logger = context.Logger;
 
-        var endpoint = context.HttpContext.GetEndpoint();
+        if (logger is null || Volatile.Read(ref _endpointUnavailableWarningEmitted) != 0)
+        {
+            return;
+        }
 
-        return endpoint?.Metadata.GetMetadata<T>() is not null;
+        if (Interlocked.CompareExchange(ref _endpointUnavailableWarningEmitted, 1, 0) != 0)
+        {
+            return;
+        }
+
+        LogEndpointUnavailableWarning(logger);
     }
+
+    [LoggerMessage(
+        EventId = 0,
+        EventName = "HEADLESS_CANONICAL_URL_ENDPOINT_UNAVAILABLE",
+        Level = LogLevel.Warning,
+        Message = "RedirectToCanonicalUrlRule skipped URL canonicalization because the request has no routed "
+            + "endpoint. Requests matching no endpoint are never canonicalized; if canonical redirects are "
+            + "expected here, register the rule AFTER UseRouting() (app.UseRouting(); "
+            + "app.UseRedirectToCanonicalUrl();) so [NoTrailingSlash] and [NoLowercaseQueryString] endpoint "
+            + "metadata is visible. This warning is emitted once per rule instance."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogEndpointUnavailableWarning(ILogger logger);
 }

@@ -22,8 +22,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly RabbitMqConsumerConfig? _consumerConfig;
     private readonly MessageLane _lane;
     private readonly List<string> _queueNames = [];
-    private readonly List<string> _consumerTags = [];
+    private readonly Dictionary<string, string> _consumerTags = new(StringComparer.Ordinal);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
@@ -36,7 +37,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IOptions<RabbitMqMessagingOptions> options,
         IServiceProvider serviceProvider,
         RabbitMqConsumerConfig? consumerConfig = null,
-        MessageLane lane = MessageLane.Bus
+        MessageLane lane = MessageLane.Bus,
+        Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null
     )
     {
         RabbitMqValidation.ValidateQueueName(groupName);
@@ -50,6 +52,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _rabbitMqOptions = options.Value;
         _consumerConfig = consumerConfig;
         _lane = lane;
+        _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
     }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -124,7 +127,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
-        _consumer = new RabbitMqBasicConsumer(
+        if (_lifecycleCheckpointAsync is not null)
+        {
+            await _lifecycleCheckpointAsync(RabbitMqConsumerLifecycleCheckpoint.BeforeStartLock).ConfigureAwait(false);
+        }
+
+        var consumer = new RabbitMqBasicConsumer(
             _channel!,
             _groupConcurrent,
             _groupName,
@@ -136,19 +144,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         try
         {
-            foreach (var queueName in _queueNames)
-            {
-                var consumerTag = await _channel!
-                    .BasicConsumeAsync(queueName, autoAck: false, _consumer, cancellationToken)
-                    .ConfigureAwait(false);
-                _consumerTags.Add(consumerTag);
-            }
+            await _StartConsumingAsync(consumer, cancellationToken).ConfigureAwait(false);
 
             _ready.TrySetResult();
         }
         catch (TimeoutException ex)
         {
-            await _consumer
+            await consumer
                 .HandleChannelShutdownAsync(
                     null!,
                     new ShutdownEventArgs(
@@ -197,17 +199,48 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
-        {
-            return;
-        }
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var consumerTag in _consumerTags)
+        try
         {
-            await _channel!.BasicCancelAsync(consumerTag, cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
+            if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
+            {
+                return;
+            }
 
-        _consumerTags.Clear();
+            try
+            {
+                foreach (var (queueName, consumerTag) in _consumerTags.ToArray())
+                {
+                    await _channel!
+                        .BasicCancelAsync(consumerTag, cancellationToken: CancellationToken.None)
+                        .ConfigureAwait(false);
+                    _consumerTags.Remove(queueName);
+                }
+            }
+            catch (Exception cancellationException)
+            {
+                try
+                {
+                    await _ConsumeQueuesAsync(CancellationToken.None).ConfigureAwait(false);
+                    await _pauseGate.ResumeAsync().ConfigureAwait(false);
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new AggregateException(
+                        "RabbitMQ consumer pause failed and the active registrations could not be restored.",
+                        cancellationException,
+                        rollbackException
+                    );
+                }
+
+                throw;
+            }
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -217,19 +250,27 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
-        {
-            return;
-        }
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        // Re-register consumer after transitioning so the broker is
-        // delivering messages when the gate unblocks waiters.
-        foreach (var queueName in _queueNames)
+        try
         {
-            var consumerTag = await _channel!
-                .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
-                .ConfigureAwait(false);
-            _consumerTags.Add(consumerTag);
+            if (!_pauseGate.IsPaused)
+            {
+                return;
+            }
+
+            // Register while the gate is still paused. If broker registration or caller cancellation
+            // fails, _ConsumeQueuesAsync rolls back the partial registration and the gate stays paused.
+            if (_consumer is not null)
+            {
+                await _ConsumeQueuesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await _pauseGate.ResumeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
@@ -313,6 +354,99 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
     }
 
+    private async Task _StartConsumingAsync(RabbitMqBasicConsumer consumer, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var waitForResume = false;
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                // Publish the consumer under the same lock as registration so ResumeAsync can safely
+                // take ownership when PauseAsync wins the lifecycle race.
+                _consumer = consumer;
+
+                if (_pauseGate.IsPaused)
+                {
+                    waitForResume = true;
+                }
+                else
+                {
+                    await _ConsumeQueuesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+
+            if (waitForResume)
+            {
+                if (_lifecycleCheckpointAsync is not null)
+                {
+                    await _lifecycleCheckpointAsync(RabbitMqConsumerLifecycleCheckpoint.StartDeferredByPause)
+                        .ConfigureAwait(false);
+                }
+
+                await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task _ConsumeQueuesAsync(CancellationToken cancellationToken)
+    {
+        List<KeyValuePair<string, string>> registrations = [];
+
+        try
+        {
+            foreach (var queueName in _queueNames)
+            {
+                if (_consumerTags.ContainsKey(queueName))
+                {
+                    continue;
+                }
+
+                var consumerTag = await _channel!
+                    .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
+                    .ConfigureAwait(false);
+
+                _consumerTags.Add(queueName, consumerTag);
+                registrations.Add(KeyValuePair.Create(queueName, consumerTag));
+            }
+        }
+        catch (Exception registrationException)
+        {
+            List<Exception> rollbackExceptions = [];
+
+            foreach (var (queueName, consumerTag) in registrations)
+            {
+                try
+                {
+                    await _channel!
+                        .BasicCancelAsync(consumerTag, cancellationToken: CancellationToken.None)
+                        .ConfigureAwait(false);
+                    _consumerTags.Remove(queueName);
+                }
+                catch (Exception rollbackException)
+                {
+                    rollbackExceptions.Add(rollbackException);
+                }
+            }
+
+            if (rollbackExceptions.Count > 0)
+            {
+                throw new AggregateException(
+                    "RabbitMQ consumer registration failed and its partial registrations could not be cancelled.",
+                    [registrationException, .. rollbackExceptions]
+                );
+            }
+
+            throw;
+        }
+    }
+
     private string _GetQueueName(string messageName)
     {
         return GetQueueName(_groupName, messageName, _lane);
@@ -351,4 +485,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             )
             .ConfigureAwait(false);
     }
+}
+
+internal enum RabbitMqConsumerLifecycleCheckpoint
+{
+    BeforeStartLock = 0,
+    StartDeferredByPause = 1,
 }

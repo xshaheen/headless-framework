@@ -11,6 +11,9 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     /// <inheritdoc/>
     public abstract string Name { get; }
 
+    /// <inheritdoc/>
+    public bool StoresEncryptedValues => true;
+
     private ISettingValueStore Store { get; } = store;
 
     /// <inheritdoc/>

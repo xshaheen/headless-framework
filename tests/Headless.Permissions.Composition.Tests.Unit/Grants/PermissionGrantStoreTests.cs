@@ -396,6 +396,100 @@ public sealed class PermissionGrantStoreTests : TestBase
     }
 
     [Fact]
+    public async Task should_convert_denials_when_every_name_already_has_a_record()
+    {
+        // given — the record count matches the requested names, but one record is an explicit denial
+        string[] permissionNames = ["Users.Create", "Users.Update"];
+        var existingRecords = new List<PermissionGrantRecord>
+        {
+            new(Guid.NewGuid(), "Users.Create", _ProviderName, _ProviderKey, true),
+            new(Guid.NewGuid(), "Users.Update", _ProviderName, _ProviderKey, false),
+        };
+
+        _repository
+            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
+            .Returns(existingRecords);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+
+        // when
+        await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
+
+        // then
+        await _repository
+            .Received(1)
+            .DeleteManyAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r =>
+                    r.Count == 1 && r.All(x => x.Name == "Users.Update")
+                ),
+                AbortToken
+            );
+        await _repository
+            .Received(1)
+            .InsertManyAsync(
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
+                    records.All(r => r.Name == "Users.Update" && r.IsGranted)
+                ),
+                AbortToken
+            );
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
+                    d.Count == 2 && d.Values.All(v => v.IsGranted == true)
+                ),
+                Arg.Any<TimeSpan>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_grant_mixed_batch_of_absent_denied_and_granted_names()
+    {
+        // given
+        string[] permissionNames = ["Users.Create", "Users.Update", "Users.Delete"];
+        var existingRecords = new List<PermissionGrantRecord>
+        {
+            new(Guid.NewGuid(), "Users.Update", _ProviderName, _ProviderKey, false),
+            new(Guid.NewGuid(), "Users.Delete", _ProviderName, _ProviderKey, true),
+        };
+
+        _repository
+            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
+            .Returns(existingRecords);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+
+        // when
+        await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
+
+        // then — the denial is converted and the missing name is inserted
+        await _repository
+            .Received(1)
+            .InsertManyAsync(
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
+                    records.All(r => r.Name == "Users.Update" && r.IsGranted)
+                ),
+                AbortToken
+            );
+        await _repository
+            .Received(1)
+            .InsertManyAsync(
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
+                    records.All(r => r.Name == "Users.Create" && r.IsGranted)
+                ),
+                AbortToken
+            );
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
+                    d.Count == 3 && d.Values.All(v => v.IsGranted == true)
+                ),
+                Arg.Any<TimeSpan>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
     public async Task should_update_cache_on_batch_grant()
     {
         // given

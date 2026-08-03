@@ -22,6 +22,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Host-Cancellable Consumer Startup**: Factory creation, metadata provisioning, and subscription receive the host-stopping token without converting cancellation into broker failures
+- **Monitoring Pagination**: `MessageQuery.CurrentPage` is zero-based, is returned as `IndexPage.Index`, and negative values are normalized to zero
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)

@@ -34,6 +34,12 @@ public interface IDistributedReadWriteLockStorage
     /// as a reader and the TTL was extended; <see langword="false"/> when the lease has been lost
     /// (expired, evicted, or never granted). Implementations MUST never shorten an existing TTL.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="TryExtendWriteAsync"/>, a <see langword="null"/> <paramref name="ttl"/> does
+    /// NOT promote the lease to non-expiring — a reader that never expires strands the resource for
+    /// queued writers. Implementations keep the existing finite expiry instead. The provider clamps
+    /// null/infinite to the default lease duration before reaching this method.
+    /// </remarks>
     ValueTask<bool> TryExtendReadAsync(
         string resource,
         string leaseId,
@@ -72,7 +78,11 @@ public interface IDistributedReadWriteLockStorage
     /// Atomically refreshes the TTL on the caller's exclusive write lease for
     /// <paramref name="resource"/>. Returns <see langword="true"/> only when the stored writer id
     /// matches <paramref name="leaseId"/>; <see langword="false"/> when the lease has been lost.
-    /// Implementations MUST never shorten an existing TTL.
+    /// Implementations MUST never shorten an existing TTL. A <see langword="null"/>
+    /// <paramref name="ttl"/> means infinite: implementations MUST clear any existing expiry so the
+    /// writer lease becomes non-expiring, never leave the previous finite expiry armed while
+    /// reporting success. (Writers may hold infinite leases; readers may not — see
+    /// <see cref="TryExtendReadAsync"/>.)
     /// </summary>
     ValueTask<bool> TryExtendWriteAsync(
         string resource,

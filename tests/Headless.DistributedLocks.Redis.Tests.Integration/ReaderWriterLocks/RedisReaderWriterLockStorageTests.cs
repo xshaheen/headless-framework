@@ -332,6 +332,49 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(30));
     }
 
+    /// <summary>
+    /// Writers may hold infinite leases, so a null TTL must PERSIST the writer key. Leaving the previous
+    /// finite TTL armed while reporting success lets the key expire under a writer that believes it holds
+    /// a non-expiring lease — a silent mutual-exclusion violation. Mirrors the in-memory sibling
+    /// (<c>should_keep_writer_lease_infinite_when_reader_writer_storage_extended_with_null_ttl</c>).
+    /// </summary>
+    [Fact]
+    public async Task should_clear_writer_key_expiry_when_extended_with_null_ttl()
+    {
+        // given - a writer holding a finite lease.
+        var resource = _NewResource();
+        var writerId = Guid.NewGuid().ToString("N");
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+
+        (
+            await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
+                resource,
+                writerId,
+                waitingId,
+                TimeSpan.FromSeconds(30),
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        (await db.KeyTimeToLiveAsync(_WriterKey(resource))).Should().NotBeNull();
+
+        // when - renewed to an infinite lease.
+        var extended = await fixture.ReaderWriterLockStorage.TryExtendWriteAsync(
+            resource,
+            writerId,
+            ttl: null,
+            AbortToken
+        );
+
+        // then - the lease really is non-expiring, not just reported as one.
+        extended.Should().BeTrue();
+        (await db.KeyTimeToLiveAsync(_WriterKey(resource))).Should().BeNull();
+        (await fixture.ReaderWriterLockStorage.ValidateWriteAsync(resource, writerId, AbortToken)).Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_report_is_read_locked_true_only_when_readers_present()
     {

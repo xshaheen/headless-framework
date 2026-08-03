@@ -88,7 +88,8 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_ProviderKey" ON features."FeatureValues" ("Name", "ProviderName", "ProviderKey");
+CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_ProviderKey" ON features."FeatureValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_NullProviderKey" ON features."FeatureValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
 END IF;
 END $EF$;
 

@@ -78,7 +78,8 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey" ON permissions."PermissionGrants" ("TenantId", "Name", "ProviderName", "ProviderKey");
+CREATE UNIQUE INDEX "IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey" ON permissions."PermissionGrants" ("TenantId", "Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_PermissionGrants_Name_ProviderName_ProviderKey_NullTenantId" ON permissions."PermissionGrants" ("Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NULL;
 END IF;
 END $EF$;
 

@@ -29,7 +29,11 @@ public class MessageQuery
     /// <summary>Gets or sets an optional delivery lane filter.</summary>
     public MessageLane? Lane { get; set; }
 
-    /// <summary>Gets or sets the one-based page index for paginated results.</summary>
+    /// <summary>
+    /// Gets or sets the zero-based page index for paginated results, matching the
+    /// <see cref="Headless.Primitives.IndexPage{T}.Index"/> of the returned page.
+    /// Values below zero are normalized to zero.
+    /// </summary>
     public int CurrentPage { get; set; }
 
     /// <summary>Gets or sets the maximum number of rows returned per page.</summary>

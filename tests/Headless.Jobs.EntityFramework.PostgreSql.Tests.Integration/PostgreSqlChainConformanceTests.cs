@@ -14,6 +14,12 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task deleting_a_chain_root_removes_every_descendant_row()
+    {
+        return base.deleting_a_chain_root_removes_every_descendant_row();
+    }
+
+    [Fact]
     public override Task deep_chain_claim_stamps_every_descendant_to_configured_depth()
     {
         return base.deep_chain_claim_stamps_every_descendant_to_configured_depth();

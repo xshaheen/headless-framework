@@ -50,6 +50,7 @@ public sealed class ConflictExceptionTests
 
         // then
         exception.Errors.Should().ContainSingle();
+        exception.Errors[0].Code.Should().Be(ApiResultErrorCodes.Default);
         exception.Errors[0].Description.Should().Be("An error occurred");
         exception.Message.Should().Be("Conflict: An error occurred");
     }

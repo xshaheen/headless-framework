@@ -503,11 +503,18 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE {mapping.ExecutionTime} = @executionTime AND {mapping.CronJobId} = @cronJobId
+                  AND {mapping.Status} IN (@idle, @queued, @inProgress)
             );
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", id));
         command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
+        // Only an ACTIVE occurrence blocks the insert, matching the filtered unique index and the PostgreSQL
+        // ON CONFLICT ... WHERE Status IN (...) sibling. A terminal row (e.g. the occurrence a cron-expression
+        // migration marked Skipped) must not suppress a fresh fire at the same execution time.
+        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
+        command.Parameters.Add(new SqlParameter("inProgress", nameof(JobStatus.InProgress)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));

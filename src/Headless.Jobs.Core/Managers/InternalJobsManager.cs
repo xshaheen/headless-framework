@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
 
-internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
+internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
@@ -196,23 +196,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining;
     }
 
-    private async Task<JobExecutionState[]> _QueueNextTimeJobsAsync(
-        TimeJobEntity[] minTimeJobs,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobsAsync(minTimeJobs, cancellationToken))
-        {
-            results.Add(_BuildQueuedTimeJobContext(updatedTimeJob));
-
-            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
-        }
-
-        return [.. results];
-    }
-
     private JobExecutionState _BuildQueuedTimeJobContext(TimeJobEntity timeJob)
     {
         var context = new JobExecutionState
@@ -260,50 +243,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         return childContext;
-    }
-
-    private async Task<JobExecutionState[]> _QueueNextCronJobsAsync(
-        (DateTime Key, JobManagerDispatchContext[] Items) minCronJob,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (
-            var occurrence in persistenceProvider
-                .QueueCronJobOccurrencesAsync(minCronJob, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            results.Add(
-                new JobExecutionState
-                {
-                    ParentId = occurrence.CronJobId,
-                    FunctionName = occurrence.CronJob.Function,
-                    JobId = occurrence.Id,
-                    Type = JobType.CronJobOccurrence,
-                    Retries = occurrence.CronJob.Retries,
-                    RetryCount = occurrence.RetryCount,
-                    RetryIntervals = occurrence.CronJob.RetryIntervals,
-                    ExecutionTime = occurrence.ExecutionTime,
-                }
-            );
-
-            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
-                    .ConfigureAwait(false);
-            }
-            else if (notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .UpdateCronOccurrenceAsync(occurrence.CronJobId, occurrence)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        return [.. results];
     }
 
     private async Task<(DateTime Key, JobManagerDispatchContext[] Items)?> _GetEarliestCronJobGroupAsync(
@@ -843,48 +782,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return request == null ? default : JobsHelper.ReadJobRequest<T>(request, serializationOptions);
     }
 
-    public async Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default)
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (
-            var timedOutTimeJob in persistenceProvider
-                .QueueTimedOutTimeJobsAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            results.Add(_BuildQueuedTimeJobContext(timedOutTimeJob));
-
-            await notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
-        }
-
-        await foreach (
-            var timedOutCronJob in persistenceProvider
-                .QueueTimedOutCronJobOccurrencesAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            var functionContext = new JobExecutionState
-            {
-                FunctionName = timedOutCronJob.CronJob.Function,
-                JobId = timedOutCronJob.Id,
-                Type = JobType.CronJobOccurrence,
-                Retries = timedOutCronJob.CronJob.Retries,
-                RetryCount = timedOutCronJob.RetryCount,
-                RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
-                ParentId = timedOutCronJob.CronJobId,
-                ExecutionTime = timedOutCronJob.ExecutionTime,
-            };
-
-            results.Add(functionContext);
-            await notificationHubSender
-                .UpdateCronOccurrenceFromExecutionState<TCronJob>(functionContext)
-                .ConfigureAwait(false);
-        }
-
-        return [.. results];
-    }
-
     public async Task MigrateDefinedCronJobs(
         (string, string)[] cronExpressions,
         CancellationToken cancellationToken = default
@@ -1021,5 +918,25 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         Guid jobId
+    );
+
+    [LoggerMessage(
+        EventId = 3216,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} was claimed, but its dashboard notification failed. The claim is unaffected and the "
+            + "job still runs; only the dashboard view is stale."
+    )]
+    public static partial void LogClaimNotificationFailed(this ILogger logger, Exception exception, Guid jobId);
+
+    [LoggerMessage(
+        EventId = 3217,
+        Level = LogLevel.Warning,
+        Message = "Releasing {ClaimedCount} job(s) claimed before the claim enumeration aborted failed; they stay "
+            + "leased until the lease lapses and the fallback sweep reclaims them."
+    )]
+    public static partial void LogAbandonedClaimReleaseFailed(
+        this ILogger logger,
+        Exception exception,
+        int claimedCount
     );
 }

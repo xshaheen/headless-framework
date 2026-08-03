@@ -32,6 +32,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 `IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (with the standard async suffix). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
+The broker composes every CashOut request as an absolute URL from the current `PaymobCashOutOptions.ApiBaseUrl`. The typed `HttpClient.BaseAddress` does not select or override the CashOut endpoint.
+
 The CashOut authentication uses OAuth2 password grant. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
 
 `ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.

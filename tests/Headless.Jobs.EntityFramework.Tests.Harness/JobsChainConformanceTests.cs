@@ -92,6 +92,43 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    // The Parent/Children FK is DeleteBehavior.NoAction on every relational provider, so deleting a chain root has to
+    // remove the subtree explicitly — nothing cascades. A stranded descendant is never benign: a non-timed one is
+    // unreachable forever, and a timed one whose ParentId was nulled escapes the parent-terminal gate and runs
+    // unconditionally. Four levels, because the previous implementation reached exactly two.
+    public virtual async Task deleting_a_chain_root_removes_every_descendant_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var builder = JobChain.Start(_Payload("n1"), executionTime: DateTime.UtcNow.AddHours(1));
+            var n2 = builder.Root.Then(_Payload("n2"));
+            var n3 = n2.Then(_Payload("n3"));
+            n3.Then(_Payload("n4"));
+            n2.Catch(_Payload("n2-catch"));
+
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(5);
+
+            var deleted = await persistence.RemoveTimeJobsAsync([rootId], ct);
+
+            deleted.Should().Be(5);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     // AE7 (provider half). A five-node linear chain plus a failure branch is claimed in one root claim: the recursive
     // CTE stamps EVERY descendant beyond the grandchild level with the root's owner + lease, and hydration rebuilds the
     // whole non-timed subtree to the configured depth. A two-level cap would leave the fourth/fifth nodes unstamped.
