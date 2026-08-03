@@ -680,6 +680,209 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_not_start_consuming_when_pause_wins_after_startup_gate()
+    {
+        // given
+        var beforeStartLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowStartLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startDeferred = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lifecycleCheckpointAsync: async checkpoint =>
+            {
+                if (checkpoint == RabbitMqConsumerLifecycleCheckpoint.BeforeStartLock)
+                {
+                    beforeStartLock.TrySetResult();
+                    await allowStartLock.Task.WaitAsync(AbortToken);
+                }
+                else
+                {
+                    startDeferred.TrySetResult();
+                }
+            }
+        );
+        _channel.IsClosed.Returns(false);
+        _ConfigureBasicConsume("consumer-tag");
+        using var cts = new CancellationTokenSource();
+
+        var listeningTask = client.ListeningAsync(TimeSpan.Zero, cts.Token).AsTask();
+
+        try
+        {
+            await beforeStartLock.Task.WaitAsync(AbortToken);
+
+            // when - ListeningAsync has passed the outer gate, but PauseAsync wins the lifecycle lock.
+            await client.PauseAsync(AbortToken);
+            allowStartLock.TrySetResult();
+            await startDeferred.Task.WaitAsync(AbortToken);
+
+            // then
+            _CountBasicConsumeCalls().Should().Be(0);
+
+            await client.ResumeAsync(AbortToken);
+            await client.WaitUntilReadyAsync(AbortToken);
+            _CountBasicConsumeCalls().Should().Be(1);
+        }
+        finally
+        {
+            allowStartLock.TrySetResult();
+            await client.ResumeAsync(AbortToken);
+            await cts.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    [Fact]
+    public async Task should_finish_pause_after_gate_transition_when_caller_is_cancelled()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        _channel.IsClosed.Returns(false);
+        _ConfigureBasicConsume("consumer-tag");
+
+        using var listeningCts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.Zero, listeningCts.Token).AsTask();
+
+        try
+        {
+            await client.WaitUntilReadyAsync(AbortToken);
+
+            var cancellationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var allowCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var brokerCancellationToken = new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _channel
+                .BasicCancelAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .Returns(callInfo =>
+                {
+                    brokerCancellationToken.TrySetResult(callInfo.ArgAt<CancellationToken>(2));
+                    cancellationStarted.TrySetResult();
+                    return allowCancellation.Task;
+                });
+            using var pauseCts = new CancellationTokenSource();
+
+            // when
+            var pauseTask = client.PauseAsync(pauseCts.Token).AsTask();
+            await cancellationStarted.Task.WaitAsync(AbortToken);
+            await pauseCts.CancelAsync();
+            allowCancellation.TrySetResult();
+            await pauseTask;
+
+            // then
+            (await brokerCancellationToken.Task.WaitAsync(AbortToken))
+                .Should()
+                .Be(CancellationToken.None);
+            await client.ResumeAsync(AbortToken);
+            _CountBasicConsumeCalls().Should().Be(2);
+        }
+        finally
+        {
+            await listeningCts.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    [Fact]
+    public async Task should_restore_resumed_state_when_broker_cancellation_fails()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        _channel.IsClosed.Returns(false);
+        _ConfigureBasicConsume("consumer-tag");
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.Zero, cts.Token).AsTask();
+
+        try
+        {
+            await client.WaitUntilReadyAsync(AbortToken);
+            _channel
+                .BasicCancelAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException(new InvalidOperationException("cancel failed")));
+
+            // when
+            var act = async () => await client.PauseAsync(AbortToken);
+
+            // then
+            await act.Should().ThrowAsync<InvalidOperationException>();
+            await client.ResumeAsync(AbortToken);
+            _CountBasicConsumeCalls().Should().Be(1, "failed pause restores the prior resumed registration");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    [Fact]
+    public async Task should_remain_paused_when_broker_registration_fails_during_resume()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        _channel.IsClosed.Returns(false);
+        _ConfigureBasicConsume("consumer-tag");
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.Zero, cts.Token).AsTask();
+
+        try
+        {
+            await client.WaitUntilReadyAsync(AbortToken);
+            await client.PauseAsync(AbortToken);
+            _channel
+                .BasicConsumeAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<bool>(),
+                    Arg.Any<string>(),
+                    Arg.Any<bool>(),
+                    Arg.Any<bool>(),
+                    Arg.Any<IDictionary<string, object?>>(),
+                    Arg.Any<IAsyncBasicConsumer>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(_ => Task.FromException<string>(new InvalidOperationException("consume failed")));
+
+            // when
+            var act = async () => await client.ResumeAsync(AbortToken);
+
+            // then
+            await act.Should().ThrowAsync<InvalidOperationException>();
+
+            _ConfigureBasicConsume("resumed-tag");
+            await client.ResumeAsync(AbortToken);
+            _CountBasicConsumeCalls().Should().Be(3, "the failed resume leaves the gate available for retry");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    private void _ConfigureBasicConsume(string consumerTag)
+    {
+        _channel
+            .BasicConsumeAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>>(),
+                Arg.Any<IAsyncBasicConsumer>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(consumerTag));
+    }
+
     private int _CountBasicConsumeCalls()
     {
         return _channel
