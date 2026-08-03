@@ -92,6 +92,41 @@ public sealed class DisposableFactoryTests
         action.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void should_throw_when_async_state_dispose_callback_is_null()
+    {
+        // when
+        var action = () => DisposableFactory.Create(state: 42, dispose: (Func<int, ValueTask>)null!);
+
+        // then
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_capture_struct_state_by_value_at_creation()
+    {
+        // given: the state is copied once at construction, so later mutations of the caller's local are
+        // invisible to the dispose callback — pin that so callers don't rely on late binding.
+        var state = new MutableStruct { Value = 1 };
+        var counter = new Counter();
+        var disposable = DisposableFactory.Create(
+            (State: state, Sink: counter),
+            static scope => scope.Sink.Value = scope.State.Value
+        );
+
+        // when
+        state.Value = 2;
+        disposable.Dispose();
+
+        // then
+        counter.Value.Should().Be(1);
+    }
+
+    private struct MutableStruct
+    {
+        public int Value;
+    }
+
     private sealed class Counter
     {
         public int Value { get; set; }
