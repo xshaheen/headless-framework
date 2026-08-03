@@ -143,10 +143,13 @@ internal sealed class JobsFallbackBackgroundService(
     // sweep in that state — this reconcile is their only recovery path, per the coordination contract
     // ("consumers must also periodically reconcile rows whose owner identity is not live").
     //
-    // The snapshot is read BEFORE the stamped-owner scan: stamping requires established membership, so an owner
-    // stamped after this snapshot was taken is necessarily observable in the next one — absence can only mean
-    // superseded or pruned. Suspected and Dead-retained identities are present in the snapshot and deliberately
-    // excluded here (Dead belongs to the dead-owner bridge; Suspected may still be alive and renewing).
+    // The stamped-owner scan is read BEFORE the snapshot: stamping requires established membership, so every
+    // owner in the scan registered no later than the scan, and one that is still live must appear in the later
+    // snapshot — absence can only mean superseded or pruned. The reverse order is unsafe: a node that registers
+    // and stamps between the two reads would be present in the scan but absent from the earlier snapshot, and
+    // this iteration acts on this iteration's diff, so it would be reclaimed while alive. Suspected and
+    // Dead-retained identities are present in the snapshot and deliberately excluded here (Dead belongs to the
+    // dead-owner bridge; Suspected may still be alive and renewing).
     private async Task _ReclaimOrphanedOwnersAsync(CancellationToken cancellationToken)
     {
         if (membership is null)
@@ -165,9 +168,9 @@ internal sealed class JobsFallbackBackgroundService(
 
         _lastOrphanSweepTimestamp = timeProvider.GetTimestamp();
 
+        var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var observable = snapshot.Select(x => x.Identity.ToString()).ToHashSet(StringComparer.Ordinal);
-        var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var owner in stamped)
         {
