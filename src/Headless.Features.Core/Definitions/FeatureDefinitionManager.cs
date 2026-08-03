@@ -14,8 +14,11 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
-    private MergedSnapshot<FeatureDefinition>? _featuresSnapshot;
-    private MergedSnapshot<FeatureGroupDefinition>? _groupsSnapshot;
+    // Volatile: the manager is a singleton and the snapshots are published without a lock, matching the
+    // convention DynamicFeatureDefinitionStore uses for the identical pattern. Racing recomputes are benign
+    // (same inputs produce an equivalent merge); unordered publication of a fresh object is not.
+    private volatile MergedSnapshot<FeatureDefinition>? _featuresSnapshot;
+    private volatile MergedSnapshot<FeatureGroupDefinition>? _groupsSnapshot;
 
     /// <summary>Finds a feature definition by <paramref name="name"/>, checking the static store first, then the dynamic store.</summary>
     /// <param name="name">The unique feature name to search for.</param>
