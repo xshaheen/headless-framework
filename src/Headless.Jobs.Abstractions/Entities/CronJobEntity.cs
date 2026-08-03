@@ -73,7 +73,13 @@ public class CronJobEntity : BaseJobEntity
     /// creation from the scheduler-wide setting and persisted here, so every node evaluates the same threshold and
     /// no node's local configuration can decide whether an instant misfired.
     /// </summary>
-    public virtual int MissedRunGraceSeconds { get; set; }
+    /// <remarks>
+    /// A persisted zero — a row migrated from before this column existed — is read as "not yet resolved" and falls
+    /// back to <see cref="JobsRecoveryDefaults.MissedRunGraceSeconds"/>. Zero is not a usable threshold in its own
+    /// right: dispatch is always at or after the scheduled instant, so a zero grace would classify every ordinary
+    /// tick delayed by a garbage collection as a misfire.
+    /// </remarks>
+    public virtual int MissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
 
     /// <summary>
     /// Policy applied when this definition enters recovery. Seeded from the job function attribute at creation and

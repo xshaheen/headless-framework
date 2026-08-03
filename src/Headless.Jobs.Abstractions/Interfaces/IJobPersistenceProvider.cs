@@ -437,6 +437,38 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
+    /// Applies a recovery policy to a definition whose watermark fell behind: resolves the occurrences already sitting
+    /// in the missed window, materializes the policy's run or none, and carries the watermark to the recovery instant.
+    /// Returns <see langword="null"/> when the advance fence was lost and nothing was written.
+    /// </summary>
+    /// <param name="request">The observed position to recover from, the policy, and the recovery instant.</param>
+    /// <param name="cancellationToken">Token that aborts the recovery.</param>
+    /// <returns>What the recovery did, or <see langword="null"/> when another node recovered first.</returns>
+    /// <remarks>
+    /// Fenced by the same compare-and-advance as ordinary dispatch, so concurrent nodes recovering the same backlog
+    /// produce exactly one winner and the loser writes nothing.
+    /// <para>
+    /// Unlike the ordinary advance this is expected to be one <b>transaction</b>, not one statement: the occurrence
+    /// resolution and the watermark move must not interleave, or a crash between them leaves the backlog partly
+    /// resolved with the watermark already past it. That is safe here specifically because
+    /// <see cref="CronRecoveryRequest.RecoveredThroughUtc"/> is a caller-supplied store instant rather than a live
+    /// clock read, so no database-clock expression is frozen at transaction open.
+    /// </para>
+    /// <para>
+    /// Occurrence resolution follows the not-yet-executing boundary the pause path already uses. An <c>Idle</c> or
+    /// <c>Queued</c> row in the window is the policy's to resolve — repurposed as the coalesced run with its ownership
+    /// revoked so its former owner's in-progress stamp fails and it drops the row, or transitioned to skipped. An
+    /// <c>InProgress</c> or terminal row is stepped past untouched, and its instant is never duplicated: an occurrence
+    /// already running or already finished has accounted for that instant.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
+        CronRecoveryRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Recovers the time jobs held by a node that coordination has declared dead, applying each row's
     /// <c>OnNodeDeath</c> policy: <c>Retry</c> → released to <c>Idle</c>, <c>MarkFailed</c> → <c>Failed</c>,
     /// <c>Skip</c> → <c>Skipped</c>.

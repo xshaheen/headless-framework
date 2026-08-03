@@ -92,6 +92,86 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return TimeZoneInfo.ConvertTimeToUtc(localTime, timeZone);
     }
 
+    /// <summary>
+    /// Walks the schedule forward from <paramref name="reconciledThroughUtc"/> to decide what it owes as of
+    /// <paramref name="storeUtcNow"/>, and whether that backlog is a misfire.
+    /// </summary>
+    /// <remarks>
+    /// Evaluation goes through <see cref="GetNextOccurrenceOrDefault(string, DateTime, string?)"/> so the DST gap and
+    /// overlap rules are applied exactly once, here as on the dispatch path. Re-deriving them would let a definition's
+    /// backlog disagree with its own projection across a transition.
+    /// <para>
+    /// A paused span needs no special case: pause suspends selection and resume rebases the watermark to the resume
+    /// instant, so the paused interval is never between the watermark and now and cannot produce a pending instant.
+    /// </para>
+    /// <para>
+    /// The recovery decision is settled by the second pending instant at the latest, so the walk continues past that
+    /// point purely to report a count. Both instants it returns stay exact regardless of saturation, because the walk
+    /// visits them in order.
+    /// </para>
+    /// </remarks>
+    public CronPendingEvaluation EvaluatePending(
+        string expression,
+        string? timeZoneId,
+        DateTime reconciledThroughUtc,
+        DateTime storeUtcNow,
+        int graceSeconds,
+        int evaluationCeiling = JobsRecoveryDefaults.EvaluationCeiling
+    )
+    {
+        var ceiling = evaluationCeiling > 0 ? evaluationCeiling : JobsRecoveryDefaults.EvaluationCeiling;
+
+        // A zero or negative persisted grace means the definition predates grace resolution; every dispatch is
+        // necessarily at or after its instant, so honoring zero would classify routine lateness as a misfire.
+        var grace = graceSeconds > 0 ? graceSeconds : JobsRecoveryDefaults.MissedRunGraceSeconds;
+
+        DateTime? earliest = null;
+        DateTime? latest = null;
+        var count = 0;
+        var cursor = reconciledThroughUtc;
+        var instants = new List<DateTime>();
+
+        while (count < ceiling)
+        {
+            var next = GetNextOccurrenceOrDefault(expression, cursor, timeZoneId);
+
+            if (next is null || next.Value > storeUtcNow)
+            {
+                break;
+            }
+
+            earliest ??= next.Value;
+            latest = next.Value;
+            cursor = next.Value;
+            instants.Add(next.Value);
+            count++;
+        }
+
+        if (count == 0)
+        {
+            return CronPendingEvaluation.None;
+        }
+
+        // Saturated only when the walk stopped at the ceiling AND another pending instant exists past it, so a backlog
+        // that lands exactly on the ceiling still reports an exact count.
+        var saturated =
+            count == ceiling
+            && GetNextOccurrenceOrDefault(expression, cursor, timeZoneId) is { } beyond
+            && beyond <= storeUtcNow;
+
+        var isRecovery = count > 1 || earliest!.Value < storeUtcNow.AddSeconds(-grace);
+
+        return new CronPendingEvaluation
+        {
+            EarliestPendingUtc = earliest,
+            LatestPendingUtc = latest,
+            PendingCount = count,
+            CountSaturated = saturated,
+            PendingInstantsUtc = instants,
+            IsRecovery = isRecovery,
+        };
+    }
+
     public bool Invalidate(string expression)
     {
         return _cache.TryRemove(_Normalize(expression), out _);
