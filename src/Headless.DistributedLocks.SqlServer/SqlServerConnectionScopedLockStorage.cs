@@ -42,6 +42,10 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     private readonly SqlServerDistributedLockOptions _options = options.Value;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
+    // Deterministic concurrency seam for proving that release serializes behind an active probe. Production
+    // leaves this unset; tests can pause a probe after it owns the connection gate without relying on timing.
+    internal Func<ValueTask>? ProbeGateAcquiredAsync { get; init; }
+
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
@@ -91,7 +95,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 isShared,
                 connection,
                 _options.CommandTimeout,
-                timeProvider
+                timeProvider,
+                ProbeGateAcquiredAsync
             );
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -433,6 +438,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         private readonly CancellationTokenSource _lostTokenSource = new();
         private readonly TimeProvider _timeProvider;
         private readonly int _probeCommandTimeoutSeconds;
+        private readonly Func<ValueTask>? _probeGateAcquiredAsync;
 
         // Serializes the active probe against release so two commands never run concurrently on the SqlConnection.
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
@@ -448,7 +454,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             bool isShared,
             SqlConnection connection,
             TimeSpan commandTimeout,
-            TimeProvider timeProvider
+            TimeProvider timeProvider,
+            Func<ValueTask>? probeGateAcquiredAsync
         )
         {
             Resource = resource;
@@ -457,6 +464,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             IsShared = isShared;
             Connection = connection;
             _timeProvider = timeProvider;
+            _probeGateAcquiredAsync = probeGateAcquiredAsync;
             _probeCommandTimeoutSeconds = SqlServerApplicationLock.GetCommandTimeoutSeconds(commandTimeout);
 
             // Subscribe before the connection opens so a break observed at any point cancels the lost token.
@@ -521,6 +529,11 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
                 try
                 {
+                    if (_probeGateAcquiredAsync is not null)
+                    {
+                        await _probeGateAcquiredAsync().ConfigureAwait(false);
+                    }
+
                     if (Connection.State != ConnectionState.Open)
                     {
                         return;

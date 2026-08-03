@@ -5,6 +5,8 @@ using Headless.DistributedLocks.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -223,6 +225,47 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         (await locks.IsLockedAsync(resource, AbortToken))
             .Should()
             .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_release_cleanly_when_a_liveness_probe_owns_the_connection_gate()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var probeOwnsGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeProbe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:",
+                }
+            ),
+            timeProvider
+        )
+        {
+            ProbeGateAcquiredAsync = async () =>
+            {
+                probeOwnsGate.TrySetResult();
+                await resumeProbe.Task.WaitAsync(AbortToken);
+            },
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+        var leaseId = Guid.NewGuid().ToString("N");
+        var handle = await storage.TryAcquireAsync(resource, leaseId, isShared: false, observeLoss: true, AbortToken);
+        handle.Should().NotBeNull();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(30));
+        await probeOwnsGate.Task.WaitAsync(AbortToken);
+
+        var release = handle!.ReleaseAsync(AbortToken).AsTask();
+        var releaseWaitedForProbe = !release.IsCompleted;
+
+        resumeProbe.TrySetResult();
+        await release.WaitAsync(AbortToken);
+
+        releaseWaitedForProbe.Should().BeTrue();
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     private ServiceProvider _CreateProvider(Action<SqlServerDistributedLockOptions>? configure = null)

@@ -145,6 +145,41 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_pace_contended_storage_retries_through_the_real_polling_signal()
+    {
+        var pollingFallback = TimeSpan.FromMilliseconds(100);
+        _storage.AcquireResults.Enqueue(false);
+        _storage.AcquireResults.Enqueue(true);
+        var provider = _CreateProvider(
+            pollingFallback: pollingFallback,
+            releaseSignal: new PollingReleaseSignal(_timeProvider)
+        );
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var acquire = provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(1) },
+            AbortToken
+        );
+
+        await _PollUntilAsync(() => _storage.AcquireCount == 1);
+
+        // The jittered delay is always in [80ms, 120ms), so no second storage attempt is allowed
+        // strictly before the lower bound.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(80) - TimeSpan.FromTicks(1));
+        await Task.Yield();
+        _storage.AcquireCount.Should().Be(1);
+
+        // Crossing the upper bound must complete the real polling signal and re-probe storage.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(40) + TimeSpan.FromTicks(1));
+        await _PollUntilAsync(() => _storage.AcquireCount == 2);
+
+        await using var handle = await acquire;
+        handle.Should().NotBeNull();
+        _storage.AcquireCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task should_emit_a_lock_acquire_activity_with_the_resource_tag_when_a_lock_is_acquired()
     {
         // given (listen to the distributed-locks activity source)
