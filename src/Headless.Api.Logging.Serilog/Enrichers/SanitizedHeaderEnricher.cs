@@ -31,17 +31,16 @@ public sealed partial class SanitizedHeaderEnricher(
     private readonly string _propertyName = propertyName ?? _SanitizePropertyName(headerName);
 
     /// <summary>
-    /// Per-instance key into <see cref="HttpContext.Items"/>. A pipeline carries one enricher per header,
-    /// each with its own header name and length budget, so the memo slots must not collide.
-    /// </summary>
-    private readonly object _memoKey = new();
-
-    /// <summary>
     /// Reads the configured request header from the current <see cref="HttpContext"/>, sanitizes its value,
     /// and adds it as a Serilog property on <paramref name="logEvent"/> if the header is present and non-empty.
     /// </summary>
     /// <param name="logEvent">The log event to enrich.</param>
     /// <param name="propertyFactory">Factory used to create the Serilog property.</param>
+    /// <remarks>
+    /// The value is resolved per event rather than cached on the request: <see cref="HttpContext.Items"/> is a
+    /// plain non-thread-safe dictionary shared with the rest of the pipeline, and a request may log from several
+    /// threads at once. Caching would also freeze a header that middleware stamps mid-pipeline.
+    /// </remarks>
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
     {
         var httpContext = contextAccessor.HttpContext;
@@ -51,16 +50,7 @@ public sealed partial class SanitizedHeaderEnricher(
             return;
         }
 
-        // A request emits many log events but its headers are fixed once the pipeline is running, so the
-        // sanitized value is resolved on the first event and reused by the rest. A null memo records
-        // "header absent or empty" so the miss is not re-probed either.
-        if (!httpContext.Items.TryGetValue(_memoKey, out var memoized))
-        {
-            memoized = _ResolveSanitizedValue(httpContext);
-            httpContext.Items[_memoKey] = memoized;
-        }
-
-        if (memoized is not string sanitized)
+        if (_ResolveSanitizedValue(httpContext) is not { } sanitized)
         {
             return;
         }
