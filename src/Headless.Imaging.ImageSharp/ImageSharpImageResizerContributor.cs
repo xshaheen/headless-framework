@@ -65,10 +65,11 @@ internal sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageR
 
         image.Mutate(x => x.Resize(new ResizeOptions { Size = _GetSize(args), Mode = resizeMode.Value }));
 
-        // Pre-size the encode buffer from the source: a resize re-encodes to the same format and (almost always) a
-        // smaller image, so the source length is a safe upper estimate that skips the doubling regrow-and-copy chain
-        // from zero. An output that does exceed it still grows normally.
-        var memoryStream = EncodeBufferHelpers.CreateEncodeBuffer(stream);
+        // Deliberately NOT pre-sized from the source (unlike the compressor): a resize output is typically orders
+        // of magnitude smaller than the source, and the returned stream keeps its full capacity for the caller's
+        // lifetime — seeding it with the source length would trade a few transient regrow copies for a retained
+        // (often large-object-heap) allocation per in-flight resize.
+        var memoryStream = new MemoryStream();
 
         try
         {

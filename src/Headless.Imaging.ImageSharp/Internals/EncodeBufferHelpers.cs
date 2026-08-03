@@ -12,9 +12,11 @@ internal static class EncodeBufferHelpers
 
     /// <summary>
     /// Creates the buffer an encode writes into, pre-sized from <paramref name="source"/> when its length is known.
-    /// Re-encoding for resize or compress yields output of the source's order of magnitude at most, so seeding the
-    /// capacity skips MemoryStream's doubling regrow-and-copy chain up from zero. This only sets the starting
-    /// capacity — an output that does exceed the estimate still grows normally.
+    /// Intended for compression, where an output worth keeping is strictly smaller than the source, making the
+    /// source length a tight upper bound that skips MemoryStream's doubling regrow-and-copy chain up from zero.
+    /// Do not use it where the output is typically far smaller than the source (resize): the buffer keeps its full
+    /// capacity for the returned stream's lifetime, so an oversized seed is a retained allocation, not a shortcut.
+    /// This only sets the starting capacity — an output that does exceed the estimate still grows normally.
     /// </summary>
     /// <param name="source">The encoded source stream; its length is used only as an estimate.</param>
     public static MemoryStream CreateEncodeBuffer(Stream source)
