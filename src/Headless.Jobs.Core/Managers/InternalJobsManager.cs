@@ -150,6 +150,15 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             }
         }
 
+        // The group's watermarks were already advanced and committed inside _GetEarliestCronJobGroupAsync, so the
+        // arbitration above may only pick the wake instant — it must never drop an advanced group. A discarded
+        // group's occurrences are never materialized, and nothing re-derives an instant the watermark has passed.
+        // Time jobs carry no such commitment: excluding them merely defers them to the next wake's read.
+        if (minCronGroup is { Items.Length: > 0 })
+        {
+            includeCron = true;
+        }
+
         if (!includeCron && !includeTimeJobs)
         {
             return (Timeout.InfiniteTimeSpan, []);

@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
@@ -140,6 +141,38 @@ public sealed class CronControlProviderTests : TestBase
         (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken))
             .Should()
             .ContainSingle(x => x.ExecutionTime == executionTime && x.Status == JobStatus.Queued);
+    }
+
+    /// <summary>
+    /// R10 on the attribute-driven path: a stored projection derived under the OLD expression must not survive a
+    /// code-defined expression change — a yearly→minutes edit would otherwise stay dormant until the stale
+    /// projection came due. Migrate resets the position to the uninitialized sentinel so the next wake re-derives
+    /// it by the creation rule under the new expression.
+    /// </summary>
+    [Fact]
+    public async Task should_reset_the_schedule_position_when_code_defined_expression_changes()
+    {
+        var provider = _Create();
+
+        // A seeded definition whose position was already initialized under a yearly expression: the projection
+        // points at next January.
+        var seeded = _Definition(isPaused: false, revision: 0, expression: "0 0 3 1 1 *");
+        seeded.Id = JobsSeedId.ForCronSeed("seeded");
+        seeded.Function = "seeded";
+        seeded.InitIdentifier = "MemoryTicker_Seeded_seeded";
+        seeded.ReconciledThroughUtc = _Now.UtcDateTime.AddMinutes(-5);
+        seeded.NextDueUtc = new DateTime(_Now.Year + 1, 1, 1, 3, 0, 0, DateTimeKind.Utc);
+        await provider.InsertCronJobsAsync([seeded], AbortToken);
+
+        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], AbortToken);
+
+        var updated = (await provider.GetCronJobByIdAsync(seeded.Id, AbortToken))!;
+        updated.Expression.Should().Be("0 */5 * * * *");
+        updated.ScheduleRevision.Should().Be(1);
+        updated
+            .ReconciledThroughUtc.Should()
+            .Be(default(DateTime), "the stale position must be re-derived under the new expression, not kept");
+        updated.NextDueUtc.Should().Be(default(DateTime), "the projection was derived under the old expression");
     }
 
     [Fact]

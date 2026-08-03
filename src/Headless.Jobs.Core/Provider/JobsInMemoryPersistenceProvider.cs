@@ -1362,6 +1362,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
+                        // R10: the stored projection was derived under the OLD expression. Reset the position to
+                        // the uninitialized sentinel so the next wake re-derives it by the R9 creation rule under
+                        // the new expression — matching the relational provider's migrate path.
+                        updated.ReconciledThroughUtc = default;
+                        updated.NextDueUtc = default;
+
                         foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == id).ToArray())
                         {
                             if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
@@ -1870,6 +1876,20 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     && x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress
                 );
                 if (liveOccurrence is not null && liveOccurrence.Id != context.NextCronOccurrence?.Id)
+                {
+                    continue;
+                }
+
+                // R7/AE10: with no reuse row carried, ANY row already at this instant — including a terminal one
+                // the live filter above ignores — means the instant is accounted for and the advance stands;
+                // materializing again would run the tick twice. Mirrors the relational claim path's
+                // occupied-instant guard.
+                if (
+                    context.NextCronOccurrence is null
+                    && _cronOccurrences.Values.Any(x =>
+                        x.CronJobId == context.Id && x.ExecutionTime == cronJobOccurrences.Key
+                    )
+                )
                 {
                     continue;
                 }

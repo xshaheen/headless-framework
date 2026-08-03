@@ -121,6 +121,82 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
     }
 
     /// <summary>
+    /// The cross-arbitration half of the never-advance-then-discard invariant: an earlier time job must not make
+    /// GetNextJobs drop a cron group whose watermarks already advanced inside the selection read. The arbitration
+    /// may pick the wake instant, but an advanced instant with nothing materialized is unrecoverable — no sweep
+    /// re-derives an instant the watermark has passed.
+    /// </summary>
+    [Fact]
+    public async Task should_materialize_the_advanced_instant_even_when_an_earlier_time_job_wins_the_wake()
+    {
+        var (manager, provider) = _Create();
+
+        // Cron due exactly now; a time job 600 ms earlier in the PREVIOUS second, still inside the time-job read's
+        // one-second lookback, so the arbitration's different-second branch prefers the time job.
+        var due = _Definition(nextDue: _Now);
+        await provider.InsertCronJobsAsync([due], AbortToken);
+        await provider.AddTimeJobsAsync(
+            [
+                new FakeTimeJob
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "time-dispatch",
+                    Status = JobStatus.Idle,
+                    ExecutionTime = _Now.AddMilliseconds(-600),
+                    CreatedAt = new DateTimeOffset(_Now.AddMinutes(-5), TimeSpan.Zero),
+                    UpdatedAt = new DateTimeOffset(_Now.AddMinutes(-5), TimeSpan.Zero),
+                    Request = [],
+                },
+            ],
+            AbortToken
+        );
+
+        await manager.GetNextJobs(AbortToken);
+
+        var after = (await provider.GetCronJobByIdAsync(due.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(_Now, "the due definition's advance committed during selection");
+
+        var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == due.Id, AbortToken);
+        occurrences
+            .Should()
+            .ContainSingle(
+                x => x.ExecutionTime == _Now,
+                "an instant whose watermark advanced must be materialized in the same wake — discarding the group "
+                    + "loses the tick with no recovery path"
+            );
+    }
+
+    /// <summary>
+    /// AE10: an occurrence at the projection's instant that already completed is invisible to the claimable-row
+    /// reuse read and no longer covered by the filtered unique index, so dispatch must step past the instant
+    /// without materializing a second run.
+    /// </summary>
+    [Fact]
+    public async Task should_not_rerun_an_instant_whose_occurrence_already_completed()
+    {
+        var (manager, provider) = _Create();
+        var due = _Definition(nextDue: _Now);
+        await provider.InsertCronJobsAsync([due], AbortToken);
+
+        var completed = _Occurrence(due.Id, _Now);
+        completed.Status = JobStatus.Succeeded;
+        completed.ExecutedAt = new DateTimeOffset(_Now.AddSeconds(-1), TimeSpan.Zero);
+        await provider.InsertCronJobOccurrencesAsync([completed], AbortToken);
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Should().BeEmpty("the succeeded occurrence already stands for this instant");
+
+        var after = (await provider.GetCronJobByIdAsync(due.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(_Now, "the instant is accounted for, so the watermark advances past it");
+
+        var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == due.Id, AbortToken);
+        occurrences.Should().ContainSingle("the completed run must not be joined by a re-materialized duplicate");
+        occurrences[0].Id.Should().Be(completed.Id);
+        occurrences[0].Status.Should().Be(JobStatus.Succeeded, "the existing terminal row is left undisturbed");
+    }
+
+    /// <summary>
     /// A definition carrying no position (seeded before the field existed, or created by a path that did not set it)
     /// must be initialized from the store's instant, never from its occurrence history — otherwise an upgrade replays
     /// every instant back to year one as a backlog.

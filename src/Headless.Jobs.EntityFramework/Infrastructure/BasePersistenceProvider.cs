@@ -1146,6 +1146,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         cron.Expression = expression;
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
+
+                        // R10: the stored projection was derived under the OLD expression; left standing it keeps
+                        // selecting (or hiding) the definition by the stale schedule — a yearly→minutes edit would
+                        // not fire until next year. Reset the position to the uninitialized sentinel so the next
+                        // wake re-derives it by the R9 creation rule under the new expression: anchored at the
+                        // store instant, no interval replayed, the edit effective on the next wake — matching the
+                        // runtime edit path's observable contract.
+                        cron.ReconciledThroughUtc = default;
+                        cron.NextDueUtc = default;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
