@@ -433,8 +433,8 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         try
         {
             // Matches File.OpenRead's mode/access/share, but opens an async handle like the upload path: the returned
-            // stream is consumed asynchronously (CopyToAsync into a response body or another provider), and a sync
-            // handle forces those reads onto blocking thread-pool work.
+            // stream is consumed asynchronously (CopyToAsync into a response body or another provider). On Windows
+            // this enables overlapped I/O instead of blocking thread-pool reads; on Unix it is a consistency no-op.
             var streamOptions = new FileStreamOptions
             {
                 Mode = FileMode.Open,
