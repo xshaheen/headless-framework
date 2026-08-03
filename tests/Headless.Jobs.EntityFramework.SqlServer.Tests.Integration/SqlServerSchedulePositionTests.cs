@@ -50,4 +50,16 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
     {
         return base.due_ness_and_the_returned_instant_follow_the_database_clock_not_a_skewed_node_clock();
     }
+
+    [Fact]
+    public override Task queueing_an_instant_with_a_terminal_occurrence_materializes_nothing()
+    {
+        return base.queueing_an_instant_with_a_terminal_occurrence_materializes_nothing();
+    }
+
+    [Fact]
+    public override Task migrate_resets_the_position_when_the_code_defined_expression_changes()
+    {
+        return base.migrate_resets_the_position_when_the_code_defined_expression_changes();
+    }
 }

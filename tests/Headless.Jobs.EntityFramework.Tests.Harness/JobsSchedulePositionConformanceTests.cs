@@ -339,6 +339,81 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             );
     }
 
+    /// <summary>
+    /// AE10: an occurrence at the projection instant that already reached a terminal status is invisible to the
+    /// claimable-row reuse read and no longer covered by the filtered unique index, so without an explicit guard
+    /// materialization would insert a second run for an instant that already executed. The claim path must step
+    /// past the occupied instant and leave the terminal row undisturbed.
+    /// </summary>
+    public virtual async Task queueing_an_instant_with_a_terminal_occurrence_materializes_nothing()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("occupied-instant");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "occupied-instant", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+        var executionTime = DateTime.UtcNow.AddMinutes(-1);
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.Succeeded,
+            ownerId: null,
+            NodeDeathPolicy.Retry,
+            lockedUntil: null,
+            executionTime,
+            ct
+        );
+
+        var context = new JobManagerDispatchContext(cronId)
+        {
+            FunctionName = "occupied-instant",
+            Expression = "* * * * *",
+            OnNodeDeath = NodeDeathPolicy.Retry,
+            NextCronOccurrence = null,
+        };
+
+        (await persistence.QueueCronJobOccurrencesAsync((executionTime, [context]), ct).ToArrayAsync(ct))
+            .Should()
+            .BeEmpty("the succeeded occurrence already stands for this instant — re-running it would double-fire");
+
+        var (status, owner) = await fixture.ReadCronOccurrenceAsync(occurrenceId, ct);
+        status.Should().Be((int)JobStatus.Succeeded, "the existing terminal row is left undisturbed");
+        owner.Should().BeNull();
+    }
+
+    /// <summary>
+    /// R10 on the attribute-driven path: a stored projection derived under the OLD expression must not survive a
+    /// code-defined expression change — a yearly→minutes edit would otherwise stay dormant until the stale
+    /// projection came due. Migrate resets the position to the uninitialized sentinel so the next wake re-derives
+    /// it by the creation rule under the new expression.
+    /// </summary>
+    public virtual async Task migrate_resets_the_position_when_the_code_defined_expression_changes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("migrate-reset");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "migrate-reset", "0 0 3 1 1 *", NodeDeathPolicy.Retry, ct);
+        var before = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        before.NextDueUtc.Should().NotBe(default(DateTime), "the seeded definition carries an initialized position");
+
+        await persistence.MigrateDefinedCronJobsAsync([("migrate-reset", "0 */5 * * * *")], ct);
+
+        var after = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        after
+            .ReconciledThroughUtc.Should()
+            .Be(default(DateTime), "the stale position must be re-derived under the new expression, not kept");
+        after.NextDueUtc.Should().Be(default(DateTime), "the projection was derived under the old expression");
+    }
+
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
