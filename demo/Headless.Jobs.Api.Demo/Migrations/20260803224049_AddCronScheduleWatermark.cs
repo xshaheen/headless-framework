@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #pragma warning disable IDE0161 // EF migrations are generated with block-scoped namespaces.
 
-namespace Headless.Jobs.Console.Demo.Migrations
+namespace Headless.Jobs.Api.Demo.Migrations
 {
     /// <summary>Adds the cron schedule watermark, dispatch projection, and misfire recovery columns.</summary>
     public partial class AddCronScheduleWatermark : Migration
@@ -47,7 +47,7 @@ namespace Headless.Jobs.Console.Demo.Migrations
                 type: "character varying(32)",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: ""
+                defaultValue: "Coalesce"
             );
 
             migrationBuilder.AddColumn<DateTime>(

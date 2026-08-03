@@ -2,6 +2,7 @@
 
 using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -31,7 +32,14 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
-        builder.Property(e => e.OnMissedRun).HasConversion<string>().HasMaxLength(32);
+        // The database default must be a valid enum name: migrated rows take the column default, and EF's
+        // string conversion has no valid mapping for '' — an upgraded database would either fail materialization
+        // on every cron read or leave '' rows that a SQL-side policy predicate can never match.
+        builder
+            .Property(e => e.OnMissedRun)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(MissedRunPolicy.Coalesce);
 
         builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
 

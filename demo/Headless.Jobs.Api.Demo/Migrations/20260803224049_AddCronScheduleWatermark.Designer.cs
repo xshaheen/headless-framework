@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Headless.Jobs.Api.Demo.Migrations
 {
     [DbContext(typeof(JobsDbContext))]
-    [Migration("20260729231148_AddCronScheduleWatermark")]
+    [Migration("20260803224049_AddCronScheduleWatermark")]
     partial class AddCronScheduleWatermark
     {
         /// <inheritdoc />
@@ -64,8 +64,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.Property<string>("OnMissedRun")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Coalesce");
 
                     b.Property<string>("OnNodeDeath")
                         .IsRequired()
