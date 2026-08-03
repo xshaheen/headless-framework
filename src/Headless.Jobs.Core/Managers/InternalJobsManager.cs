@@ -519,15 +519,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     /// <summary>
-    /// Gives a definition its first schedule position, anchored at the store's instant rather than at anything in its
-    /// history, so nothing before this moment is ever treated as missed.
-    /// </summary>
-    /// <remarks>
-    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark IS the observed value — so two
-    /// nodes initializing the same definition converge on one position instead of racing. Nothing is dispatched on
-    /// this wake; the definition becomes selectable at its real projection on the next one.
-    /// </remarks>
-    /// <summary>
     /// Initializes a positionless definition and dispatches nothing this wake, so it can share the advance wave's
     /// result shape. The definition becomes selectable at its real projection on the next wake.
     /// </summary>
@@ -542,6 +533,14 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return null;
     }
 
+    /// <summary>
+    /// Gives a definition its first schedule position, anchored at the store's instant rather than at anything in its
+    /// history, so nothing before this moment is ever treated as missed.
+    /// </summary>
+    /// <remarks>
+    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark IS the observed value — so two
+    /// nodes initializing the same definition converge on one position instead of racing.
+    /// </remarks>
     private async Task _InitializeSchedulePositionAsync(
         CronDispatchCandidate candidate,
         DateTime storeUtcNow,
@@ -1150,14 +1149,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task<int> RebaseStaleFingerprintsAsync(int limit, CancellationToken cancellationToken = default)
     {
-        // The set of fingerprints this evaluator currently produces, across every timezone the registry declares plus
-        // the scheduler-wide fallback. A definition outside this set is a CANDIDATE, not proven stale — a runtime
-        // definition may name a timezone no declared function uses, so each candidate is confirmed below by
-        // recomputing for its own zone. Erring this way costs a wasted read; the opposite would miss a rebase.
-        var knownFingerprints = new HashSet<string>(StringComparer.Ordinal)
-        {
-            cronScheduleCache.ComputeEvaluationFingerprint(timeZoneId: null),
-        };
+        var knownFingerprints = await _CurrentFingerprintsAsync(cancellationToken).ConfigureAwait(false);
 
         var candidates = await persistenceProvider
             .GetStaleFingerprintDefinitionsAsync(knownFingerprints, limit, cancellationToken)
@@ -1174,11 +1166,33 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var current = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId);
+            string current;
+
+            try
+            {
+                current = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId);
+            }
+            catch (ArgumentException exception)
+            {
+                // This host cannot resolve the definition's zone — a zone dropped by the very tzdata update that made
+                // things stale, or a trimmed container image. Such a definition is permanently a candidate (its
+                // fingerprint can never match), so letting the exception escape would abort the sweep on this row and
+                // every row after it, on every sweep, forever. Skipping keeps the rest of the sweep working; the
+                // definition cannot be repositioned here anyway, because deriving its next occurrence needs the same
+                // zone.
+                logger.LogUnresolvableCronTimeZone(
+                    exception,
+                    candidate.CronJobId,
+                    candidate.FunctionName,
+                    candidate.TimeZoneId ?? "<default>"
+                );
+
+                continue;
+            }
 
             if (string.Equals(candidate.EvaluationFingerprint, current, StringComparison.Ordinal))
             {
-                // A candidate only because its zone was outside the known set — its rules are in fact current.
+                // Its rules are in fact current: possible when a zone entered use between the two reads below.
                 continue;
             }
 
@@ -1189,6 +1203,55 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         return rebased;
+    }
+
+    /// <summary>
+    /// Every fingerprint this evaluator currently produces: one per timezone actually in use, plus the scheduler-wide
+    /// fallback.
+    /// </summary>
+    /// <remarks>
+    /// Completeness is what makes the store-side predicate precise, and it is load-bearing rather than an
+    /// optimization. A zone missing from this set makes every definition using it match "fingerprint not known" on
+    /// every sweep, forever — and because the store applies the batch limit BEFORE the per-candidate confirmation
+    /// above, those permanent false positives crowd genuinely stale definitions out of the batch and starve them
+    /// indefinitely. The zones in use come from the store rather than from the declared functions because a runtime
+    /// definition may name a zone no <c>[JobFunction]</c> mentions.
+    /// </remarks>
+    private async Task<HashSet<string>> _CurrentFingerprintsAsync(CancellationToken cancellationToken)
+    {
+        var fingerprints = new HashSet<string>(StringComparer.Ordinal)
+        {
+            cronScheduleCache.ComputeEvaluationFingerprint(timeZoneId: null),
+        };
+
+        // The one read whose result may legitimately be served from a cache (see IJobPersistenceProvider): a zone that
+        // entered use since it was cached only costs one wasted candidate, which the confirmation above absorbs.
+        var definitions = await persistenceProvider
+            .GetAllCronJobExpressionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var seenZones = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var definition in definitions)
+        {
+            if (definition.TimeZoneId is not { } zone || !seenZones.Add(zone))
+            {
+                continue;
+            }
+
+            try
+            {
+                fingerprints.Add(cronScheduleCache.ComputeEvaluationFingerprint(zone));
+            }
+            catch (ArgumentException)
+            {
+                // Unresolvable on this host. Contributing nothing is correct — there is no fingerprint that would make
+                // definitions in this zone look current — and the per-candidate guard reports it once per sweep with
+                // the definition it belongs to, rather than once per zone with no owner.
+            }
+        }
+
+        return fingerprints;
     }
 
     /// <summary>
@@ -1382,5 +1445,20 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         Guid jobId
+    );
+
+    [LoggerMessage(
+        EventId = 3216,
+        Level = LogLevel.Warning,
+        Message = "Cron definition {CronJobId} ({FunctionName}) names time zone '{TimeZoneId}', which this host "
+            + "cannot resolve. Its schedule interpretation cannot be re-derived here and it is skipped by the "
+            + "fingerprint sweep; the rest of the sweep continues."
+    )]
+    public static partial void LogUnresolvableCronTimeZone(
+        this ILogger logger,
+        Exception exception,
+        Guid cronJobId,
+        string functionName,
+        string timeZoneId
     );
 }

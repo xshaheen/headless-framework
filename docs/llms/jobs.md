@@ -487,6 +487,12 @@ projection, so a sweep keyed on due-ness would skip exactly the definitions that
 projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
 replayed as a misfire.
 
+The sweep runs every `FingerprintSweepInterval` (default 1h) over batches of `FingerprintSweepBatchSize` (default 100),
+and starts a batch immediately whenever the previous one came back full — a tzdata update stales every definition in
+the affected zone at once, so waiting out the interval between batches would leave a large set dispatching under the
+old interpretation for hours. A definition naming a timezone this host cannot resolve is logged and skipped: its
+schedule cannot be re-derived here, and letting the failure escape would abandon the rest of the sweep.
+
 Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
 always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
 counting at a ceiling, and "at least 1000" calls for a different response than "exactly 1000".

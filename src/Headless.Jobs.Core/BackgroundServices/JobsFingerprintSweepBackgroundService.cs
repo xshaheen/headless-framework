@@ -34,6 +34,11 @@ internal sealed class JobsFingerprintSweepBackgroundService(
     private readonly TimeSpan _period = schedulerOptions.FingerprintSweepInterval;
     private readonly int _batchSize = schedulerOptions.FingerprintSweepBatchSize;
 
+    // Back-to-back full batches before the sweep returns to its interval. At the default batch size this drains 10,000
+    // definitions in one pass, which is far beyond any realistic cron-definition count, so the bound is a backstop
+    // against a provider that never persists rather than a limit real deployments meet.
+    private const int _MaxConsecutiveFullBatches = 100;
+
     public override Task StartAsync(CancellationToken ct)
     {
         return Interlocked.CompareExchange(ref _started, 1, 0) != 0 ? Task.CompletedTask : base.StartAsync(ct);
@@ -41,6 +46,8 @@ internal sealed class JobsFingerprintSweepBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var consecutiveFullBatches = 0;
+
         // Sweep once at startup before waiting out a period: a process that just came up on a host with new tzdata is
         // the single most likely moment for a fingerprint to be stale, and making it wait out the interval means
         // dispatching under the old interpretation for exactly as long as the interval.
@@ -56,6 +63,27 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                 {
                     JobsFingerprintSweepLog.RebasedDefinitions(logger, rebased);
                 }
+
+                if (rebased >= _batchSize && ++consecutiveFullBatches < _MaxConsecutiveFullBatches)
+                {
+                    // A full batch means the store almost certainly holds more. The event this sweep exists for — a
+                    // tzdata update — stales every definition in the affected zone AT ONCE, so waiting out the
+                    // interval between batches would drain a large set at batch-size-per-interval and keep dispatching
+                    // under the old interpretation for hours. Loop straight into the next batch instead; the sweep
+                    // settles back onto the interval as soon as one batch comes back short.
+                    continue;
+                }
+
+                if (consecutiveFullBatches >= _MaxConsecutiveFullBatches)
+                {
+                    // Progress is guaranteed only while a rebase actually persists a current fingerprint, which is a
+                    // provider contract this service cannot verify. A provider that reports success without persisting
+                    // would otherwise keep this loop hammering the store with no delay between batches, so the drain is
+                    // bounded and what it stopped short of is reported rather than passed over in silence.
+                    JobsFingerprintSweepLog.DrainBoundReached(logger, _MaxConsecutiveFullBatches * _batchSize);
+                }
+
+                consecutiveFullBatches = 0;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -88,6 +116,15 @@ internal static partial class JobsFingerprintSweepLog
         Message = "Rebased {Count} cron definition(s) whose schedule-interpretation rules had changed."
     )]
     public static partial void RebasedDefinitions(ILogger logger, int count);
+
+    [LoggerMessage(
+        EventId = 3232,
+        Level = LogLevel.Warning,
+        Message = "The cron evaluation-fingerprint sweep stopped after rebasing {Count} definition(s) in one pass and "
+            + "will resume on its next interval; every batch was full, which can also mean rebases are not being "
+            + "persisted."
+    )]
+    public static partial void DrainBoundReached(ILogger logger, int count);
 
     [LoggerMessage(
         EventId = 3231,

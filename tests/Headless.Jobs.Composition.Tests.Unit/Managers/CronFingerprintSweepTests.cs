@@ -143,6 +143,67 @@ public sealed class CronFingerprintSweepTests : TestBase
         (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!.EvaluationFingerprint.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// The store applies the batch limit BEFORE the manager can confirm whether a candidate is really stale, so any
+    /// definition that is permanently a candidate consumes batch budget on every sweep, forever. A timezone missing
+    /// from the known-fingerprint set produces exactly that, and it starves the definitions the sweep exists to fix.
+    /// </summary>
+    [Fact]
+    public async Task should_not_let_definitions_in_other_time_zones_crowd_out_a_stale_one()
+    {
+        var (manager, provider) = _Create();
+        var cache = new CronScheduleCache(TimeZoneInfo.Utc);
+
+        // Two definitions in a zone that is NOT the scheduler fallback, each already carrying the correct fingerprint
+        // for its own zone, ordered ahead of the stale one by id.
+        var current = cache.ComputeEvaluationFingerprint("America/New_York");
+        var a = _Zoned(new Guid("00000001-0000-0000-0000-000000000000"), "America/New_York", current);
+        var b = _Zoned(new Guid("00000002-0000-0000-0000-000000000000"), "America/New_York", current);
+        var stale = _Zoned(new Guid("00000003-0000-0000-0000-000000000000"), timeZoneId: null, "stale-older-tzdata");
+
+        await provider.InsertCronJobsAsync([a, b, stale], AbortToken);
+
+        // A limit of 2 stands in for the default batch size with more zoned definitions than fit in one batch.
+        var rebased = await manager.RebaseStaleFingerprintsAsync(limit: 2, AbortToken);
+
+        rebased.Should().Be(1, "the genuinely stale definition must be reached, not crowded out by current ones");
+        (await provider.GetCronJobByIdAsync(stale.Id, AbortToken))!
+            .EvaluationFingerprint.Should()
+            .NotBe("stale-older-tzdata");
+    }
+
+    /// <summary>
+    /// A zone this host cannot resolve is exactly what the tzdata update this sweep exists for can produce. Such a
+    /// definition is permanently a candidate, so letting the resolve failure escape would abort every sweep at that
+    /// row for good.
+    /// </summary>
+    [Fact]
+    public async Task should_skip_an_unresolvable_time_zone_without_abandoning_the_sweep()
+    {
+        var (manager, provider) = _Create();
+        var unresolvable = _Zoned(new Guid("00000001-0000-0000-0000-000000000000"), "Mars/Olympus", "stale");
+        var healthy = _Zoned(new Guid("00000002-0000-0000-0000-000000000000"), timeZoneId: null, "stale");
+
+        await provider.InsertCronJobsAsync([unresolvable, healthy], AbortToken);
+
+        var rebased = await manager.RebaseStaleFingerprintsAsync(limit: 50, AbortToken);
+
+        rebased.Should().Be(1, "the healthy definition is still rebased");
+        (await provider.GetCronJobByIdAsync(healthy.Id, AbortToken))!.EvaluationFingerprint.Should().NotBe("stale");
+        (await provider.GetCronJobByIdAsync(unresolvable.Id, AbortToken))!
+            .EvaluationFingerprint.Should()
+            .Be("stale", "a definition whose zone cannot be resolved here cannot be repositioned here either");
+    }
+
+    private static FakeCronJob _Zoned(Guid id, string? timeZoneId, string? fingerprint)
+    {
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint);
+        definition.Id = id;
+        definition.TimeZoneId = timeZoneId;
+
+        return definition;
+    }
+
     private static (
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider
