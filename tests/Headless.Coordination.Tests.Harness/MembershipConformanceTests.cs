@@ -313,6 +313,25 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         snapshot.Should().ContainSingle(x => x.Identity == secondIdentity && x.State == NodeLivenessState.Alive);
     }
 
+    public virtual async Task should_treat_leave_of_a_never_registered_identity_as_a_no_op()
+    {
+        // IMembershipStore contract: leave "must be a no-op when the identity is already terminal, superseded,
+        // or absent". The relational providers are UPDATE-only and always honored this; the Redis leave script
+        // previously CREATED a member payload for an absent identity, retaining a phantom entry for the whole
+        // RedisKnownNodeRetention window and pinning its generation mirror against cleanup.
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        var phantom = new NodeIdentity(new NodeId("never-registered"), new NodeIncarnation(7));
+        await store.LeaveAsync(phantom, AbortToken);
+
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        snapshot.Should().NotContain(x => x.Identity == phantom, "leave must not materialize an absent identity");
+        (await node.Membership.GetLiveNodesAsync(AbortToken)).Should().Equal([identity]);
+    }
+
     public virtual async Task should_read_targeted_node_liveness_across_states()
     {
         var cluster = _Cluster();

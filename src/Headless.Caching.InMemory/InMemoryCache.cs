@@ -739,32 +739,49 @@ public sealed class InMemoryCache
             return default;
         }
 
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
+        // Single clock read reused for the expiry, the stale-baseline check below, and the new entry's
+        // birth/last-access stamp — mirrors the other write paths, which fetch the clock once per call.
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var now = new DateTime(nowTicks, DateTimeKind.Utc);
+        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
 
         long sizeDelta = 0;
         TNumeric result = default;
 
+        // Starts the counter over from the input value, as if the key were absent. Shared by the add factory and
+        // by the update factory's expired-entry branch so both produce an identical fresh entry.
+        CacheEntry _CreateFreshEntry(long replacedSize)
+        {
+            var size = _CalculateEntrySize(inputValue);
+            sizeDelta = size - replacedSize;
+            result = inputValue;
+
+            return new CacheEntry(
+                inputValue,
+                expiresAt,
+                _timeProvider,
+                _shouldClone,
+                _shouldThrowOnSerializationError,
+                size,
+                nowTicksOverride: nowTicks
+            );
+        }
+
         _memory.AddOrUpdate(
             key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(inputValue);
-                sizeDelta = size;
-                result = inputValue;
-
-                return new CacheEntry(
-                    inputValue,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
+            _ => _CreateFreshEntry(replacedSize: 0),
             (_, existingEntry) =>
             {
+                // A physically-expired entry that has not been reaped yet is a MISS, not a baseline. Eviction here
+                // is lazy (a value read, or a maintenance sweep that only runs off cache activity), so an idle
+                // window past the TTL leaves the old value resident — reading it would revive an expired counter
+                // under a fresh TTL and the window would never reset. Redis, the cross-provider reference, has
+                // already dropped the key before INCRBY / SetIfHigher / SetIfLower run, so it restarts from absent.
+                if (existingEntry.IsExpiredAt(now))
+                {
+                    return _CreateFreshEntry(existingEntry.Size);
+                }
+
                 TNumeric? currentValue = null;
 
                 try
@@ -796,7 +813,8 @@ public sealed class InMemoryCache
                     _timeProvider,
                     _shouldClone,
                     _shouldThrowOnSerializationError,
-                    computedSize
+                    computedSize,
+                    nowTicksOverride: nowTicks
                 );
             }
         );
@@ -856,7 +874,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddItems(key, newItems, expiresAt, StringComparer.Ordinal);
+            result = _SetAddItems(key, newItems, expiresAt, StringComparer.Ordinal, utcNow);
         }
         else
         {
@@ -870,7 +888,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddItems(key, newItems, expiresAt, comparer: null);
+            result = _SetAddItems(key, newItems, expiresAt, comparer: null, utcNow);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -885,7 +903,8 @@ public sealed class InMemoryCache
         string key,
         Dictionary<TKey, DateTime?> newItems,
         DateTime? expiresAt,
-        IEqualityComparer<TKey>? comparer
+        IEqualityComparer<TKey>? comparer,
+        DateTime utcNow
     )
         where TKey : notnull
     {
@@ -921,6 +940,17 @@ public sealed class InMemoryCache
                 // AddOrUpdate may invoke this factory multiple times under contention; reset the captured counter
                 // so a retried invocation does not accumulate counts from a discarded attempt.
                 addedCount = 0;
+
+                // A physically-expired entry that has not been reaped yet is a MISS: replace it outright instead
+                // of merging into (or type-checking against) a set no read would serve. Redis has already dropped
+                // the key, so its ZADD starts a fresh set — including when the expired value was not a set at all,
+                // which here would otherwise throw instead of writing.
+                if (existingEntry.IsExpiredAt(utcNow))
+                {
+                    sizeDelta = entrySize - existingEntry.Size;
+                    addedCount = newItems.Count;
+                    return entry;
+                }
 
                 if (existingEntry.PeekValue() is not IDictionary<TKey, DateTime?> dictionary)
                 {
@@ -1541,9 +1571,19 @@ public sealed class InMemoryCache
         var callerKey = key;
         key = _GetKey(key);
         var wasRemoved = false;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         while (_memory.TryGetValue(key, out var existingEntry))
         {
+            // A physically-expired entry that has not been reaped yet is a MISS: reap it and report no removal.
+            // Comparing against the stale value would let the CAS succeed on a value no read would serve, whereas
+            // Redis (the cross-provider reference) evaluates its CAS script on a key it has already dropped.
+            if (existingEntry.IsExpiredAt(now))
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+                break;
+            }
+
             if (!Equals(existingEntry.GetValue<T>(), expected))
             {
                 break;
@@ -1784,21 +1824,27 @@ public sealed class InMemoryCache
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (typeof(T) == typeof(string))
         {
             var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
-            return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.Ordinal));
+            return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.Ordinal, utcNow));
         }
 
         var valuesToRemove = value.Where(v => v is not null).Cast<object>().ToList();
-        return new ValueTask<long>(_SetRemoveItems(key, valuesToRemove, comparer: null));
+        return new ValueTask<long>(_SetRemoveItems(key, valuesToRemove, comparer: null, utcNow));
     }
 
     // Shared set-remove path for both the string (ordinal, case-sensitive) and object (default-comparer) member
     // dictionaries. The caller picks TKey + comparer at the typeof(T) dispatch; the copy-remove-recompute body is
     // identical across both backings.
-    private long _SetRemoveItems<TKey>(string key, List<TKey> valuesToRemove, IEqualityComparer<TKey>? comparer)
+    private long _SetRemoveItems<TKey>(
+        string key,
+        List<TKey> valuesToRemove,
+        IEqualityComparer<TKey>? comparer,
+        DateTime utcNow
+    )
         where TKey : notnull
     {
         if (valuesToRemove.Count is 0)
@@ -1813,6 +1859,15 @@ public sealed class InMemoryCache
             key,
             (_, existingEntry) =>
             {
+                // A physically-expired entry that has not been reaped yet is a MISS: nothing is removed and the
+                // reported count stays 0, matching Redis, whose SREM/ZREM runs against an already-dropped key.
+                if (existingEntry.IsExpiredAt(utcNow))
+                {
+                    removed = 0;
+                    sizeDelta = 0;
+                    return existingEntry;
+                }
+
                 if (existingEntry.PeekValue() is not IDictionary<TKey, DateTime?> { Count: > 0 } dictionary)
                 {
                     sizeDelta = 0;

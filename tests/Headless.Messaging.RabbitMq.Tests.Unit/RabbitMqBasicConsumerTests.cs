@@ -63,7 +63,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             body,
             CancellationToken.None
         );
@@ -112,7 +112,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             body,
             CancellationToken.None
         );
@@ -162,7 +162,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             body,
             CancellationToken.None
         );
@@ -214,7 +214,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             body,
             CancellationToken.None
         );
@@ -260,7 +260,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             body,
             CancellationToken.None
         );
@@ -300,7 +300,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 false,
                 "exchange",
                 "routingKey",
-                Substitute.For<IReadOnlyBasicProperties>(),
+                _CreateProperties(),
                 body,
                 CancellationToken.None
             );
@@ -331,8 +331,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var properties = Substitute.For<IReadOnlyBasicProperties>();
-        properties.Headers.Returns(
+        var properties = _CreateProperties(
             new Dictionary<string, object?>(StringComparer.Ordinal) { { "TestHeader", "TestValue"u8.ToArray() } }
         );
 
@@ -375,8 +374,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var properties = Substitute.For<IReadOnlyBasicProperties>();
-        properties.Headers.Returns(
+        var properties = _CreateProperties(
             new Dictionary<string, object?>(StringComparer.Ordinal) { { "ByteHeader", "TestValue"u8.ToArray() } }
         );
 
@@ -416,8 +414,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var properties = Substitute.For<IReadOnlyBasicProperties>();
-        properties.Headers.Returns(new Dictionary<string, object?>(StringComparer.Ordinal) { { "IntHeader", 123 } });
+        var properties = _CreateProperties(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { { "IntHeader", 123 } }
+        );
 
         // when
         await consumer.HandleBasicDeliverAsync(
@@ -460,7 +459,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var properties = Substitute.For<IReadOnlyBasicProperties>();
+        var properties = _CreateProperties();
 
         // when
         await consumer.HandleBasicDeliverAsync(
@@ -476,6 +475,44 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then
         receivedMessage!.Value.Headers["CustomHeader"].Should().Be("CustomValue");
+    }
+
+    [Fact]
+    public async Task should_requeue_without_terminal_reject_when_custom_headers_builder_throws()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            throw new InvalidOperationException("bad header builder");
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (_, _) => Task.CompletedTask,
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumer-tag",
+            42ul,
+            false,
+            "test-exchange",
+            "test-routing-key",
+            _CreateProperties(),
+            "test-body"u8.ToArray(),
+            AbortToken
+        );
+
+        // then
+        await _channel.Received(1).BasicRejectAsync(42ul, true, Arg.Any<CancellationToken>());
+        await _channel.DidNotReceive().BasicRejectAsync(42ul, false, Arg.Any<CancellationToken>());
+        _loggedEvents
+            .Should()
+            .ContainSingle(e => e.Reason != null && e.Reason.Contains("rejected for retry", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -644,9 +681,10 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_null_headers_in_properties()
+    public async Task should_terminally_reject_null_headers_in_properties()
     {
         // given
+        _channel.IsOpen.Returns(true);
         TransportMessage? receivedMessage = null;
 
         using var consumer = new RabbitMqBasicConsumer(
@@ -679,9 +717,8 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         // then
-        receivedMessage.Should().NotBeNull();
-        receivedMessage!.Value.Headers.Should().ContainKey(Headers.Group);
-        receivedMessage.Value.Headers[Headers.Group].Should().Be("test-group");
+        receivedMessage.Should().BeNull();
+        await _channel.Received(1).BasicRejectAsync(1UL, false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -726,8 +763,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var properties = Substitute.For<IReadOnlyBasicProperties>();
-        properties.Headers.Returns(new Dictionary<string, object?>(StringComparer.Ordinal) { { "NullHeader", null } });
+        var properties = _CreateProperties(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { { "NullHeader", null } }
+        );
 
         // when
         await consumer.HandleBasicDeliverAsync(
@@ -746,17 +784,15 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_when_custom_headers_builder_throws_with_concurrent_processing()
+    public async Task should_terminally_reject_when_required_header_is_missing_with_concurrent_processing()
     {
         // given
         _channel.IsOpen.Returns(true);
         var consumeFailed = _CreateSignal();
         var callbackInvoked = false;
 
-        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __)
-        {
-            throw new InvalidOperationException("bad header builder");
-        }
+        static List<KeyValuePair<string, string>> malformedBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            [new(Headers.MessageId, null!)];
 
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
@@ -768,7 +804,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 return Task.CompletedTask;
             },
             args => _RecordLog(args, consumeFailed),
-            throwingBuilder,
+            malformedBuilder,
             _serviceProvider
         );
 
@@ -779,23 +815,34 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             "test"u8.ToArray(),
             CancellationToken.None
         );
 
         await _WaitForSignalAsync(consumeFailed.Task);
 
-        // then — message should be nacked, not left unacked
+        // then — malformed transport input is terminal and does not enter a requeue storm
         callbackInvoked.Should().BeFalse();
-        await _channel.Received(1).BasicNackAsync(999ul, false, true, Arg.Any<CancellationToken>());
+        await _channel.Received(1).BasicRejectAsync(999ul, false, Arg.Any<CancellationToken>());
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
-        _loggedEvents[0].Reason.Should().Contain("bad header builder");
+        _loggedEvents[0].Reason.Should().Contain("terminally rejected").And.NotContain("Messaging header");
     }
 
     private TaskCompletionSource _CreateSignal()
     {
         return new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static IReadOnlyBasicProperties _CreateProperties(IDictionary<string, object?>? headers = null)
+    {
+        headers ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+        headers[Headers.MessageId] = "msg-1"u8.ToArray();
+        headers[Headers.MessageName] = "TestEvent"u8.ToArray();
+
+        var properties = Substitute.For<IReadOnlyBasicProperties>();
+        properties.Headers.Returns(headers);
+        return properties;
     }
 
     private void _RecordLog(LogMessageEventArgs args, TaskCompletionSource signal)
@@ -810,14 +857,14 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()
+    public async Task should_terminally_reject_when_required_header_is_missing_without_concurrent_processing()
     {
         // given
         _channel.IsOpen.Returns(true);
         var callbackInvoked = false;
 
-        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
-            throw new InvalidOperationException("bad header builder");
+        static List<KeyValuePair<string, string>> malformedBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            [new(Headers.MessageId, null!)];
 
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
@@ -829,7 +876,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 return Task.CompletedTask;
             },
             args => _loggedEvents.Add(args),
-            throwingBuilder,
+            malformedBuilder,
             _serviceProvider
         );
 
@@ -840,14 +887,14 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             false,
             "exchange",
             "routingKey",
-            Substitute.For<IReadOnlyBasicProperties>(),
+            _CreateProperties(),
             "test"u8.ToArray(),
             CancellationToken.None
         );
 
-        // then — message should be nacked, not left unacked
+        // then — malformed transport input is terminal and does not enter a requeue storm
         callbackInvoked.Should().BeFalse();
-        await _channel.Received(1).BasicNackAsync(888ul, false, true, Arg.Any<CancellationToken>());
+        await _channel.Received(1).BasicRejectAsync(888ul, false, Arg.Any<CancellationToken>());
         _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
     }
 

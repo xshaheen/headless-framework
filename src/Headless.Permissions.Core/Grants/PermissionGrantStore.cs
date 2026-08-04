@@ -255,12 +255,8 @@ public sealed class PermissionGrantStore(
             .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
-        if (existGrantRecords.Count == distinctNames.Count)
-        {
-            return;
-        }
-
-        // Handle records that need to be updated from denied to granted
+        // A name that already has a record may still be an explicit denial, so the record count alone
+        // cannot decide whether there is work to do — every name has to be classified.
         var deniedRecords = existGrantRecords.Where(x => !x.IsGranted).ToList();
         if (deniedRecords.Count > 0)
         {
@@ -285,9 +281,13 @@ public sealed class PermissionGrantStore(
                 providerKey,
                 isGranted: true,
                 tenantId
-            ));
+            ))
+            .AsArray();
 
-        await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
+        if (newRecords.Length > 0)
+        {
+            await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
+        }
 
         var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
         var cacheItem = new PermissionGrantCacheItem(isGranted: true);

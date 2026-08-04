@@ -49,6 +49,11 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         var localTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, timeZone);
 
         var nextOccurrence = parsed.GetNextOccurrence(localTime);
+        if (_HasNoFutureOccurrence(nextOccurrence))
+        {
+            return null;
+        }
+
         var nextUtc = _ConvertScheduledLocalTimeToUtc(nextOccurrence, timeZone);
 
         if (timeZone.IsAmbiguousTime(localTime))
@@ -65,6 +70,16 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         }
 
         return nextUtc;
+    }
+
+    // NCrontab reports "no future occurrence" (e.g. `0 0 0 30 2 *`, Feb 30) by returning DateTime.MaxValue-era
+    // values, NOT null or an error — without this guard such expressions were accepted as valid recurring jobs
+    // and a permanently pending year-9999 occurrence row was materialized and re-leased forever. No legitimate
+    // schedule computes a next occurrence in year 9999, and the sentinel is not timezone-stable, so detect it
+    // before conversion.
+    private static bool _HasNoFutureOccurrence(DateTime nextOccurrence)
+    {
+        return nextOccurrence.Year >= 9999;
     }
 
     private static DateTime _ConvertScheduledLocalTimeToUtc(DateTime localTime, TimeZoneInfo timeZone)

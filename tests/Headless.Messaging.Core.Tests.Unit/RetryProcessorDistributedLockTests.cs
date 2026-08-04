@@ -391,7 +391,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // when
         await processor.ProcessAsync(context);
-        await Task.Delay(200, AbortToken);
+        await Task.WhenAll(
+            processor.WaitForQuadrantIdleForTestAsync(MessageType.Publish, MessageLane.Bus),
+            processor.WaitForQuadrantIdleForTestAsync(MessageType.Publish, MessageLane.Queue),
+            processor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus),
+            processor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Queue)
+        );
 
         // then — lock provider must never be called when UseStorageLock is false
         await mockProvider

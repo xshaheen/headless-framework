@@ -8,7 +8,7 @@
 It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
 
 **This is a greenfield project.**
-Prefer simpler, cleaner APIs even when that requires breaking changes. Do not preserve awkward compatibility layers unless explicitly requested.
+Prefer simpler, cleaner APIs even when that requires breaking changes. Breaking changes that materially improve correctness or performance are acceptable and recommended over compatibility shims unless explicitly requested otherwise.
 
 **Coverage targets:**
 - **Line coverage**: ≥85% (minimum: 80%)
@@ -180,6 +180,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- ApiResult is the value-based counterpart to the API exception path: conflict and authorization errors preserve `ErrorDescriptor` data, validation preserves field-keyed descriptors, validation-only aggregates map to 422, and Minimal API result wrappers publish the full response set as endpoint metadata. (2026-07-27)
 - Cache events are best-effort observability: preserve `AsyncEvent<T>` handlers, capture the copy-on-write handler array at emission, and feed one lazy bounded FIFO shared by the cache root and tier hubs; producers never block, accepted signals retain FIFO, and a full buffer drops the incoming signal. (2026-07-25)
 - CI runs unit tests only (`make ci-test`); integration suites never gate merges, so a semantics change can silently break provider-integration tests for weeks (a Redis membership test contradicted the #643 heartbeat contract unnoticed). Run the affected `*.Tests.Integration` projects locally when touching provider behavior. (2026-07-21)
 - PostgreSQL materializes `DateTime` at microsecond granularity while SQL Server `datetime2(7)` keeps ticks; conformance asserts on round-tripped values must use `BeCloseTo(1µs)` (messaging-harness precedent). Exact `.Be()` may still pass nondeterministically when the read hits the EF identity map instead of a fresh context — passing once proves nothing. (2026-07-21)

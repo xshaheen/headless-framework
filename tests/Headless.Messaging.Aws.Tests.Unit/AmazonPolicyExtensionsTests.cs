@@ -17,6 +17,8 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
+        statement.Actions.Add(new ActionIdentifier("sqs:SendMessage"));
+        statement.Principals.Add(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"));
         statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition
@@ -41,6 +43,8 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
+        statement.Actions.Add(new ActionIdentifier("sqs:SendMessage"));
+        statement.Principals.Add(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"));
         statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition
@@ -112,8 +116,36 @@ public sealed class AmazonPolicyExtensionsTests
         statement.Resources.Should().ContainSingle();
         statement.Resources[0].Id.Should().Be(_QueueArn);
         statement.Principals.Should().ContainSingle();
-        statement.Principals[0].Id.Should().Be("*");
+        statement.Principals[0].Provider.Should().Be(Principal.SERVICE_PROVIDER);
+        statement.Principals[0].Id.Should().Be("sns.amazonaws.com");
         statement.Conditions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void should_not_treat_wildcard_principal_as_least_privilege_permission()
+    {
+        var policy = new Policy();
+        var statement = new Statement(Statement.StatementEffect.Allow);
+        statement.Actions.Add(new ActionIdentifier("sqs:SendMessage"));
+        statement.Principals.Add(new Principal("*"));
+        statement.Resources.Add(new Resource(_QueueArn));
+        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(_TopicArn1));
+        policy.Statements.Add(statement);
+
+        policy.HasSqsPermission(_TopicArn1, _QueueArn).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_require_send_message_action()
+    {
+        var policy = new Policy();
+        var statement = new Statement(Statement.StatementEffect.Allow);
+        statement.Principals.Add(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"));
+        statement.Resources.Add(new Resource(_QueueArn));
+        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(_TopicArn1));
+        policy.Statements.Add(statement);
+
+        policy.HasSqsPermission(_TopicArn1, _QueueArn).Should().BeFalse();
     }
 
     [Fact]
@@ -122,6 +154,8 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
+        statement.Actions.Add(new ActionIdentifier("sqs:SendMessage"));
+        statement.Principals.Add(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"));
         statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition

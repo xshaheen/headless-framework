@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MessagingPackageVersion Condition="'$(MessagingPackageVersion)' == ''"
+      >0.0.0-local-required</MessagingPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Headless.Messaging.Abstractions" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Aws" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.AzureServiceBus" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Bus.Abstractions" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Core" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Dashboard" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Dashboard.K8s" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.InMemory" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Kafka" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Nats" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Pulsar" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Queue.Abstractions" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.RabbitMq" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Redis" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Storage.InMemory" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.Storage.PostgreSql" Version="$(MessagingPackageVersion)" />
+    <PackageReference
+      Include="Headless.Messaging.Storage.PostgreSql.EntityFramework"
+      Version="$(MessagingPackageVersion)"
+    />
+    <PackageReference Include="Headless.Messaging.Storage.SqlServer" Version="$(MessagingPackageVersion)" />
+    <PackageReference
+      Include="Headless.Messaging.Storage.SqlServer.EntityFramework"
+      Version="$(MessagingPackageVersion)"
+    />
+    <PackageReference Include="Headless.Messaging.Testing" Version="$(MessagingPackageVersion)" />
+  </ItemGroup>
+</Project>

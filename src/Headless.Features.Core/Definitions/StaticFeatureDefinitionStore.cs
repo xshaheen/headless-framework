@@ -36,6 +36,12 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     private readonly FeatureManagementProvidersOptions _options;
     private readonly Lazy<Dictionary<string, FeatureGroupDefinition>> _lazyFeatureGroupDefinitions;
     private readonly Lazy<Dictionary<string, FeatureDefinition>> _lazyFeatureDefinitions;
+
+    // The catalogs are built once and never mutated afterwards, so their list projections are built once too.
+    // GetFeaturesAsync/GetGroupsAsync run on every feature check and previously copied the whole catalog per call.
+    private readonly Lazy<IReadOnlyList<FeatureGroupDefinition>> _lazyGroupList;
+    private readonly Lazy<IReadOnlyList<FeatureDefinition>> _lazyFeatureList;
+
     private Dictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions => _lazyFeatureGroupDefinitions.Value;
     private Dictionary<string, FeatureDefinition> FeatureDefinitions => _lazyFeatureDefinitions.Value;
 
@@ -51,6 +57,8 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
         _options = optionsAccessor.Value;
         _lazyFeatureDefinitions = new(_CreateFeatureDefinitions, isThreadSafe: true);
         _lazyFeatureGroupDefinitions = new(_CreateFeatureGroupDefinitions, isThreadSafe: true);
+        _lazyFeatureList = new(() => [.. FeatureDefinitions.Values], isThreadSafe: true);
+        _lazyGroupList = new(() => [.. FeatureGroupDefinitions.Values], isThreadSafe: true);
     }
 
     /// <inheritdoc/>
@@ -64,14 +72,14 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     public Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<FeatureDefinition>>(FeatureDefinitions.Values.ToList());
+        return Task.FromResult(_lazyFeatureList.Value);
     }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<FeatureGroupDefinition>>(FeatureGroupDefinitions.Values.ToList());
+        return Task.FromResult(_lazyGroupList.Value);
     }
 
     #region Helpers

@@ -265,6 +265,18 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void default_scheduler_time_zone_is_utc()
+    {
+        // Never Local: two fleet nodes with different container timezones would evaluate one cron expression to
+        // two different UTC instants, and the occurrence dedup unique index cannot collapse them — every tick
+        // would run once per distinct timezone. The framework's temporal-authority standard forbids the Local
+        // default; this pins the contract (invisible on UTC-only dev/CI boxes, which is how it regressed before).
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.SchedulerTimeZone.Should().Be(TimeZoneInfo.Utc);
+    }
+
+    [Fact]
     public void cancellation_observation_interval_defaults_to_the_effective_lease_renewal_interval()
     {
         var schedulerOptions = new SchedulerOptionsBuilder

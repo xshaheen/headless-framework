@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
 
-internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
+internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
@@ -207,23 +207,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining;
     }
 
-    private async Task<JobExecutionState[]> _QueueNextTimeJobsAsync(
-        TimeJobEntity[] minTimeJobs,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobsAsync(minTimeJobs, cancellationToken))
-        {
-            results.Add(_BuildQueuedTimeJobContext(updatedTimeJob));
-
-            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
-        }
-
-        return [.. results];
-    }
-
     private JobExecutionState _BuildQueuedTimeJobContext(TimeJobEntity timeJob)
     {
         var context = new JobExecutionState
@@ -271,50 +254,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         return childContext;
-    }
-
-    private async Task<JobExecutionState[]> _QueueNextCronJobsAsync(
-        (DateTime Key, JobManagerDispatchContext[] Items) minCronJob,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (
-            var occurrence in persistenceProvider
-                .QueueCronJobOccurrencesAsync(minCronJob, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            results.Add(
-                new JobExecutionState
-                {
-                    ParentId = occurrence.CronJobId,
-                    FunctionName = occurrence.CronJob.Function,
-                    JobId = occurrence.Id,
-                    Type = JobType.CronJobOccurrence,
-                    Retries = occurrence.CronJob.Retries,
-                    RetryCount = occurrence.RetryCount,
-                    RetryIntervals = occurrence.CronJob.RetryIntervals,
-                    ExecutionTime = occurrence.ExecutionTime,
-                }
-            );
-
-            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
-                    .ConfigureAwait(false);
-            }
-            else if (notificationHubSender != null)
-            {
-                await notificationHubSender
-                    .UpdateCronOccurrenceAsync(occurrence.CronJobId, occurrence)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        return [.. results];
     }
 
     // Bounds the projection read. The scheduler wants the earliest instant and whatever ties it, not a page of work;
@@ -580,6 +519,45 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             JobStatus.InProgress
         );
 
+        // Admission stamps one function at a time (JobsAdmissionWorkItem), so the single-resource shape is the hot one:
+        // it needs neither the type partitioning nor the stamped-id sets used to reconcile a mixed batch.
+        if (resources.Length == 1)
+        {
+            var only = resources[0];
+            var singleStamped =
+                only.Type == JobType.TimeJob
+                    ? await persistenceProvider
+                        .UpdateTimeJobsWithUnifiedContextAsync([only.JobId], unifiedFunctionContext, cancellationToken)
+                        .ConfigureAwait(false)
+                    : await persistenceProvider
+                        .UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                            [only.JobId],
+                            unifiedFunctionContext,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+            if (!singleStamped.Contains(only.JobId))
+            {
+                return [];
+            }
+
+            only.Status = JobStatus.InProgress;
+
+            if (only.Type == JobType.TimeJob)
+            {
+                await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(only).ConfigureAwait(false);
+            }
+            else
+            {
+                await notificationHubSender
+                    .UpdateCronOccurrenceFromExecutionState<TCronJob>(only)
+                    .ConfigureAwait(false);
+            }
+
+            return [only];
+        }
+
         var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
         var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
@@ -657,7 +635,12 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (resources is null)
+        // Null and empty both mean "release every row this owner claimed but has not started": the scheduler's
+        // fault path cannot know which rows a failed tick had already claimed, so it must be able to release
+        // without a list. Previously [] short-circuited to a no-op here (the fault path released nothing and the
+        // rows sat leased for a full LeaseDuration) while the providers treated [] as an UNSCOPED release — both
+        // sides now agree on the owner-scoped release-everything form.
+        if (resources is null || resources.Length == 0)
         {
             await Task.WhenAll(
                     persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync([], cancellationToken),
@@ -667,10 +650,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
             return;
         }
 
-        var cronJobIds =
-            resources.Length == 0
-                ? []
-                : resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
+        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
 
         if (cronJobIds.Length != 0)
         {
@@ -679,8 +659,7 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        var timeJobIds =
-            resources.Length == 0 ? [] : resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
         if (timeJobIds.Length != 0)
         {
@@ -932,48 +911,6 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         return request == null ? default : JobsHelper.ReadJobRequest<T>(request, serializationOptions);
     }
 
-    public async Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default)
-    {
-        var results = new List<JobExecutionState>();
-
-        await foreach (
-            var timedOutTimeJob in persistenceProvider
-                .QueueTimedOutTimeJobsAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            results.Add(_BuildQueuedTimeJobContext(timedOutTimeJob));
-
-            await notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
-        }
-
-        await foreach (
-            var timedOutCronJob in persistenceProvider
-                .QueueTimedOutCronJobOccurrencesAsync(cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            var functionContext = new JobExecutionState
-            {
-                FunctionName = timedOutCronJob.CronJob.Function,
-                JobId = timedOutCronJob.Id,
-                Type = JobType.CronJobOccurrence,
-                Retries = timedOutCronJob.CronJob.Retries,
-                RetryCount = timedOutCronJob.RetryCount,
-                RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
-                ParentId = timedOutCronJob.CronJobId,
-                ExecutionTime = timedOutCronJob.ExecutionTime,
-            };
-
-            results.Add(functionContext);
-            await notificationHubSender
-                .UpdateCronOccurrenceFromExecutionState<TCronJob>(functionContext)
-                .ConfigureAwait(false);
-        }
-
-        return [.. results];
-    }
-
     public async Task MigrateDefinedCronJobs(
         (string, string)[] cronExpressions,
         CancellationToken cancellationToken = default
@@ -996,6 +933,51 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)
     {
+        await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+
+        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
+        // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
+        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task ReleaseDeadNodeResources(
+        IReadOnlyCollection<string> instanceIdentifiers,
+        CancellationToken cancellationToken = default
+    )
+    {
+        List<Exception>? failures = null;
+
+        foreach (var instanceIdentifier in instanceIdentifiers)
+        {
+            try
+            {
+                await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+
+        try
+        {
+            // All owners share one set-based terminal-child reconciliation. Running it after every owner multiplies
+            // an unbounded global scan during the exact fleet disruption this batch path is meant to recover from.
+            await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            (failures ??= []).Add(exception);
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException("One or more dead-owner resource releases failed.", failures);
+        }
+    }
+
+    private async Task _ReleaseDeadNodeResourcesAsync(string instanceIdentifier, CancellationToken cancellationToken)
+    {
         var cronOccurrence = persistenceProvider.ReleaseDeadNodeOccurrenceResourcesAsync(
             instanceIdentifier,
             cancellationToken
@@ -1004,10 +986,11 @@ internal sealed class InternalJobsManager<TTimeJob, TCronJob>(
         var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken);
 
         await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+    }
 
-        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
-        // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
-        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+    public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
     }
 
     public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
@@ -1110,5 +1093,25 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         Guid jobId
+    );
+
+    [LoggerMessage(
+        EventId = 3216,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} was claimed, but its dashboard notification failed. The claim is unaffected and the "
+            + "job still runs; only the dashboard view is stale."
+    )]
+    public static partial void LogClaimNotificationFailed(this ILogger logger, Exception exception, Guid jobId);
+
+    [LoggerMessage(
+        EventId = 3217,
+        Level = LogLevel.Warning,
+        Message = "Releasing {ClaimedCount} job(s) claimed before the claim enumeration aborted failed; they stay "
+            + "leased until the lease lapses and the fallback sweep reclaims them."
+    )]
+    public static partial void LogAbandonedClaimReleaseFailed(
+        this ILogger logger,
+        Exception exception,
+        int claimedCount
     );
 }

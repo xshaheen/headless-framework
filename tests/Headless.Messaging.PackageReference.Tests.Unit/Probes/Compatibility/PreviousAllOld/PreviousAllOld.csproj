@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Headless.Messaging.Abstractions" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Aws" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.AzureServiceBus" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Bus.Abstractions" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Core" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Dashboard" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Dashboard.K8s" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.InMemory" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.InMemoryStorage" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Kafka" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Nats" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.OpenTelemetry" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Pulsar" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Queue.Abstractions" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.RabbitMq" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Redis" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Storage.PostgreSql" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Storage.SqlServer" Version="0.11.0" />
+    <PackageReference Include="Headless.Messaging.Testing" Version="0.11.0" />
+  </ItemGroup>
+</Project>

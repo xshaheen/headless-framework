@@ -644,6 +644,50 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task time_job_chain_with_negative_descendant_retries_is_rejected_before_persistence()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var job = _FutureTimeJob();
+        job.Children =
+        [
+            new TimeJobEntity
+            {
+                Function = _FunctionName,
+                ExecutionTime = DateTime.UtcNow.AddHours(2),
+                Retries = -1,
+            },
+        ];
+
+        var act = () => sut.Time.AddAsync(job, AbortToken);
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Retries must be >= 0*");
+        await sut.Persistence.DidNotReceive().AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task time_job_batch_with_negative_descendant_retries_is_rejected_atomically()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var validJob = _FutureTimeJob();
+        var invalidJob = _FutureTimeJob();
+        invalidJob.Children =
+        [
+            new TimeJobEntity
+            {
+                Function = _FunctionName,
+                ExecutionTime = DateTime.UtcNow.AddHours(2),
+                Retries = -1,
+            },
+        ];
+
+        var act = () => sut.Time.AddBatchAsync([validJob, invalidJob], AbortToken);
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Retries must be >= 0*");
+        await sut.Persistence.DidNotReceive().AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), AbortToken);
+        await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
+    }
+
+    [Fact]
     public async Task cron_without_coordinator_takes_direct_path()
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
@@ -722,6 +766,20 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         {
             await sut.Notification.Received(1).AddCronJobNotifyAsync(cron);
         }
+    }
+
+    [Fact]
+    public async Task cron_batch_with_negative_retries_is_rejected_atomically()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var validCron = _CronJob();
+        var invalidCron = _CronJob();
+        invalidCron.Retries = -1;
+
+        var act = () => sut.Cron.AddBatchAsync([validCron, invalidCron], AbortToken);
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Retries must be >= 0*");
+        await sut.Persistence.DidNotReceive().InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), AbortToken);
     }
 
     [Fact]

@@ -128,6 +128,14 @@ internal sealed class MembershipHeartbeatBackgroundService(
                 timeoutCts.Token
             );
 
+            // Capture BEFORE issuing the beat: the store stamps LastBeat mid-call and peers classify Dead from
+            // LastBeat + DeadThreshold, so measuring the fence from the call's RETURN grants this node overhang
+            // equal to the beat's completion latency — with the deadline-bounded timeout above, a beat that
+            // commits early but returns slowly could keep this node running well past the instant peers reclaim
+            // its work. Anchoring to the pre-call instant keeps the local fence conservative relative to every
+            // peer's view of LastBeat.
+            var beatStartedTimestamp = timeProvider.GetTimestamp();
+
             try
             {
                 var accepted = await membership
@@ -140,7 +148,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
                     return;
                 }
 
-                _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
+                _lastConfirmedHeartbeatTimestamp = beatStartedTimestamp;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

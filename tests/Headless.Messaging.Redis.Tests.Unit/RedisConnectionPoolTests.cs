@@ -157,6 +157,31 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_replace_a_pool_slot_whose_connect_attempt_failed()
+    {
+        // given — a loopback port with nothing listening refuses immediately, so the first attempt faults
+        var configuration = ConfigurationOptions.Parse("127.0.0.1:1");
+        configuration.ConnectTimeout = 250;
+        configuration.ConnectRetry = 1;
+        configuration.AbortOnConnectFail = true;
+
+        var options = Options.Create(
+            new RedisMessagingOptions { Configuration = configuration, ConnectionPoolSize = 2 }
+        );
+
+        await using var pool = new RedisConnectionPool(options, LoggerFactory);
+        var connect = async () => await pool.ConnectAsync(AbortToken);
+
+        // when
+        var first = (await connect.Should().ThrowAsync<Exception>()).Which;
+        var second = (await connect.Should().ThrowAsync<Exception>()).Which;
+
+        // then — a cached faulted task rethrows the very same exception instance to every later caller,
+        // which is what used to poison the transport until the process restarted
+        second.Should().NotBeSameAs(first, "the faulted slot must be replaced so the next caller retries");
+    }
+
+    [Fact]
 #pragma warning disable MA0045, VSTHRD103 // This test intentionally verifies synchronous Dispose remains supported.
     public async Task should_throw_when_connect_called_after_sync_dispose()
     {

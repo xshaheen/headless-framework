@@ -93,6 +93,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -129,6 +130,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -182,6 +184,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -239,6 +242,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -276,6 +280,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(value => value.HasValue),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(value => value == 0),
@@ -301,6 +306,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -356,6 +362,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -391,6 +398,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -409,6 +417,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -443,6 +452,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -502,6 +512,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -531,6 +542,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -568,6 +580,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -589,6 +602,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -634,6 +648,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v.HasValue),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(v => v == startingRetries),
@@ -654,6 +669,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -702,6 +718,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -718,6 +735,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -748,6 +766,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Is<DateTimeOffset?>(value => value.HasValue),
                 Arg.Is<DateTimeOffset?>(value => value == null),
                 Arg.Is(0),
@@ -785,7 +804,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, AbortToken);
+            .ChangeReceiveRetryStateAsync(default!, default, default, default, default, default, default, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(default!, default, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()

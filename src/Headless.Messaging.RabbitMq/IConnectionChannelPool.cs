@@ -258,10 +258,25 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             model = await connection
                 .CreateChannelAsync(BuildChannelOptions(_isPublishConfirms), cancellationToken)
                 .ConfigureAwait(false);
-            await model
+            await _DeclareLaneExchangesAsync(model, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.ChannelModelCreateFailed(e);
+            throw;
+        }
+
+        return model;
+    }
+
+    private async Task _DeclareLaneExchangesAsync(IChannel channel, CancellationToken cancellationToken)
+    {
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        {
+            await channel
                 .ExchangeDeclareAsync(
-                    Exchange,
-                    RabbitMqMessagingOptions.ExchangeType,
+                    RabbitMqPhysicalAddress.Exchange(Exchange, lane),
+                    RabbitMqPhysicalAddress.ExchangeType(lane),
                     durable: true,
                     autoDelete: false,
                     arguments: null,
@@ -271,13 +286,6 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
                 )
                 .ConfigureAwait(false);
         }
-        catch (Exception e)
-        {
-            _logger.ChannelModelCreateFailed(e);
-            throw;
-        }
-
-        return model;
     }
 
     internal static CreateChannelOptions BuildChannelOptions(bool publishConfirms)

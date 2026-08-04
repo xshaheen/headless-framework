@@ -67,9 +67,17 @@ internal sealed class AsyncLazyRedisConnection(
             {
                 logger.LogRedisConnectionAttemptFailed(attempt);
 
-                await timeProvider.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
-
                 ++attempt;
+
+                if (attempt <= 5)
+                {
+                    // The next attempt builds its own multiplexer, so this one has to go: it owns
+                    // sockets and background timers that would otherwise live until the process exits.
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                    connection = null;
+
+                    await timeProvider.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                }
             }
             else
             {

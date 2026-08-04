@@ -12,12 +12,13 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Message Explorer**: Search, filter, and inspect messages
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
+- **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing broker resource names or credentials
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
 
 ## Design Notes
 
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment cutover state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
 
 ## Installation
 
@@ -30,7 +31,7 @@ dotnet add package Headless.Messaging.Dashboard
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMq(config);
 

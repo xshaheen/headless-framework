@@ -42,19 +42,26 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         );
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await _ObserveForAsync(consumerClient, TimeSpan.FromSeconds(5));
+        await consumerClient.DisposeAsync();
 
-        try
-        {
-            await consumerClient.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected timeout
-        }
+        var pendingAfterTerminalSettlement = await _GetPendingMessageCountAsync(sqsClient, queueUrl);
+
+        var replacement = await _CreateConsumerClientAsync(groupId);
+        replacement.AttachCallbacks(
+            onMessage: (_, _) =>
+            {
+                receivedMessageCount++;
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        await _ObserveForAsync(replacement, TimeSpan.FromSeconds(3));
+        await replacement.DisposeAsync();
 
         // then
         receivedMessageCount.Should().Be(0, "malformed JSON should not be delivered to consumer");
+        pendingAfterTerminalSettlement.Should().Be(0, "terminal SQS deletion must survive consumer restart");
     }
 
     [Fact]
@@ -165,6 +172,8 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
             {
                 "Message": "test content",
                 "MessageAttributes": {
+                    "headless-msg-id": {"Type": "String", "Value": "msg-1"},
+                    "headless-msg-name": {"Type": "String", "Value": "TestEvent"},
                     "TestHeader": {"Type": "String", "Value": "TestValue"}
                 }
             }
@@ -196,8 +205,32 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
     private async Task<string> _CreateQueueAsync(string queueName)
     {
         using var sqsClient = _CreateSqsClient();
-        var response = await sqsClient.CreateQueueAsync(queueName.NormalizeForAws());
+        var response = await sqsClient.CreateQueueAsync(AwsPhysicalAddress.BusGroupQueue(queueName));
         return response.QueueUrl;
+    }
+
+    private static async Task _ObserveForAsync(IConsumerClient consumerClient, TimeSpan duration)
+    {
+        using var cts = new CancellationTokenSource(duration);
+
+        try
+        {
+            await consumerClient.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // The bounded observation window elapsed.
+        }
+    }
+
+    private static async Task<int> _GetPendingMessageCountAsync(IAmazonSQS sqsClient, string queueUrl)
+    {
+        var response = await sqsClient.GetQueueAttributesAsync(
+            queueUrl,
+            [QueueAttributeName.ApproximateNumberOfMessages, QueueAttributeName.ApproximateNumberOfMessagesNotVisible]
+        );
+
+        return response.ApproximateNumberOfMessages + response.ApproximateNumberOfMessagesNotVisible;
     }
 
     private IAmazonSQS _CreateSqsClient()

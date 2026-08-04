@@ -100,7 +100,7 @@
                   </v-card-item>
                   <v-divider />
                   <v-card-text class="example-content">
-                    <div v-if="currentExampleData" v-html="formatJsonForDisplay(currentExampleData, true)"></div>
+                    <div v-if="currentExampleData" class="json-preview">{{ formatExampleData(currentExampleData) }}</div>
                     <div v-else class="no-example-text">Select a function to see request example</div>
                   </v-card-text>
                 </v-card>
@@ -752,6 +752,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { timeJobService } from '@/http/services/timeJobService'
 import type { AddChainJobsRequest } from '@/http/services/types/timeJobService.types'
+import { formatJsonForDisplay } from '@/utilities/json-format'
 
 // Domain types
 interface RetryIntervalOption {
@@ -1057,22 +1058,14 @@ const onFunctionChange = (level: string, functionName: string, childIndex?: numb
   }
 }
 
-// Format JSON for display (similar to AddTimeJob)
-const formatJsonForDisplay = (json: string | null, isHtml: boolean = false) => {
-  if (!json) return ''
-  try {
-    const formatted = JSON.stringify(JSON.parse(json), null, 2)
-    return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch {
-    return isHtml ? json.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : json
-  }
-}
+// Format JSON for display, falling back to the raw payload when it is not valid JSON.
+const formatExampleData = (json: string | null) => formatJsonForDisplay(json) ?? json ?? ''
 
 // Copy example data to current request data field
 const copyExampleToRequestData = () => {
   if (!currentExampleData.value) return
   
-  const formattedData = formatJsonForDisplay(currentExampleData.value, false)
+  const formattedData = formatExampleData(currentExampleData.value)
   
   if (currentStep.value === 'parent') {
     parentJob.value.requestData = formattedData
@@ -1753,6 +1746,12 @@ onMounted(async () => {
   overflow-y: auto;
   line-height: 1.4;
   color: #ffffff;
+}
+
+/* Keeps the JSON indentation without rendering it as HTML. */
+.json-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .no-example-text {

@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Core.Tests.Harness\Headless.Messaging.Core.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

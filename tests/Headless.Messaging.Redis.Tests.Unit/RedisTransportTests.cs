@@ -93,7 +93,9 @@ public sealed class RedisTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await _mockStreamManager.Received(1).PublishAsync("test-topic", Arg.Any<NameValueEntry[]>(), AbortToken);
+        await _mockStreamManager
+            .Received(1)
+            .PublishAsync("headless:messaging:queue:test-topic", Arg.Any<NameValueEntry[]>(), AbortToken);
     }
 
     [Fact]

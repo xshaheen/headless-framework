@@ -437,4 +437,232 @@ public sealed class InternalJobsManagerTests : TestBase
         childContext.TenantId.Should().Be("t-child");
         childContext.TimeJobChildren.Should().ContainSingle().Which.TenantId.Should().Be("t-grand");
     }
+
+    [Fact]
+    public async Task release_acquired_resources_null_and_empty_both_release_everything_owned()
+    {
+        // The scheduler's fault path cannot know which rows a failed tick claimed, so both the null and the
+        // empty-batch forms must reach the providers as the (owner-scoped) release-everything call. Previously []
+        // short-circuited to a no-op and a faulted tick left its claims leased for a full LeaseDuration.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _ReleaseTestManager(provider);
+
+        await manager.ReleaseAcquiredResources(resources: null, AbortToken);
+
+        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+
+        provider.ClearReceivedCalls();
+
+        await manager.ReleaseAcquiredResources([], AbortToken);
+
+        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+    }
+
+    [Fact]
+    public async Task release_acquired_resources_with_resources_releases_only_the_listed_ids()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _ReleaseTestManager(provider);
+        var timeJobId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+
+        await manager.ReleaseAcquiredResources(
+            [_ReleaseState(timeJobId, JobType.TimeJob), _ReleaseState(occurrenceId, JobType.CronJobOccurrence)],
+            AbortToken
+        );
+
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Single() == occurrenceId), AbortToken);
+
+        provider.ClearReceivedCalls();
+
+        await manager.ReleaseAcquiredResources([_ReleaseState(timeJobId, JobType.TimeJob)], AbortToken);
+
+        // A one-type batch must not escalate the other type into the release-everything form.
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+        await provider
+            .DidNotReceive()
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task release_dead_node_resources_batch_attempts_every_owner_and_reconciles_once()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider
+            .ReleaseDeadNodeTimeJobResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        provider
+            .ReleaseDeadNodeOccurrenceResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        provider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<DateTime?>(null));
+        var manager = _ReleaseTestManager(provider);
+
+        await manager.ReleaseDeadNodeResources(["node-a@1", "node-b@1", "node-c@1"], AbortToken);
+
+        foreach (var owner in new[] { "node-a@1", "node-b@1", "node-c@1" })
+        {
+            await provider.Received(1).ReleaseDeadNodeTimeJobResourcesAsync(owner, AbortToken);
+            await provider.Received(1).ReleaseDeadNodeOccurrenceResourcesAsync(owner, AbortToken);
+        }
+
+        await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
+    }
+
+    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _ReleaseTestManager(
+        IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider
+    )
+    {
+        return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+                new DateTimeOffset(2026, 7, 17, 10, 0, 0, TimeSpan.Zero)
+            ),
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+    }
+
+    private static JobExecutionState _ReleaseState(Guid jobId, JobType type)
+    {
+        return new JobExecutionState
+        {
+            JobId = jobId,
+            FunctionName = "fn",
+            Type = type,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            RunCondition = RunCondition.OnSuccess,
+        };
+    }
+
+    /// <summary>
+    /// The dashboard notification is awaited INSIDE the claim enumeration. When it threw (SignalR backplane outage,
+    /// client backpressure) the exception aborted the enumeration, so rows the claim strategy had already committed
+    /// as Queued+leased never reached the scheduler and stayed unclaimable by any node until the lease lapsed — a
+    /// pure observability channel degrading core scheduling. It must be best-effort.
+    /// </summary>
+    [Fact]
+    public async Task get_next_jobs_still_dispatches_claimed_jobs_when_the_dashboard_notification_throws()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+
+        var first = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "first",
+            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+        };
+        var second = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "second",
+            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+        };
+
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([first, second]);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        provider
+            .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+        provider
+            .QueueTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { first, second }.ToAsyncEnumerable());
+        // The FIRST notification fails, so a regression abandons both claims: the throwing row and everything the
+        // enumeration would still have yielded after it.
+        sender.UpdateTimeJobNotifyAsync(first).Returns(_ => throw new InvalidOperationException("hub offline"));
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Select(x => x.JobId).Should().Equal(first.Id, second.Id);
+        // Best-effort means best-effort: the claims stand, so nothing is released back to Idle.
+        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredTimeJobsAsync(default!, AbortToken);
+    }
+
+    /// <summary>
+    /// When the claim enumeration itself aborts, the rows it already yielded are durably Queued+leased but sit in no
+    /// execution context, so the scheduler's catch-all cannot return them. They must be released at the source.
+    /// </summary>
+    [Fact]
+    public async Task get_next_jobs_releases_rows_claimed_before_the_claim_enumeration_aborted()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+
+        var claimed = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "claimed",
+            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+        };
+
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([claimed]);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        provider
+            .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+        provider
+            .QueueTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ClaimThenFail(claimed));
+
+        var act = () => manager.GetNextJobs(AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<Guid[]>(ids => ids.Single() == claimed.Id),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static async IAsyncEnumerable<TimeJobEntity> _ClaimThenFail(TimeJobEntity claimed)
+    {
+        yield return claimed;
+        await Task.Yield();
+
+        throw new InvalidOperationException("claim batch failed");
+    }
 }

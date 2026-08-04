@@ -10,6 +10,8 @@ Provides consistent JSON serialization and validation for Minimal API endpoints 
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
+- `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — maps expected failures to the same
+  ProblemDetails shapes as the exception handler and publishes 200/204 plus 401/403/404/409/422 OpenAPI metadata
 - API versioning integration
 - Endpoint discovery extensions
 
@@ -28,7 +30,11 @@ builder.AddHeadless().ConfigureMinimalApi();
 
 var app = builder.Build();
 
-app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id })).Validate<GetOrderRequest>();
+app.MapGet(
+    "/orders/{id:guid}",
+    async (Guid id, IOrderService service, IProblemDetailsCreator problems, CancellationToken ct) =>
+        (await service.GetAsync(id, ct)).ToHttpResult(problems)
+);
 
 app.Run();
 ```
@@ -46,3 +52,5 @@ No additional configuration required. Uses framework JSON settings automatically
 ## Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
+- Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual
+  `.Produces(...)` calls

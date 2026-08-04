@@ -6,10 +6,47 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 // Explicit IFactoryCacheStore implementation: the per-entry store primitives the FactoryCacheCoordinator drives.
-// These fan the framed entry descriptor across both tiers (L2 then L1, with the local ceiling applied to L1) and
-// broadcast peer invalidations for value-bearing writes, keeping the hybrid in sync with the coordinator's stamps.
+// These fan the framed entry descriptor across both tiers (L2 then L1 — reversed when L1 is the compare-and-set
+// guarded tier — with the local ceiling applied to L1) and broadcast peer invalidations for value-bearing writes,
+// keeping the hybrid in sync with the coordinator's stamps.
 public sealed partial class HybridCache
 {
+    // A ConcurrencyStamp is opaque and store-local: only the tier that minted it can compare it, and a read is
+    // served by ONE tier. So the stamp handed to the coordinator is tagged with its tier of origin, and on the way
+    // back in the compare-and-set is applied to that tier alone (the other tier is written unconditionally). The
+    // tag is what makes the CAS possible at all: an L1 instance-number stamp handed to Redis — or a Redis
+    // frame-header stamp handed to the in-memory store — matches nothing and would drop every factory write.
+    private const string _L1StampPrefix = "1:";
+    private const string _L2StampPrefix = "2:";
+
+    private static string? _TagStamp(string tierPrefix, string? stamp)
+    {
+        return stamp is null ? null : tierPrefix + stamp;
+    }
+
+    // Splits a tier-tagged expected stamp back into the per-tier stamps to enforce. No stamp (a cold miss, or a
+    // read that yielded no live entry) means an unconditional write on both tiers, which is what the coordinator
+    // asks for when it had no snapshot to guard against.
+    private static (string? L1, string? L2) _SplitStamp(string? stamp)
+    {
+        if (stamp is null)
+        {
+            return (null, null);
+        }
+
+        if (stamp.StartsWith(_L1StampPrefix, StringComparison.Ordinal))
+        {
+            return (stamp[_L1StampPrefix.Length..], null);
+        }
+
+        if (stamp.StartsWith(_L2StampPrefix, StringComparison.Ordinal))
+        {
+            return (null, stamp[_L2StampPrefix.Length..]);
+        }
+
+        return (null, null);
+    }
+
     async ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
         string key,
         FactoryCacheReadOptions readOptions,
@@ -34,6 +71,12 @@ public sealed partial class HybridCache
                 var l1Entry = await l1Store
                     .TryGetEntryAsync<T>(key, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
+
+                // Tag the stamp at its source so a factory write derived from this snapshot CAS-guards L1.
+                l1Entry = l1Entry with
+                {
+                    ConcurrencyStamp = _TagStamp(_L1StampPrefix, l1Entry.ConcurrencyStamp),
+                };
 
                 if (l1Entry.IsFresh(now))
                 {
@@ -150,7 +193,11 @@ public sealed partial class HybridCache
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
-        var l2Entry = l2Read.Value;
+        // Tag the stamp at its source so a factory write derived from this snapshot CAS-guards L2 (see _SplitStamp).
+        var l2Entry = l2Read.Value with
+        {
+            ConcurrencyStamp = _TagStamp(_L2StampPrefix, l2Read.Value.ConcurrencyStamp),
+        };
 
         CachingMetrics.RecordRequest(
             _metricCacheName,
@@ -173,7 +220,14 @@ public sealed partial class HybridCache
         // an L2 reserve is unaffected — it simply is not re-cached into L1.
         if (l2Entry.IsFresh(now) && LocalCache is IFactoryCacheStore l1StoreForPromotion)
         {
-            await _SetLocalEntryAsync(l1StoreForPromotion, key, l2Entry, cancellationToken).ConfigureAwait(false);
+            await _SetLocalEntryAsync(
+                    l1StoreForPromotion,
+                    key,
+                    l2Entry,
+                    expectedConcurrencyStamp: null,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
@@ -230,15 +284,26 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
-        // Background path: the GetOrAdd factory write-through is the highest-value detach target. The factory
-        // already returned its value to the caller against L1, so the L2 mirror + peer publish add nothing to
-        // the caller's result. Write L1 synchronously (capturing the physical stamp the recovery replay verifies
-        // against), then detach the L2 write + recovery bookkeeping + publish under CancellationToken.None so a
-        // caller token going away cannot abandon the L2 mirror. The descriptor is already captured by value
-        // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
-        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
+        // The coordinator's expected stamp identifies a snapshot from exactly one tier; route it to that tier so
+        // its compare-and-set actually runs (a late factory must not resurrect a concurrently removed key).
+        var (expectedL1Stamp, expectedL2Stamp) = _SplitStamp(entry.ExpectedConcurrencyStamp);
+
+        // Background path: the GetOrAdd factory write-through is the highest-value detach target. An L2-origin
+        // concurrency stamp must stay on the synchronous guarded-tier-first path below: committing L1 before the
+        // L2 CAS would resurrect a value when a concurrent remove wins the CAS, and this instance ignores its own
+        // invalidation message. For all other writes, write L1 synchronously (capturing the physical stamp the
+        // recovery replay verifies against), then detach the L2 write + recovery bookkeeping + publish under
+        // CancellationToken.None so a caller token going away cannot abandon the L2 mirror. The descriptor is
+        // already captured by value (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns
+        // immutable state.
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations && expectedL2Stamp is null)
         {
-            var (localCommitted, localPhysicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
+            var (localCommitted, localPhysicalStamp) = await _WriteSetEntryToLocalAsync(
+                    key,
+                    entry,
+                    expectedL1Stamp,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (!localCommitted)
@@ -246,15 +311,31 @@ public sealed partial class HybridCache
                 return false;
             }
 
-            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localPhysicalStamp), key);
+            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localPhysicalStamp, expectedL2Stamp), key);
 
             return true;
+        }
+
+        // Write the compare-and-set-guarded tier FIRST so a lost CAS aborts before the other tier is touched — a
+        // late factory that lost the race must land on neither tier. At most one tier is guarded (the stamp
+        // identifies a single snapshot), so this is an either/or ordering, not a two-phase commit.
+        var guardedTierIsL1 = expectedL1Stamp is not null;
+        DateTime? physicalStamp = null;
+
+        if (guardedTierIsL1 && !await _TryWriteLocalAsync().ConfigureAwait(false))
+        {
+            return false;
         }
 
         // Per-call tier control: skip the L2 (distributed) write entirely. No recovery replay is queued (the skip
         // is intentional, not a failure), and the peer-invalidation publish below is skipped together with it —
         // a value that never reached L2 has no shared copy for peers to invalidate against.
-        var (skipL2, l2WriteSucceeded, l2WriteConditionFailed) = await _WriteL2EntryAsync(entry, key, cancellationToken)
+        var (skipL2, l2WriteSucceeded, l2WriteConditionFailed) = await _WriteL2EntryAsync(
+                entry,
+                key,
+                expectedL2Stamp,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!skipL2 && l2WriteConditionFailed)
@@ -262,10 +343,7 @@ public sealed partial class HybridCache
             return false;
         }
 
-        var (committed, physicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!committed)
+        if (!guardedTierIsL1 && !await _TryWriteLocalAsync().ConfigureAwait(false))
         {
             return false;
         }
@@ -281,16 +359,28 @@ public sealed partial class HybridCache
             .ConfigureAwait(false);
 
         return true;
+
+        async ValueTask<bool> _TryWriteLocalAsync()
+        {
+            var (committed, stamp) = await _WriteSetEntryToLocalAsync(key, entry, expectedL1Stamp, cancellationToken)
+                .ConfigureAwait(false);
+            physicalStamp = stamp;
+
+            return committed;
+        }
     }
 
     /// <summary>
     /// Writes the framed entry into L1 (bounded by the local ceiling), returning the physical stamp actually
     /// written so the auto-recovery replay can detect that the L1 entry was later replaced. Shared by the
     /// synchronous and background <see cref="_SetEntryCoreAsync{T}"/> flows so both write L1 identically.
+    /// <paramref name="expectedConcurrencyStamp"/> is non-<see langword="null"/> only when the coordinator's
+    /// snapshot came from L1; the write is then a compare-and-set and an uncommitted result means the CAS lost.
     /// </summary>
     private async ValueTask<(bool Committed, DateTime? PhysicalStamp)> _WriteSetEntryToLocalAsync<T>(
         string key,
         CacheStoreEntryWrite<T> entry,
+        string? expectedConcurrencyStamp,
         CancellationToken cancellationToken
     )
     {
@@ -319,8 +409,22 @@ public sealed partial class HybridCache
                 Tags = entry.Tags,
             };
 
-            var physicalStamp = await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken)
+            var (localCommitted, physicalStamp) = await _SetLocalEntryAsync(
+                    l1Store,
+                    key,
+                    l1Entry,
+                    expectedConcurrencyStamp,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
+
+            // An unconditional L1 write that the store declined (an oversized entry under MaxEntrySize, say) stays
+            // best-effort: L2 still holds the value, so the operation as a whole succeeded. Only a CAS we actually
+            // asked for reports failure, which is what the coordinator logs as a lost write.
+            if (expectedConcurrencyStamp is not null && !localCommitted)
+            {
+                return (false, null);
+            }
 
             return (true, physicalStamp);
         }
@@ -344,7 +448,12 @@ public sealed partial class HybridCache
     /// swallowed), then publishes the peer invalidation. Runs under <see cref="CancellationToken.None"/> because
     /// the caller's token is gone. <paramref name="l1PhysicalStamp"/> was captured from the synchronous L1 write.
     /// </summary>
-    private async Task _SetEntryL2TailAsync<T>(string key, CacheStoreEntryWrite<T> entry, DateTime? l1PhysicalStamp)
+    private async Task _SetEntryL2TailAsync<T>(
+        string key,
+        CacheStoreEntryWrite<T> entry,
+        DateTime? l1PhysicalStamp,
+        string? expectedL2Stamp
+    )
     {
         // Per-call tier control: skip the L2 write (and its recovery bookkeeping) when requested; the publish
         // below is kept as-is so peers still drop their stale L1.
@@ -352,6 +461,7 @@ public sealed partial class HybridCache
         var (skipL2, l2WriteSucceeded, l2WriteConditionFailed) = await _WriteL2EntryAsync(
                 entry,
                 key,
+                expectedL2Stamp,
                 CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -420,8 +530,12 @@ public sealed partial class HybridCache
             }
             else
             {
-                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
-                _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
+                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay. The
+                // expected stamp is dropped: it identifies a snapshot read before this write, so replaying it
+                // against L2 minutes later would compare a stamp no leaf store can still match (and a Redis leaf
+                // rejects the hybrid's tagged form outright). The queued item's L1 stamp guard is what keeps a
+                // superseded replay from landing.
+                _QueueSetEntryRecovery(key, entry with { ExpectedConcurrencyStamp = null }, l1PhysicalStamp);
             }
         }
 
@@ -494,6 +608,7 @@ public sealed partial class HybridCache
     private async ValueTask<(bool SkipL2, bool Succeeded, bool ConditionFailed)> _WriteL2EntryAsync<T>(
         CacheStoreEntryWrite<T> entry,
         string key,
+        string? expectedL2Stamp,
         CancellationToken ct
     )
     {
@@ -504,10 +619,11 @@ public sealed partial class HybridCache
             return (SkipL2: true, Succeeded: false, ConditionFailed: false);
         }
 
-        // ExpectedConcurrencyStamp is store-local; an L1 stamp must not be applied to the L2 mirror.
+        // Replace the tier-tagged composite with the untagged L2 stamp (null when the coordinator's snapshot came
+        // from L1, since an L1 stamp means nothing to L2): the leaf store must never see the hybrid's tag.
         var l2Entry = entry with
         {
-            ExpectedConcurrencyStamp = null,
+            ExpectedConcurrencyStamp = expectedL2Stamp,
         };
 
         if (l2Cache is IFactoryCacheStore l2Store)
@@ -555,20 +671,23 @@ public sealed partial class HybridCache
     }
 
     /// <summary>
-    /// Writes an entry into L1 bounded by the local ceiling. Returns the physical expiration stamp actually
-    /// written (auto-recovery uses it to detect that the L1 entry was replaced), or <see langword="null"/>
-    /// when the write was skipped.
+    /// Writes an entry into L1 bounded by the local ceiling. Returns whether the store committed the write and the
+    /// physical expiration stamp actually written (auto-recovery uses it to detect that the L1 entry was replaced);
+    /// the stamp is <see langword="null"/> when the write was skipped. Read-path promotions pass no
+    /// <paramref name="expectedConcurrencyStamp"/> and ignore the committed flag; the factory write path passes the
+    /// L1 stamp it read so the write becomes a compare-and-set.
     /// </summary>
-    private async ValueTask<DateTime?> _SetLocalEntryAsync<T>(
+    private async ValueTask<(bool Committed, DateTime? PhysicalStamp)> _SetLocalEntryAsync<T>(
         IFactoryCacheStore l1Store,
         string key,
         CacheStoreEntry<T> entry,
+        string? expectedConcurrencyStamp,
         CancellationToken cancellationToken
     )
     {
         if (!entry.Found)
         {
-            return null;
+            return (false, null);
         }
 
         var now = _GetUtcNow();
@@ -583,7 +702,7 @@ public sealed partial class HybridCache
         {
             if (!localCeiling.HasValue)
             {
-                return null;
+                return (false, null);
             }
 
             var ceilingWrite = new CacheStoreEntryWrite<T>
@@ -600,11 +719,14 @@ public sealed partial class HybridCache
                 // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
                 CreatedAt = entry.CreatedAt,
                 Tags = entry.Tags,
+                ExpectedConcurrencyStamp = expectedConcurrencyStamp,
             };
 
-            await l1Store.SetEntryAsync(key, in ceilingWrite, cancellationToken).ConfigureAwait(false);
+            var ceilingCommitted = await l1Store
+                .SetEntryAsync(key, in ceilingWrite, cancellationToken)
+                .ConfigureAwait(false);
 
-            return ceilingWrite.PhysicalExpiresAt;
+            return (ceilingCommitted, ceilingWrite.PhysicalExpiresAt);
         }
 
         var logicalExpiresAt = localCeiling.HasValue
@@ -628,11 +750,12 @@ public sealed partial class HybridCache
             // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
             CreatedAt = entry.CreatedAt,
             Tags = entry.Tags,
+            ExpectedConcurrencyStamp = expectedConcurrencyStamp,
         };
 
-        await l1Store.SetEntryAsync(key, in localWrite, cancellationToken).ConfigureAwait(false);
+        var committed = await l1Store.SetEntryAsync(key, in localWrite, cancellationToken).ConfigureAwait(false);
 
-        return localWrite.PhysicalExpiresAt;
+        return (committed, localWrite.PhysicalExpiresAt);
     }
 
     /// <summary>
@@ -793,7 +916,8 @@ public sealed partial class HybridCache
         // Promote the fresh L2 entry into L1, exactly like the generic IFactoryCacheStore.TryGetEntryAsync cold path:
         // _SetLocalEntryAsync preserves Tags + CreatedAt and applies the local-expiration ceiling, so the seeded L1
         // entry stays version-pinned for Family-2 tag/clear invalidation.
-        await _SetLocalEntryAsync(l1Store, key, l2Entry, cancellationToken).ConfigureAwait(false);
+        await _SetLocalEntryAsync(l1Store, key, l2Entry, expectedConcurrencyStamp: null, cancellationToken)
+            .ConfigureAwait(false);
 
         destination.Write(l2Bytes);
         return true;

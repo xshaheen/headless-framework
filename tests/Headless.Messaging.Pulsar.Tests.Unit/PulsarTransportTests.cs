@@ -48,7 +48,7 @@ public sealed class PulsarTransportTests : TestBase
         // then
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<PublisherSentFailedException>();
-        await _connectionFactory.Received(1).CreateProducerAsync("TestTopic");
+        await _connectionFactory.Received(1).CreateProducerAsync("headless-bus-TestTopic");
     }
 
     [Fact]
@@ -99,7 +99,34 @@ public sealed class PulsarTransportTests : TestBase
         await transport.SendAsync(message, AbortToken);
 
         // then
-        await _connectionFactory.Received(1).CreateProducerAsync("orders.created");
+        await _connectionFactory.Received(1).CreateProducerAsync("headless-bus-orders.created");
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, "orders.created", "headless-bus-orders.created")]
+    [InlineData(MessageLane.Queue, "orders.created", "headless-queue-orders.created")]
+    [InlineData(
+        MessageLane.Bus,
+        "persistent://tenant/namespace/orders.created",
+        "persistent://tenant/namespace/headless-bus-orders.created"
+    )]
+    [InlineData(
+        MessageLane.Queue,
+        "persistent://tenant/namespace/orders.created",
+        "persistent://tenant/namespace/headless-queue-orders.created"
+    )]
+    public void should_lane_qualify_physical_topic(MessageLane lane, string logicalName, string expected)
+    {
+        PulsarPhysicalAddress.Topic(lane, logicalName).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_disambiguate_subscription_names_changed_by_normalization()
+    {
+        PulsarPhysicalAddress
+            .Subscription(MessageLane.Bus, "sales.east")
+            .Should()
+            .NotBe(PulsarPhysicalAddress.Subscription(MessageLane.Bus, "sales_east"));
     }
 
     [Fact]

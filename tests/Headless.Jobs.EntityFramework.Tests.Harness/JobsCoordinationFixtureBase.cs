@@ -779,6 +779,24 @@ public static class JobsCoordinationFixtureExtensions
         return (status, ownerId, lockedUntil, exceptionMessage, skippedReason);
     }
 
+    /// <summary>Reads a TimeJob's persisted RetryCount — for asserting crash-durable budget consumption.</summary>
+    public static async Task<int> ReadTimeJobRetryCountAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT \"RetryCount\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        AddParameter(command, "@id", id);
+        var result =
+            await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException($"TimeJob {id} not found.");
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
     public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,

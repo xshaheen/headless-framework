@@ -258,6 +258,7 @@ The durable operational store (EF provider) uses `Headless.Coordination` for:
 - **Node identity**: the node owner stamped on job rows is `node@incarnation` (a store-allocated incarnation ID), not `Environment.MachineName`. K8s pod-collision handling via `POD_NAME`/`POD_NAMESPACE` is configured on `Headless.Coordination`, not on `SchedulerOptionsBuilder`.
 - **Dead-node recovery**: triggered by `Coordination` `NodeLeft` events plus a periodic liveness-snapshot reconcile (`DeadNodeReconcileInterval`, default 1 minute). Backend-neutral — works without Redis. Reclaim matches the dead `node@incarnation` exactly; it never touches rows owned by a restarted node's fresh incarnation.
 - **Fail-stop on membership loss**: if the local node loses coordination membership, the durable scheduler stops processing rather than stamping stale owners.
+- **Orphaned-owner sweep**: on the `DeadNodeReconcileInterval` cadence the fallback service also reclaims rows stamped by an owner identity absent from the liveness snapshot entirely — a superseded incarnation (never classified Dead, so the dead-node path cannot see it) or a dead identity pruned past retention. This is the only recovery path for owner-stamped `Idle`/`Queued` rows with no execution time (non-timed chain descendants) after a whole-cluster or single-node ungraceful restart.
 
 ### Commit-Coordinated Enqueue (Atomic Enqueue)
 
@@ -568,7 +569,13 @@ Each `IHost` receives its own immutable runtime registry projected from the cano
 
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 
-Claiming a chained time job leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied by the parent's terminal state. A descendant carrying its own execution time is not claimed with the parent — it becomes claimable independently at the later of the parent's matching terminal state and its own time (see [Typed Job Chains](#typed-job-chains)). Reclaimed time jobs and cron occurrences preserve `RetryCount`, so execution resumes from the persisted attempt instead of resetting the retry budget.
+Claiming a chained time job leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner while leaving their status `Idle`; each child transitions to `InProgress` only when its `RunCondition` is satisfied by the parent's terminal state. A descendant carrying its own execution time is not claimed with the parent — it becomes claimable independently at the later of the parent's matching terminal state and its own time (see [Typed Job Chains](#typed-job-chains)). Recovery keeps the retry budget crash-durable: reclaiming a **started** attempt (an `InProgress` row whose lease lapsed, under `OnNodeDeath.Retry`) increments the persisted `RetryCount` — the interrupted attempt is consumed, per the `NodeDeathPolicy.Retry` contract — while releasing a claimed-but-unstarted (`Idle`/`Queued`) row leaves the count untouched. Execution resumes from the persisted attempt, and a row whose persisted count already exceeds the budget is terminalized `Failed` (with the exhausted callback) instead of running the handler again, so a handler that reliably kills its host cannot re-run forever.
+
+Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first (the EF provider does so inside one transaction); the returned count includes every removed descendant. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
+
+A typed job function's stored request is read immediately before the handler runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
+
+Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
 
@@ -688,7 +695,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s; > 0, max: 5 min
-        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: UTC — never Local (fleet-divergent cron dedup)
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
         scheduler.MaxChainDepth = 10; // default: 10; range 1..JobChain.MaxStructuralDepth (64)
@@ -743,6 +750,9 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 
 - **Embedded SPA**: served from the host process, no separate deployment.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
+- **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
+- **Predictable timestamp display**: explicit ISO UTC offsets are preserved, legacy zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
+- **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
@@ -1219,7 +1229,7 @@ if (isPermamentFailure)
 
 Overloads:
 - `TerminateExecutionException("message")` → final status `Skipped`
-- `TerminateExecutionException(JobStatus status, "message")` → explicit status
+- `TerminateExecutionException(JobStatus status, "message")` → explicit terminal status: `Succeeded`, `DueDone`, `Failed`, `Cancelled`, or `Skipped`; any other value throws `ArgumentOutOfRangeException`
 - Both overloads have a variant accepting an `innerException` for diagnostic details
 
 #### Cron Occurrence Skipping
@@ -1379,7 +1389,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
 - Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.
-- Creates cron occurrences atomically against the unique execution-time and cron-job key.
+- Creates cron occurrences atomically against the unique execution-time and cron-job key, deduplicating only against **active** (`Idle`, `Queued`, `InProgress`) occurrences so a terminal occurrence at the same execution time never suppresses a new fire — the same semantics the filtered unique index and the PostgreSQL claim strategy enforce.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
 

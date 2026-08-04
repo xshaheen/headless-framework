@@ -93,54 +93,43 @@ internal sealed class ConsumeMiddlewarePipeline(
         {
             consumeContextAccessor?.Current = consumeContext;
 
+            // The scope is not elided on the zero-middleware path the way the publish pipeline elides its
+            // own: the inner ring resolves the handler (and the dispatcher) from this provider, so it is
+            // the consumer's scope, not just a middleware-resolution scope.
             await using var scope = serviceProvider.CreateAsyncScope();
             var provider = scope.ServiceProvider;
             var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
-            var innerRingCompleted = false;
 
-            Func<ValueTask> next = async () =>
+            if (middleware.Length == 0)
             {
-                if (
-                    descriptor.HandlerId is { Length: > 0 } handlerId
-                    && runtimeRegistry.TryGetInvoker(
-                        descriptor.MessageName,
-                        descriptor.GroupName,
-                        handlerId,
-                        descriptor.Lane,
-                        out var runtimeInvoker
-                    )
-                )
-                {
-                    await runtimeInvoker
-                        .InvokeAsync(consumeContext, provider, consumeContext.CancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
-                    await _DispatchAsync(
-                            dispatcher,
-                            provider,
-                            descriptor,
-                            consumeContext,
-                            messageType,
-                            consumeContext.CancellationToken
-                        )
-                        .ConfigureAwait(false);
-                }
-
-                innerRingCompleted = true;
+                // Zero-middleware fast path: with no ring to wrap there is no delegate chain to build and
+                // no completion flag to track — that flag only feeds the middleware error filters below.
+                await _InvokeInnerAsync(descriptor, consumeContext, provider, messageType).ConfigureAwait(false);
                 consumeContext.MarkCompleted();
-            };
-
-            for (var i = middleware.Length - 1; i >= 0; i--)
-            {
-                var current = middleware[i];
-                var innerNext = next;
-                next = () => _InvokeAsync(current, consumeContext, innerNext, () => innerRingCompleted);
             }
+            else
+            {
+                // Hoisted into a single StrongBox so the per-middleware wiring captures one loop-invariant
+                // reference instead of allocating a fresh `() => innerRingCompleted` delegate per middleware.
+                var innerRingCompleted = new StrongBox<bool>(value: false);
 
-            await next().ConfigureAwait(false);
+                Func<ValueTask> next = async () =>
+                {
+                    await _InvokeInnerAsync(descriptor, consumeContext, provider, messageType).ConfigureAwait(false);
+
+                    innerRingCompleted.Value = true;
+                    consumeContext.MarkCompleted();
+                };
+
+                for (var i = middleware.Length - 1; i >= 0; i--)
+                {
+                    var current = middleware[i];
+                    var innerNext = next;
+                    next = () => _InvokeAsync(current, consumeContext, innerNext, innerRingCompleted);
+                }
+
+                await next().ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -159,11 +148,48 @@ internal sealed class ConsumeMiddlewarePipeline(
         );
     }
 
+    private async ValueTask _InvokeInnerAsync(
+        ConsumerExecutorDescriptor descriptor,
+        ConsumeContext consumeContext,
+        IServiceProvider provider,
+        Type messageType
+    )
+    {
+        if (
+            descriptor.HandlerId is { Length: > 0 } handlerId
+            && runtimeRegistry.TryGetInvoker(
+                descriptor.MessageName,
+                descriptor.GroupName,
+                handlerId,
+                descriptor.Lane,
+                out var runtimeInvoker
+            )
+        )
+        {
+            await runtimeInvoker
+                .InvokeAsync(consumeContext, provider, consumeContext.CancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
+        await _DispatchAsync(
+                dispatcher,
+                provider,
+                descriptor,
+                consumeContext,
+                messageType,
+                consumeContext.CancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private async ValueTask _InvokeAsync(
         object middleware,
         ConsumeContext context,
         Func<ValueTask> innerNext,
-        Func<bool> innerRingCompleted
+        StrongBox<bool> innerRingCompleted
     )
     {
         try
@@ -171,7 +197,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
             context.MarkCompleted();
         }
-        catch (Exception ex) when (innerRingCompleted())
+        catch (Exception ex) when (innerRingCompleted.Value)
         {
             logger?.ConsumePostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
             return;

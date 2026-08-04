@@ -112,8 +112,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// after a successful claim.
     /// </summary>
     /// <param name="timeJobIds">
-    /// The jobs to release. An <b>empty</b> array is not a no-op: it releases every row this node currently holds
-    /// in a releasable state.
+    /// The jobs to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c> row this node
+    /// has claimed but not started. Releasable means <c>Queued</c> AND owned by this node — <c>InProgress</c>
+    /// work, foreign or unowned rows, and <c>Idle</c> owned rows (a running chain's claimed descendants) are
+    /// never matched by either form.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release.</param>
     /// <returns>A task that completes when the release has been applied.</returns>
@@ -458,6 +460,26 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns the distinct owner identities currently stamped on non-terminal (<c>Idle</c>/<c>Queued</c>/
+    /// <c>InProgress</c>) time jobs and cron occurrences. The orphaned-owner sweep diffs this set against the
+    /// coordination liveness snapshot to recover rows whose owner identity can no longer be observed at all —
+    /// a superseded incarnation (its successor's registration instantly removes it from every snapshot, so it
+    /// is never classified <c>Dead</c>) or a dead identity already pruned past its retention window. Rows with
+    /// a <c>null</c> execution time (non-timed chain descendants) are matched by no other sweep in that state.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>Distinct non-null owner identity strings; empty when nothing is stamped.</returns>
+    /// <remarks>
+    /// Default implementation returns an empty set, which safely disables the orphaned-owner sweep for a
+    /// provider that has not opted in; durable providers should override with a storage-side distinct query.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Array.Empty<string>());
+    }
     #endregion
 
     #region Cron_TickerOccurrence_Core_Methods
@@ -554,8 +576,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// owner and lease cleared. The cron mirror of <see cref="ReleaseAcquiredTimeJobsAsync"/>.
     /// </summary>
     /// <param name="occurrenceIds">
-    /// The occurrences to release. An <b>empty</b> array is not a no-op: it releases every occurrence this node
-    /// currently holds in a releasable state.
+    /// The occurrences to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c>
+    /// occurrence this node has claimed but not started. Releasable means <c>Queued</c> AND owned by this node —
+    /// <c>InProgress</c>, foreign, unowned, and <c>Idle</c> owned rows are never matched by either form.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release.</param>
     /// <returns>A task that completes when the release has been applied.</returns>

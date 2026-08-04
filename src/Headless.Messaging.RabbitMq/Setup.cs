@@ -6,6 +6,7 @@ using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -15,9 +16,8 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// Registers a single shared <c>ConnectionChannelPool</c> that multiplexes AMQP channels over one
-/// TCP connection. The exchange declared at startup uses the topic exchange type; each consumer
-/// queue is bound with a routing key derived from the message type name.
-/// Both a bus (pub/sub) and a queue (point-to-point) transport are registered.
+/// TCP connection. Bus uses a lane-qualified topic exchange; Queue uses a lane-qualified direct
+/// exchange. Each owned queue is bound with a lane-qualified routing key.
 /// </remarks>
 public static class SetupRabbitMqMessaging
 {
@@ -112,13 +112,20 @@ public static class SetupRabbitMqMessaging
                 MessagingProviderCapabilities.Transport(
                     "RabbitMQ",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: true
                 )
             );
             configureOptions(services);
-            services.AddSingleton<RabbitMqTransport>();
-            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());
-            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());
+            services.AddSingleton<IBusTransport>(sp => new RabbitMqTransport(
+                sp.GetRequiredService<ILogger<RabbitMqTransport>>(),
+                sp.GetRequiredService<IConnectionChannelPool>(),
+                MessageLane.Bus
+            ));
+            services.AddSingleton<IQueueTransport>(sp => new RabbitMqTransport(
+                sp.GetRequiredService<ILogger<RabbitMqTransport>>(),
+                sp.GetRequiredService<IConnectionChannelPool>(),
+                MessageLane.Queue
+            ));
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }

@@ -68,8 +68,11 @@ internal sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var lockKey = _GetLockKey(key);
-        var fenceKey = _GetFenceKey(key);
+        // The lock key and its fence counter are two renderings of the same hex-encoded logical key, and the encode
+        // (UTF8 bytes + hex) is the expensive half — do it once per acquire instead of once per key.
+        var encodedKey = _GetEncodedKey(key);
+        var lockKey = _GetLockKeyFromEncoded(encodedKey);
+        var fenceKey = _GetFenceKeyFromEncoded(encodedKey);
 
         var (acquired, fencingToken) = await _TryAcquireLockAsync(
                 Db,
@@ -435,19 +438,23 @@ internal sealed class RedisDistributedLockStorage(
         return new AcquireLockParams(key, fenceKey, leaseId, expiresValue);
     }
 
-    private static RedisKey _GetFenceKey(string key)
-    {
-        return "fence:{" + _GetHashTag(key) + "}";
-    }
-
     private static RedisKey _GetLockKey(string key)
     {
-        return _PhysicalLockKeyPrefix + _GetEncodedKey(key) + _PhysicalLockKeySuffix;
+        return _GetLockKeyFromEncoded(_GetEncodedKey(key));
     }
 
-    private static string _GetHashTag(string key)
+    private static RedisKey _GetLockKeyFromEncoded(string encodedKey)
     {
-        return "hflock:" + _GetEncodedKey(key);
+        return _PhysicalLockKeyPrefix + encodedKey + _PhysicalLockKeySuffix;
+    }
+
+    /// <summary>
+    /// Fence-counter key for an already hex-encoded logical key. It carries the same <c>hflock:&lt;hex&gt;</c> hash
+    /// tag as the lock key, so both land on one cluster slot and the acquire script can touch them atomically.
+    /// </summary>
+    private static RedisKey _GetFenceKeyFromEncoded(string encodedKey)
+    {
+        return "fence:{hflock:" + encodedKey + "}";
     }
 
     private static string _GetEncodedKey(string key)

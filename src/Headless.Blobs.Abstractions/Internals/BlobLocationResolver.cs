@@ -97,39 +97,58 @@ public static class BlobLocationResolver
 
     private static string _NormalizeKey(string path, IBlobNamingNormalizer normalizer, bool allowTrailingSlash)
     {
-        var segments = path.Split('/');
+        // Every provider operation routes through here and the overwhelming majority of keys are already in
+        // normalized form, so the segments are walked in place and the caller gets the original string back when no
+        // segment was rewritten. The output buffer is allocated only from the first segment the normalizer actually
+        // changes onward; the validation rules below are byte-for-byte the ones a Split/Join pass applied.
+        StringBuilder? normalized = null;
+        var start = 0;
 
-        for (var i = 0; i < segments.Length; i++)
+        while (true)
         {
-            var rawSegment = segments[i];
-            segments[i] = normalizer.NormalizeBlobName(segments[i]);
+            var slash = path.IndexOf('/', start);
+            var isLastSegment = slash < 0;
+            var rawSegment = isLastSegment ? path[start..] : path[start..slash];
+            var segment = normalizer.NormalizeBlobName(rawSegment);
 
-            if (string.IsNullOrEmpty(segments[i]))
+            if (string.IsNullOrEmpty(segment))
             {
-                var isIntentionalTrailingSlash =
-                    allowTrailingSlash && i == segments.Length - 1 && rawSegment.Length == 0;
+                var isIntentionalTrailingSlash = allowTrailingSlash && isLastSegment && rawSegment.Length == 0;
 
-                if (isIntentionalTrailingSlash)
+                if (!isIntentionalTrailingSlash)
                 {
-                    continue;
+                    throw new ArgumentException(
+                        "The blob key contains a segment that is empty after provider normalization.",
+                        nameof(path)
+                    );
                 }
-
-                throw new ArgumentException(
-                    "The blob key contains a segment that is empty after provider normalization.",
-                    nameof(path)
-                );
             }
-
-            if (segments[i] is "." or "..")
+            else if (segment is "." or "..")
             {
                 throw new ArgumentException(
                     "The blob key contains a relative path segment after provider normalization.",
                     nameof(path)
                 );
             }
-        }
 
-        return string.Join('/', segments);
+            if (normalized is not null)
+            {
+                normalized.Append('/').Append(segment);
+            }
+            else if (!string.Equals(segment, rawSegment, StringComparison.Ordinal))
+            {
+                // First rewritten segment: everything before it is character-identical to the input — including the
+                // '/' that terminates the preceding segment — so the untouched head is copied verbatim.
+                normalized = new StringBuilder(path.Length).Append(path, 0, start).Append(segment);
+            }
+
+            if (isLastSegment)
+            {
+                return normalized?.ToString() ?? path;
+            }
+
+            start = slash + 1;
+        }
     }
 
     /// <summary>

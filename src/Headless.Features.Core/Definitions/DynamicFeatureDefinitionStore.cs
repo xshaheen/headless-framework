@@ -106,8 +106,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // Fast path: lock-free read if cache is fresh
         if (!_IsUpdateMemoryCacheRequired())
         {
-            var cache = _featureMemoryCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
-            return cache.Values.ToImmutableList();
+            return _featureListCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
         }
 
         // Slow path: acquire lock and refresh if needed
@@ -115,8 +114,7 @@ public sealed class DynamicFeatureDefinitionStore(
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
-            var cache = _featureMemoryCache; // Capture local reference
-            return cache.Values.ToImmutableList();
+            return _featureListCache;
         }
     }
 
@@ -133,8 +131,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // Fast path: lock-free read if cache is fresh
         if (!_IsUpdateMemoryCacheRequired())
         {
-            var cache = _groupMemoryCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
-            return cache.Values.ToImmutableList();
+            return _groupListCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
         }
 
         // Slow path: acquire lock and refresh if needed
@@ -142,8 +139,7 @@ public sealed class DynamicFeatureDefinitionStore(
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
-            var cache = _groupMemoryCache; // Capture local reference
-            return cache.Values.ToImmutableList();
+            return _groupListCache;
         }
     }
 
@@ -162,6 +158,11 @@ public sealed class DynamicFeatureDefinitionStore(
         string,
         FeatureDefinition
     >.Empty.WithComparers(StringComparer.Ordinal);
+
+    // List projections of the two dictionaries above, rebuilt alongside them. Callers ask for the whole
+    // catalog on every feature check, and materializing it per call dominated the lock-free read path.
+    private volatile IReadOnlyList<FeatureGroupDefinition> _groupListCache = [];
+    private volatile IReadOnlyList<FeatureDefinition> _featureListCache = [];
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -265,10 +266,15 @@ public sealed class DynamicFeatureDefinitionStore(
             }
         }
 
-        // Swap references to new immutable caches. Each assignment is atomic, but the two updates are not atomic as a unit,
+        var groups = newGroupCache.ToImmutable();
+        var features = newFeatureCache.ToImmutable();
+
+        // Swap references to new immutable caches. Each assignment is atomic, but the updates are not atomic as a unit,
         // so readers may briefly observe one cache updated while the other is stale. This transient state is acceptable here.
-        _groupMemoryCache = newGroupCache.ToImmutable();
-        _featureMemoryCache = newFeatureCache.ToImmutable();
+        _groupMemoryCache = groups;
+        _featureMemoryCache = features;
+        _groupListCache = [.. groups.Values];
+        _featureListCache = [.. features.Values];
     }
 
     private static void _UpdateInMemoryStoreCacheAddFeatureRecursively(

@@ -393,7 +393,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.AzureServiceBus` — Azure Service Bus transport.
 - `Headless.Messaging.Nats` — NATS with JetStream transport.
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
-- `Headless.Messaging.Redis` — Redis Streams queue transport and Redis Pub/Sub bus transport.
+- `Headless.Messaging.Redis` — Redis Streams transport for durable Bus and Queue delivery.
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.Storage.PostgreSql.EntityFramework` — EF Core connection and transactional-outbox adapter for PostgreSQL storage.

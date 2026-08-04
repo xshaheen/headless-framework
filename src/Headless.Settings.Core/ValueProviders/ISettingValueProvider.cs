@@ -10,6 +10,16 @@ public interface ISettingValueReadProvider
     /// <summary>Gets the unique name of this provider.</summary>
     string Name { get; }
 
+    /// <summary>
+    /// Whether values this provider returns for encrypted definitions are ciphertext produced by the
+    /// manager's encryption pipeline. The manager encrypts before every provider write, so writable
+    /// providers default to <see langword="true"/> while read-only sources that surface plaintext the
+    /// manager never wrote (configuration, definition defaults) default to <see langword="false"/>.
+    /// Override to <see langword="false"/> only for a writable provider whose values bypass the manager's
+    /// encryption pipeline.
+    /// </summary>
+    bool StoresEncryptedValues => this is ISettingValueProvider;
+
     /// <summary>Returns the stored value for <paramref name="setting"/>, or <see langword="null"/> if none is set.</summary>
     /// <param name="setting">The setting definition to look up.</param>
     /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier). Provider implementations determine how this is used.</param>
@@ -22,6 +32,11 @@ public interface ISettingValueReadProvider
     );
 
     /// <summary>Returns the stored values for all <paramref name="settings"/>.</summary>
+    /// <remarks>
+    /// Must agree with <see cref="GetOrDefaultAsync"/>: a setting resolvable through the single-value read must
+    /// resolve identically through the batch, and vice versa. <c>SettingManager</c> routes by-provider bulk reads
+    /// through this member, so a stubbed implementation silently drops those settings from bulk results.
+    /// </remarks>
     /// <param name="settings">The setting definitions to look up.</param>
     /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
     /// <param name="cancellationToken">The abort token.</param>

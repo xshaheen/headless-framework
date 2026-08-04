@@ -14,7 +14,7 @@ namespace Headless.Messaging.RabbitMq;
 /// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
 /// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure the message is nacked with <c>requeue=true</c>.
+/// thread. On header or body parsing failure the malformed delivery is terminally rejected.
 /// </remarks>
 internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
@@ -88,10 +88,10 @@ internal sealed class RabbitMqBasicConsumer(
         ReadOnlyMemory<byte> body
     )
     {
-        TransportMessage message;
+        Dictionary<string, string?> headers;
         try
         {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
             if (properties.Headers != null)
             {
@@ -109,8 +109,16 @@ internal sealed class RabbitMqBasicConsumer(
             }
 
             headers[Headers.Group] = groupName;
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyRejectMalformedEnvelopeAsync(deliveryTag, ex).ConfigureAwait(false);
+            return;
+        }
 
-            if (customHeadersBuilder != null)
+        if (customHeadersBuilder != null)
+        {
+            try
             {
                 var e = new BasicDeliverEventArgs(
                     consumerTag,
@@ -127,41 +135,101 @@ internal sealed class RabbitMqBasicConsumer(
                     headers[customHeader.Key] = customHeader.Value;
                 }
             }
-
-            message = new TransportMessage(headers, body);
-        }
-        catch (Exception ex)
-        {
-            logCallback(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, nacking delivery {deliveryTag}: {ex}",
-                }
-            );
-
-            try
-            {
-                if (Channel.IsOpen)
-                {
-                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true).ConfigureAwait(false);
-                }
-            }
-            catch (Exception nackEx)
+            catch (Exception ex)
             {
                 logCallback(
                     new LogMessageEventArgs
                     {
                         LogType = MqLogType.ConsumeError,
-                        Reason = $"Failed to nack delivery {deliveryTag}: {nackEx}",
+                        Reason =
+                            $"RabbitMQ custom headers builder failed; delivery {deliveryTag} rejected for retry: {ex.GetType().Name}",
                     }
                 );
-            }
 
+                await _RejectForRetryAsync(deliveryTag).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
+            _ValidateRequiredHeaders(headers);
+            message = new TransportMessage(headers, body);
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyRejectMalformedEnvelopeAsync(deliveryTag, ex).ConfigureAwait(false);
             return;
         }
 
         await msgCallback(message, deliveryTag).ConfigureAwait(false);
+    }
+
+    private async Task _RejectForRetryAsync(ulong deliveryTag)
+    {
+        try
+        {
+            if (Channel.IsOpen)
+            {
+                await Channel.BasicRejectAsync(deliveryTag, requeue: true).ConfigureAwait(false);
+            }
+        }
+        catch (Exception rejectException)
+        {
+            logCallback(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        $"Failed to reject RabbitMQ delivery {deliveryTag} for retry: {rejectException.GetType().Name}",
+                }
+            );
+        }
+    }
+
+    private async Task _TerminallyRejectMalformedEnvelopeAsync(ulong deliveryTag, Exception exception)
+    {
+        logCallback(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason =
+                    $"Malformed RabbitMQ transport envelope terminally rejected at delivery {deliveryTag}: {exception.GetType().Name}",
+            }
+        );
+
+        try
+        {
+            if (Channel.IsOpen)
+            {
+                await Channel.BasicRejectAsync(deliveryTag, requeue: false).ConfigureAwait(false);
+            }
+        }
+        catch (Exception rejectException)
+        {
+            logCallback(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        $"Failed to terminally reject malformed RabbitMQ delivery {deliveryTag}: {rejectException.GetType().Name}",
+                }
+            );
+        }
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The RabbitMQ transport envelope is missing a required Messaging header.");
+        }
     }
 
     public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)

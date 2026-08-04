@@ -182,6 +182,10 @@ internal sealed class PostgreSqlMonitoringApi(
         // literally instead of acting as a wildcard (paired with ESCAPE '\' in the ILIKE clause).
         var contentLike = $"%{_EscapeLike(query.Content)}%";
 
+        // CurrentPage is zero-based (it is returned as IndexPage.Index). Clamping keeps a negative
+        // index off the wire, where it would be rejected as a negative OFFSET.
+        var currentPage = Math.Max(query.CurrentPage, 0);
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
@@ -192,7 +196,7 @@ internal sealed class PostgreSqlMonitoringApi(
                 "@IntentType",
                 query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value)
             ),
-            new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
+            new NpgsqlParameter("@Offset", (long)currentPage * query.PageSize),
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
 
@@ -207,7 +211,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
         if (totalCount == 0)
         {
-            return new([], query.CurrentPage, query.PageSize, 0);
+            return new([], currentPage, query.PageSize, 0);
         }
 
         var items = await connection
@@ -267,7 +271,7 @@ internal sealed class PostgreSqlMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+        return new(items, currentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     /// <inheritdoc />

@@ -148,7 +148,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 SELECT root.{mapping.Id}
                 FROM {mapping.Table} AS root, claim_clock
                 WHERE root.{mapping.ExecutionTime} IS NOT NULL
-                  AND root.{mapping.ExecutionTime} <= @fallbackThreshold
+                  AND root.{mapping.ExecutionTime} <= claim_clock.now - INTERVAL '1 second'
                   AND (root.{mapping.Status} = @idle
                        OR (root.{mapping.Status} = @queued
                            AND (root.{mapping.LockedUntil} IS NULL
@@ -167,7 +167,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    new NpgsqlParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)),
                     new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
                     new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
                     new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry))
@@ -602,7 +601,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             ), candidates AS (
                 SELECT occurrence.{mapping.Id}
                 FROM {mapping.Table} AS occurrence, claim_clock
-                WHERE occurrence.{mapping.ExecutionTime} <= @fallbackThreshold
+                WHERE occurrence.{mapping.ExecutionTime} <= claim_clock.now - INTERVAL '1 second'
                   AND (occurrence.{mapping.Status} = @idle
                        OR (occurrence.{mapping.Status} = @queued
                            AND (occurrence.{mapping.LockedUntil} IS NULL
@@ -623,7 +622,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             """;
 #pragma warning restore CA2100
 
-        command.Parameters.Add(new NpgsqlParameter("fallbackThreshold", now.UtcDateTime.AddSeconds(-1)));
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));

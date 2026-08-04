@@ -168,6 +168,36 @@ public sealed class RedisMessagingOptionsTests : TestBase
         context.Entry.Should().BeNull();
     }
 
+    [Fact]
+    public void should_keep_documented_redis_options_aligned_with_public_api()
+    {
+        // given
+        var repositoryRoot = _FindRepositoryRoot();
+        var currentDocumentation = string.Join(
+            '\n',
+            File.ReadAllText(Path.Combine(repositoryRoot, "docs", "llms", "messaging.md")),
+            File.ReadAllText(Path.Combine(repositoryRoot, "docs", "llms", "index.md")),
+            File.ReadAllText(Path.Combine(repositoryRoot, "src", "Headless.Messaging.Redis", "README.md"))
+        );
+        var documentedOptionTypes = currentDocumentation
+            .Split('`')
+            .Where((_, index) => index % 2 == 1)
+            .Where(token =>
+                token.StartsWith("Redis", StringComparison.Ordinal)
+                && token.EndsWith("MessagingOptions", StringComparison.Ordinal)
+            )
+            .Distinct(StringComparer.Ordinal);
+        var publicOptionTypes = typeof(RedisMessagingOptions)
+            .Assembly.ExportedTypes.Where(type =>
+                string.Equals(type.Namespace, typeof(RedisMessagingOptions).Namespace, StringComparison.Ordinal)
+                && type.Name.EndsWith("MessagingOptions", StringComparison.Ordinal)
+            )
+            .Select(type => type.Name);
+
+        // then
+        documentedOptionTypes.Should().BeEquivalentTo(publicOptionTypes);
+    }
+
     // Validator tests
 
     [Fact]
@@ -224,5 +254,18 @@ public sealed class RedisMessagingOptionsTests : TestBase
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         return (string)property!.GetValue(options)!;
+    }
+
+    private static string _FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "headless-framework.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
 }

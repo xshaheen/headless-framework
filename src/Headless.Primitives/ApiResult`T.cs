@@ -15,45 +15,48 @@ namespace Headless.Primitives;
 #pragma warning disable CA1000 // Do not declare static members on generic types
 public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
 {
+    private const byte _SuccessState = 1;
+    private const byte _FailureState = 2;
     private readonly T? _value;
     private readonly ApiResultError? _error;
+    private readonly byte _state;
 
     private ApiResult(T value)
     {
         Argument.IsNotNull(value);
         _value = value;
         _error = null;
-        IsSuccess = true;
+        _state = _SuccessState;
     }
 
     private ApiResult(ApiResultError error)
     {
         _value = default;
         _error = Argument.IsNotNull(error);
-        IsSuccess = false;
+        _state = _FailureState;
     }
 
     /// <summary>True if operation succeeded.</summary>
-    [MemberNotNullWhen(true, nameof(Value))]
-    [MemberNotNullWhen(false, nameof(Error))]
-    public bool IsSuccess { get; }
+    public bool IsSuccess => _state == _SuccessState;
 
     /// <summary>True if operation failed.</summary>
-    [MemberNotNullWhen(false, nameof(Value))]
-    [MemberNotNullWhen(true, nameof(Error))]
-    public bool IsFailure => !IsSuccess;
+    public bool IsFailure => _state == _FailureState;
 
     /// <summary>The success value.</summary>
     /// <exception cref="InvalidOperationException">Thrown when the result is a failure (<see cref="IsFailure"/> is <see langword="true"/>).</exception>
     public T Value =>
         IsSuccess
             ? _value!
-            : throw new InvalidOperationException($"Cannot access Value on failed result. Error: {_error}");
+            : throw new InvalidOperationException(
+                IsFailure
+                    ? $"Cannot access Value on failed result. Error: {_error}"
+                    : "ApiResult<T> was not properly initialized. Value was accessed on a default instance."
+            );
 
     /// <summary>The error describing the failure.</summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>), or when accessed on a
-    /// default-initialized instance (which is a failure state carrying no error).
+    /// default-initialized instance (which is neither success nor failure).
     /// </exception>
     public ApiResultError Error
     {
@@ -64,7 +67,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
                 throw new InvalidOperationException("Cannot access Error on successful result.");
             }
 
-            // A default(ApiResult<T>) is a failure state with no error; throw clearly instead of a downstream NRE.
+            // A default(ApiResult<T>) is uninitialized; throw clearly instead of a downstream NRE.
             return _error
                 ?? throw new InvalidOperationException(
                     "ApiResult<T> was not properly initialized. Error was accessed on a default instance."
@@ -86,15 +89,17 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns><see langword="true"/> if the result is a failure; otherwise <see langword="false"/>.</returns>
     public bool TryGetError([MaybeNullWhen(false)] out ApiResultError error)
     {
-        error = _error;
-        return !IsSuccess;
+        error = IsFailure ? _error : null;
+        return IsFailure;
     }
 
     /// <summary>Gets the success value, or <paramref name="defaultValue"/> when the result is a failure.</summary>
     /// <param name="defaultValue">The value to return when the result is a failure.</param>
     /// <returns>The success value when successful; otherwise <paramref name="defaultValue"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when called on a default-initialized result.</exception>
     public T GetValueOrDefault(T defaultValue)
     {
+        _EnsureInitialized();
         return IsSuccess ? _value! : defaultValue;
     }
 
@@ -114,6 +119,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>A successful result holding the mapped value, or the original failure.</returns>
     public ApiResult<TOut> Map<TOut>(Func<T, TOut> mapper)
     {
+        _EnsureInitialized();
         return IsSuccess ? ApiResult<TOut>.Ok(mapper(_value!)) : ApiResult<TOut>.Fail(_error!);
     }
 
@@ -123,6 +129,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>The result produced by <paramref name="binder"/>, or the original failure.</returns>
     public ApiResult<TOut> Bind<TOut>(Func<T, ApiResult<TOut>> binder)
     {
+        _EnsureInitialized();
         return IsSuccess ? binder(_value!) : ApiResult<TOut>.Fail(_error!);
     }
 
@@ -131,6 +138,8 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>This result, to allow chaining.</returns>
     public ApiResult<T> OnSuccess(Action<T> action)
     {
+        _EnsureInitialized();
+
         if (IsSuccess)
         {
             action(_value!);
@@ -144,7 +153,9 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>This result, to allow chaining.</returns>
     public ApiResult<T> OnFailure(Action<ApiResultError> action)
     {
-        if (!IsSuccess)
+        _EnsureInitialized();
+
+        if (IsFailure)
         {
             action(Error);
         }
@@ -187,6 +198,26 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
         return new ApiResult<T>(new NotFoundError { Entity = entity, Key = key });
     }
 
+    /// <summary>Creates a failed result representing a missing entity identified by a <see cref="Guid"/>.</summary>
+    /// <param name="entity">The logical name of the entity that could not be found.</param>
+    /// <param name="key">The key used to look up the entity.</param>
+    /// <returns>A failed result containing a <see cref="NotFoundError"/>.</returns>
+    public static ApiResult<T> NotFound(string entity, Guid key) => NotFound(entity, key.ToString());
+
+    /// <summary>Creates a failed result representing a missing entity identified by an <see cref="int"/>.</summary>
+    /// <param name="entity">The logical name of the entity that could not be found.</param>
+    /// <param name="key">The key used to look up the entity.</param>
+    /// <returns>A failed result containing a <see cref="NotFoundError"/>.</returns>
+    public static ApiResult<T> NotFound(string entity, int key) =>
+        NotFound(entity, key.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>Creates a failed result representing a missing entity identified by a <see cref="long"/>.</summary>
+    /// <param name="entity">The logical name of the entity that could not be found.</param>
+    /// <param name="key">The key used to look up the entity.</param>
+    /// <returns>A failed result containing a <see cref="NotFoundError"/>.</returns>
+    public static ApiResult<T> NotFound(string entity, long key) =>
+        NotFound(entity, key.ToString(CultureInfo.InvariantCulture));
+
     /// <summary>
     /// Creates a failed <see cref="ApiResult{T}"/> representing a conflict.
     /// </summary>
@@ -200,6 +231,23 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
         return new ApiResult<T>(new ConflictError(code, message));
     }
 
+    /// <summary>Creates a failed result representing a conflict with the default general error code.</summary>
+    /// <param name="message">The human-readable message describing the conflict.</param>
+    /// <returns>A failed result containing a <see cref="ConflictError"/>.</returns>
+    public static ApiResult<T> Conflict(string message) =>
+        Conflict(new ErrorDescriptor(ApiResultErrorCodes.Default, message));
+
+    /// <summary>Creates a failed result representing one conflict descriptor.</summary>
+    /// <param name="error">The descriptor describing the conflict.</param>
+    /// <returns>A failed result containing the supplied conflict descriptor.</returns>
+    public static ApiResult<T> Conflict(ErrorDescriptor error) => new(new ConflictError(error));
+
+    /// <summary>Creates a failed result representing one or more conflict descriptors.</summary>
+    /// <param name="errors">The descriptors describing all conflicting conditions.</param>
+    /// <returns>A failed result containing all supplied conflict descriptors.</returns>
+    public static ApiResult<T> Conflict(params IReadOnlyCollection<ErrorDescriptor> errors) =>
+        new(new ConflictError(errors));
+
     /// <summary>
     /// Creates a failed <see cref="ApiResult{T}"/> representing validation errors.
     /// </summary>
@@ -212,6 +260,12 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
         return new ApiResult<T>(ValidationError.FromFields(errors));
     }
 
+    /// <summary>Creates a failed result from a structured validation-error map.</summary>
+    /// <param name="errors">The field-keyed descriptors to expose in the 422 ProblemDetails response.</param>
+    /// <returns>A failed result containing the supplied validation descriptors.</returns>
+    public static ApiResult<T> ValidationFailed(IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errors) =>
+        new(ValidationError.FromErrorDescriptors(errors));
+
     /// <summary>
     /// Creates a failed <see cref="ApiResult{T}"/> representing a forbidden operation.
     /// </summary>
@@ -221,8 +275,13 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// </returns>
     public static ApiResult<T> Forbidden(string reason)
     {
-        return new(new ForbiddenError { Reason = reason });
+        return Forbidden(new ErrorDescriptor(ApiResultErrorCodes.Forbidden, reason));
     }
+
+    /// <summary>Creates a failed result representing a forbidden operation.</summary>
+    /// <param name="error">The descriptor exposed in the 403 ProblemDetails response.</param>
+    /// <returns>A failed result containing the supplied forbidden descriptor.</returns>
+    public static ApiResult<T> Forbidden(ErrorDescriptor error) => new(new ForbiddenError(error));
 
     /// <summary>
     /// Creates a failed <see cref="ApiResult{T}"/> representing an unauthorized operation.
@@ -234,6 +293,18 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     {
         return new(UnauthorizedError.Instance);
     }
+
+    /// <summary>Creates a failed result representing an unauthorized operation.</summary>
+    /// <param name="error">The descriptor exposed in the 401 ProblemDetails response.</param>
+    /// <returns>A failed result containing the supplied unauthorized descriptor.</returns>
+    public static ApiResult<T> Unauthorized(ErrorDescriptor error) => new(new UnauthorizedError(error));
+
+    /// <summary>Creates a failed result representing an unauthorized operation.</summary>
+    /// <param name="message">The human-readable unauthorized condition.</param>
+    /// <param name="code">The machine-readable code; defaults to <see cref="ApiResultErrorCodes.Default"/>.</param>
+    /// <returns>A failed result containing the supplied unauthorized condition.</returns>
+    public static ApiResult<T> Unauthorized(string message, string code = ApiResultErrorCodes.Default) =>
+        Unauthorized(new ErrorDescriptor(code, message));
 
     // Implicit conversions
 
@@ -254,7 +325,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>An <see cref="ApiResult"/> with the same success/error state.</returns>
     public static implicit operator ApiResult(ApiResult<T> result)
     {
-        return result.IsSuccess ? ApiResult.Ok() : ApiResult.Fail(result._error!);
+        return result.IsSuccess ? ApiResult.Ok() : ApiResult.Fail(result.Error);
     }
 
     // Equality
@@ -264,7 +335,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns><see langword="true"/> if both have the same success state, value, and error; otherwise <see langword="false"/>.</returns>
     public bool Equals(ApiResult<T> other)
     {
-        return IsSuccess == other.IsSuccess
+        return _state == other._state
             && EqualityComparer<T?>.Default.Equals(_value, other._value)
             && Equals(_error, other._error);
     }
@@ -281,7 +352,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>A hash code for this instance.</returns>
     public override int GetHashCode()
     {
-        return HashCode.Combine(IsSuccess, _value, _error);
+        return HashCode.Combine(_state, _value, _error);
     }
 
     /// <summary>Determines whether two <see cref="ApiResult{T}"/> instances are equal.</summary>
@@ -295,4 +366,12 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <param name="right">The right operand.</param>
     /// <returns><see langword="true"/> if the instances are not equal; otherwise <see langword="false"/>.</returns>
     public static bool operator !=(ApiResult<T> left, ApiResult<T> right) => !left.Equals(right);
+
+    private void _EnsureInitialized()
+    {
+        if (_state == 0)
+        {
+            throw new InvalidOperationException("ApiResult<T> was not properly initialized.");
+        }
+    }
 }

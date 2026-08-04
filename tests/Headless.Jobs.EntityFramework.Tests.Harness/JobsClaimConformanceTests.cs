@@ -652,6 +652,171 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task deleting_a_chain_root_removes_the_whole_descendant_tree()
+    {
+        // The self-referential parent FK is DeleteBehavior.NoAction, so the previous root-only RemoveRange threw
+        // DbUpdateException (surfacing as a 500 through the dashboard's never-throws delete API) for ANY chain
+        // root with live descendants. Deletion must remove the whole subtree, deepest level first.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var root = _CreateJobTree(DateTime.UtcNow.AddMinutes(5));
+            await persistence.AddTimeJobsAsync([root], ct);
+            var totalNodes = await fixture.CountTimeJobsAsync(ct);
+            totalNodes.Should().BeGreaterThan(1, "the seeded tree must actually have descendants");
+
+            var removed = await persistence.RemoveTimeJobsAsync([root.Id], ct);
+
+            removed.Should().Be(totalNodes, "every node of the tree is deleted, not just the root");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task concurrent_cas_claims_of_one_row_have_exactly_one_winner()
+    {
+        // Adversarial repro for the portable CAS strategy: its optimistic gate is expressed as a subquery over the
+        // root row rather than a predicate on the updated row itself. Under READ COMMITTED, two claimants racing
+        // the SAME row must still resolve to exactly one winner (the loser's re-evaluated gate must fail after it
+        // unblocks on the winner's committed write). Round-loops because the interleaving is probabilistic — a
+        // single shot can trivially pass even when the gate is unsound.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var firstHost = fixture.BuildHost("cas-race-a", useNativeClaims: false);
+        using var secondHost = fixture.BuildHost("cas-race-b", useNativeClaims: false);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        await firstHost.StartAsync(ct);
+        await secondHost.StartAsync(ct);
+
+        try
+        {
+            var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var second = secondHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+
+            for (var round = 0; round < 30; round++)
+            {
+                var job = new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "cas-race",
+                    ExecutionTime = DateTime.UtcNow,
+                };
+                await first.AddTimeJobsAsync([job], ct);
+                var stored = await first.GetTimeJobByIdAsync(job.Id, ct);
+                var peeked = new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt };
+
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                async Task<TimeJobEntity[]> claimAsync(IJobPersistenceProvider<TimeJobEntity, CronJobEntity> p)
+                {
+                    await gate.Task;
+                    return await p.QueueTimeJobsAsync([peeked], ct).ToArrayAsync(ct);
+                }
+
+                var firstClaim = claimAsync(first);
+                var secondClaim = claimAsync(second);
+                gate.SetResult();
+                var claims = await Task.WhenAll(firstClaim, secondClaim);
+
+                var winners = claims.SelectMany(x => x).Count(x => x.Id == job.Id);
+                winners
+                    .Should()
+                    .Be(
+                        1,
+                        "round {0}: exactly one claimant may win a single-row CAS race — two winners means the "
+                            + "optimistic gate is not re-evaluated against the committed row",
+                        round
+                    );
+            }
+        }
+        finally
+        {
+            await Task.WhenAll(firstHost.StopAsync(ct), secondHost.StopAsync(ct));
+        }
+    }
+
+    /// <summary>
+    /// The insert-path dedup must conflict with ACTIVE occurrences only, matching the filtered unique index. A
+    /// terminal row at the same execution time — the one a cron-expression migration marks <c>Skipped</c> without
+    /// creating a replacement — must not suppress the fire. PostgreSQL got this right through
+    /// <c>ON CONFLICT … WHERE Status IN (…)</c>; SQL Server's unfiltered <c>NOT EXISTS</c> silently dropped it.
+    /// </summary>
+    public virtual async Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("terminal-dedup-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "terminal-dedup", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            // Whole seconds: PostgreSQL stores DateTime at microsecond granularity, so a tick-precision execution
+            // time would never match the dedup predicate and the test would pass for the wrong reason there.
+            var now = DateTime.UtcNow;
+            var executionTime = new DateTime(
+                now.Year,
+                now.Month,
+                now.Day,
+                now.Hour,
+                now.Minute,
+                now.Second,
+                DateTimeKind.Utc
+            ).AddMinutes(1);
+
+            var skippedId = Guid.NewGuid();
+            await fixture.SeedCronOccurrenceAsync(
+                skippedId,
+                cronId,
+                (int)JobStatus.Skipped,
+                null,
+                NodeDeathPolicy.Retry,
+                null,
+                executionTime,
+                ct
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var context = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "terminal-dedup",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+            };
+
+            // NextCronOccurrence is null (the earliest-available read skips terminal rows), so dispatch takes the
+            // insert path — exactly the state the scheduler reaches after a cron-expression migration.
+            var claimed = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
+                .ToArrayAsync(ct);
+
+            var occurrence = claimed.Should().ContainSingle().Subject;
+            occurrence.Id.Should().NotBe(skippedId);
+            occurrence.Status.Should().Be(JobStatus.Queued);
+            occurrence.ExecutionTime.Should().BeCloseTo(executionTime, TimeSpan.FromMicroseconds(1));
+            (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(2);
+            (await fixture.ReadCronOccurrenceAsync(skippedId, ct)).Status.Should().Be((int)JobStatus.Skipped);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         var ct = AbortToken;
