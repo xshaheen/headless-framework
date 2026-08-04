@@ -13,7 +13,7 @@ public sealed class KafkaMessageBuilderExtensionsTests
     [Fact]
     public void should_store_partition_key_header_contribution()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new QueueMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseKafka(kafka => kafka.PartitionBy(static message => message.TenantId));
         var contribution = (

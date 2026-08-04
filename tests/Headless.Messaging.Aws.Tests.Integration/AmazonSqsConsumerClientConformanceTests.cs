@@ -62,6 +62,27 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
     }
 
     [Fact]
+    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
+    {
+        var driver = new AwsProviderConformanceDriver(fixture);
+        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(driver, AbortToken);
+    }
+
+    [Fact]
+    public Task should_deliver_one_owned_queue_copy_across_replicas()
+    {
+        var driver = new AwsProviderConformanceDriver(fixture);
+        return TransportProviderConformance.AssertQueueOwnershipAsync(driver, AbortToken);
+    }
+
+    [Fact]
+    public Task should_isolate_same_logical_name_between_bus_and_queue()
+    {
+        var driver = new AwsProviderConformanceDriver(fixture);
+        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(driver, AbortToken);
+    }
+
+    [Fact]
     public override Task should_commit_real_delivery_and_prevent_redelivery()
     {
         return base.should_commit_real_delivery_and_prevent_redelivery();

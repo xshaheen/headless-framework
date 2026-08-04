@@ -4,11 +4,11 @@ RabbitMQ transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables Headless bus and queue delivery over RabbitMQ using a topic exchange, queue bindings, routing keys, publisher confirms, consumer acknowledgements, and configurable queue arguments.
+Enables Headless Bus and Queue delivery over RabbitMQ using lane-qualified exchanges, owned queues, routing keys, publisher confirms, consumer acknowledgements, and configurable queue arguments.
 
 ## Key Features
 
-- **Topic Exchange/Queue Model**: Declares a topic exchange and binds consumer queues with routing keys derived from message registrations
+- **Lane-Isolated Topology**: Declares a Bus topic exchange and Queue direct exchange, with lane-qualified routing keys and owned queues
 - **Reliability**: Optional publisher confirms that await broker acknowledgments or negative acknowledgments, plus consumer acknowledgments and rejects
 - **Auto-Provisioning**: Automatic exchange and queue creation
 - **Clustering**: Comma-separated broker host names for RabbitMQ cluster connectivity
@@ -81,7 +81,9 @@ options.Bus.ForMessage<OrderEvent>(message =>
 );
 ```
 
-RabbitMQ declares Bus and Queue capabilities, but its current exchange/queue topology cannot isolate the same contract and logical name on both lanes. That combination fails capability validation before readiness; use distinct logical names until #359 adds physical lane isolation.
+RabbitMQ supports the same contract and logical name on both lanes without cross-delivery. For a configured base exchange such as `myapp.events`, the provider creates `myapp.events.bus` (topic) and `myapp.events.queue` (direct), publishes with `bus.{logical-name}` / `queue.{logical-name}` routing keys, and owns `bus.{subscriber-group}` / `queue.{logical-name}` queues.
+
+This topology replaces the pre-cutover shared topic exchange. Before deployment, stop old and new publishers, inventory producer/consumer versions and auto-provision permissions, drain every legacy exchange-bound queue to a measured zero-ready/zero-unacknowledged signal, then deploy consumers before publishers. Aborting is safe only before the first lane-qualified publication. After that point recovery is roll-forward-only: restore the new consumers, reconcile legacy and lane-qualified queue counts, and do not delete legacy entities until the deployment owner signs off.
 
 ### Security Best Practices
 
@@ -120,13 +122,13 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 
 ## Messaging Semantics
 
-- Publish sends the serialized body to the configured exchange and preserves headers.
+- Publish sends the serialized body to the lane-qualified exchange and preserves logical names, headers, and payloads.
 - Delay stays in the core pipeline unless you add RabbitMQ delayed-message plugins yourself.
 - Commit sends `BasicAck`.
 - Reject sends `BasicReject(requeue: true)`. Dead-letter behavior follows queue arguments and broker policies.
-- Consumer startup declares the exchange and queue. `SubscribeAsync(...)` binds routing keys to that queue.
+- Consumer startup declares the Bus topic or Queue direct exchange and its lane-owned queue. `SubscribeAsync(...)` binds lane-qualified routing keys to that queue.
 - Higher `ConsumerThreadCount` increases concurrency but weakens observable ordering guarantees.
-- Exchange names, routing keys, headers, and payload sizes follow RabbitMQ and AMQP limits.
+- The configured `ExchangeName` is a base name; `.bus` and `.queue` are appended after the messaging-version suffix. Routing keys and queue names receive matching `bus.` / `queue.` prefixes. Headers and durable/wire identity remain unchanged.
 
 **Registration overloads:** `UseRabbitMq(...)` accepts the standard trio — an `IConfiguration` section, an `Action<RabbitMqMessagingOptions>` delegate, or an `Action<RabbitMqMessagingOptions, IServiceProvider>` delegate — plus the host-name convenience form. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the default `guest`/`guest` credentials.
 
@@ -137,7 +139,7 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 
 ## Side Effects
 
-- Creates exchanges and queues if they don't exist
+- Creates lane-qualified exchanges and queues if they don't exist
 - Binds routing keys for configured consumers
 - Establishes persistent connections to RabbitMQ
-- Rejects messages with `BasicReject(requeue: true)`; dead-letter behavior follows queue arguments and broker policies outside this package
+- Rejects valid handler failures with `BasicReject(requeue: true)`; malformed transport envelopes use `BasicReject(requeue: false)` so they cannot create a requeue storm. Dead-letter behavior follows queue arguments and broker policies outside this package

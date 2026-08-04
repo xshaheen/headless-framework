@@ -109,10 +109,13 @@ jobs:
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make rebuild
+        run: make rebuild build-messaging-previous-version-probe
 
       - name: "Unit tests with coverage"
         run: make ci-test
+
+      - name: "Messaging conformance scenarios"
+        run: make ci-messaging-conformance-evidence
 
       # Re-run the unit suite under a non-UTC zone. GitHub runners are UTC, so a UTC-only pipeline
       # structurally cannot catch a local-offset bug: code that trusts DateTime.Kind, calls

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -101,6 +102,26 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
 
         // then
         await action.Should().ThrowAsync<ArgumentException>().WithMessage("*alphanumeric*");
+        await _pool.DidNotReceive().GetConnectionAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reject_overlong_lane_qualified_topic_before_broker_side_effects()
+    {
+        await using var client = new RabbitMqConsumerClient(
+            "valid-queue",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Queue
+        );
+        var validLogicalButInvalidPhysicalName = new string('a', 252);
+
+        var action = async () => await client.SubscribeAsync([validLogicalButInvalidPhysicalName], AbortToken);
+
+        await action.Should().ThrowAsync<ArgumentOutOfRangeException>().WithMessage("*must not exceed 255 characters*");
+        await _pool.DidNotReceive().GetConnectionAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

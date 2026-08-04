@@ -6,9 +6,11 @@ using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
-internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool)
-    : IBusTransport,
-        IQueueTransport
+internal sealed class NatsTransport(
+    ILogger<NatsTransport> logger,
+    INatsConnectionPool connectionPool,
+    MessageLane lane = MessageLane.Bus
+) : IBusTransport, IQueueTransport
 {
     public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
@@ -22,7 +24,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             // NatsJSContext is a stateless wrapper around the connection, so it's safe to create per call.
             var js = new NatsJSContext(connection);
 
-            var subject = ResolveSubject(message, logger);
+            var subject = ResolveSubject(message, lane, logger);
 
             var ack = await js.PublishAsync(
                     subject: subject,
@@ -99,24 +101,28 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         return new NatsJSPubOpts { MsgId = message.Id };
     }
 
-    internal static string ResolveSubject(TransportMessage message, ILogger? logger = null)
+    internal static string ResolveSubject(
+        TransportMessage message,
+        MessageLane lane = MessageLane.Bus,
+        ILogger? logger = null
+    )
     {
         if (
             !message.Headers.TryGetValue(NatsMessagingHeaders.SubjectShard, out var shard)
             || string.IsNullOrWhiteSpace(shard)
         )
         {
-            return message.Name;
+            return NatsPhysicalAddress.Subject(lane, message.Name);
         }
 
         try
         {
-            return $"{message.Name}.{NatsSubjectShard.Validate(shard)}";
+            return NatsPhysicalAddress.Subject(lane, $"{message.Name}.{NatsSubjectShard.Validate(shard)}");
         }
         catch (InvalidOperationException ex)
         {
             logger?.LogInvalidSubjectShard(shard, ex.Message);
-            return message.Name;
+            return NatsPhysicalAddress.Subject(lane, message.Name);
         }
     }
 }

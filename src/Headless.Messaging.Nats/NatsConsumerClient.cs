@@ -105,8 +105,10 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
+            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
             var subjects = new HashSet<string>(
-                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup)),
+                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))
+                    .Select(subject => NatsPhysicalAddress.Subject(lane, subject)),
                 StringComparer.Ordinal
             );
 
@@ -118,7 +120,7 @@ internal sealed class NatsConsumerClient(
             try
             {
                 var existing = await _jsContext!
-                    .GetStreamAsync(streamGroup.Key, cancellationToken: cts.Token)
+                    .GetStreamAsync(streamName, cancellationToken: cts.Token)
                     .ConfigureAwait(false);
 
                 if (existing.Info.Config.Subjects is { } existingSubjects)
@@ -126,25 +128,40 @@ internal sealed class NatsConsumerClient(
                     subjects.UnionWith(existingSubjects);
                 }
             }
-            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404 || ex.Error.ErrCode == 10059)
             {
                 // Stream does not exist yet; it will be created below.
             }
 
+            var expectedSubjects = _PruneOverlappingSubjects(subjects);
+
             var config = new StreamConfig
             {
-                Name = streamGroup.Key,
+                Name = streamName,
                 // JetStream rejects a stream whose subject list contains overlapping entries, so drop any
                 // exact subject already covered by a '.>' wildcard in the union (e.g. a pre-provisioned
                 // 'prefix.>' catch-all subsumes the exact 'prefix.foo' subjects).
-                Subjects = [.. _PruneOverlappingSubjects(subjects)],
+                Subjects = [.. expectedSubjects],
                 NoAck = false,
                 // File storage is the production default. Override via StreamOptions
                 // for dev/testing: config.Storage = StreamConfigStorage.Memory;
                 Storage = StreamConfigStorage.File,
+                Retention = NatsPhysicalAddress.Retention(lane),
             };
 
             _natsOptions.StreamOptions?.Invoke(config);
+
+            if (
+                !string.Equals(config.Name, streamName, StringComparison.Ordinal)
+                || config.Retention != NatsPhysicalAddress.Retention(lane)
+                || config.Subjects?.ToHashSet(StringComparer.Ordinal).SetEquals(expectedSubjects) != true
+            )
+            {
+                throw new InvalidOperationException(
+                    $"NATS {lane} stream identity, subjects, and retention are provider-owned. "
+                        + "StreamOptions may configure storage, replicas, and limits but cannot override lane topology."
+                );
+            }
 
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
@@ -162,9 +179,7 @@ internal sealed class NatsConsumerClient(
 
     internal static string BuildDurableName(string groupName, string subject, MessageLane lane)
     {
-        return lane == MessageLane.Queue
-            ? TransportNaming.Normalize("queue-" + subject)
-            : TransportNaming.Normalize(groupName + "-" + subject);
+        return NatsPhysicalAddress.Durable(lane, groupName, subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -257,28 +272,42 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
-            var groupName = TransportNaming.Normalize(name);
+            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
+            var groupName = name;
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
-            foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
+            foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
-                var durableName = BuildDurableName(groupName, subject, lane);
+                var durableName = BuildDurableName(groupName, logicalSubject, lane);
+                var subject = NatsPhysicalAddress.Subject(lane, logicalSubject);
+                var deliverPolicy =
+                    lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;
 
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
                     FilterSubject = subject,
-                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                    DeliverPolicy = deliverPolicy,
                     AckWait = TimeSpan.FromSeconds(30),
                 };
 
                 _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
 
+                if (
+                    !string.Equals(consumerConfig.Name, durableName, StringComparison.Ordinal)
+                    || !string.Equals(consumerConfig.FilterSubject, subject, StringComparison.Ordinal)
+                    || consumerConfig.DeliverPolicy != deliverPolicy
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"NATS {lane} consumer identity, subject, and delivery policy are provider-owned. "
+                            + "ConsumerOptions may configure acknowledgement, retry, replica, and backoff settings but cannot override lane topology."
+                    );
+                }
+
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
 #pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
-                tasks.Add(
-                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, listeningCts.Token)
-                );
+                tasks.Add(_ConsumeSubjectAsync(streamName, consumerConfig, timeout, startupReady, listeningCts.Token));
 #pragma warning restore AsyncFixer04
             }
         }
@@ -664,10 +693,10 @@ internal sealed class NatsConsumerClient(
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
     {
-        TransportMessage message;
+        Dictionary<string, string?> headers;
         try
         {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
             if (msg.Headers is { Count: > 0 } natsHeaders)
             {
@@ -678,8 +707,16 @@ internal sealed class NatsConsumerClient(
             }
 
             headers[Headers.Group] = name;
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
+            return;
+        }
 
-            if (_natsOptions.CustomHeadersBuilder is not null)
+        if (_natsOptions.CustomHeadersBuilder is not null)
+        {
+            try
             {
                 var metadata = msg.Metadata;
                 var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
@@ -688,20 +725,31 @@ internal sealed class NatsConsumerClient(
                     headers[customHeader.Key] = customHeader.Value;
                 }
             }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason =
+                            $"NATS custom headers builder failed; message negatively acknowledged: {ex.GetType().Name}",
+                    }
+                );
 
+                await RejectAsync(msg).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, msg.Data);
         }
         catch (Exception ex)
         {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, nacking: {ex}",
-                }
-            );
-
-            await RejectAsync(msg).ConfigureAwait(false);
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
             return;
         }
 
@@ -714,6 +762,35 @@ internal sealed class NatsConsumerClient(
             );
 
         await onMessage(message, msg).ConfigureAwait(false);
+    }
+
+    private async Task _TerminallyAcknowledgeMalformedEnvelopeAsync(
+        INatsJSMsg<ReadOnlyMemory<byte>> msg,
+        Exception exception
+    )
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason = $"Malformed NATS transport envelope terminally acknowledged: {exception.GetType().Name}",
+            }
+        );
+
+        await msg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The NATS transport envelope is missing a required Messaging header.");
+        }
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)

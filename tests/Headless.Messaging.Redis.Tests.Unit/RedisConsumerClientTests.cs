@@ -52,10 +52,18 @@ public sealed class RedisConsumerClientTests : TestBase
         // then
         await _mockStreamManager
             .Received(1)
-            .CreateStreamWithConsumerGroupAsync("messageName-1", "my-group", Arg.Any<CancellationToken>());
+            .CreateStreamWithConsumerGroupAsync(
+                "headless:messaging:queue:messageName-1",
+                "my-group",
+                Arg.Any<CancellationToken>()
+            );
         await _mockStreamManager
             .Received(1)
-            .CreateStreamWithConsumerGroupAsync("messageName-2", "my-group", Arg.Any<CancellationToken>());
+            .CreateStreamWithConsumerGroupAsync(
+                "headless:messaging:queue:messageName-2",
+                "my-group",
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -67,7 +75,29 @@ public sealed class RedisConsumerClientTests : TestBase
 
         await client.SubscribeAsync(["orders"], cts.Token);
 
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("orders", "my-group", cts.Token);
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("headless:messaging:queue:orders", "my-group", cts.Token);
+    }
+
+    [Fact]
+    public async Task should_lane_qualify_bus_streams()
+    {
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient(
+            "billing",
+            1,
+            _mockStreamManager,
+            _options,
+            logger,
+            MessageLane.Bus
+        );
+
+        await client.SubscribeAsync(["orders"], AbortToken);
+
+        await _mockStreamManager
+            .Received(1)
+            .CreateStreamWithConsumerGroupAsync("headless:messaging:bus:orders", "billing", AbortToken);
     }
 
     [Fact]
@@ -161,6 +191,91 @@ public sealed class RedisConsumerClientTests : TestBase
         client.OnLogCallback.Should().BeSameAs(logCallback);
     }
 
+    [Fact]
+    public async Task should_sanitize_malformed_entry_across_diagnostic_surfaces()
+    {
+        // given
+        const string secret = "sentinel-secret-value";
+        var entry = new StreamEntry(
+            "1234567-0",
+            [new NameValueEntry("headers", $"{{\"secret\":\"{secret}"), new NameValueEntry("body", secret)]
+        );
+        var stream = new RedisStreamMessages("test-stream", [entry]);
+        _mockStreamManager
+            .PollStreamsPendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages(stream));
+        _mockStreamManager
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages());
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages());
+
+        var consumeError = new TaskCompletionSource<RedisMessagingOptions.ConsumeErrorContext>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var transportLog = new TaskCompletionSource<LogMessageEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var options = Options.Create(
+            new RedisMessagingOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                OnConsumeError = context =>
+                {
+                    consumeError.TrySetResult(context);
+                    return Task.CompletedTask;
+                },
+            }
+        );
+        var logger = new CapturingLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 0, _mockStreamManager, options, logger);
+        client.OnLogCallback = args => transportLog.TrySetResult(args);
+        await client.SubscribeAsync(["test-stream"], AbortToken);
+        using var listeningCancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+
+        // when
+        var listening = client.ListeningAsync(TimeSpan.Zero, listeningCancellation.Token).AsTask();
+        var context = await consumeError.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var logArgs = await transportLog.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await listeningCancellation.CancelAsync();
+        await listening;
+
+        // then
+        context.Entry.Should().NotBeNull();
+        context.Entry.Value.Id.Should().Be(entry.Id);
+        context.Entry.Value.Values.Should().BeEmpty();
+        context.Exception.ToString().Should().NotContain(secret);
+        logArgs.Reason.Should().NotContain(secret);
+        logger.Entries.Should().NotBeEmpty();
+        logger.Entries.Select(log => log.Message).Should().AllSatisfy(message => message.Should().NotContain(secret));
+        var malformedEntryLog = logger.Entries.Should().ContainSingle(log => log.EventId == 3004).Which;
+        malformedEntryLog.Exception.Should().NotBeNull();
+        malformedEntryLog.Exception!.ToString().Should().NotContain(secret);
+        await _mockStreamManager
+            .Received(1)
+            .Ack("test-stream", "test-group", entry.Id.ToString(), CancellationToken.None);
+    }
+
     // -------------------------------------------------------------------------
     // PauseAsync / ResumeAsync
     // -------------------------------------------------------------------------
@@ -205,4 +320,45 @@ public sealed class RedisConsumerClientTests : TestBase
 
         // then — no exception
     }
+
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _Messages(
+        RedisStreamMessages? stream = null
+    )
+    {
+        if (stream is { } value)
+        {
+            yield return [value];
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add(new LogEntry(eventId.Id, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed record LogEntry(int EventId, string Message, Exception? Exception);
 }

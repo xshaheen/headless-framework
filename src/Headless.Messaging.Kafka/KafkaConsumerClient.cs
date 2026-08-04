@@ -186,13 +186,26 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     continue;
                 }
 
-                if (consumerResult.IsPartitionEOF || consumerResult.Message.Value == null)
+                if (consumerResult.IsPartitionEOF)
                 {
-                    // Neither result is dispatched to a handler, so their offsets never reach
-                    // CommitAsync. The concurrent-mode watermark still has to account for them or it
+                    // The marker is not dispatched to a handler, so its offset never reaches
+                    // CommitAsync. The concurrent-mode watermark still has to account for it or it
                     // stops at the first one and the partition is never committed again.
                     _ObserveUndispatched(consumerResult);
 
+                    continue;
+                }
+
+                if (consumerResult.Message.Value == null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = "Kafka record had a null transport value and was terminally committed.",
+                        }
+                    );
+                    _ObserveUndispatched(consumerResult);
                     continue;
                 }
 
@@ -498,10 +511,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private async Task _ConsumeAsync(KafkaDelivery delivery)
     {
         var consumerResult = delivery.ConsumerResult;
-        TransportMessage message;
+        Dictionary<string, string?> headers;
         try
         {
-            var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
+            headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
             foreach (var header in consumerResult.Message.Headers)
             {
                 var val = header.GetValueBytes();
@@ -509,8 +522,16 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
 
             headers[Headers.Group] = _groupId;
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyCommitMalformedEnvelopeAsync(delivery, ex).ConfigureAwait(false);
+            return;
+        }
 
-            if (_kafkaOptions.CustomHeadersBuilder != null)
+        if (_kafkaOptions.CustomHeadersBuilder != null)
+        {
+            try
             {
                 var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, _serviceProvider);
                 foreach (var customHeader in customHeaders)
@@ -518,24 +539,61 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     headers[customHeader.Key] = customHeader.Value;
                 }
             }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Kafka custom headers builder failed; seeking offset for retry: {ex.GetType().Name}",
+                    }
+                );
 
+                await RejectAsync(delivery).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, consumerResult.Message.Value);
         }
         catch (Exception ex)
         {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, seeking back: {ex}",
-                }
-            );
-
-            await RejectAsync(delivery).ConfigureAwait(false);
+            await _TerminallyCommitMalformedEnvelopeAsync(delivery, ex).ConfigureAwait(false);
             return;
         }
 
         await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+    }
+
+    private async Task _TerminallyCommitMalformedEnvelopeAsync(KafkaDelivery delivery, Exception exception)
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason =
+                    $"Failed to build transport message; the Kafka offset was terminally committed: {exception.GetType().Name}",
+            }
+        );
+
+        await CommitAsync(delivery).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The Kafka transport envelope is missing a required Messaging header.");
+        }
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)

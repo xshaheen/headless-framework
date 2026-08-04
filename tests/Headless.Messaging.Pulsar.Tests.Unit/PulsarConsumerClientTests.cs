@@ -22,7 +22,7 @@ public sealed class PulsarConsumerClientTests : TestBase
     [Fact]
     public void should_use_group_for_bus_intent_when_get_subscription_name()
     {
-        PulsarConsumerClient.GetSubscriptionName("payments", MessageLane.Bus).Should().Be("payments");
+        PulsarConsumerClient.GetSubscriptionName("payments", MessageLane.Bus).Should().Be("headless-bus-payments");
     }
 
     [Fact]

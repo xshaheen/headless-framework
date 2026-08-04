@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NATS.Client.JetStream.Models;
 using Tests.Capabilities;
 
 namespace Tests;
@@ -18,10 +19,28 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
         await base.InitializeAsync();
 
         // JetStream requires a stream to exist before publishing.
-        // Create a catch-all stream for test subjects.
-        // TransportTestsBase uses single-token subjects ("TestMessage", "TestMessageName").
-        // NATS "*" matches any single token at one level.
-        await fixture.EnsureStreamAsync("TEST", "*");
+        // Use exact subjects so these transport-only streams can coexist with the
+        // conformance streams that exercise provider-owned auto-provisioning.
+        await fixture.EnsureStreamAsync(
+            "headless_bus_TEST",
+            "headless.bus.TestMessage",
+            StreamConfigRetention.Interest
+        );
+        await fixture.EnsureStreamAsync(
+            "headless_bus_TEST_NAME",
+            "headless.bus.TestMessageName",
+            StreamConfigRetention.Interest
+        );
+        await fixture.EnsureStreamAsync(
+            "headless_queue_TEST",
+            "headless.queue.TestMessage",
+            StreamConfigRetention.Workqueue
+        );
+        await fixture.EnsureStreamAsync(
+            "headless_queue_TEST_NAME",
+            "headless.queue.TestMessageName",
+            StreamConfigRetention.Workqueue
+        );
     }
 
     protected override TransportCapabilities Capabilities =>
@@ -54,8 +73,17 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
 
     protected override IQueueTransport GetQueueTransport()
     {
-        return GetBusTransport() as IQueueTransport
-            ?? throw new InvalidOperationException("NATS transport must support queue intent.");
+        var natsOptions = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                ConnectionPoolSize = 2,
+                ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+            }
+        );
+
+        _connectionPool = new NatsConnectionPool(NullLogger<NatsConnectionPool>.Instance, natsOptions);
+        return new NatsTransport(NullLogger<NatsTransport>.Instance, _connectionPool, MessageLane.Queue);
     }
 
     protected override async ValueTask DisposeAsyncCore()

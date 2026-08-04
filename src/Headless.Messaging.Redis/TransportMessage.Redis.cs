@@ -21,7 +21,7 @@ internal static class RedisMessage
 
     public static TransportMessage Create(StreamEntry streamEntry, string? groupId = null)
     {
-        IDictionary<string, string?> headers;
+        Dictionary<string, string?> headers;
         byte[]? body;
 
         var streamDict = streamEntry.Values.ToDictionary(c => c.Name, c => c.Value);
@@ -40,7 +40,7 @@ internal static class RedisMessage
 
         try
         {
-            headers = JsonSerializer.Deserialize<IDictionary<string, string?>>(json: headersRaw!, _JsonOptions)!;
+            headers = JsonSerializer.Deserialize<Dictionary<string, string?>>(json: headersRaw!, _JsonOptions)!;
         }
         catch (Exception ex)
         {
@@ -68,7 +68,24 @@ internal static class RedisMessage
             headers[Headers.Group] = groupId;
         }
 
+        _ValidateRequiredHeaders(headers, entryId);
         return new TransportMessage(headers, body);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers, string entryId)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new RedisConsumeInvalidHeadersException(
+                entryId,
+                new InvalidDataException("The Redis transport envelope is missing a required Messaging header.")
+            );
+        }
     }
 
     private static RedisValue _ToJson(object? obj)

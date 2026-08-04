@@ -7,6 +7,44 @@ namespace Tests;
 public sealed class TopicNormalizerTests
 {
     [Fact]
+    public void should_lane_qualify_bus_topic_and_queue_destination()
+    {
+        AwsPhysicalAddress.BusTopic("orders-created").Should().Be("bus-orders-created");
+        AwsPhysicalAddress.QueueDestination("orders-created").Should().Be("queue-orders-created");
+    }
+
+    [Theory]
+    [InlineData("orders.created", "orders-created")]
+    [InlineData("orders:created", "orders_created")]
+    public void should_disambiguate_bus_and_queue_names_changed_by_normalization(string first, string second)
+    {
+        AwsPhysicalAddress.BusTopic(first).Should().NotBe(AwsPhysicalAddress.BusTopic(second));
+        AwsPhysicalAddress.QueueDestination(first).Should().NotBe(AwsPhysicalAddress.QueueDestination(second));
+        AwsPhysicalAddress.BusGroupQueue(first).Should().NotBe(AwsPhysicalAddress.BusGroupQueue(second));
+    }
+
+    [Fact]
+    public void should_bind_bus_group_queue_to_logical_name_and_group()
+    {
+        AwsPhysicalAddress.BusGroupQueue("billing").Should().Be("bus-billing");
+        AwsPhysicalAddress.BusGroupQueue("shipping").Should().Be("bus-shipping");
+    }
+
+    [Fact]
+    public void should_bound_and_stabilize_lane_qualified_names()
+    {
+        var logicalName = new string('a', 180);
+        var group = new string('b', 180);
+
+        var first = AwsPhysicalAddress.BusGroupQueue(group);
+        var second = AwsPhysicalAddress.BusGroupQueue(group);
+
+        first.Should().Be(second);
+        first.Should().HaveLength(80);
+        AwsPhysicalAddress.BusTopic(logicalName).Length.Should().BeLessThanOrEqualTo(256);
+    }
+
+    [Fact]
     public void should_replace_dots_with_dashes()
     {
         // given

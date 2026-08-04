@@ -104,6 +104,52 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         );
     }
 
+    public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        MessageLane lane,
+        string destination,
+        string group,
+        string topicName,
+        bool ownsEntity,
+        CancellationToken cancellationToken
+    )
+    {
+        if (lane == MessageLane.Queue)
+        {
+            if (ownsEntity)
+            {
+                await _CreateQueueAsync(destination, cancellationToken);
+            }
+
+            return await _CreateSessionAsync(
+                lane,
+                destination,
+                group,
+                AzureServiceBusMessagingOptions.DefaultTopicPath,
+                ownsEntity ? async () => await _DeleteQueueAsync(destination, CancellationToken.None) : null,
+                cancellationToken
+            );
+        }
+
+        if (lane != MessageLane.Bus)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lane), lane, null);
+        }
+
+        if (ownsEntity)
+        {
+            var options = new CreateSubscriptionOptions(topicName, group)
+            {
+                LockDuration = TimeSpan.FromSeconds(5),
+                MaxDeliveryCount = 10,
+            };
+            await _RequireAdministrationClient()
+                .CreateSubscriptionAsync(options, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await _CreateSessionAsync(lane, destination, group, topicName, disposeEntity: null, cancellationToken);
+    }
+
     public async ValueTask DisposeAsync()
     {
         var operations = _queues

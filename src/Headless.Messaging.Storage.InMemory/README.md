@@ -28,7 +28,7 @@ dotnet add package Headless.Messaging.Storage.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseRabbitMq(config);
 });

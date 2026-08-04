@@ -1,0 +1,274 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Redis;
+using StackExchange.Redis;
+using Tests.Capabilities;
+
+namespace Tests;
+
+[Collection<RedisMessagingFixture>]
+public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture) : TransportConsumerConformanceTestsBase
+{
+    protected override string ProviderName => "Redis";
+
+    protected override void ConfigureTransport(MessagingSetupBuilder setup) => setup.UseRedis(fixture.ConnectionString);
+
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var destination = $"conformance-{Guid.NewGuid():N}";
+        return fixture.CreateSessionAsync(MessageLane.Queue, destination, destination, cancellationToken);
+    }
+
+    [Fact]
+    public override Task should_round_trip_queue_message_body_and_headers() =>
+        base.should_round_trip_queue_message_body_and_headers();
+
+    [Fact]
+    public override Task should_match_production_runtime_capabilities() =>
+        base.should_match_production_runtime_capabilities();
+
+    [Fact]
+    public override Task should_dispatch_empty_message_body() => base.should_dispatch_empty_message_body();
+
+    [Fact]
+    public override Task should_commit_real_delivery_and_prevent_redelivery() =>
+        base.should_commit_real_delivery_and_prevent_redelivery();
+
+    [Fact]
+    public override Task should_reject_real_delivery_and_observe_redelivery() =>
+        base.should_reject_real_delivery_and_observe_redelivery();
+
+    [Fact]
+    public override Task should_isolate_unique_destinations() => base.should_isolate_unique_destinations();
+
+    [Fact]
+    public override Task should_shutdown_idle_consumer_within_bound() =>
+        base.should_shutdown_idle_consumer_within_bound();
+
+    [Fact]
+    public override Task should_bound_shutdown_while_handler_is_active() =>
+        base.should_bound_shutdown_while_handler_is_active();
+
+    [Fact]
+    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete() =>
+        TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+            new RedisProviderConformanceDriver(fixture),
+            AbortToken
+        );
+
+    [Fact]
+    public Task should_deliver_one_owned_queue_copy_across_replicas() =>
+        TransportProviderConformance.AssertQueueOwnershipAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_isolate_same_logical_name_between_bus_and_queue() =>
+        TransportProviderConformance.AssertSameNameLaneIsolationAsync(
+            new RedisProviderConformanceDriver(fixture),
+            AbortToken
+        );
+
+    [Fact]
+    public async Task should_terminally_ack_malformed_entry_across_consumer_restart()
+    {
+        var destination = $"malformed-{Guid.NewGuid():N}";
+        var group = $"group-{Guid.NewGuid():N}";
+        var consumeErrors = 0;
+        await using var session = await fixture.CreateSessionAsync(
+            MessageLane.Queue,
+            destination,
+            group,
+            AbortToken,
+            onConsumeError: _ =>
+            {
+                Interlocked.Increment(ref consumeErrors);
+                return Task.CompletedTask;
+            }
+        );
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var database = connection.GetDatabase();
+        var stream = $"headless:messaging:queue:{destination}";
+        var malformed = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = destination,
+                [Headers.Intent] = nameof(MessageLane.Queue),
+            },
+            "valid-body"u8.ToArray()
+        );
+        await database.StreamAddAsync(stream, malformed.AsStreamEntries());
+
+        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
+        {
+            while (Volatile.Read(ref consumeErrors) == 0)
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+
+        (await database.StreamPendingAsync(stream, group)).PendingMessageCount.Should().Be(0);
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+        await using var replacement = await session.CreateReplacementAsync(AbortToken);
+        await replacement.StartAsync(cancellationToken: AbortToken);
+
+        (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(2), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref consumeErrors).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_roll_forward_legacy_stream_without_deleting_operator_owned_source()
+    {
+        var destination = $"legacy-{Guid.NewGuid():N}";
+        var group = $"group-{Guid.NewGuid():N}";
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var database = connection.GetDatabase();
+        var legacyMessageId = $"legacy-{Guid.NewGuid():N}";
+
+        await using (
+            var abortedConsumer = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "redis",
+                "queue",
+                fixture.ConnectionString,
+                destination,
+                group,
+                legacyMessageId,
+                AbortToken
+            )
+        )
+        {
+            await PreviousMessagingPackageProbe.ProduceAsync(
+                "redis",
+                "queue",
+                fixture.ConnectionString,
+                destination,
+                group,
+                legacyMessageId,
+                AbortToken
+            );
+            await abortedConsumer.WaitUntilReceivedAsync(AbortToken);
+            (await database.StreamPendingAsync(destination, group)).PendingMessageCount.Should().Be(1);
+            await abortedConsumer.AbortAsync(AbortToken);
+            abortedConsumer.HasExited.Should().BeTrue("the pre-publish abort stops the previous binary");
+        }
+
+        await using (
+            var drainConsumer = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "redis",
+                "queue",
+                fixture.ConnectionString,
+                destination,
+                group,
+                legacyMessageId,
+                AbortToken
+            )
+        )
+        {
+            await drainConsumer.WaitUntilReceivedAsync(AbortToken);
+            await drainConsumer.CommitAsync(AbortToken);
+            drainConsumer.HasExited.Should().BeTrue("the version fence excludes old consumers from cutover");
+        }
+
+        (await database.StreamPendingAsync(destination, group))
+            .PendingMessageCount.Should()
+            .Be(0, "zero pending entries is the legacy Streams drain signal");
+        var legacyLengthAtFence = await database.StreamLengthAsync(destination);
+
+        var legacyBusMessageId = $"legacy-bus-{Guid.NewGuid():N}";
+        await using (
+            var legacyBusConsumer = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "redis",
+                "bus",
+                fixture.ConnectionString,
+                destination,
+                group,
+                legacyBusMessageId,
+                AbortToken
+            )
+        )
+        {
+            await PreviousMessagingPackageProbe.ProduceAsync(
+                "redis",
+                "bus",
+                fixture.ConnectionString,
+                destination,
+                group,
+                legacyBusMessageId,
+                AbortToken
+            );
+            await legacyBusConsumer.WaitUntilReceivedAsync(AbortToken);
+            await legacyBusConsumer.CommitAsync(AbortToken);
+        }
+
+        var abortRecoveryMessageId = $"legacy-bus-abort-{Guid.NewGuid():N}";
+        await using (
+            var resumedLegacyBus = await PreviousMessagingPackageProbe.StartConsumerAsync(
+                "redis",
+                "bus",
+                fixture.ConnectionString,
+                destination,
+                group,
+                abortRecoveryMessageId,
+                AbortToken
+            )
+        )
+        {
+            await PreviousMessagingPackageProbe.ProduceAsync(
+                "redis",
+                "bus",
+                fixture.ConnectionString,
+                destination,
+                group,
+                abortRecoveryMessageId,
+                AbortToken
+            );
+            await resumedLegacyBus.WaitUntilReceivedAsync(AbortToken);
+            await resumedLegacyBus.CommitAsync(AbortToken);
+            resumedLegacyBus
+                .HasExited.Should()
+                .BeTrue("before the first new publish an aborted deployment can resume the fenced Pub/Sub path");
+        }
+
+        await using var bus = await fixture.CreateSessionAsync(MessageLane.Bus, destination, group, AbortToken);
+        await using var queue = await fixture.CreateSessionAsync(MessageLane.Queue, destination, group, AbortToken);
+        await bus.StartAsync(cancellationToken: AbortToken);
+        await queue.StartAsync(cancellationToken: AbortToken);
+
+        (await bus.PublishAsync(_Message(destination, MessageLane.Bus), AbortToken)).Succeeded.Should().BeTrue();
+        var busDelivery = await bus.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await bus.Consumer.CommitAsync(busDelivery.SettlementValue, AbortToken);
+        (await queue.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+
+        (await queue.PublishAsync(_Message(destination, MessageLane.Queue), AbortToken)).Succeeded.Should().BeTrue();
+        var queueDelivery = await queue.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await queue.Consumer.CommitAsync(queueDelivery.SettlementValue, AbortToken);
+        (await bus.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+
+        await bus.StopAsync(TimeSpan.FromSeconds(2));
+        await using var restartedBus = await bus.CreateReplacementAsync(AbortToken);
+        await restartedBus.StartAsync(cancellationToken: AbortToken);
+        (await bus.PublishAsync(_Message(destination, MessageLane.Bus), AbortToken)).Succeeded.Should().BeTrue();
+        var restartedDelivery = await restartedBus.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await restartedBus.Consumer.CommitAsync(restartedDelivery.SettlementValue, AbortToken);
+
+        (await database.KeyExistsAsync(destination)).Should().BeTrue("legacy deletion remains operator-owned");
+        (await database.StreamLengthAsync(destination))
+            .Should()
+            .Be(legacyLengthAtFence, "post-cutover roll-forward must not write back into the legacy stream");
+    }
+
+    private static TransportMessage _Message(string logicalName, MessageLane lane) =>
+        new(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+                [Headers.MessageName] = logicalName,
+                [Headers.Intent] = lane.ToString(),
+            },
+            "cutover"u8.ToArray()
+        );
+}

@@ -749,6 +749,9 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 
 - **Embedded SPA**: served from the host process, no separate deployment.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
+- **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
+- **Predictable timestamp display**: explicit ISO UTC offsets are preserved, legacy zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
+- **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;

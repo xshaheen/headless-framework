@@ -9,7 +9,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 ## Key Features
 
 - **Small Runtime Footprint**: Minimal resource footprint, cloud-native
-- **JetStream**: Persistent streams with at-least-once delivery
+- **JetStream**: Lane-qualified persistent streams with at-least-once delivery
 - **Subject Routing**: Hierarchical subject/message-name patterns (e.g., `orders.*.created`)
 - **Connection Pooling**: Optional round-robin publish pool (defaults to a single multiplexed connection; raise only as a throughput knob)
 - **Host-Cancellable Startup**: Connection and JetStream topology setup honor host shutdown while preserving configured timeouts.
@@ -76,7 +76,9 @@ options.Bus.ForMessage<OrderEvent>(message =>
 );
 ```
 
-NATS declares Bus and Queue capabilities, but its current subject/stream topology cannot isolate the same contract and logical name on both lanes. That combination fails capability validation before readiness; use distinct logical names until #359 adds physical lane isolation.
+NATS supports the same contract and logical name on both lanes without cross-delivery. Bus publishes to `headless.bus.{logical-name}` and Queue publishes to `headless.queue.{logical-name}`. Auto-provisioned Bus streams use interest retention and `bus-{subscriber-group}-{logical-name}` durable consumers, while Queue streams use work-queue retention and the shared `queue-{logical-name}` durable. `StreamOptions` can tune storage, replicas, and limits, but stream name, subjects, and retention are provider-owned lane identity.
+
+This topology replaces legacy unqualified subjects and streams. Before deployment, stop old and new publishers, inventory producer/consumer versions and stream auto-provision permissions, and drain every legacy durable to a measured zero-pending/zero-ack-pending signal. Deploy consumers before publishers behind a version fence. Abort before the first lane-qualified publication if the legacy drain or permissions check fails. After lane-qualified publication begins, recovery is roll-forward-only: restore the new consumers, reconcile legacy and lane-qualified stream counts, and retain legacy streams until the deployment owner signs off.
 
 `SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
@@ -97,9 +99,9 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Publish writes the serialized body and headers to JetStream.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit sends a double `ACK` and waits for JetStream to confirm settlement before returning.
-- Reject sends `NAK` so JetStream can redeliver.
+- Reject sends `NAK` so JetStream can redeliver. An envelope that cannot be constructed is terminally double-acknowledged and logged without payload or headers, preventing a broker redelivery storm.
 - `FetchMessageNamesAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
-- Consumer startup creates filtered durable consumers for each subscribed subject.
+- Consumer startup creates filtered, lane-qualified durable consumers for each subscribed subject.
 - Message-level `SubjectShard(...)` publishes to `{messageName}.{shard}`. Stream auto-creation and durable consumer filters add wildcard coverage only for consumers that declared `.UseNats(c => c.Sharded())`. Shard symmetry is enforced at startup.
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
 - Subject naming, header sizes, and payload limits follow NATS and JetStream limits.

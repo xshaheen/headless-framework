@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Kafka;
+using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,7 +36,7 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new KafkaConnectionPool(NullLogger<KafkaConnectionPool>.Instance, options);
         var producer = new KafkaTransport(NullLogger<KafkaTransport>.Instance, pool);
-        var consumer = new KafkaConsumerClient(group, 2, options, services) { OnLogCallback = _ => { } };
+        var consumer = new KafkaConsumerClient(group, 2, options, services);
 #pragma warning restore CA2000
 
         try

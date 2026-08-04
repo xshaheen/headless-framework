@@ -55,9 +55,9 @@ public sealed class RabbitMqMessagingOptions
     public string VirtualHost { get; set; } = DefaultVHost;
 
     /// <summary>
-    /// The topic exchange name declared on startup. Defaults to <see cref="DefaultExchangeName"/>.
-    /// When the messaging version is not <c>"v1"</c>, the version suffix is appended automatically
-    /// (for example <c>"messaging.default.router.v2"</c>).
+    /// The base exchange name used for lane-qualified exchanges. Defaults to <see cref="DefaultExchangeName"/>.
+    /// When the messaging version is not <c>"v1"</c>, the version suffix is appended before the lane
+    /// suffix (for example <c>"messaging.default.router.v2.bus"</c>).
     /// </summary>
     public string ExchangeName { get; set; } = DefaultExchangeName;
 

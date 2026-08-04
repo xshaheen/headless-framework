@@ -6,6 +6,7 @@ using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -110,15 +111,22 @@ public static class SetupPulsarMessaging
                 MessagingProviderCapabilities.Transport(
                     "Apache Pulsar",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: true
                 )
             );
 
             configureOptions(services);
 
-            services.AddSingleton<PulsarTransport>();
-            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<PulsarTransport>());
-            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<PulsarTransport>());
+            services.AddSingleton<IBusTransport>(sp => new PulsarTransport(
+                sp.GetRequiredService<ILogger<PulsarTransport>>(),
+                sp.GetRequiredService<IConnectionFactory>(),
+                MessageLane.Bus
+            ));
+            services.AddSingleton<IQueueTransport>(sp => new PulsarTransport(
+                sp.GetRequiredService<ILogger<PulsarTransport>>(),
+                sp.GetRequiredService<IConnectionFactory>(),
+                MessageLane.Queue
+            ));
             services.AddSingleton<IConsumerClientFactory, PulsarConsumerClientFactory>();
             services.AddSingleton<IConnectionFactory, ConnectionFactory>();
         }
