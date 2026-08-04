@@ -129,6 +129,47 @@ public static class ObjectPropertiesHelper
     }
 
     /// <summary>
+    /// Sets the named property to <paramref name="value"/>, if the property exists and is writable (including
+    /// non-public setters) and is not decorated with any of <paramref name="ignoreAttributeTypes"/>. Prefer this
+    /// over the <c>Func</c> overloads when the value is already in hand: it builds neither an expression tree nor
+    /// a capturing closure per call.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the factory overloads — which invoke the factory only after the property is found — the value here is
+    /// evaluated by the caller regardless of whether the property exists. Keep values whose production has an
+    /// observable effect or cost (a new <see cref="Guid"/>, a clock read against an auto-advancing provider) on a
+    /// factory overload so they stay lazy.
+    /// </remarks>
+    /// <typeparam name="TObject">The type of the object whose property is set.</typeparam>
+    /// <typeparam name="TValue">The type of the property value.</typeparam>
+    /// <param name="obj">The object to set the property on.</param>
+    /// <param name="propertyName">The exact (case-sensitive) name of the property to set, for example <c>nameof(X.Name)</c>.</param>
+    /// <param name="value">The value to assign.</param>
+    /// <param name="ignoreAttributeTypes">Attribute types that, if applied to the property, cause the set to be skipped.</param>
+    /// <returns><see langword="true"/> if the property was found and set; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="System.Reflection.TargetInvocationException">Thrown when the property's setter throws.</exception>
+    [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
+    public static bool TrySetPropertyValue<TObject, TValue>(
+        TObject obj,
+        string propertyName,
+        TValue value,
+        params Type[]? ignoreAttributeTypes
+    )
+        where TObject : notnull
+    {
+        var property = _GetCachedProperty(obj.GetType(), propertyName, ignoreAttributeTypes);
+
+        if (property is null)
+        {
+            return false;
+        }
+
+        property.SetValue(obj, value);
+
+        return true;
+    }
+
+    /// <summary>
     /// Sets the named property to <see langword="null"/>, if the property exists, is writable (including non-public
     /// setters), is of a nullable type, and is not decorated with any of <paramref name="ignoreAttributeTypes"/>.
     /// </summary>

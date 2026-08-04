@@ -78,6 +78,53 @@ public sealed class SmtpClientPooledObjectPolicyTests
         policy.Return(client).Should().BeFalse();
     }
 
+    [Fact]
+    public void should_discard_an_unauthenticated_client_when_return_on_a_named_pool_with_credentials()
+    {
+        // Regression: Return() must read the named snapshot. Reading CurrentValue binds the DEFAULT options, so a
+        // named pool whose credentials live only in its own section would skip the authentication check entirely
+        // and pool a connected-but-unauthenticated client.
+        var monitor = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
+        monitor.CurrentValue.Returns(new MailkitSmtpOptions { Server = "smtp.example.com" });
+        monitor
+            .Get("named")
+            .Returns(
+                new MailkitSmtpOptions
+                {
+                    Server = "smtp.example.com",
+                    User = "user",
+                    Password = "password",
+                }
+            );
+
+        var policy = new SmtpClientPooledObjectPolicy(monitor, optionsName: "named");
+        using var client = new FakeConnectedSmtpClient(isAuthenticated: false);
+
+        policy.Return(client).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_keep_an_authenticated_client_when_return_on_a_named_pool_with_credentials()
+    {
+        var monitor = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
+        monitor.CurrentValue.Returns(new MailkitSmtpOptions { Server = "smtp.example.com" });
+        monitor
+            .Get("named")
+            .Returns(
+                new MailkitSmtpOptions
+                {
+                    Server = "smtp.example.com",
+                    User = "user",
+                    Password = "password",
+                }
+            );
+
+        var policy = new SmtpClientPooledObjectPolicy(monitor, optionsName: "named");
+        using var client = new FakeConnectedSmtpClient(isAuthenticated: true);
+
+        policy.Return(client).Should().BeTrue();
+    }
+
     private static SmtpClientPooledObjectPolicy _Policy(TimeSpan timeout)
     {
         var options = new MailkitSmtpOptions { Server = "smtp.example.com", Timeout = timeout };
@@ -85,6 +132,13 @@ public sealed class SmtpClientPooledObjectPolicyTests
         monitor.CurrentValue.Returns(options);
         monitor.Get(Arg.Any<string>()).Returns(options);
         return new SmtpClientPooledObjectPolicy(monitor, optionsName: null);
+    }
+
+    private sealed class FakeConnectedSmtpClient(bool isAuthenticated) : SmtpClient
+    {
+        public override bool IsConnected => true;
+
+        public override bool IsAuthenticated => isAuthenticated;
     }
 }
 

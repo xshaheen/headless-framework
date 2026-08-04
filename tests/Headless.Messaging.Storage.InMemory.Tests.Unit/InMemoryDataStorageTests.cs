@@ -598,6 +598,30 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_preserve_persisted_envelope_when_published_transition_declares_preserve()
+    {
+        return base.should_preserve_persisted_envelope_when_published_transition_declares_preserve();
+    }
+
+    [Fact]
+    public override Task should_preserve_persisted_envelope_when_received_transition_declares_preserve()
+    {
+        return base.should_preserve_persisted_envelope_when_received_transition_declares_preserve();
+    }
+
+    [Fact]
+    public override Task should_refresh_persisted_envelope_when_published_transition_declares_refresh()
+    {
+        return base.should_refresh_persisted_envelope_when_published_transition_declares_refresh();
+    }
+
+    [Fact]
+    public override Task should_refresh_persisted_envelope_when_received_transition_declares_refresh()
+    {
+        return base.should_refresh_persisted_envelope_when_received_transition_declares_refresh();
+    }
+
+    [Fact]
     public override Task should_change_publish_state_to_delayed()
     {
         return base.should_change_publish_state_to_delayed();
@@ -1014,6 +1038,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangePublishRetryStateAsync(
             message,
             StatusName.Failed,
+            MessageContentWrite.Refresh,
             nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
@@ -1043,6 +1068,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         var updated = await storage.ChangeReceiveRetryStateAsync(
             message,
             StatusName.Failed,
+            MessageContentWrite.Refresh,
             nextRetryAt: DateTimeOffset.UtcNow,
             lockedUntil: null,
             originalRetries: 0,
@@ -1051,6 +1077,62 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         );
 
         updated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_persisted_origin_and_content_consistent_after_refresh_on_a_retry_picked_row()
+    {
+        // Retry pickup hands out a snapshot whose Origin is CLONED from the row, so a Refresh driven by that
+        // snapshot is where writing Content without writing Origin leaves the row self-contradictory: the
+        // next pickup would deal out an envelope whose headers disagree with the bytes stored beside them.
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var stored = await storage.StoreReceivedMessageAsync(
+            "refresh-origin-consistency",
+            "group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        // given — a row that is due for retry, claimed the way the retry processor claims it
+        var dueAt = _fakeTimeProvider!.GetUtcNow().AddSeconds(-1);
+        await storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: dueAt,
+            cancellationToken: AbortToken
+        );
+
+        var picked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single(m =>
+            m.StorageId == stored.StorageId
+        );
+
+        // when — that attempt fails, stamping the exception onto the picked snapshot before persisting it
+        picked.Origin.AddOrUpdateException(new InvalidOperationException("retry-probe"));
+        var changed = await storage.ChangeReceiveStateAsync(
+            picked,
+            StatusName.Failed,
+            MessageContentWrite.Refresh,
+            nextRetryAt: dueAt,
+            cancellationToken: AbortToken
+        );
+
+        changed.Should().BeTrue();
+
+        // then — the next pickup gets an Origin and a Content that still describe the same envelope
+        var repicked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single(m =>
+            m.StorageId == stored.StorageId
+        );
+
+        repicked
+            .Origin.Headers.Should()
+            .ContainKey(Headers.Exception, "Refresh persisted an envelope that carries the failure")
+            .WhoseValue.Should()
+            .Be(nameof(InvalidOperationException));
+        GetSerializer()
+            .Serialize(repicked.Origin)
+            .Should()
+            .Be(repicked.Content, "the row must satisfy `persisted Content == Serialize(Origin)` after a Refresh");
     }
 
     [Fact]
@@ -1114,6 +1196,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangePublishRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                MessageContentWrite.Preserve,
                 null,
                 null,
                 message.Retries,
@@ -1149,6 +1232,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                MessageContentWrite.Refresh,
                 null,
                 null,
                 message.Retries,
@@ -1176,6 +1260,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Failed,
+                MessageContentWrite.Refresh,
                 _fakeTimeProvider!.GetUtcNow(),
                 null,
                 originalRetries: 0,

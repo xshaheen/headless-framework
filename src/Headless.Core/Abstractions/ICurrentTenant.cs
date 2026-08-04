@@ -96,7 +96,11 @@ public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) 
 
         currentTenantAccessor.Current = new TenantInformation(tenantId, name);
 
-        // Reset on dispose
-        return DisposableFactory.Create(() => currentTenantAccessor.Current = currentScope);
+        // Tenant switching sits on per-request and per-message paths: the state-taking overload with a
+        // static lambda keeps the reset to a single allocation, unlike a closure over the accessor.
+        return DisposableFactory.Create(
+            (Accessor: currentTenantAccessor, Previous: currentScope),
+            static scope => scope.Accessor.Current = scope.Previous
+        );
     }
 }

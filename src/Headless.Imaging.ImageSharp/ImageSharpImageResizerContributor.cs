@@ -71,6 +71,10 @@ internal sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageR
 
         image.Mutate(x => x.Resize(new ResizeOptions { Size = _GetSize(args), Mode = resizeMode.Value }));
 
+        // Deliberately NOT pre-sized from the source (unlike the compressor): a resize output is typically orders
+        // of magnitude smaller than the source, and the returned stream keeps its full capacity for the caller's
+        // lifetime — seeding it with the source length would trade a few transient regrow copies for a retained
+        // (often large-object-heap) allocation per in-flight resize.
         var memoryStream = new MemoryStream();
 
         try

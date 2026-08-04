@@ -73,7 +73,12 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
         var parent = _currentPrincipal.Value;
         _currentPrincipal.Value = principal;
 
-        return DisposableFactory.Create(() => _currentPrincipal.Value = parent);
+        // Principal switching sits on per-request and per-message paths: the state-taking overload with a
+        // static lambda keeps the restore to a single allocation, unlike a closure over the raw slot.
+        return DisposableFactory.Create(
+            (Slot: _currentPrincipal, Parent: parent),
+            static scope => scope.Slot.Value = scope.Parent
+        );
     }
 }
 

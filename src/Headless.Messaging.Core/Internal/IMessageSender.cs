@@ -147,7 +147,11 @@ internal sealed class MessageSender : IMessageSender
         var brokerAddress = transport.BrokerAddress;
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
-        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
+        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never
+        // fire, so a linked source would only wrap a plain timeout source in extra registration state.
+        using var publishCts = _shutdownToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
+            : new CancellationTokenSource();
         publishCts.CancelAfter(_options.TransportPublishTimeout);
         OperateResult result;
 
@@ -246,6 +250,9 @@ internal sealed class MessageSender : IMessageSender
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
+                // The envelope is untouched on this path: the failure is a configuration fault detected
+                // before any transport attempt, so no exception is stamped onto Origin.
+                MessageContentWrite.Preserve,
                 nextRetryAt: null,
                 lockedUntil: null,
                 originalRetries: message.Retries,
@@ -264,6 +271,9 @@ internal sealed class MessageSender : IMessageSender
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                // A successful publish never mutates Origin, so the stored envelope is already
+                // byte-identical — re-serializing it would be a wasted write on the hottest path.
+                MessageContentWrite.Preserve,
                 nextRetryAt: null,
                 lockedUntil: null,
                 originalRetries: message.Retries,
@@ -425,6 +435,9 @@ internal sealed class MessageSender : IMessageSender
             .ChangePublishRetryStateAsync(
                 message,
                 state.NextStatus,
+                // _SetFailedState stamped the exception onto Origin, so the persisted envelope is stale
+                // until this write refreshes it.
+                MessageContentWrite.Refresh,
                 state.NextRetryAt,
                 lockedUntil,
                 originalRetries,

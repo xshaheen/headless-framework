@@ -432,7 +432,18 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            var fileStream = File.OpenRead(fullPath);
+            // Matches File.OpenRead's mode/access/share, but opens an async handle like the upload path: the returned
+            // stream is consumed asynchronously (CopyToAsync into a response body or another provider). On Windows
+            // this enables overlapped I/O instead of blocking thread-pool reads; on Unix it is a consistency no-op.
+            var streamOptions = new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous,
+            };
+
+            var fileStream = new FileStream(fullPath, streamOptions);
 
 #pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
             // FileName is the full container-relative key (location.Path), matching AWS/Azure/Redis/SSH — not just the

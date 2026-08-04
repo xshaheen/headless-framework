@@ -140,6 +140,7 @@ internal sealed partial class SqlServerDataStorage(
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
@@ -151,6 +152,7 @@ internal sealed partial class SqlServerDataStorage(
             _publishedTable,
             message,
             state,
+            contentWrite,
             transaction,
             nextRetryAt,
             lockedUntil,
@@ -163,6 +165,7 @@ internal sealed partial class SqlServerDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -174,6 +177,7 @@ internal sealed partial class SqlServerDataStorage(
             _publishedTable,
             message,
             state,
+            contentWrite,
             transaction: null,
             nextRetryAt,
             lockedUntil,
@@ -230,6 +234,7 @@ internal sealed partial class SqlServerDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -239,6 +244,7 @@ internal sealed partial class SqlServerDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -250,6 +256,7 @@ internal sealed partial class SqlServerDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -260,6 +267,7 @@ internal sealed partial class SqlServerDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -280,6 +288,7 @@ internal sealed partial class SqlServerDataStorage(
     private async ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
@@ -290,16 +299,17 @@ internal sealed partial class SqlServerDataStorage(
         // NOTE: ChangeReceiveStateAsync does not call _ChangeMessageStateAsync because the receive
         // path additionally writes ExceptionInfo, a column absent from the published table schema.
         // Keep these two methods in sync when adding columns.
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var contentAssignment = refreshContent ? "Content=@Content, " : "";
         var sql =
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
+            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET {contentAssignment}Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
-        object[] sqlParams =
+        object[] stateParams =
         [
             new SqlParameter("@Id", message.StorageId),
-            new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
@@ -325,6 +335,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
+
+        object[] sqlParams = refreshContent
+            ? [new SqlParameter("@Content", _RefreshContent(message)), .. stateParams]
+            : stateParams;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
@@ -953,6 +967,7 @@ internal sealed partial class SqlServerDataStorage(
         string tableName,
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DbTransaction? transaction,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
@@ -961,13 +976,14 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken
     )
     {
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var contentAssignment = refreshContent ? "Content=@Content, " : "";
         var sql =
-            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET Content=@Content, Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
+            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET {contentAssignment}Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
-        object[] sqlParams =
+        object[] stateParams =
         [
             new SqlParameter("@Id", message.StorageId),
-            new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
             new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
@@ -992,6 +1008,10 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
+
+        object[] sqlParams = refreshContent
+            ? [new SqlParameter("@Content", _RefreshContent(message)), .. stateParams]
+            : stateParams;
 
         int affectedRows;
 
@@ -1026,6 +1046,18 @@ internal sealed partial class SqlServerDataStorage(
         }
 
         return affectedRows > 0;
+    }
+
+    /// <summary>
+    /// Re-serializes a mutated envelope and re-establishes the <c>Content == Serialize(Origin)</c> invariant on
+    /// the caller's in-memory copy, so a later retry pickup that reads the row sees what this write persisted.
+    /// </summary>
+    private string _RefreshContent(MediumMessage message)
+    {
+        var content = serializer.Serialize(message.Origin);
+        message.Content = content;
+
+        return content;
     }
 
     private async ValueTask<Guid?> _StoreReceivedMessage(
@@ -1319,16 +1351,14 @@ internal sealed partial class SqlServerDataStorage(
                                 Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, ct).ConfigureAwait(false),
-                                NextRetryAt = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
-                                    ? null
-                                    : await reader.GetFieldValueAsync<DateTimeOffset>(6, ct).ConfigureAwait(false),
-                                LockedUntil = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
-                                    ? null
-                                    : await reader.GetFieldValueAsync<DateTimeOffset>(7, ct).ConfigureAwait(false),
-                                Owner = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(8),
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
+                                // the large Content column synchronously, so these remaining small columns
+                                // cannot add blocking this row has not already paid for.
+                                Added = reader.GetFieldValue<DateTimeOffset>(5),
+                                NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                                LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                                Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
                             };
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)

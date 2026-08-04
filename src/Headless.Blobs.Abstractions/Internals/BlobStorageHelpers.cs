@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Headless.Constants;
 using Headless.Primitives;
@@ -170,6 +171,23 @@ public static class BlobStorageHelpers
     /// <returns>A predicate returning <see langword="true"/> when a key matches <paramref name="pattern"/>.</returns>
     public static Func<string, bool> CreateGlobMatcher(string pattern)
     {
+        var regex = _GlobMatchers.TryGetValue(pattern, out var cached) ? cached : _CompileAndCacheGlob(pattern);
+
+        return key => regex.IsMatch(key);
+    }
+
+    /// <summary>
+    /// Compiled glob patterns, keyed by their source pattern. Glob patterns are configuration-shaped — an application
+    /// uses a handful of them — so caching removes a per-call <see cref="Regex"/> construction (parse + node-tree
+    /// build) from every listing scan.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, Regex> _GlobMatchers = new(StringComparer.Ordinal);
+
+    /// <summary>Cap on <see cref="_GlobMatchers"/>, so an application that mints patterns per request cannot grow it without bound.</summary>
+    private const int _MaxCachedGlobMatchers = 512;
+
+    private static Regex _CompileAndCacheGlob(string pattern)
+    {
         var regexText = Regex
             .Escape(pattern)
             .Replace("\\*", ".*", StringComparison.Ordinal)
@@ -177,7 +195,9 @@ public static class BlobStorageHelpers
 
         var regex = new Regex($"^{regexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
 
-        return key => regex.IsMatch(key);
+        // Past the cap the matcher is still returned, just not retained — bypassing beats evicting here because the
+        // cache exists for a small, stable pattern set and an unbounded-pattern caller gains nothing from either.
+        return _GlobMatchers.Count < _MaxCachedGlobMatchers ? _GlobMatchers.GetOrAdd(pattern, regex) : regex;
     }
 
     /// <summary>

@@ -167,7 +167,12 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
         var changed = await _storage
-            .ChangePublishStateAsync(message, statusName, transaction, cancellationToken: cancellationToken)
+            .ChangePublishStateAsync(
+                message,
+                statusName,
+                transaction: transaction,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!changed)
@@ -183,7 +188,7 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
                     .ChangePublishStateAsync(
                         message,
                         StatusName.Delayed,
-                        transaction,
+                        transaction: transaction,
                         cancellationToken: CancellationToken.None
                     )
                     .ConfigureAwait(false);

@@ -101,6 +101,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? dbTransaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
@@ -111,6 +112,7 @@ internal sealed partial class InMemoryDataStorage(
         return _ChangePublishStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -122,6 +124,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -132,6 +135,7 @@ internal sealed partial class InMemoryDataStorage(
         return _ChangePublishStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -155,9 +159,33 @@ internal sealed partial class InMemoryDataStorage(
         );
     }
 
+    /// <summary>
+    /// Applies the caller's envelope-write contract to a stored row. <see cref="MessageContentWrite.Preserve"/>
+    /// leaves the stored envelope alone; <see cref="MessageContentWrite.Refresh"/> re-serializes the mutated
+    /// origin and re-establishes the <c>Content == Serialize(Origin)</c> invariant on the caller's copy too.
+    /// </summary>
+    private void _WriteContent(MediumMessage stored, MediumMessage message, MessageContentWrite contentWrite)
+    {
+        if (contentWrite is not MessageContentWrite.Refresh)
+        {
+            return;
+        }
+
+        var content = serializer.Serialize(message.Origin);
+
+        // Unlike the relational providers — whose row IS the serialized content — this provider keeps a
+        // live Origin beside Content, so refreshing only Content would hand the next pickup an envelope
+        // whose headers disagree with its bytes. Clone for the reason _ToSnapshot clones on the way out:
+        // the caller goes on mutating its own copy after this write.
+        stored.Origin = _CloneOrigin(message.Origin);
+        stored.Content = content;
+        message.Content = content;
+    }
+
     private ValueTask<bool> _ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
@@ -215,7 +243,7 @@ internal sealed partial class InMemoryDataStorage(
             current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
-            current.Content = serializer.Serialize(message.Origin);
+            _WriteContent(current, message, contentWrite);
             updated = true;
         }
 
@@ -259,6 +287,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -268,6 +297,7 @@ internal sealed partial class InMemoryDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -279,6 +309,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -289,6 +320,7 @@ internal sealed partial class InMemoryDataStorage(
         return _ChangeReceiveStateAsync(
             message,
             state,
+            contentWrite,
             nextRetryAt,
             lockedUntil,
             originalRetries,
@@ -309,6 +341,7 @@ internal sealed partial class InMemoryDataStorage(
     private ValueTask<bool> _ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
@@ -364,7 +397,7 @@ internal sealed partial class InMemoryDataStorage(
             current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
-            current.Content = serializer.Serialize(message.Origin);
+            _WriteContent(current, message, contentWrite);
             current.ExceptionInfo = message.ExceptionInfo;
             updated = true;
         }
@@ -460,7 +493,7 @@ internal sealed partial class InMemoryDataStorage(
         {
             StorageId = stored.StorageId,
             Name = name,
-            Origin = stored.Origin,
+            Origin = _CloneOrigin(stored.Origin),
             Content = stored.Content,
             Lane = stored.Lane,
             Retries = stored.Retries,
@@ -601,7 +634,7 @@ internal sealed partial class InMemoryDataStorage(
             {
                 StorageId = id,
                 Group = group,
-                Origin = message.Origin,
+                Origin = _CloneOrigin(message.Origin),
                 Name = name,
                 Content = content,
                 Lane = message.Lane,
@@ -715,7 +748,7 @@ internal sealed partial class InMemoryDataStorage(
                     );
                 }
 
-                existing.Origin = message.Origin;
+                existing.Origin = _CloneOrigin(message.Origin);
                 existing.Content = serialized;
                 existing.Lane = message.Lane;
                 // Redelivery refreshes the envelope but cannot replenish durable retry budgets.
@@ -797,7 +830,7 @@ internal sealed partial class InMemoryDataStorage(
         ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {
             StorageId = mdMessage.StorageId,
-            Origin = mdMessage.Origin,
+            Origin = _CloneOrigin(mdMessage.Origin),
             Lane = mdMessage.Lane,
             Group = group,
             Name = name,
@@ -997,18 +1030,23 @@ internal sealed partial class InMemoryDataStorage(
             && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
+    /// <summary>
+    /// Copies an envelope crossing the store boundary in either direction. Caller mutations (e.g.
+    /// <c>AddOrUpdateException</c> before a write the terminal-row guard then rejects) must not leak into the
+    /// stored Origin, and a stored Origin must not drift under a caller that keeps editing its copy. The
+    /// payload value is shared by reference — payload semantics treat it as immutable.
+    /// </summary>
+    private static Message _CloneOrigin(Message origin)
+    {
+        return new Message(new Dictionary<string, string?>(origin.Headers, StringComparer.Ordinal), origin.Value);
+    }
+
     private static MediumMessage _ToSnapshot(MemoryMessage m)
     {
         return new()
         {
             StorageId = m.StorageId,
-            // Clone the Origin's Headers dictionary so caller mutations (e.g., AddOrUpdateException
-            // before a write that the terminal-row guard then rejects) cannot leak back into the
-            // stored Origin. Value is shared by reference — payload semantics treat it as immutable.
-            Origin = new Message(
-                new Dictionary<string, string?>(m.Origin.Headers, StringComparer.Ordinal),
-                m.Origin.Value
-            ),
+            Origin = _CloneOrigin(m.Origin),
             Content = m.Content,
             Added = m.Added,
             ExpiresAt = m.ExpiresAt,

@@ -125,8 +125,9 @@ public static class HeadlessHttpContextExtensions
     /// <returns>The raw <c>User-Agent</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetUserAgent(this HttpContext httpContext)
     {
-        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.UserAgent, out var value)
-            ? value.FirstOrDefault()
+        // Indexer instead of FirstOrDefault(): the LINQ path boxes the StringValues struct.
+        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.UserAgent, out var value) && value.Count > 0
+            ? value[0]
             : null;
     }
 
@@ -137,8 +138,9 @@ public static class HeadlessHttpContextExtensions
     /// <returns>The raw <c>X-Correlation-ID</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetCorrelationId(this HttpContext httpContext)
     {
-        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.CorrelationId, out var value)
-            ? value.FirstOrDefault()
+        // Indexer instead of FirstOrDefault(): the LINQ path boxes the StringValues struct.
+        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.CorrelationId, out var value) && value.Count > 0
+            ? value[0]
             : null;
     }
 

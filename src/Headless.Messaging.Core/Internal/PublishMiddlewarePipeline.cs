@@ -107,6 +107,17 @@ internal sealed class PublishMiddlewarePipeline(
         Func<MessageOptions?, CancellationToken, Task> innerPublish
     )
     {
+        // Zero-middleware fast path. The scope below exists solely to resolve middleware — nothing in the
+        // inner publish ring reads from it — so when the container proves no middleware is registered for
+        // this context there is nothing to scope, chain, or track completion around beyond the inner call.
+        if (_HasNoMiddleware(context))
+        {
+            await innerPublish(context.Options, context.CancellationToken).ConfigureAwait(false);
+            _MarkCompleted(context);
+
+            return;
+        }
+
         await using var scope = _serviceProvider.CreateAsyncScope();
         var middleware = _ResolveMiddleware(scope.ServiceProvider, context);
 
@@ -212,6 +223,31 @@ internal sealed class PublishMiddlewarePipeline(
         );
 
         return invoker(middleware, context, next);
+    }
+
+    /// <summary>
+    /// Proves that <see cref="_ResolveMiddleware"/> would return an empty set without opening a scope.
+    /// A null probe (non-conforming container) cannot prove absence, so it always takes the slow path.
+    /// </summary>
+    private bool _HasNoMiddleware(PublishContext context)
+    {
+        if (_serviceProbe is null)
+        {
+            return false;
+        }
+
+        if (
+            _hasDirectMiddleware.GetOrAdd(
+                context.GetType(),
+                static (type, self) => self._HasAnyDirectMiddleware(type),
+                this
+            )
+        )
+        {
+            return false;
+        }
+
+        return descriptorRegistry?.TryGetPublishDescriptors(context.MessageType, context.Lane, out _) != true;
     }
 
     private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)

@@ -33,12 +33,14 @@ internal static class DeliveryDecisionResolver
         DateTimeOffset now
     )
     {
-        if (!Enum.IsDefined(lane))
+        // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
+        // searches the type's cached value table where a contiguous compare suffices.
+        if (lane is not (MessageLane.Bus or MessageLane.Queue))
         {
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (!Enum.IsDefined(requestedMode))
+        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.TransportDirect))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
@@ -47,7 +49,14 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (!Enum.IsDefined(coordination.Status))
+        if (
+            coordination.Status
+            is not (
+                DeliveryCoordinationStatus.None
+                or DeliveryCoordinationStatus.Compatible
+                or DeliveryCoordinationStatus.Incompatible
+            )
+        )
         {
             throw new ArgumentOutOfRangeException(
                 nameof(coordination),

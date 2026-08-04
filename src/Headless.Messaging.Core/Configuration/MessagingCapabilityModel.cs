@@ -38,6 +38,10 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
 {
     private readonly FrozenDictionary<MessagingProviderRole, MessagingProviderCapabilities[]> _providersByRole;
 
+    // The model is immutable once composed, so the role/lane union is resolved here instead of scanning
+    // the provider arrays with a capturing predicate on every publish gate check.
+    private readonly FrozenSet<(MessagingProviderRole Role, MessageLane Lane)> _supportedRoleLanes;
+
     private MessagingCapabilityModel(
         MessagingProviderCapabilities[] declaredCapabilities,
         MessagingProviderCapabilities[] providers
@@ -48,6 +52,9 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         _providersByRole = providers
             .GroupBy(static capability => capability.Role)
             .ToFrozenDictionary(static group => group.Key, static group => group.ToArray());
+        _supportedRoleLanes = providers
+            .SelectMany(static capability => capability.Lanes, static (capability, lane) => (capability.Role, lane))
+            .ToFrozenSet();
     }
 
     /// <inheritdoc />
@@ -86,8 +93,7 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     public bool Supports(MessageLane lane, MessagingProviderRole role)
     {
         _EnsureDefinedLane(lane);
-        return _providersByRole.TryGetValue(role, out var providers)
-            && providers.Any(provider => provider.Lanes.Contains(lane));
+        return _supportedRoleLanes.Contains((role, lane));
     }
 
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
@@ -134,7 +140,7 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     /// <summary>Rejects a direct publish when the selected lane has no declared transport capability.</summary>
     internal void EnsureDirectSupported(MessageLane lane)
     {
-        _EnsureDefinedLane(lane);
+        // Supports validates the lane itself; a second _EnsureDefinedLane here would only double the cost.
         if (Supports(lane, MessagingProviderRole.Transport))
         {
             return;

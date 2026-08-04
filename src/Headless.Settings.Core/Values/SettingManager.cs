@@ -142,57 +142,126 @@ public sealed class SettingManager(
 
         var settingValues = new Dictionary<string, SettingValue>(StringComparer.Ordinal);
 
+        // Non-inherited settings only ever consult the head of the chain while inherited ones walk it until
+        // a value appears, so the two groups are resolved separately. Each provider is then asked once with
+        // a batch instead of once per definition: every provider implements GetAllAsync as a single store
+        // round-trip, so the previous nested loop cost one round-trip per definition per provider.
+        var inherited = new List<SettingDefinition>();
+        var notInherited = new List<SettingDefinition>();
+
         foreach (var setting in settingDefinitions)
         {
-            string? value = null;
-            ISettingValueReadProvider? resolvedProvider = null;
-            string? resolvedProviderKey = null;
+            (setting.IsInherited ? inherited : notInherited).Add(setting);
+        }
 
-            if (setting.IsInherited)
+        if (notInherited.Count != 0)
+        {
+            // SkipWhile guarantees the head of the chain is the requested provider, so it takes providerKey.
+            var provider = providerList[0];
+            var values = await provider
+                .GetAllAsync([.. notInherited], providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            var resolved = _ToResolvedValues(values);
+
+            foreach (var setting in notInherited)
             {
-                foreach (var provider in providerList)
+                if (resolved.TryGetValue(setting.Name, out var value))
                 {
-                    var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-                    var providerValue = await provider
-                        .GetOrDefaultAsync(setting, pk, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    if (providerValue is not null)
-                    {
-                        value = providerValue;
-                        resolvedProvider = provider;
-                        resolvedProviderKey = pk;
-                        break;
-                    }
+                    _AddSettingValue(settingValues, setting, value, provider, providerKey);
                 }
-            }
-            else
-            {
-                var provider = providerList[0];
-                value = await provider.GetOrDefaultAsync(setting, providerKey, cancellationToken).ConfigureAwait(false);
-                resolvedProvider = provider;
-                resolvedProviderKey = providerKey;
-            }
-
-            // Decrypt only what a provider actually persisted as ciphertext: with fallback the winning value
-            // can come from configuration or the definition default, which are plaintext — same rule as
-            // _CoreGetOrDefaultAsync.
-            if (value is not null && setting.IsEncrypted && resolvedProvider is { StoresEncryptedValues: true })
-            {
-                value = encryptionService.Decrypt(setting, value);
-            }
-
-            if (value is not null)
-            {
-                settingValues[setting.Name] = new SettingValue(
-                    setting.Name,
-                    value,
-                    new SettingValueProvider(resolvedProvider!.Name, resolvedProviderKey)
-                );
             }
         }
 
-        return [.. settingValues.Values];
+        var pending = inherited;
+
+        foreach (var provider in providerList)
+        {
+            if (pending.Count == 0)
+            {
+                break;
+            }
+
+            var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            var values = await provider.GetAllAsync([.. pending], pk, cancellationToken).ConfigureAwait(false);
+            var resolved = _ToResolvedValues(values);
+
+            if (resolved.Count == 0)
+            {
+                continue;
+            }
+
+            var stillPending = new List<SettingDefinition>(pending.Count);
+
+            foreach (var setting in pending)
+            {
+                if (resolved.TryGetValue(setting.Name, out var value))
+                {
+                    _AddSettingValue(settingValues, setting, value, provider, pk);
+                }
+                else
+                {
+                    stillPending.Add(setting);
+                }
+            }
+
+            pending = stillPending;
+        }
+
+        // Emit in definition order: the previous per-definition loop populated the dictionary that way.
+        var orderedValues = new List<SettingValue>(settingValues.Count);
+
+        foreach (var setting in settingDefinitions)
+        {
+            if (settingValues.TryGetValue(setting.Name, out var settingValue))
+            {
+                orderedValues.Add(settingValue);
+            }
+        }
+
+        // The spread wraps the list in the compiler's throw-on-mutate read-only view, matching the previous
+        // implementation's return shape — callers must not be able to downcast and mutate manager state.
+        return [.. orderedValues];
+    }
+
+    /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>
+    private static Dictionary<string, string> _ToResolvedValues(List<SettingValue> providerValues)
+    {
+        var resolved = new Dictionary<string, string>(providerValues.Count, StringComparer.Ordinal);
+
+        foreach (var providerValue in providerValues)
+        {
+            if (providerValue.Value is not null)
+            {
+                resolved[providerValue.Name] = providerValue.Value;
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>Decrypts when required and records the resolved value against the provider that supplied it.</summary>
+    private void _AddSettingValue(
+        Dictionary<string, SettingValue> settingValues,
+        SettingDefinition setting,
+        string? value,
+        ISettingValueReadProvider resolvedProvider,
+        string? resolvedProviderKey
+    )
+    {
+        if (setting.IsEncrypted && resolvedProvider.StoresEncryptedValues)
+        {
+            value = encryptionService.Decrypt(setting, value);
+        }
+
+        if (value is not null)
+        {
+            settingValues[setting.Name] = new SettingValue(
+                setting.Name,
+                value,
+                new SettingValueProvider(resolvedProvider.Name, resolvedProviderKey)
+            );
+        }
     }
 
     /// <inheritdoc/>

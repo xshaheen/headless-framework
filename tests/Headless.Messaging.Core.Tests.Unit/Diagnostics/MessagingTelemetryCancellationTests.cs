@@ -150,6 +150,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             .ChangePublishRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),

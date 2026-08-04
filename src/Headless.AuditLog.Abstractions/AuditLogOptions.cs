@@ -33,15 +33,17 @@ public sealed class AuditLogOptions
 
     /// <summary>
     /// Predicate to exclude specific entity types from change tracking.
-    /// The first result for a given entity type is cached for the capture service lifetime.
+    /// The first result for a given entity type is cached process-wide, keyed on this delegate instance —
+    /// the memo lives as long as the delegate does and is never re-evaluated for that type.
     /// Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
     /// </summary>
     public Func<Type, bool>? EntityFilter { get; set; }
 
     /// <summary>
     /// Predicate to exclude specific properties from change tracking.
-    /// The first result for a given entity type and property name is cached for the capture
-    /// service lifetime. Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
+    /// The first result for a given entity type and property name is cached process-wide, keyed on this
+    /// delegate instance — the memo lives as long as the delegate does and is never re-evaluated for that
+    /// pair. Return <see langword="true"/> to exclude. The predicate must be pure and deterministic.
     /// Applied after model policy and default excluded property checks.
     /// </summary>
     public Func<Type, string, bool>? PropertyFilter { get; set; }
