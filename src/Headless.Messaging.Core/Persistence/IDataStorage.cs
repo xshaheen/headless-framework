@@ -33,6 +33,11 @@ public interface IDataStorage
     /// </remarks>
     /// <param name="message">The message whose state is changing.</param>
     /// <param name="state">The new status to persist.</param>
+    /// <param name="contentWrite">
+    /// Whether the transition also rewrites the persisted envelope. Defaults to
+    /// <see cref="MessageContentWrite.Preserve"/> because a status transition does not change the envelope;
+    /// pass <see cref="MessageContentWrite.Refresh"/> only after mutating <see cref="MediumMessage.Origin"/>.
+    /// </param>
     /// <param name="transaction">Optional ambient relational transaction.</param>
     /// <param name="nextRetryAt">
     /// UTC timestamp at which the retry processor should re-dispatch this message.
@@ -59,6 +64,7 @@ public interface IDataStorage
     ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
@@ -67,9 +73,13 @@ public interface IDataStorage
     );
 
     /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    /// <param name="contentWrite">
+    /// Whether the transition also rewrites the persisted envelope. See <see cref="MessageContentWrite"/>.
+    /// </param>
     ValueTask<bool> ChangePublishRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,
@@ -143,6 +153,11 @@ public interface IDataStorage
     /// </summary>
     /// <param name="message">The message whose state is changing.</param>
     /// <param name="state">The new status to persist.</param>
+    /// <param name="contentWrite">
+    /// Whether the transition also rewrites the persisted envelope. Defaults to
+    /// <see cref="MessageContentWrite.Preserve"/> because a status transition does not change the envelope;
+    /// pass <see cref="MessageContentWrite.Refresh"/> only after mutating <see cref="MediumMessage.Origin"/>.
+    /// </param>
     /// <param name="nextRetryAt">
     /// UTC timestamp at which the retry processor should re-dispatch this message.
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
@@ -168,6 +183,7 @@ public interface IDataStorage
     ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DateTimeOffset? nextRetryAt = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
@@ -175,9 +191,13 @@ public interface IDataStorage
     );
 
     /// <summary>Updates received retry state with optimistic checks for both durable retry counters.</summary>
+    /// <param name="contentWrite">
+    /// Whether the transition also rewrites the persisted envelope. See <see cref="MessageContentWrite"/>.
+    /// </param>
     ValueTask<bool> ChangeReceiveRetryStateAsync(
         MediumMessage message,
         StatusName state,
+        MessageContentWrite contentWrite,
         DateTimeOffset? nextRetryAt,
         DateTimeOffset? lockedUntil,
         int originalRetries,

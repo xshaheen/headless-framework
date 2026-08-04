@@ -53,11 +53,14 @@ public static class CultureHelper
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = uiCulture ?? culture;
 
-        return DisposableFactory.Create(() =>
-        {
-            CultureInfo.CurrentCulture = currentCulture;
-            CultureInfo.CurrentUICulture = currentUiCulture;
-        });
+        return DisposableFactory.Create(
+            (Culture: currentCulture, UiCulture: currentUiCulture),
+            static scope =>
+            {
+                CultureInfo.CurrentCulture = scope.Culture;
+                CultureInfo.CurrentUICulture = scope.UiCulture;
+            }
+        );
     }
 
     /// <summary>Determines whether <paramref name="cultureCode"/> names a culture supported by the runtime.</summary>

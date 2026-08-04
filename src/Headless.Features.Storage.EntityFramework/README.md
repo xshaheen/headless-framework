@@ -15,6 +15,7 @@ Provides EF Core repository implementations for feature values, feature definiti
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
+- Value uniqueness declared as a pair of filtered unique indexes — `(Name, ProviderName, ProviderKey) WHERE "ProviderKey" IS NOT NULL` and `(Name, ProviderName) WHERE "ProviderKey" IS NULL` — matching the raw-DDL providers, so NULL-key values stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite). Requires a relational provider with partial-index support (PostgreSQL, SQL Server, SQLite); providers without it (e.g. MySQL/MariaDB) need a replacement uniqueness strategy via a custom entity configuration
 
 ## Installation
 

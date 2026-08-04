@@ -135,7 +135,8 @@ public sealed partial class HybridCache
 
             // Promote into L1 preserving Tags + CreatedAt via _SetLocalEntryAsync (mirrors the buffer cold path and
             // the generic TryGetEntryAsync promotion gate), so the local copy is version-pinned for invalidation.
-            await _SetLocalEntryAsync(l1Store, key, l2Entry, cancellationToken).ConfigureAwait(false);
+            await _SetLocalEntryAsync(l1Store, key, l2Entry, expectedConcurrencyStamp: null, cancellationToken)
+                .ConfigureAwait(false);
 
             return l2Entry.IsNull ? CacheValue<T>.Null : new CacheValue<T>(l2Entry.Value, hasValue: true);
         }
@@ -359,7 +360,9 @@ public sealed partial class HybridCache
             result[key] = entry.IsNull ? CacheValue<T>.Null : new CacheValue<T>(entry.Value, hasValue: true);
 
             // Promote into L1 preserving Tags + CreatedAt (mirrors the generic TryGetEntryAsync promotion gate).
-            (localSeeds ??= []).Add(_SetLocalEntryAsync(l1Store, key, entry, cancellationToken).AsTask());
+            (localSeeds ??= []).Add(
+                _SetLocalEntryAsync(l1Store, key, entry, expectedConcurrencyStamp: null, cancellationToken).AsTask()
+            );
         }
 
         if (localSeeds is not null)

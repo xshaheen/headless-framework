@@ -5,12 +5,81 @@ using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 
 namespace Tests.Extensions;
 
 public sealed class ApiResultExtensionsTests : TestBase
 {
+    [Fact]
+    public void should_publish_complete_openapi_metadata_for_valued_results()
+    {
+        // given
+        var builder = _CreateEndpointBuilder();
+
+        // when
+        _ = RequestDelegateFactory.Create(
+            (Func<ApiResultHttpResult<string>>)_GenericEndpoint,
+            new RequestDelegateFactoryOptions { EndpointBuilder = builder }
+        );
+
+        // then
+        var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+        var success = responses.Single(response => response.StatusCode == 200);
+        success.Type.Should().Be<string>();
+        success.ContentTypes.Should().Equal("application/json");
+        responses
+            .Where(response => response.StatusCode >= 400)
+            .Should()
+            .AllSatisfy(response =>
+            {
+                response.Type.Should().Be<ProblemDetails>();
+                response.ContentTypes.Should().Equal("application/problem+json");
+            });
+    }
+
+    [Fact]
+    public void should_publish_complete_openapi_metadata_for_unit_results()
+    {
+        // given
+        var builder = _CreateEndpointBuilder();
+
+        // when
+        _ = RequestDelegateFactory.Create(
+            (Func<ApiResultHttpResult>)_UnitEndpoint,
+            new RequestDelegateFactoryOptions { EndpointBuilder = builder }
+        );
+
+        // then
+        var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 401, 403, 404, 409, 422]);
+        responses.Single(response => response.StatusCode == 204).ContentTypes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_publish_openapi_metadata_for_async_valued_results()
+    {
+        // given
+        var builder = _CreateEndpointBuilder();
+
+        // when
+        _ = RequestDelegateFactory.Create(
+            (Func<Task<ApiResultHttpResult<string>>>)_GenericAsyncEndpoint,
+            new RequestDelegateFactoryOptions { EndpointBuilder = builder }
+        );
+
+        // then
+        builder
+            .Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Select(response => response.StatusCode)
+            .Should()
+            .BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+    }
+
     #region ApiResult<T> Tests
 
     [Fact]
@@ -25,10 +94,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var httpResult = result.ToHttpResult(creator);
 
         // then
-        httpResult.Should().BeOfType<Ok<string>>();
-        var okResult = (Ok<string>)httpResult;
-        okResult.Value.Should().Be(expectedValue);
-        okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpResult.Should().BeOfType<ApiResultHttpResult<string>>();
+        ((IStatusCodeHttpResult)httpResult).StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
     [Fact]
@@ -42,9 +109,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var httpResult = result.ToHttpResult(creator);
 
         // then
-        httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        httpResult.Should().BeOfType<ApiResultHttpResult<string>>();
+        ((IStatusCodeHttpResult)httpResult).StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     #endregion
@@ -62,9 +128,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var httpResult = result.ToHttpResult(creator);
 
         // then
-        httpResult.Should().BeOfType<NoContent>();
-        var noContentResult = (NoContent)httpResult;
-        noContentResult.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+        httpResult.Should().BeOfType<ApiResultHttpResult>();
+        ((IStatusCodeHttpResult)httpResult).StatusCode.Should().Be(StatusCodes.Status204NoContent);
     }
 
     [Fact]
@@ -78,9 +143,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var httpResult = result.ToHttpResult(creator);
 
         // then
-        httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        httpResult.Should().BeOfType<ApiResultHttpResult>();
+        ((IStatusCodeHttpResult)httpResult).StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     #endregion
@@ -124,7 +188,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     {
         // given
         var creator = _CreateProblemDetailsCreator();
-        var error = new ForbiddenError { Reason = "Access denied" };
+        var error = new ForbiddenError(new ErrorDescriptor(ApiResultErrorCodes.Forbidden, "Access denied"));
 
         // when
         var httpResult = error.ToHttpResult(creator);
@@ -140,7 +204,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     {
         // given — verify the g: prefix is used (framework snake_case convention)
         var creator = _CreateProblemDetailsCreator();
-        var error = new ForbiddenError { Reason = "Access denied" };
+        var error = new ForbiddenError(new ErrorDescriptor(ApiResultErrorCodes.Forbidden, "Access denied"));
 
         // when
         _ = error.ToHttpResult(creator);
@@ -163,6 +227,20 @@ public sealed class ApiResultExtensionsTests : TestBase
         httpResult.Should().BeOfType<ProblemHttpResult>();
         var problemResult = (ProblemHttpResult)httpResult;
         problemResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public void should_preserve_unauthorized_descriptor_when_mapping_to_401()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var descriptor = new ErrorDescriptor("auth:expired", "Session expired");
+
+        // when
+        _ = new UnauthorizedError(descriptor).ToHttpResult(creator);
+
+        // then
+        creator.Received(1).Unauthorized(descriptor);
     }
 
     [Fact]
@@ -198,6 +276,134 @@ public sealed class ApiResultExtensionsTests : TestBase
         httpResult.Should().BeOfType<ProblemHttpResult>();
         var problemResult = (ProblemHttpResult)httpResult;
         problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [Fact]
+    public void should_preserve_all_conflict_descriptors_when_mapping_to_409()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var errors = new[]
+        {
+            new ErrorDescriptor("user:duplicate_email", "Email already exists").WithParam("email", "a@b.com"),
+            new ErrorDescriptor("user:duplicate_phone", "Phone already exists"),
+        };
+
+        // when
+        _ = new ConflictError(errors).ToHttpResult(creator);
+
+        // then
+        creator
+            .Received(1)
+            .Conflict(Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(actual => actual.SequenceEqual(errors)));
+    }
+
+    [Fact]
+    public void should_map_aggregate_of_validation_errors_to_422()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                ValidationError.FromFields(("email", "Email is required")),
+                ValidationError.FromFields(("name", "Name is required")),
+            ],
+        };
+
+        // when
+        var httpResult = error.ToHttpResult(creator);
+
+        // then
+        httpResult
+            .Should()
+            .BeOfType<ProblemHttpResult>()
+            .Which.StatusCode.Should()
+            .Be(StatusCodes.Status422UnprocessableEntity);
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(actual =>
+                    actual.Count == 2 && actual.ContainsKey("email") && actual.ContainsKey("name")
+                )
+            );
+    }
+
+    [Fact]
+    public void should_map_nested_validation_aggregate_to_422()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                new AggregateError { Errors = [ValidationError.FromFields(("email", "Email is required"))] },
+                ValidationError.FromFields(("name", "Name is required")),
+            ],
+        };
+
+        // when
+        var httpResult = error.ToHttpResult(creator);
+
+        // then
+        httpResult.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(actual =>
+                    actual.ContainsKey("email") && actual.ContainsKey("name")
+                )
+            );
+    }
+
+    [Fact]
+    public void should_map_mixed_nested_aggregate_to_409()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                new AggregateError { Errors = [ValidationError.FromFields(("email", "Email is required"))] },
+                new ConflictError("user:duplicate", "User already exists"),
+            ],
+        };
+
+        // when
+        var httpResult = error.ToHttpResult(creator);
+
+        // then
+        httpResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        creator.Received(1).Conflict(Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(actual => actual.Count == 2));
+    }
+
+    [Fact]
+    public void should_throw_clear_error_when_mapping_default_result()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var action = () => default(ApiResult).ToHttpResult(creator);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_clear_error_when_mapping_default_generic_result()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var action = () => default(ApiResult<string>).ToHttpResult(creator);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -314,7 +520,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator
-            .Unauthorized()
+            .Unauthorized(Arg.Any<ErrorDescriptor?>())
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
@@ -323,6 +529,21 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         return creator;
     }
+
+    private static RouteEndpointBuilder _CreateEndpointBuilder()
+    {
+        return new RouteEndpointBuilder(
+            static _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/api-result"),
+            order: 0
+        );
+    }
+
+    private static ApiResultHttpResult<string> _GenericEndpoint() => throw new NotSupportedException();
+
+    private static Task<ApiResultHttpResult<string>> _GenericAsyncEndpoint() => throw new NotSupportedException();
+
+    private static ApiResultHttpResult _UnitEndpoint() => throw new NotSupportedException();
 
     #endregion
 }

@@ -49,6 +49,13 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
         // Cap before parsing and before forming the key so both are bounded.
         var normalized = userAgent.Length > _maxUserAgentLength ? userAgent[.._maxUserAgentLength] : userAgent;
 
+        // Probe before GetOrCreate: the factory lambda captures `normalized` and `this`, so a closure and a
+        // delegate are allocated at the call site even when the entry is already cached — the common case.
+        if (_memo.TryGetValue<string?>(normalized, out var cached))
+        {
+            return cached;
+        }
+
         return _memo.GetOrCreate<string?>(normalized, _ => _parser(normalized), _entryOptions);
     }
 

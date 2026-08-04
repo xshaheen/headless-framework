@@ -37,6 +37,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         ConcurrentDictionary<Type, bool>
     >.CreateValueCallback _CreateImplementsInner = static _ => new ConcurrentDictionary<Type, bool>();
 
+    // Method group captured once instead of a `() => timeProvider.GetUtcNow()` lambda per stamped entity:
+    // that lambda closes over `this`, so it allocates on every save. Stays a factory rather than an eager
+    // value so the clock is read only when the target property actually exists.
+    private readonly Func<DateTimeOffset> _getUtcNow = timeProvider.GetUtcNow;
+
     /// <summary>Stamps audit fields on the entry based on its current <see cref="EntityState"/>.</summary>
     /// <param name="entry">The tracked entity entry to audit.</param>
     /// <param name="context">The per-save scratchpad (tenant id unused by this processor).</param>
@@ -48,9 +53,19 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                 _TrySetCreateAudit(entry);
                 break;
             case EntityState.Modified:
-                _TrySetUpdateAudit(entry);
-                _TrySetDeleteAudit(entry);
-                _TrySetSuspendAudit(entry);
+                // ICurrentUser implementations re-scan and re-parse claims on every UserId/AccountId read, so the
+                // stampers share one at-most-once resolution instead of paying for up to three. Resolution stays
+                // lazy inside the id stampers: an audited entity whose branches do not fire (an IDeleteAudit
+                // modified on an unrelated property, a non-generic IUpdateAudit) performs zero claim scans.
+                if (entry.Entity is IUpdateAudit or IDeleteAudit or ISuspendAudit)
+                {
+                    var actor = new ActorPair(currentUser);
+
+                    _TrySetUpdateAudit(entry, ref actor);
+                    _TrySetDeleteAudit(entry, ref actor);
+                    _TrySetSuspendAudit(entry, ref actor);
+                }
+
                 break;
         }
     }
@@ -64,11 +79,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (entity.CreatedAt == default)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                entity,
-                nameof(ICreateAudit.CreatedAt),
-                () => timeProvider.GetUtcNow()
-            );
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ICreateAudit.CreatedAt), _getUtcNow);
         }
 
         _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
@@ -104,22 +115,18 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (byUser is not null && byUser.CreatedById == null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(ICreateAudit<>.CreatedById), () => currentUserId);
+            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(ICreateAudit<>.CreatedById), currentUserId);
 
             return;
         }
 
         if (byAccount is not null && byAccount.CreatedById == null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                byAccount,
-                nameof(ICreateAudit<>.CreatedById),
-                () => currentAccountId
-            );
+            ObjectPropertiesHelper.TrySetPropertyValue(byAccount, nameof(ICreateAudit<>.CreatedById), currentAccountId);
         }
     }
 
-    private void _TrySetUpdateAudit(EntityEntry entry)
+    private void _TrySetUpdateAudit(EntityEntry entry, ref ActorPair actor)
     {
         if (entry.Entity is not IUpdateAudit entity)
         {
@@ -127,7 +134,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         }
 
         _TrySetUpdateAuditDate(entry, entity);
-        _TrySetUpdateAuditId(entry, currentUser.UserId, currentUser.AccountId);
+        _TrySetUpdateAuditId(entry, ref actor);
     }
 
     private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
@@ -143,29 +150,25 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        if (
-            ObjectPropertiesHelper.TrySetProperty(
-                entity,
-                nameof(IUpdateAudit.UpdatedAt),
-                () => timeProvider.GetUtcNow()
-            )
-        )
+        if (ObjectPropertiesHelper.TrySetProperty(entity, nameof(IUpdateAudit.UpdatedAt), _getUtcNow))
         {
             propertyEntry.IsModified = true;
         }
     }
 
-    private static void _TrySetUpdateAuditId(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private static void _TrySetUpdateAuditId(EntityEntry entry, ref ActorPair actor)
     {
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
         var byUser = entry.Entity as IUpdateAudit<UserId>;
         var byAccount = entry.Entity as IUpdateAudit<AccountId>;
 
         if (byUser is null && byAccount is null)
+        {
+            return;
+        }
+
+        var (currentUserId, currentAccountId) = actor.Resolve();
+
+        if (currentUserId is null && currentAccountId is null)
         {
             return;
         }
@@ -179,7 +182,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (byUser is not null && byUser.UpdatedById is null && currentUserId is not null)
         {
-            if (ObjectPropertiesHelper.TrySetProperty(byUser, nameof(IUpdateAudit<>.UpdatedById), () => currentUserId))
+            if (ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(IUpdateAudit<>.UpdatedById), currentUserId))
             {
                 propertyEntry.IsModified = true;
             }
@@ -190,10 +193,10 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         if (byAccount is not null && byAccount.UpdatedById is null && currentAccountId is not null)
         {
             if (
-                ObjectPropertiesHelper.TrySetProperty(
+                ObjectPropertiesHelper.TrySetPropertyValue(
                     byAccount,
                     nameof(IUpdateAudit<>.UpdatedById),
-                    () => currentAccountId
+                    currentAccountId
                 )
             )
             {
@@ -202,7 +205,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         }
     }
 
-    private void _TrySetDeleteAudit(EntityEntry entry)
+    private void _TrySetDeleteAudit(EntityEntry entry, ref ActorPair actor)
     {
         if (entry.Entity is not IDeleteAudit deleteAudit || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified)
         {
@@ -212,7 +215,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         if (deleteAudit.IsDeleted)
         {
             _TrySetDeleteAuditDate(entry, deleteAudit);
-            _TrySetDeleteAuditId(entry, currentUser.UserId, currentUser.AccountId);
+            _TrySetDeleteAuditId(entry, ref actor);
 
             return;
         }
@@ -229,25 +232,23 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
     {
         if (entity.DeletedAt == null || !entry.Property(nameof(IDeleteAudit.DeletedAt)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                entity,
-                nameof(IDeleteAudit.DeletedAt),
-                () => timeProvider.GetUtcNow()
-            );
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(IDeleteAudit.DeletedAt), _getUtcNow);
         }
     }
 
-    private static void _TrySetDeleteAuditId(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private static void _TrySetDeleteAuditId(EntityEntry entry, ref ActorPair actor)
     {
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
         var byUser = entry.Entity as IDeleteAudit<UserId>;
         var byAccount = entry.Entity as IDeleteAudit<AccountId>;
 
         if (byUser is null && byAccount is null)
+        {
+            return;
+        }
+
+        var (currentUserId, currentAccountId) = actor.Resolve();
+
+        if (currentUserId is null && currentAccountId is null)
         {
             return;
         }
@@ -261,20 +262,16 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (byUser is not null && byUser.DeletedById is null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(IDeleteAudit<>.DeletedById), () => currentUserId);
+            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(IDeleteAudit<>.DeletedById), currentUserId);
         }
 
         if (byAccount is not null && byAccount.DeletedById is null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                byAccount,
-                nameof(IDeleteAudit<>.DeletedById),
-                () => currentAccountId
-            );
+            ObjectPropertiesHelper.TrySetPropertyValue(byAccount, nameof(IDeleteAudit<>.DeletedById), currentAccountId);
         }
     }
 
-    private void _TrySetSuspendAudit(EntityEntry entry)
+    private void _TrySetSuspendAudit(EntityEntry entry, ref ActorPair actor)
     {
         if (
             entry.Entity is not ISuspendAudit suspendAudit
@@ -287,7 +284,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         if (suspendAudit.IsSuspended)
         {
             _TrySetSuspendAuditDate(entry, suspendAudit);
-            _TrySetSuspendAuditId(entry, currentUser.UserId, currentUser.AccountId);
+            _TrySetSuspendAuditId(entry, ref actor);
 
             return;
         }
@@ -304,25 +301,23 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
     {
         if (entity.SuspendedAt == null || !entry.Property(nameof(ISuspendAudit.SuspendedAt)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                entity,
-                nameof(ISuspendAudit.SuspendedAt),
-                () => timeProvider.GetUtcNow()
-            );
+            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ISuspendAudit.SuspendedAt), _getUtcNow);
         }
     }
 
-    private static void _TrySetSuspendAuditId(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private static void _TrySetSuspendAuditId(EntityEntry entry, ref ActorPair actor)
     {
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
         var byUser = entry.Entity as ISuspendAudit<UserId>;
         var byAccount = entry.Entity as ISuspendAudit<AccountId>;
 
         if (byUser is null && byAccount is null)
+        {
+            return;
+        }
+
+        var (currentUserId, currentAccountId) = actor.Resolve();
+
+        if (currentUserId is null && currentAccountId is null)
         {
             return;
         }
@@ -336,15 +331,15 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (byUser is not null && byUser.SuspendedById is null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, nameof(ISuspendAudit<>.SuspendedById), () => currentUserId);
+            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(ISuspendAudit<>.SuspendedById), currentUserId);
         }
 
         if (byAccount is not null && byAccount.SuspendedById is null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(
+            ObjectPropertiesHelper.TrySetPropertyValue(
                 byAccount,
                 nameof(ISuspendAudit<>.SuspendedById),
-                () => currentAccountId
+                currentAccountId
             );
         }
     }
@@ -359,5 +354,29 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                 entityType.GetInterfaces().Exists(x => x.IsGenericType && x.GetGenericTypeDefinition() == interfaceDef),
             type
         );
+    }
+
+    /// <summary>
+    /// Stack-only at-most-once resolution of the current actor's identifier pair, shared by ref across the
+    /// modified-entry stampers. Resolution happens on the first <see cref="Resolve"/> call — an entry whose id
+    /// stampers all bail out before consuming the pair never touches <see cref="ICurrentUser"/> at all.
+    /// </summary>
+    private struct ActorPair(ICurrentUser currentUser)
+    {
+        private ICurrentUser? _pending = currentUser;
+        private UserId? _userId;
+        private AccountId? _accountId;
+
+        public (UserId? UserId, AccountId? AccountId) Resolve()
+        {
+            if (_pending is { } user)
+            {
+                _userId = user.UserId;
+                _accountId = user.AccountId;
+                _pending = null;
+            }
+
+            return (_userId, _accountId);
+        }
     }
 }

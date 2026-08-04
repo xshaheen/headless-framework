@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Primitives;
 
 /// <summary>
@@ -19,12 +21,12 @@ public ref struct ApiResultErrorBuilder
     public void Add(ApiResultError error)
     {
         _errors ??= [];
-        _errors.Add(error);
+        _errors.Add(Argument.IsNotNull(error));
     }
 
     /// <summary>
-    /// Materializes the builder into an <see cref="ApiResult{T}"/>: a failure carrying an
-    /// <see cref="AggregateError"/> if any errors were accumulated, otherwise a success holding <paramref name="successValue"/>.
+    /// Materializes the builder into an <see cref="ApiResult{T}"/>: a failure carrying the sole error or an
+    /// <see cref="AggregateError"/> when multiple errors were accumulated, otherwise a success holding <paramref name="successValue"/>.
     /// </summary>
     /// <typeparam name="T">The success value type.</typeparam>
     /// <param name="successValue">The value used when no errors were accumulated.</param>
@@ -32,16 +34,26 @@ public ref struct ApiResultErrorBuilder
     /// <exception cref="ArgumentNullException">Thrown when no errors were accumulated and <paramref name="successValue"/> is <see langword="null"/>.</exception>
     public readonly ApiResult<T> ToApiResult<T>(T successValue)
     {
-        return HasErrors ? new AggregateError { Errors = _errors! } : successValue;
+        return _errors switch
+        {
+            null or { Count: 0 } => successValue,
+            [var error] => error,
+            _ => new AggregateError { Errors = _errors },
+        };
     }
 
     /// <summary>
-    /// Materializes the builder into a non-generic <see cref="ApiResult"/>: a failure carrying an
-    /// <see cref="AggregateError"/> if any errors were accumulated, otherwise a success.
+    /// Materializes the builder into a non-generic <see cref="ApiResult"/>: a failure carrying the sole error or an
+    /// <see cref="AggregateError"/> when multiple errors were accumulated, otherwise a success.
     /// </summary>
     /// <returns>A failed result when <see cref="HasErrors"/> is <see langword="true"/>; otherwise a successful result.</returns>
     public readonly ApiResult ToApiResult()
     {
-        return HasErrors ? ApiResult.Fail(new AggregateError { Errors = _errors! }) : ApiResult.Ok();
+        return _errors switch
+        {
+            null or { Count: 0 } => ApiResult.Ok(),
+            [var error] => ApiResult.Fail(error),
+            _ => ApiResult.Fail(new AggregateError { Errors = _errors }),
+        };
     }
 }

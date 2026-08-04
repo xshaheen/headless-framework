@@ -31,11 +31,18 @@ internal static class DirectPublisherCore
             .ConfigureAwait(false);
 
         using var timeoutCts = new CancellationTokenSource(transportPublishTimeout, timeProvider);
-        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        // A caller token that can never be cancelled contributes nothing to the linked source, so skip
+        // building one — the timeout source alone carries identical cancellation semantics.
+        using var publishCts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token)
+            : null;
+        var publishToken = publishCts?.Token ?? timeoutCts.Token;
+
         var traceHandle = _TracingBeforeSend(transportMsg, lane, brokerAddress, nowMs, telemetry);
         try
         {
-            var result = await sendTransport(transportMsg, publishCts.Token).ConfigureAwait(false);
+            var result = await sendTransport(transportMsg, publishToken).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {

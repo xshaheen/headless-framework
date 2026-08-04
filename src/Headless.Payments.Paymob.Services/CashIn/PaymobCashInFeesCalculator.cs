@@ -83,7 +83,7 @@ public sealed class PaymobCashInFeesCalculator(
 
         var vatScaler = 1m + vatPercentOnFees;
         var vatFixedFees = fixedFeesPerTransaction * vatScaler;
-        var vatPercentageFees = vatPercentOnFees * vatScaler;
+        var vatPercentageFees = percentageFeesPerTransaction * vatScaler;
 
         var amount = decimal.Round((net + vatFixedFees) / (1 - vatPercentageFees), 2, _Mode);
 

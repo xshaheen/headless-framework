@@ -217,6 +217,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         var context = dbContext.Set<TTimeJob>();
 
+        // Claimed and yielded ONE root at a time on purpose: a consumer that stops enumerating (cancellation, host
+        // stop) must leave the remaining candidates unclaimed for the next sweep rather than stranding rows it will
+        // never execute under a lease. Pinned by
+        // compatibility_fallback_claims_at_most_one_native_sized_batch_per_sweep.
         foreach (var timeJob in timeJobs)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -224,7 +228,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
             var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
-            var claimedIds = await _ClaimTimeJobTreeAsync(dbContext, rootMatches, rootId, owner, cancellationToken)
+            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
             if (claimedIds.Count == 0)
@@ -290,6 +294,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .AttachNonTimedDescendantsAsync(context.AsNoTracking(), timeJobsToUpdate, _maxChainDepth, cancellationToken)
             .ConfigureAwait(false);
 
+        // One root claimed and yielded per step (see ClaimTimeJobsAsync): abandoning the sweep must not leave rows
+        // leased that the caller never receives.
         foreach (var timeJob in timeJobsToUpdate)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -302,7 +308,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
                 .WhereCanFallbackClaimUsingDatabaseClock()
                 .WhereClaimableUnderParentTerminalGate(context);
-            var claimedIds = await _ClaimTimeJobTreeAsync(dbContext, rootMatches, rootId, owner, cancellationToken)
+            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
                 .ConfigureAwait(false);
 
             if (claimedIds.Count == 0)
@@ -556,15 +562,13 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     }
 
     private async Task<HashSet<Guid>> _ClaimTimeJobTreeAsync(
-        TDbContext dbContext,
+        DbSet<TTimeJob> context,
         IQueryable<TTimeJob> rootMatches,
         Guid rootId,
         string owner,
         CancellationToken cancellationToken
     )
     {
-        var context = dbContext.Set<TTimeJob>();
-
         // R12/KTD2: claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
         // DB-clock lease invariants govern this (docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md):
         //
@@ -602,16 +606,20 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the KTD2
-        // lease-deadline-copy discipline has exactly one relational implementation.
-        return await JobsSubtreeLeaseWalk
+        // lease-deadline-copy discipline has exactly one relational implementation. This path walks a single root at a
+        // time because it claims and yields incrementally; the walk batches across roots for callers that acquire a
+        // whole set at once.
+        var claimedIdsByRoot = await JobsSubtreeLeaseWalk
             .LeaseNonTimedDescendantsAsync(
                 context,
-                rootId,
+                [rootId],
                 owner,
                 _maxChainDepth,
                 OnFrontierBeforeLease,
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        return claimedIdsByRoot[rootId];
     }
 }

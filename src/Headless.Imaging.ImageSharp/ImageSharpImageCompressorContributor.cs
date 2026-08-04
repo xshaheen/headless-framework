@@ -38,14 +38,19 @@ internal sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupported();
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
+        var (decoded, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
             return ImageStreamCompressResult.NotSupported(error);
         }
 
-        Debug.Assert(image is not null);
+        Debug.Assert(decoded is not null);
+
+        // The decoded image owns pooled pixel buffers that only Dispose returns to the allocator; every exit path
+        // below must release them. No returned result references the image — only the encoded output stream.
+        using var image = decoded;
+
         var format = image.Metadata.DecodedImageFormat;
 
         if (format is null)
@@ -58,7 +63,8 @@ internal sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupportedMimeType(format.DefaultMimeType);
         }
 
-        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken).ConfigureAwait(false);
+        var memoryStream = await _CreateCompressedStreamAsync(image, format, stream, cancellationToken)
+            .ConfigureAwait(false);
 
         if (memoryStream.Length < stream.Length)
         {
@@ -70,9 +76,16 @@ internal sealed class ImageSharpImageCompressorContributor(
         return ImageStreamCompressResult.Failed("The compressed image is larger than the original.");
     }
 
-    private async Task<Stream> _CreateCompressedStreamAsync(Image image, IImageFormat format, CancellationToken token)
+    private async Task<Stream> _CreateCompressedStreamAsync(
+        Image image,
+        IImageFormat format,
+        Stream source,
+        CancellationToken token
+    )
     {
-        var memoryStream = new MemoryStream();
+        // Compression only counts as a success when the output is strictly smaller than the source, so the source
+        // length is a hard upper bound on any output worth keeping — pre-size to it rather than regrowing from zero.
+        var memoryStream = EncodeBufferHelpers.CreateEncodeBuffer(source);
 
         try
         {

@@ -254,6 +254,12 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    {
+        return base.a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time();
+    }
+
+    [Fact]
     public override Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {
         return base.long_cron_claim_transaction_publishes_a_fresh_lease();

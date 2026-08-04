@@ -137,7 +137,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         // given
         var controller = _CreateController();
         var creator = _CreateProblemDetailsCreator();
-        var error = new ForbiddenError { Reason = "Access denied" };
+        var error = new ForbiddenError(new ErrorDescriptor(ApiResultErrorCodes.Forbidden, "Access denied"));
 
         // when
         var actionResult = error.ToActionResult(controller, creator);
@@ -169,6 +169,21 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         unauthorizedResult.Value.Should().BeOfType<ProblemDetails>();
         var problemDetails = (ProblemDetails)unauthorizedResult.Value!;
         problemDetails.Status.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public void should_preserve_unauthorized_descriptor_when_mapping_to_401()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+        var descriptor = new ErrorDescriptor("auth:expired", "Session expired");
+
+        // when
+        _ = new UnauthorizedError(descriptor).ToActionResult(controller, creator);
+
+        // then
+        creator.Received(1).Unauthorized(descriptor);
     }
 
     [Fact]
@@ -215,6 +230,136 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     }
 
     [Fact]
+    public void should_preserve_all_conflict_descriptors_when_mapping_to_409()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+        var errors = new[]
+        {
+            new ErrorDescriptor("user:duplicate_email", "Email already exists").WithParam("email", "a@b.com"),
+            new ErrorDescriptor("user:duplicate_phone", "Phone already exists"),
+        };
+
+        // when
+        _ = new ConflictError(errors).ToActionResult(controller, creator);
+
+        // then
+        creator
+            .Received(1)
+            .Conflict(Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(actual => actual.SequenceEqual(errors)));
+    }
+
+    [Fact]
+    public void should_map_aggregate_of_validation_errors_to_422()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                ValidationError.FromFields(("email", "Email is required")),
+                ValidationError.FromFields(("name", "Name is required")),
+            ],
+        };
+
+        // when
+        var actionResult = error.ToActionResult(controller, creator);
+
+        // then
+        actionResult.Should().BeOfType<UnprocessableEntityObjectResult>();
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(actual =>
+                    actual.Count == 2 && actual.ContainsKey("email") && actual.ContainsKey("name")
+                )
+            );
+    }
+
+    [Fact]
+    public void should_map_nested_validation_aggregate_to_422()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                new AggregateError { Errors = [ValidationError.FromFields(("email", "Email is required"))] },
+                ValidationError.FromFields(("name", "Name is required")),
+            ],
+        };
+
+        // when
+        var actionResult = error.ToActionResult(controller, creator);
+
+        // then
+        actionResult.Should().BeOfType<UnprocessableEntityObjectResult>();
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(actual =>
+                    actual.ContainsKey("email") && actual.ContainsKey("name")
+                )
+            );
+    }
+
+    [Fact]
+    public void should_map_mixed_nested_aggregate_to_409()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+        var error = new AggregateError
+        {
+            Errors =
+            [
+                new AggregateError { Errors = [ValidationError.FromFields(("email", "Email is required"))] },
+                new ConflictError("user:duplicate", "User already exists"),
+            ],
+        };
+
+        // when
+        var actionResult = error.ToActionResult(controller, creator);
+
+        // then
+        actionResult.Should().BeOfType<ConflictObjectResult>();
+        creator.Received(1).Conflict(Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(actual => actual.Count == 2));
+    }
+
+    [Fact]
+    public void should_throw_clear_error_when_mapping_default_result()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var action = () => default(ApiResult).ToActionResult(controller, creator);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_clear_error_when_mapping_default_generic_result()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var action = () => default(ApiResult<string>).ToActionResult(controller, creator);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void should_map_unknown_error_to_409()
     {
         // given
@@ -257,7 +402,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator
-            .Unauthorized()
+            .Unauthorized(Arg.Any<ErrorDescriptor?>())
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator

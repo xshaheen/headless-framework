@@ -8,6 +8,7 @@ import type { GetCronJobResponse } from '@/http/services/types/cronJobService.ty
 import { cronJobService } from '@/http/services/cronJobService'
 import { formatTime } from '@/utilities/dateTimeParser'
 import { describeCron, isValidCronExpression } from '@/utilities/cron'
+import { formatJsonForDisplay } from '@/utilities/json-format'
 const functionNamesStore = useFunctionNameStore()
 const getJobRequestData = jobsService.getRequestData()
 const updateCronJob = cronJobService.updateCronJob()
@@ -40,21 +41,11 @@ watch(
 
 const setRequestData = async () => {
   await getJobRequestData.requestAsync(props.dialogProps.id, 0).then((res) => {
-    const formattedJson = formatJsonForDisplay(res.result!, false)
+    const formattedJson = formatJsonForDisplay(res.result)
 
     if (formattedJson == undefined) setFieldValue('requestData', '')
     else setFieldValue('requestData', formattedJson)
   })
-}
-
-const formatJsonForDisplay = (json: string, isHtml: boolean = false) => {
-  if (json == null) return undefined
-  try {
-    const formatted = JSON.stringify(JSON.parse(json), null, 2)
-    return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch {
-    return undefined
-  }
 }
 
 // Validate cron expression: requires 6-segment (seconds) format that cronstrue can parse.
@@ -91,7 +82,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
       )
       setFieldValue(
         'requestData',
-        formatJsonForDisplay(getJobRequestData.response.value?.result || '', false) || '',
+        formatJsonForDisplay(getJobRequestData.response.value?.result) ?? '',
       )
 
       update(value)
@@ -293,7 +284,7 @@ defineExpose({
                 </v-card-item>
 
                 <v-card-text>
-                  <div v-html="formatJsonForDisplay(getFieldValue('exampleData'), true)"></div>
+                  <div class="json-preview">{{ formatJsonForDisplay(getFieldValue('exampleData')) }}</div>
                 </v-card-text>
               </v-card>
             </v-container>
@@ -426,9 +417,7 @@ defineExpose({
                       v-bind="bindField('requestData')"
                       label="Request Data"
                       variant="outlined"
-                      :disabled="
-                        formatJsonForDisplay(getFieldValue('exampleData'), false) == undefined
-                      "
+                      :disabled="formatJsonForDisplay(getFieldValue('exampleData')) == undefined"
                     />
                   </v-col>
                 </v-row>
@@ -448,3 +437,10 @@ defineExpose({
     </v-dialog>
   </div>
 </template>
+<style scoped>
+/* Keeps the JSON indentation without rendering it as HTML. */
+.json-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>

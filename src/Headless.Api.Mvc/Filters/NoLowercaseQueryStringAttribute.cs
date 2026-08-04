@@ -13,6 +13,9 @@ namespace Headless.Api.Filters;
 /// <remarks>
 /// Useful for endpoints whose query strings contain case-sensitive tokens (e.g. OAuth state parameters,
 /// signed URLs, or legacy integration identifiers). Path lowercasing is unaffected by this attribute.
+/// The rule reads this marker from endpoint metadata, so it only takes effect when the rule is registered
+/// after <c>UseRouting()</c> — see <c>UseRedirectToCanonicalUrl()</c>. Before routing the rule cannot see the
+/// marker and therefore performs no canonicalization at all rather than redirecting past the opt-out.
 /// </remarks>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]

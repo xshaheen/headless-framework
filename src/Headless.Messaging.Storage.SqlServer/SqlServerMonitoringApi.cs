@@ -152,6 +152,10 @@ internal sealed class SqlServerMonitoringApi(
         var sqlQuery =
             $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
 
+        // CurrentPage is zero-based (it is returned as IndexPage.Index). Clamping keeps a negative
+        // index off the wire, where it would be rejected as a negative OFFSET.
+        var currentPage = Math.Max(query.CurrentPage, 0);
+
         object[] countSqlParams =
         [
             new SqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
@@ -174,7 +178,7 @@ internal sealed class SqlServerMonitoringApi(
             {
                 Value = query.Lane is null ? 0 : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
             },
-            new SqlParameter("@Offset", query.CurrentPage * query.PageSize),
+            new SqlParameter("@Offset", (long)currentPage * query.PageSize),
             new SqlParameter("@Limit", query.PageSize),
         ];
 
@@ -191,7 +195,7 @@ internal sealed class SqlServerMonitoringApi(
 
         if (totalCount == 0)
         {
-            return new([], query.CurrentPage, query.PageSize, 0);
+            return new([], currentPage, query.PageSize, 0);
         }
 
         var items = await connection
@@ -244,7 +248,7 @@ internal sealed class SqlServerMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+        return new(items, currentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     /// <inheritdoc />

@@ -246,22 +246,28 @@ public static class HeadlessEnumExtensions
         {
             var (defaultValue, locales) = enumValue.GetAllLocales();
 
-            var main = locales.FirstOrDefault(x => string.Equals(x.Key, locale, StringComparison.Ordinal));
-
-            if (main is not null)
+            // Indexed loops over the cached array rather than FirstOrDefault: the predicates capture
+            // `locale`/`fallbackLocale`, so the LINQ form allocated a closure and a delegate per lookup on a
+            // path called once per localized field rendered.
+            for (var i = 0; i < locales.Length; i++)
             {
-                return main.Locale;
+                if (string.Equals(locales[i].Key, locale, StringComparison.Ordinal))
+                {
+                    return locales[i].Locale;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(fallbackLocale))
             {
-                var fallback = locales.FirstOrDefault(x =>
-                    string.Equals(x.Key, fallbackLocale, StringComparison.Ordinal)
-                );
-
-                if (!string.IsNullOrWhiteSpace(fallback?.Locale.DisplayName))
+                for (var i = 0; i < locales.Length; i++)
                 {
-                    return fallback.Locale;
+                    if (!string.Equals(locales[i].Key, fallbackLocale, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    // A declared-but-blank fallback display name is treated as absent, so the default wins.
+                    return string.IsNullOrWhiteSpace(locales[i].Locale.DisplayName) ? defaultValue : locales[i].Locale;
                 }
             }
 

@@ -23,6 +23,10 @@ internal sealed class MessagePublisher(
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly TimeSpan _transportPublishTimeout = transportPublishTimeout ?? TimeSpan.FromSeconds(10);
 
+    // Cached once: passing a method group as Func<long> allocates a fresh delegate on every publish,
+    // because the compiler only caches method-group conversions for static methods.
+    private readonly Func<long> _nowUnixTimeMilliseconds = () => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+
     internal Task PublishAsync<T>(
         MessageLane lane,
         T? content,
@@ -79,7 +83,7 @@ internal sealed class MessagePublisher(
                         serializer,
                         transport.BrokerAddress,
                         transport.SendAsync,
-                        _NowUnixTimeMilliseconds,
+                        _nowUnixTimeMilliseconds,
                         _telemetry,
                         _transportPublishTimeout,
                         timeProvider,
@@ -108,10 +112,5 @@ internal sealed class MessagePublisher(
         var resolver = coordinationResolver();
         return resolver?.Resolve(coordinator)
             ?? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
-    }
-
-    private long _NowUnixTimeMilliseconds()
-    {
-        return timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
     }
 }

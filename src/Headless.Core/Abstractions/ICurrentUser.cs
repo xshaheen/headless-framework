@@ -69,7 +69,27 @@ public interface ICurrentUser
     /// <returns>A read-only list of all matching <see cref="Claim"/> instances.</returns>
     IReadOnlyList<Claim> FindClaims(string claimType)
     {
-        return Principal?.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray() ?? [];
+        var principal = Principal;
+
+        if (principal is null)
+        {
+            return [];
+        }
+
+        // Manual loop rather than Where(...).ToArray(): claim lookups run several times per request and the
+        // predicate captures `claimType`, so the LINQ form allocates a closure, a delegate, and an iterator
+        // even when nothing matches — which is the usual outcome.
+        List<Claim>? matches = null;
+
+        foreach (var claim in principal.Claims)
+        {
+            if (string.Equals(claim.Type, claimType, StringComparison.Ordinal))
+            {
+                (matches ??= []).Add(claim);
+            }
+        }
+
+        return matches ?? [];
     }
 }
 
