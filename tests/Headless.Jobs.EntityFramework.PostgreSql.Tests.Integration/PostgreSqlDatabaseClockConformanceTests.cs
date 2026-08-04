@@ -26,4 +26,10 @@ public sealed class PostgreSqlDatabaseClockConformanceTests(PostgreSqlJobsCoordi
     {
         return base.reclaim_and_release_sweep_sql_is_owned_by_the_database_clock();
     }
+
+    [Fact]
+    public override Task schedule_advance_sql_is_owned_by_the_database_clock()
+    {
+        return base.schedule_advance_sql_is_owned_by_the_database_clock();
+    }
 }

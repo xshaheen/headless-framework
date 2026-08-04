@@ -26,6 +26,14 @@ public sealed class JobsDispatcherTests : TestBase
         // the delegate nor cancel it mid-run — the row would otherwise sit out its whole lease and be resolved
         // by OnNodeDeath as if the node had died.
         var manager = _HealthyManager();
+        var persisted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                persisted.TrySetResult();
+                return Task.FromResult(1);
+            });
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         await using var serviceProvider = services.BuildServiceProvider();
@@ -52,10 +60,11 @@ public sealed class JobsDispatcherTests : TestBase
         callerCts.Dispose();
         release.TrySetResult();
 
-        var observedCancellation = await completed.Task.WaitAsync(_waitBudget);
+        var observedCancellation = await completed.Task.WaitAsync(_waitBudget, AbortToken);
         observedCancellation
             .Should()
             .BeFalse("a job the store says is running must not follow the enqueuer's lifetime");
+        await persisted.Task.WaitAsync(_waitBudget, AbortToken);
         await manager.Received().UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
@@ -93,11 +102,11 @@ public sealed class JobsDispatcherTests : TestBase
         );
 
         await dispatcher.DispatchAsync([context], AbortToken);
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         await taskScheduler.CancelExecutionsAsync();
 
-        var observedCancellation = await observed.Task.WaitAsync(_waitBudget);
+        var observedCancellation = await observed.Task.WaitAsync(_waitBudget, AbortToken);
         observedCancellation.Should().BeTrue("scheduler shutdown must still reach immediate-dispatch jobs");
     }
 

@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -1396,6 +1397,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
+                        // R10: the stored projection was derived under the OLD expression. Reset the position to
+                        // the uninitialized sentinel so the next wake re-derives it by the R9 creation rule under
+                        // the new expression — matching the relational provider's migrate path.
+                        updated.ReconciledThroughUtc = default;
+                        updated.NextDueUtc = default;
+
                         foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == id).ToArray())
                         {
                             if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
@@ -1449,6 +1456,195 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         _cronJobs.TryGetValue(id, out var job);
 
         return Task.FromResult(job is null ? null : _CloneCronJob(job));
+    }
+
+    public Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var candidates = _cronJobs
+            .Values.Where(x => !x.IsPaused)
+            .OrderBy(x => x.NextDueUtc)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new CronDispatchCandidate
+            {
+                CronJobId = x.Id,
+                FunctionName = x.Function,
+                Expression = x.Expression,
+                TimeZoneId = x.TimeZoneId,
+                ScheduleRevision = x.ScheduleRevision,
+                ReconciledThroughUtc = x.ReconciledThroughUtc,
+                NextDueUtc = x.NextDueUtc,
+                Retries = x.Retries,
+                RetryIntervals = x.RetryIntervals,
+                OnNodeDeath = x.OnNodeDeath,
+            })
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            return Task.FromResult<CronDispatchCandidates?>(null);
+        }
+
+        return Task.FromResult<CronDispatchCandidates?>(
+            new CronDispatchCandidates { Candidates = candidates, StoreUtcNow = _timeProvider.GetUtcNow().UtcDateTime }
+        );
+    }
+
+    public Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The per-definition lock is this provider's equivalent of the relational value CAS: it makes the fence check
+        // and the position write one indivisible step, so concurrent advances from the same observed watermark produce
+        // exactly one winner here too. The lock is per definition, so advancing one never blocks or mutates a sibling.
+        lock (_GetCronDefinitionLock(advance.CronJobId))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (
+                !_cronJobs.TryGetValue(advance.CronJobId, out var current)
+                || current.IsPaused
+                || current.ScheduleRevision != advance.ExpectedScheduleRevision
+                || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+            )
+            {
+                return Task.FromResult<CronScheduleAdvanceResult?>(null);
+            }
+
+            // KTD2: TimeProvider is the coherent single-process authority for this provider — there is no separate
+            // store whose clock could disagree — and it is the deterministic seam FakeTimeProvider drives in tests.
+            var storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
+
+            if (advance.RequireProjectionDue && current.NextDueUtc > storeUtcNow)
+            {
+                return Task.FromResult<CronScheduleAdvanceResult?>(null);
+            }
+
+            // Copy-on-write, matching every other definition transition in this provider: a reader holding the prior
+            // instance keeps a coherent snapshot instead of observing a half-updated position.
+            var updated = _CloneCronJob(current);
+            updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
+            updated.NextDueUtc = advance.NextDueUtc;
+            _cronJobs[advance.CronJobId] = updated;
+
+            // Read back off the stored instance rather than echoing the request, so this provider's result is
+            // indistinguishable in shape and origin from the relational read-back.
+            return Task.FromResult<CronScheduleAdvanceResult?>(
+                new CronScheduleAdvanceResult
+                {
+                    ReconciledThroughUtc = updated.ReconciledThroughUtc,
+                    NextDueUtc = updated.NextDueUtc,
+                    StoreUtcNow = storeUtcNow,
+                }
+            );
+        }
+    }
+
+    public Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var advance = materialization.Advance;
+
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ReconciledThroughUtc,
+            "The occurrence instant must equal the schedule position's reconciled-through instant.",
+            nameof(materialization)
+        );
+
+        lock (_GetCronDefinitionLock(advance.CronJobId))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (
+                !_cronJobs.TryGetValue(advance.CronJobId, out var current)
+                || current.IsPaused
+                || current.ScheduleRevision != advance.ExpectedScheduleRevision
+                || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+                || current.NextDueUtc != materialization.ExecutionTimeUtc
+            )
+            {
+                return Task.FromResult(
+                    new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence }
+                );
+            }
+
+            var storeUtcNow = _timeProvider.GetUtcNow();
+            if (current.NextDueUtc > storeUtcNow.UtcDateTime)
+            {
+                return Task.FromResult(
+                    new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue }
+                );
+            }
+
+            var occurrence = _cronOccurrences
+                .Values.Where(x =>
+                    x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc
+                )
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
+                .FirstOrDefault();
+            var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
+
+            if (occurrence is null)
+            {
+                do
+                {
+                    occurrence = new CronJobOccurrenceEntity<TCronJob>
+                    {
+                        Id = _guidGenerator.Create(),
+                        CronJobId = current.Id,
+                        CronJob = current,
+                        ExecutionTime = materialization.ExecutionTimeUtc,
+                        Status = JobStatus.Idle,
+                        OwnerId = null,
+                        LockedUntil = null,
+                        OnNodeDeath = current.OnNodeDeath,
+                        CreatedAt = storeUtcNow,
+                        UpdatedAt = storeUtcNow,
+                    };
+                } while (!_cronOccurrences.TryAdd(occurrence.Id, occurrence));
+
+                outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+            }
+            else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+            {
+                outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+            }
+
+            // No cancellation or fallible work is allowed between publishing the durable outcome and advancing the
+            // position. The per-definition lock is this provider's single-process transaction boundary.
+            var updated = _CloneCronJob(current);
+            updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
+            updated.NextDueUtc = advance.NextDueUtc;
+            _cronJobs[advance.CronJobId] = updated;
+
+            return Task.FromResult(
+                new CronScheduleMaterializationResult
+                {
+                    Outcome = outcome,
+                    SchedulePosition = new CronScheduleAdvanceResult
+                    {
+                        ReconciledThroughUtc = updated.ReconciledThroughUtc,
+                        NextDueUtc = updated.NextDueUtc,
+                        StoreUtcNow = storeUtcNow.UtcDateTime,
+                    },
+                    OccurrenceId = occurrence.Id,
+                    OccurrenceCreatedAt = occurrence.CreatedAt,
+                    OnNodeDeath = current.OnNodeDeath,
+                }
+            );
+        }
     }
 
     public Task<TCronJob?> PauseCronJobAsync(
@@ -1520,6 +1716,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updated.IsPaused = false;
             updated.ScheduleRevision++;
             updated.UpdatedAt = operationTimeUtc;
+            // R10: the position moves with the pause state and revision, so a resumed definition never carries a
+            // pre-pause watermark that would read as a backlog spanning the whole pause.
+            updated.ReconciledThroughUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            updated.NextDueUtc = nextOccurrence.ExecutionTime;
 
             var replacement = _CloneCronOccurrence(nextOccurrence);
             replacement.CronJob = updated;
@@ -1586,6 +1786,20 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 definition.ScheduleRevision = changed ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
                 definition.UpdatedAt = operationTimeUtc;
+
+                // R10: rebase the position on a schedule-changing edit so the old expression's projection cannot
+                // survive it; a metadata-only edit leaves the position exactly where it was. Carried explicitly
+                // because the caller's definition instance does not own these fields.
+                if (changed && update.NextOccurrence is not null)
+                {
+                    definition.ReconciledThroughUtc = _timeProvider.GetUtcNow().UtcDateTime;
+                    definition.NextDueUtc = update.NextOccurrence.ExecutionTime;
+                }
+                else
+                {
+                    definition.ReconciledThroughUtc = current.ReconciledThroughUtc;
+                    definition.NextDueUtc = current.NextDueUtc;
+                }
 
                 CronJobOccurrenceEntity<TCronJob>? replacement = null;
                 if (changed && !current.IsPaused)
@@ -1802,12 +2016,35 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     continue;
                 }
 
+                // R7/AE10: with no reuse row carried, ANY row already at this instant — including a terminal one
+                // the live filter above ignores — means the instant is accounted for and the advance stands;
+                // materializing again would run the tick twice. Mirrors the relational claim path's
+                // occupied-instant guard.
+                if (
+                    context.NextCronOccurrence is null
+                    && _cronOccurrences.Values.Any(x =>
+                        x.CronJobId == context.Id && x.ExecutionTime == cronJobOccurrences.Key
+                    )
+                )
+                {
+                    continue;
+                }
+
                 // Each cron occurrence should have a unique ID
                 var occurrenceId = context.NextCronOccurrence?.Id ?? _guidGenerator.Create();
 
                 // Check if this specific occurrence already exists
                 if (_cronOccurrences.TryGetValue(occurrenceId, out var existingOccurrence))
                 {
+                    if (
+                        existingOccurrence.CronJobId != context.Id
+                        || existingOccurrence.ExecutionTime != cronJobOccurrences.Key
+                        || !_CanAcquireCronOccurrence(existingOccurrence)
+                    )
+                    {
+                        continue;
+                    }
+
                     // Update existing occurrence (should be rare - only if re-queuing)
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
                     updatedOccurrence.OwnerId = _ownerId;

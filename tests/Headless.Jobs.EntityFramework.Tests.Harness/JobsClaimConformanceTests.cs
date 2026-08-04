@@ -117,8 +117,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             gate.SetResult();
             var claims = await Task.WhenAll(firstClaim, secondClaim);
 
-            claims.Should().OnlyContain(x => x.Length > 0);
-            var claimedOccurrences = claims.SelectMany(x => x).ToArray();
+            claims.Should().Contain(x => x.Length > 0);
+            var initiallyClaimedIds = claims.SelectMany(x => x).Select(x => x.Id).ToHashSet();
+            var followUp = await first.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+            var claimedOccurrences = claims.SelectMany(x => x).Concat(followUp).ToArray();
             claimedOccurrences.Should().OnlyHaveUniqueItems(x => x.Id);
             claimedOccurrences.Should().HaveCount(101);
         }

@@ -455,6 +455,9 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
+    public string UtcNowOffsetSqlExpression(int seconds) =>
+        FormattableString.Invariant($"DATEADD(second, {seconds}, SYSUTCDATETIME())");
+
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 
     public string ResetSql => string.Empty;

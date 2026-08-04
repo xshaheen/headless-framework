@@ -465,6 +465,23 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (item.NextCronOccurrence is null)
             {
+                // R7/AE10: any row already at this instant — including a terminal one the reuse pairing cannot
+                // see (its read is filtered to claimable rows) — means the instant is accounted for and the
+                // advance stands. The filtered unique index blocks duplicates only among live rows, so without
+                // this check a completed resume-created occurrence would be re-materialized and the tick would
+                // run twice. A live row left unclaimed here is picked up by the fallback sweep; nothing is
+                // disturbed either way.
+                var instantOccupied = await context
+                    .AsNoTracking()
+                    .Where(x => x.CronJobId == item.Id && x.ExecutionTime == executionTime)
+                    .AnyAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (instantOccupied)
+                {
+                    continue;
+                }
+
                 var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
                 {
                     Id = guidGenerator.Create(),
