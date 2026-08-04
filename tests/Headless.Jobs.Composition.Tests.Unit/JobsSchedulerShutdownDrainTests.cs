@@ -40,7 +40,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             JobPriority.Normal,
             AbortToken
         );
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         var stop = service.StopAsync(CancellationToken.None);
 
@@ -140,7 +140,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         var applicationStopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var stoppingRegistration = host
+        await using var stoppingRegistration = host
             .Services.GetRequiredService<IHostApplicationLifetime>()
             .ApplicationStopping.Register(() => applicationStopping.TrySetResult());
         var stop = host.StopAsync(AbortToken);

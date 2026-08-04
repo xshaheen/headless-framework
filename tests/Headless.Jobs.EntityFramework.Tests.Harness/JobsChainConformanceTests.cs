@@ -461,7 +461,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             (await persistence.ReclaimStalledTimeJobsAsync(ct))
                 .Should()
-                .BeGreaterThan(0, "the stalled-lease sweep must reclaim the dead owner's running root");
+                .BePositive("the stalled-lease sweep must reclaim the dead owner's running root");
 
             var rootRow = await _ReadNodeAsync(rootId, ct);
             rootRow.Status.Should().Be(JobStatus.Idle);
@@ -1463,7 +1463,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             connection,
             $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
                 + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;",
-            ("@status", JobStatus.InProgress.ToString()),
+            ("@status", nameof(JobStatus.InProgress)),
             ("@ownerId", ownerId),
             ("@lockedUntil", lockedUntil),
             ("@updatedAt", DateTime.UtcNow),
@@ -1480,7 +1480,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         command.CommandText =
             $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
             + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @lockedUntil WHERE \"Id\" = @id;";
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", JobStatus.InProgress.ToString());
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", nameof(JobStatus.InProgress));
         JobsCoordinationFixtureExtensions.AddParameter(command, "@ownerId", ownerId);
         JobsCoordinationFixtureExtensions.AddParameter(command, "@lockedUntil", DateTime.UtcNow.AddMinutes(-5));
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);

@@ -299,10 +299,11 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     {
         var storage = Substitute.For<IBlobStorage>();
         var exactLimitXml = _CreateXmlWithByteLength(BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes);
-        var blobCount =
-            BlobStorageDataProtectionXmlRepository.MaxAggregateXmlBytes
+        const int blobCount =
+            (
+                BlobStorageDataProtectionXmlRepository.MaxAggregateXmlBytes
                 / BlobStorageDataProtectionXmlRepository.MaxXmlBlobSizeBytes
-            + 1;
+            ) + 1;
         var blobs = Enumerable.Range(0, blobCount).Select(index => _CreateBlobInfo($"key-{index}.xml")).ToArray();
         _SetupStorageWithBlobs(storage, blobs);
         storage

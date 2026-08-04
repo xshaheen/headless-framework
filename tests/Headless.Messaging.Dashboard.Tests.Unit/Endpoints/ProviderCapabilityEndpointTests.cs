@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;

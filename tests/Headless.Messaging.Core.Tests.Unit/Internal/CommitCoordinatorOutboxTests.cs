@@ -9,7 +9,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -22,7 +21,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task should_buffer_message_and_only_signal_committed_dispatch_after_commit()
     {
-        using var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -56,7 +55,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                     return ValueTask.FromResult(mediumMessage);
                 });
 
-            var dispatcher = new RecordingCommittedDispatcher();
+            await using var dispatcher = new RecordingCommittedDispatcher();
             var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
             var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
             var decision = DeliveryDecisionResolver.Resolve(
@@ -115,7 +114,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                     Arg.Any<DbTransaction?>(),
                     Arg.Any<CancellationToken>()
                 );
+#pragma warning disable xUnit1051 // The default token is part of the verified call shape; substituting the test token would change the assertion.
             _ = dispatcher.DidNotReceiveWithAnyArgs().EnqueueToPublish(default!, default);
+#pragma warning restore xUnit1051
         }
     }
 
@@ -123,7 +124,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task should_signal_delayed_message_after_commit_without_scheduler_io()
     {
         var coordinator = new CommitCoordinator();
-        var dispatcher = new RecordingCommittedDispatcher();
+        await using var dispatcher = new RecordingCommittedDispatcher();
         var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
         var message = _BuildMessage();
         message.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
@@ -148,7 +149,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(stored);
-        var dispatcher = new RecordingCommittedDispatcher();
+        await using var dispatcher = new RecordingCommittedDispatcher();
         var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
@@ -168,7 +169,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task coordinated_delay_should_store_schedule_state_atomically_and_signal_after_commit()
     {
-        using var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
@@ -192,7 +193,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(stored);
-            var dispatcher = new RecordingCommittedDispatcher();
+            await using var dispatcher = new RecordingCommittedDispatcher();
             var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
             var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
             var decision = DeliveryDecisionResolver.Resolve(

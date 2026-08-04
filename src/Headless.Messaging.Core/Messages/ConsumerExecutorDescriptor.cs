@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Messaging.Internal;
 
 namespace Headless.Messaging.Messages;
 

@@ -104,10 +104,12 @@ public static class JobsHelper
         Span<byte> compressedBytes;
         using (var memoryStream = new MemoryStream())
         {
+#pragma warning disable MA0045 // This synchronous serialization API must finish compression before returning its byte array.
             using (var stream = new GZipStream(memoryStream, CompressionMode.Compress, leaveOpen: true))
             {
                 stream.Write(serialized);
             }
+#pragma warning restore MA0045
 
             compressedBytes = memoryStream.GetBuffer().AsSpan()[..(int)memoryStream.Length];
         }
@@ -191,7 +193,8 @@ public static class JobsHelper
             if (expandedStream.Length > maxDecompressedBytes - read)
             {
                 throw new InvalidDataException(
-                    FormattableString.Invariant(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
                         $"The decompressed job request exceeds the configured {maxDecompressedBytes} byte limit."
                     )
                 );

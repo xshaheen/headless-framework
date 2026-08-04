@@ -546,7 +546,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     {
         return failure switch
         {
-            "argument" => new ArgumentException("Invalid configuration"),
+            "argument" => new ArgumentException("Invalid configuration", nameof(failure)),
             "not-supported" => new NotSupportedException("Unsupported configuration"),
             "operation-cancelled" => new OperationCanceledException("Initialization cancelled"),
             _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, message: null),

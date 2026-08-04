@@ -53,8 +53,10 @@ public sealed class JobChainBuilder
         if (depth > JobChain.MaxStructuralDepth)
         {
             throw new InvalidOperationException(
-                $"The chain has a depth of {depth} nodes, which exceeds the maximum structural depth of "
-                    + $"{JobChain.MaxStructuralDepth} nodes (on-success and on-failure edges both count toward depth)."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The chain has a depth of {depth} nodes, which exceeds the maximum structural depth of {JobChain.MaxStructuralDepth} nodes (on-success and on-failure edges both count toward depth)."
+                )
             );
         }
 

@@ -2,18 +2,10 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Abstractions;
-using Headless.Coordination;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
-using Headless.Messaging.Persistence;
-using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 #pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.SqlServer;

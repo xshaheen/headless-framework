@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
 

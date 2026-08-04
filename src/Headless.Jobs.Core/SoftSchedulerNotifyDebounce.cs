@@ -2,17 +2,11 @@
 
 namespace Headless.Jobs;
 
-internal sealed class SoftSchedulerNotifyDebounce : IDisposable
+internal sealed class SoftSchedulerNotifyDebounce(Action<string> notifyCoreAction) : IDisposable
 {
-    private readonly Action<string> _notifyCoreAction;
     private int _latest;
     private int _lastNotified = -1;
     private int _disposed;
-
-    public SoftSchedulerNotifyDebounce(Action<string> notifyCoreAction)
-    {
-        _notifyCoreAction = notifyCoreAction;
-    }
 
     /// <summary>
     /// Sends notifications in a thread-safe way and suppresses duplicates.
@@ -56,7 +50,7 @@ internal sealed class SoftSchedulerNotifyDebounce : IDisposable
 
         Volatile.Write(ref _lastNotified, latest);
 
-        _notifyCoreAction?.Invoke(latest.ToString(CultureInfo.InvariantCulture));
+        notifyCoreAction?.Invoke(latest.ToString(CultureInfo.InvariantCulture));
     }
 
     public void Dispose()

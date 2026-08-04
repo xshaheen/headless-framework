@@ -21,7 +21,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var context = _CreateHttpContext();
         // No cookie set
 
-        var agent = _CreateAgent(context);
+        using var agent = _CreateAgent(context);
 
         // when
         var result = await agent.Invoke(context);
@@ -37,7 +37,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var context = _CreateHttpContext();
         context.Request.Headers.Cookie = $"{GatewayProxyAgent.CookieNodeName}=";
 
-        var agent = _CreateAgent(context);
+        using var agent = _CreateAgent(context);
 
         // when
         var result = await agent.Invoke(context);
@@ -73,7 +73,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         using var httpClient = new HttpClient(httpMessageHandler);
         httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
 
-        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
+        using var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
 
         // when
         var result = await agent.Invoke(context);
@@ -94,7 +94,7 @@ public sealed class GatewayProxyAgentTests : TestBase
             .GetNodeAsync("unknown-node", null, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Node?>(null));
 
-        var agent = _CreateAgent(context, discoveryProvider);
+        using var agent = _CreateAgent(context, discoveryProvider);
 
         // when
         var result = await agent.Invoke(context);
@@ -134,7 +134,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         using var httpClient = new HttpClient(httpMessageHandler);
         httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
 
-        var agent = _CreateAgent(firstContext, discoveryProvider, httpClientFactory);
+        using var agent = _CreateAgent(firstContext, discoveryProvider, httpClientFactory);
 
         // when
         var firstResult = await agent.Invoke(firstContext);
@@ -156,7 +156,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
 
         // Configure consul options with current node name matching the cookie
-        var agent = _CreateAgent(context, discoveryProvider, nodeName: "current-node");
+        using var agent = _CreateAgent(context, discoveryProvider, nodeName: "current-node");
 
         // when
         var result = await agent.Invoke(context);
@@ -191,7 +191,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         using var httpClient = new HttpClient(httpMessageHandler);
         httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
 
-        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
+        using var agent = _CreateAgent(context, discoveryProvider, httpClientFactory);
 
         // when
         var result = await agent.Invoke(context);
@@ -226,7 +226,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         using var httpClient = new HttpClient(handler);
         httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
-        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, useK8s: true);
+        using var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, useK8s: true);
 
         // when
         var result = await agent.Invoke(context);
@@ -249,7 +249,7 @@ public sealed class GatewayProxyAgentTests : TestBase
             .GetNodeAsync("node1", "team-b", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Node?>(null));
         var requestMapper = Substitute.For<IRequestMapper>();
-        var agent = _CreateAgent(context, discoveryProvider, useK8s: true, requestMapper: requestMapper);
+        using var agent = _CreateAgent(context, discoveryProvider, useK8s: true, requestMapper: requestMapper);
 
         // when
         var result = await agent.Invoke(context);
@@ -276,7 +276,7 @@ public sealed class GatewayProxyAgentTests : TestBase
             .Returns(Task.FromResult<Node?>(null));
         var requestMapper = Substitute.For<IRequestMapper>();
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var agent = _CreateAgent(
+        using var agent = _CreateAgent(
             context,
             discoveryProvider,
             httpClientFactory,
@@ -318,10 +318,12 @@ public sealed class GatewayProxyAgentTests : TestBase
             .Map(Arg.Any<HttpRequest>())
             .Returns(
                 Task.FromResult(
+#pragma warning disable CA2000 // GatewayProxyAgent owns the mapped request and disposes it after forwarding completes.
                     new HttpRequestMessage(HttpMethod.Get, "http://example.com")
                     {
                         Headers = { Authorization = new AuthenticationHeaderValue("Bearer", "dashboard-token") },
                     }
+#pragma warning restore CA2000
                 )
             );
 
@@ -331,7 +333,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         using var httpClient = new HttpClient(handler);
         httpClientFactory.CreateClient("GatewayProxy").Returns(httpClient);
-        var agent = _CreateAgent(
+        using var agent = _CreateAgent(
             context,
             discoveryProvider,
             httpClientFactory,
@@ -363,7 +365,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         requestMapper
             .Map(Arg.Any<HttpRequest>())
             .Returns(Task.FromException<HttpRequestMessage>(new HttpRequestException("stop after discovery")));
-        var agent = _CreateAgent(firstContext, discoveryProvider, useK8s: true, requestMapper: requestMapper);
+        using var agent = _CreateAgent(firstContext, discoveryProvider, useK8s: true, requestMapper: requestMapper);
 
         var first = agent.Invoke(firstContext);
         var second = agent.Invoke(secondContext);
@@ -398,7 +400,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         GatewayProxyAgent.CookieNodeNsName.Should().Be("messaging.node.ns");
     }
 
-    private GatewayProxyAgent _CreateAgent(
+    private GatewayProxyAgentHarness _CreateAgent(
         HttpContext context,
         INodeDiscoveryProvider? discoveryProvider = null,
         IHttpClientFactory? httpClientFactory = null,
@@ -441,15 +443,31 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         var cache = sp.GetRequiredService<MessagingDashboardCache>();
         var keyedLock = sp.GetRequiredService<KeyedAsyncLock>();
-        return new GatewayProxyAgent(
-            LoggerFactory,
-            requestMapper,
-            httpClientFactory,
-            cache,
-            sp,
-            discoveryProvider,
-            keyedLock
+        return new GatewayProxyAgentHarness(
+#pragma warning disable CA2000 // GatewayProxyAgentHarness owns the agent and disposes it before the test service provider.
+            new GatewayProxyAgent(
+                LoggerFactory,
+                requestMapper,
+                httpClientFactory,
+                cache,
+                sp,
+                discoveryProvider,
+                keyedLock
+            ),
+#pragma warning restore CA2000
+            sp
         );
+    }
+
+    private sealed class GatewayProxyAgentHarness(GatewayProxyAgent agent, ServiceProvider services) : IDisposable
+    {
+        public Task<bool> Invoke(HttpContext context) => agent.Invoke(context);
+
+        public void Dispose()
+        {
+            agent.Dispose();
+            services.Dispose();
+        }
     }
 
     private sealed class MockHttpMessageHandler : HttpMessageHandler

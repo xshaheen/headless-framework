@@ -159,7 +159,9 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
     {
         // given
         var creations = 0;
+#pragma warning disable CA2000 // Disposal is the behavior under test; await using would add a second disposal and change the assertion path.
         var pool = _CreatePool(_CreateClientSubstitute(), () => Interlocked.Increment(ref creations));
+#pragma warning restore CA2000
 
         // when
         var act = async () => await pool.DisposeAsync();
@@ -246,7 +248,9 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         var badSender = Substitute.For<ServiceBusSender>();
         badSender.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("close failed")));
         client.CreateSender("orders").Returns(badSender);
+#pragma warning disable CA2000 // The expected disposal failure is asserted below; await using would invoke a second, unrelated disposal.
         var pool = _CreatePool(client, () => 0);
+#pragma warning restore CA2000
         _ = pool.GetSender("orders");
 
         // when
@@ -270,7 +274,9 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         badSender.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("sender close failed")));
         client.CreateSender("orders").Returns(badSender);
         client.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("client close failed")));
+#pragma warning disable CA2000 // Both expected disposal failures are asserted below; await using would invoke another faulting disposal.
         var pool = _CreatePool(client, () => 0);
+#pragma warning restore CA2000
         _ = pool.GetSender("orders");
 
         // when
@@ -307,16 +313,20 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         var releaseFactory = new TaskCompletionSource();
         var client = _CreateClientSubstitute();
 
+#pragma warning disable CA2000 // This test races explicit disposal against creation; await using would add a second disposal after the race.
         var pool = new AzureServiceBusClientPool(
             NullLogger<AzureServiceBusClientPool>.Instance,
             _Options,
             _ =>
             {
                 factoryEntered.SetResult();
+#pragma warning disable MA0045 // The client factory contract is synchronous; blocking here creates the controlled race this test verifies.
                 releaseFactory.Task.Wait(AbortToken);
+#pragma warning restore MA0045
                 return client;
             }
         );
+#pragma warning restore CA2000
 
         var getSenderTask = Task.Run(() => pool.GetSender("orders"), AbortToken);
         await factoryEntered.Task;
@@ -347,7 +357,9 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
             .Returns(_ =>
             {
                 createEntered.SetResult();
+#pragma warning disable MA0045 // ServiceBusClient.CreateSender is synchronous; blocking here creates the in-flight disposal race under test.
                 releaseCreate.Task.Wait(AbortToken);
+#pragma warning restore MA0045
                 return lateSender;
             });
 

@@ -159,7 +159,7 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
             JobPriority.Normal,
             AbortToken
         );
-        await faulted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await faulted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!logger.HasError)

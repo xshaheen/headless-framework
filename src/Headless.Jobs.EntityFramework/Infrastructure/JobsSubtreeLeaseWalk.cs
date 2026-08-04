@@ -4,6 +4,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Microsoft.EntityFrameworkCore;
 
+#pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
 /// <summary>

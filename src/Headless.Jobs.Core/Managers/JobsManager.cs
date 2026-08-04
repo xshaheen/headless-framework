@@ -573,7 +573,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (retries < 0)
         {
             throw new JobValidatorException(
-                FormattableString.Invariant($"Retries must be >= 0 for function '{function}' but was {retries}.")
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Retries must be >= 0 for function '{function}' but was {retries}."
+                )
             );
         }
     }
@@ -589,7 +592,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             if (job.Retries < 0)
             {
                 errors.Add(
-                    FormattableString.Invariant(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
                         $"Retries must be >= 0 for function '{job.Function}' but was {job.Retries}."
                     )
                 );

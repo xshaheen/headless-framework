@@ -2,8 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Data;
-using System.Globalization;
-using System.Text;
 using Headless.Abstractions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;

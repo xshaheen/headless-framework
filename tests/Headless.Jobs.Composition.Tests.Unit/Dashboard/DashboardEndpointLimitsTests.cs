@@ -34,7 +34,7 @@ public sealed class DashboardEndpointLimitsTests : TestBase
     public async Task should_return_payload_too_large_before_reading_declared_oversize_body()
     {
         var context = new DefaultHttpContext();
-        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream("{}"u8.ToArray());
@@ -56,7 +56,7 @@ public sealed class DashboardEndpointLimitsTests : TestBase
         body[1] = (byte)'}';
 
         var context = new DefaultHttpContext();
-        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream(body);
@@ -72,7 +72,7 @@ public sealed class DashboardEndpointLimitsTests : TestBase
     public async Task should_return_bad_request_for_malformed_json()
     {
         var context = new DefaultHttpContext();
-        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
         context.Request.Body = new MemoryStream("{"u8.ToArray());

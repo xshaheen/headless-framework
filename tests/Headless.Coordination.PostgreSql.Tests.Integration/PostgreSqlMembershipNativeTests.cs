@@ -86,8 +86,8 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
             """,
             connection
         );
-        command.Parameters.AddWithValue("updatedAt", updatedAt);
-        command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
+        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
 
         columns.Should().Contain("created_at");
         columns.Should().Contain("updated_at");
@@ -376,8 +376,8 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
             """,
             connection
         );
-        command.Parameters.AddWithValue("updatedAt", updatedAt);
-        command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
+        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

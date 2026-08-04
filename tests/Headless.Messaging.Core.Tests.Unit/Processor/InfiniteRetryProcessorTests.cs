@@ -15,7 +15,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await using var provider = new ServiceCollection().BuildServiceProvider();
         using var cancellation = new CancellationTokenSource();
         var timeProvider = new ControlledTimeProvider();
-        using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
+        await using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
         var inner = new SequenceProcessor(
             _ => Task.FromException(new InvalidOperationException("first failure")),
             _ => Task.FromException(new InvalidOperationException("second failure")),
@@ -58,7 +58,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await using var provider = new ServiceCollection().BuildServiceProvider();
         using var cancellation = new CancellationTokenSource();
         var timeProvider = new ControlledTimeProvider();
-        using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
+        await using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
         var inner = new SequenceProcessor(
             _ => Task.FromException(new InvalidOperationException("first failure")),
             _ => Task.CompletedTask,
@@ -98,7 +98,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await using var provider = new ServiceCollection().BuildServiceProvider();
         using var cancellation = new CancellationTokenSource();
         var timeProvider = new ControlledTimeProvider();
-        using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
+        await using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
         var inner = new SequenceProcessor(async _ =>
         {
             await cancellation.CancelAsync();

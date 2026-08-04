@@ -20,7 +20,9 @@ internal static class RoslynExtensions
     {
         var syntaxReference = self.ApplicationSyntaxReference;
 
+#pragma warning disable MA0045 // Generator discovery is a synchronous callback pipeline and the referenced syntax is already materialized by Roslyn.
         var syntax = (AttributeSyntax?)syntaxReference?.GetSyntax();
+#pragma warning restore MA0045
 
         return syntax?.GetLocation();
     }
@@ -55,6 +57,7 @@ internal static class RoslynExtensions
 
         foreach (var syntax in declaringSyntaxReferences)
         {
+#pragma warning disable MA0045 // This synchronous generator helper feeds out-parameter APIs; making it async would force blocking at every caller.
             if (
                 syntax.GetSyntax() is TypeDeclarationSyntax classDeclaration
                 && string.Equals(classDeclaration.GetClassFullName(), self.ToString(), StringComparison.Ordinal)
@@ -65,6 +68,7 @@ internal static class RoslynExtensions
                 result ??= [];
                 result.AddRange(constructors);
             }
+#pragma warning restore MA0045
         }
 
         return result;

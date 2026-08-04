@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

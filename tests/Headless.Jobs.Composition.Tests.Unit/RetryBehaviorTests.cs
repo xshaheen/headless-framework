@@ -678,7 +678,7 @@ public sealed class RetryBehaviorTests : TestBase
         var fail = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         context.CachedDelegate = async (_, _, token) =>
         {
-            using var registration = token.Register(() => cancellationObserved.TrySetResult());
+            await using var registration = token.Register(() => cancellationObserved.TrySetResult());
             started.TrySetResult();
             await fail.Task;
             throw new InvalidOperationException("natural failure after cancellation request");

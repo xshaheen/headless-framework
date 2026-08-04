@@ -2,7 +2,6 @@
 
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 
 namespace Headless.Jobs.GeneratedDiscoveryFixture;
 
@@ -14,8 +13,12 @@ public sealed class DiscoveryJobs
 
     [JobFunction(FunctionName, "%Jobs:Discovery:Cron%", JobPriority.High, 2)]
     [JobScheduleMiddleware<DiscoveryScheduleMiddleware>]
-    public static Task RunAsync(JobFunctionContext<DiscoveryRequest> context, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+#pragma warning disable IDE0060 // The discovery generator requires the full job-function signature even when this fixture does no work.
+    public static Task RunAsync(JobFunctionContext<DiscoveryRequest> context, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+#pragma warning restore IDE0060
 }
 
 public sealed class DiscoveryScheduleMiddleware : IJobScheduleMiddleware

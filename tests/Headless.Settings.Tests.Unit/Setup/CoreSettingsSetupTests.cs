@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless;
-using Headless.Abstractions;
 using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;

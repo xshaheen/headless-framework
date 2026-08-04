@@ -37,7 +37,9 @@ internal static class DeliveryMetadata
         var hasMetadata =
             headers.ContainsKey(Headers.RequestedDeliveryMode) || headers.ContainsKey(Headers.ResolvedDeliveryMode);
 
-        return hasMetadata ? Read(headers) : new(null, DeliveryMode.Durable);
+        return hasMetadata
+            ? Read(headers)
+            : new(RequestedDeliveryMode: null, ResolvedDeliveryMode: DeliveryMode.Durable);
     }
 
     internal static DeliveryMetadataValues ReadStoredEnvelope(ISerializer serializer, string? content)

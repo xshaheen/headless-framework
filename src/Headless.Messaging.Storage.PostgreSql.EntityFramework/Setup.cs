@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Messaging.Storage.PostgreSql.EntityFramework;

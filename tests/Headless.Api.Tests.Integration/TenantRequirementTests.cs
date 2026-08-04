@@ -347,7 +347,9 @@ public sealed class TenantRequirementTests : TestBase
 
     private async Task _AssertTenantRequiredProblemDetailsAsync(HttpResponseMessage response)
     {
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType.MediaType.Should().Be("application/problem+json");
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

@@ -90,7 +90,7 @@ public sealed class EnsureTests
     public void should_use_captured_expression_as_object_name_when_not_disposed_with_null_value()
     {
         // given
-        var isShutDown = true;
+        const bool isShutDown = true;
 
         // when
         var action = () => Ensure.NotDisposed(isShutDown, disposedValue: null);

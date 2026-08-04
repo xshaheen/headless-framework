@@ -24,7 +24,7 @@ public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.Defa
         // Transient schedule-time authorization flag (KTD2): never a column.
         builder.Ignore(x => x.IsSystemJob);
 
-        builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(false);
+        builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(value: false);
 
         // Persist enums by name (not ordinal) so the stored value is stable and self-describing, and reordering
         // an enum never silently remaps existing rows. Matches Headless.Messaging's StatusName-as-string storage.

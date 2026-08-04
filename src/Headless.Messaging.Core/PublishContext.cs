@@ -185,13 +185,12 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             content?.GetType() ?? typeof(TMessage),
             lane,
             options,
-            _CreateLegacyDecision(lane, options, delayTime, isTransactional),
+            _CreateLegacyDecision(options, delayTime, isTransactional),
             deliveryFrozen: false,
             cancellationToken
         ) { }
 
     private static DeliveryDecision _CreateLegacyDecision(
-        MessageLane lane,
         MessageOptions? options,
         TimeSpan? delayTime,
         bool isTransactional

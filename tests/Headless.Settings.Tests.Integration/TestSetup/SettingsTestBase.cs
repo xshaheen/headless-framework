@@ -1,4 +1,3 @@
-using Headless;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;

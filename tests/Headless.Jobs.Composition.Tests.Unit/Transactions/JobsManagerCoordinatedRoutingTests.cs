@@ -70,7 +70,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             Children = [acquiredChild],
         };
         sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { acquired });
+            .Returns([acquired]);
         JobExecutionState[]? dispatched = null;
         sut.Dispatcher.DispatchAsync(
                 Arg.Do<JobExecutionState[]>(states => dispatched = states),

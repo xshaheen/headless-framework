@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 
 #pragma warning disable IL2026, IL3050

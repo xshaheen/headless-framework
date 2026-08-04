@@ -51,6 +51,8 @@ public sealed class MessagingEnumCompatibilityTests
     [Fact]
     public void should_keep_transport_log_type_numeric_contract_stable()
     {
+#pragma warning disable MA0078 // Cast<int>() cannot perform the required enum-to-underlying-value conversion and throws at runtime.
         Enum.GetValues<MqLogType>().Select(static value => (int)value).Should().Equal(Enumerable.Range(0, 14));
+#pragma warning restore MA0078
     }
 }

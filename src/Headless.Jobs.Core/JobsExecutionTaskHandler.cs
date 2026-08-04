@@ -454,10 +454,14 @@ internal sealed class JobsExecutionTaskHandler
                 }
 
                 var exhaustedByRecovery = new InvalidOperationException(
-                    FormattableString.Invariant(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
                         $"Retry budget exhausted by crash recovery: the persisted attempt count ({context.RetryCount}) "
                     )
-                        + FormattableString.Invariant($"exceeds the retry budget ({crashRecoveryBudget}); the ")
+                        + string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"exceeds the retry budget ({crashRecoveryBudget}); the "
+                        )
                         + "interrupted attempts were consumed by lease-lapse/node-death reclaims and the handler "
                         + "was not invoked again."
                 );

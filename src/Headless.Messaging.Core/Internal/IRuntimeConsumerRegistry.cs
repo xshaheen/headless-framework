@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.Checks;

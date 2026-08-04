@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Interfaces;
 using Headless.Testing.Tests;

@@ -20,7 +20,7 @@ public delegate ValueTask AsyncEventHandler<in TEvent>(
 /// <summary>Represents an asynchronous event that can have multiple handlers.</summary>
 /// <typeparam name="TEvent">The type of event arguments.</typeparam>
 /// <remarks>
-/// Unlike a delegate <c>event</c>, this invokes its handlers asynchronously (each may return a <see cref="ValueTask"/>),
+/// Unlike a delegate <see langword="event"/>, this invokes its handlers asynchronously (each may return a <see cref="ValueTask"/>),
 /// optionally in parallel, and supports both asynchronous and synchronous handlers. Subscriptions are identified by the
 /// returned <see cref="IDisposable"/> (registration identity), so the same delegate can be added more than once and each
 /// registration removed independently. It also implements <see cref="IObservable{T}"/>.
@@ -106,8 +106,10 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     // dispatcher store heterogeneous event types in one FIFO.
     internal object CaptureHandlerSnapshot() => _handlers;
 
+#pragma warning disable RCS1158 // The opaque snapshot contains the closed generic Subscription type, so the cast must stay on AsyncEvent<TEvent>.
     internal static bool IsEmptyHandlerSnapshot(object handlerSnapshot) =>
         ((Subscription[])handlerSnapshot).Length == 0;
+#pragma warning restore RCS1158
 
     internal static ValueTask SafeInvokeHandlerSnapshotAsync(
         object handlerSnapshot,
@@ -326,7 +328,7 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
 
         public void Dispose()
         {
-            Interlocked.Exchange(ref _owner, null)?._Remove(this);
+            Interlocked.Exchange(ref _owner, value: null)?._Remove(this);
         }
     }
 }

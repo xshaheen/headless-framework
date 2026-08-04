@@ -2,7 +2,6 @@
 
 using Headless.Payments.Paymob.CashIn;
 using Headless.Payments.Paymob.CashIn.Models.Auth;
-using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;

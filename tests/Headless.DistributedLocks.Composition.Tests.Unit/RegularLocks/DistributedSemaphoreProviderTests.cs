@@ -193,7 +193,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         for (var i = 0; i < 10 && !slot.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await DistributedLockTestSupport.DrainUntilAsync(() => slot.LostToken.IsCancellationRequested);
+            await DistributedLockTestSupport.DrainUntilAsync(() => slot.LostToken.IsCancellationRequested, AbortToken);
         }
 
         // then

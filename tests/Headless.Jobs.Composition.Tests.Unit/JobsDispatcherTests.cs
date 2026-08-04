@@ -52,10 +52,13 @@ public sealed class JobsDispatcherTests : TestBase
         callerCts.Dispose();
         release.TrySetResult();
 
-        var observedCancellation = await completed.Task.WaitAsync(_waitBudget);
+        var observedCancellation = await completed.Task.WaitAsync(_waitBudget, AbortToken);
         observedCancellation
             .Should()
             .BeFalse("a job the store says is running must not follow the enqueuer's lifetime");
+        (await taskScheduler.WaitForRunningTasksAsync(_waitBudget))
+            .Should()
+            .BeTrue("the completion update must finish before it is asserted");
         await manager.Received().UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
@@ -93,11 +96,11 @@ public sealed class JobsDispatcherTests : TestBase
         );
 
         await dispatcher.DispatchAsync([context], AbortToken);
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         await taskScheduler.CancelExecutionsAsync();
 
-        var observedCancellation = await observed.Task.WaitAsync(_waitBudget);
+        var observedCancellation = await observed.Task.WaitAsync(_waitBudget, AbortToken);
         observedCancellation.Should().BeTrue("scheduler shutdown must still reach immediate-dispatch jobs");
     }
 

@@ -164,7 +164,7 @@ public sealed class InMemoryCacheEventTests : TestBase
         var cache = _CreateCache();
         await cache.UpsertAsync("a", "1", TimeSpan.FromMinutes(5), AbortToken);
         var flushed = false;
-        var evictionFired = false;
+        const bool evictionFired = false;
         using var _1 = cache.Events.Set.AddHandler(_ => { });
         using var _2 = cache.Events.Flush.AddHandler(_ => flushed = true);
         // no cache.Events.Eviction subscription

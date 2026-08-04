@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Settings;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 

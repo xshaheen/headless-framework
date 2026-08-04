@@ -64,6 +64,11 @@ internal readonly record struct DeliveryCoordination
             throw new ArgumentOutOfRangeException(nameof(mismatch), mismatch, "A defined mismatch reason is required.");
         }
 
-        return new DeliveryCoordination(DeliveryCoordinationStatus.Incompatible, mismatch, null, null);
+        return new DeliveryCoordination(
+            DeliveryCoordinationStatus.Incompatible,
+            mismatch,
+            coordinator: null,
+            transaction: null
+        );
     }
 }

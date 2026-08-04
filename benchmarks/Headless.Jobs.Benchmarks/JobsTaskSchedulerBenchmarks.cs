@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 

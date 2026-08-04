@@ -56,7 +56,7 @@ public sealed class HeadlessAuditPolicyExtensionsTests : TestBase
     {
         // given
         var modelBuilder = new ModelBuilder();
-        var property = modelBuilder.Entity(typeof(IncludedEntity)).Property(nameof(IncludedEntity.Sensitive));
+        var property = modelBuilder.Entity<IncludedEntity>().Property(nameof(IncludedEntity.Sensitive));
 
         // when
         var act = () => property.IsAuditSensitive((SensitiveDataStrategy)999);

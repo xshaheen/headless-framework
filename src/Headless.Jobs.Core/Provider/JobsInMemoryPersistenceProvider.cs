@@ -193,9 +193,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // rebuilds the returned tree strictly from this set.
         var claimed = new HashSet<Guid> { rootId };
         var frontier = new List<Guid> { rootId };
-        var depth = 1;
 
-        while (frontier.Count != 0 && depth < _maxChainDepth)
+        for (var depth = 1; frontier.Count != 0 && depth < _maxChainDepth; depth++)
         {
             var next = new List<Guid>();
 
@@ -218,7 +217,6 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             frontier = next;
-            depth++;
         }
 
         return claimed;

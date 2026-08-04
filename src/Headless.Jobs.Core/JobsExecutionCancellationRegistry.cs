@@ -184,10 +184,7 @@ internal sealed class JobsExecutionCancellationRegistration(
             {
                 return false;
             }
-            else
-            {
-                Volatile.Write(ref _cause, (int)cause);
-            }
+            Volatile.Write(ref _cause, (int)cause);
 
             if (previousCause == JobsExecutionCancellationCause.None)
             {

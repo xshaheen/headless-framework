@@ -124,7 +124,7 @@ public sealed class JobChainEnqueueTests : TestBase
 
         await scheduler.EnqueueAsync(chain, AbortToken);
 
-        adds.Should().HaveCount(1);
+        adds.Should().ContainSingle();
     }
 
     [Fact]
@@ -220,10 +220,10 @@ public sealed class JobChainEnqueueTests : TestBase
 
         await scheduler.EnqueueAsync(chain, AbortToken);
 
-        adds.Should().HaveCount(1);
+        adds.Should().ContainSingle();
         var root = adds[0];
         root.Function.Should().Be("order");
-        root.Children.Should().HaveCount(1);
+        root.Children.Should().ContainSingle();
         var chargeEntity = root.Children.Single();
         chargeEntity.Function.Should().Be("charge");
         chargeEntity.Children.Should().HaveCount(2);

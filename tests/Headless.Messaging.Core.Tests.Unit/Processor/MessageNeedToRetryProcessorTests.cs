@@ -201,7 +201,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg1, msg2, msg3);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when
         await sut.ProcessAsync(context);
@@ -235,7 +237,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var msg1 = _CreateMessage("group-a");
         var msg2 = _CreateMessage("group-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when
         await sut.ProcessAsync(context);
@@ -256,7 +260,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when
         await sut.ProcessAsync(context);
@@ -291,7 +297,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — first cycle
         await sut.ProcessAsync(context);
@@ -323,7 +331,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // All cycles return empty — clean cycles
         _SetupReceivedMessages(dataStorage);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — 3 clean cycles
         await sut.ProcessAsync(context);
@@ -356,7 +366,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — all skipped, but adaptive polling is off
         await sut.ProcessAsync(context);
@@ -386,7 +398,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, _CreateMessage("open-group"));
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — 10 cycles, each doubles interval, should cap at maxPollingInterval (2s)
         for (var i = 0; i < 10; i++)
@@ -413,7 +427,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         var dataStorage = Substitute.For<IDataStorage>();
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // Cycle 1: High transient rate → doubles interval
         cb.IsOpen(_CircuitKey("open-group")).Returns(true);
@@ -527,7 +543,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Concat(Enumerable.Range(0, 4).Select(_ => _CreateMessage("healthy-group")))
             .ToArray();
         _SetupReceivedMessages(dataStorage, messages);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — mid-range cycle
         await sut.ProcessAsync(context);
@@ -558,7 +576,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage); // empty
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // Pre-condition: jitter flag has not been observed yet.
         sut.StartupJitterApplied.Should().BeFalse();
@@ -582,7 +602,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var cts = new CancellationTokenSource();
         try
         {
-            using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cts.Token);
+            await using var cancellableContext = new ProcessingContext(
+                context.Provider,
+                TimeProvider.System,
+                cts.Token
+            );
             var secondTask = sut.ProcessAsync(cancellableContext);
             // Give the storage call a moment to be invoked, then cancel.
             await Task.Delay(50, AbortToken);
@@ -628,7 +652,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         var timeProvider = new FakeTimeProvider();
-        using var context = new ProcessingContext(
+        await using var context = new ProcessingContext(
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider(),
             timeProvider,
             AbortToken
@@ -710,7 +734,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — cycle 1, 2 → Warning; cycle 3 → Error; cycle 4 → success resets the counter.
         await sut.ProcessAsync(context);
@@ -758,7 +784,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         await sut.ProcessAsync(context);
         sut.CurrentPollingInterval.Should().Be(TimeSpan.FromSeconds(2));
@@ -825,7 +853,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — drive a single cycle; published-path acquire throws.
         await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
@@ -900,7 +930,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — drive three cycles; the third must emit EventId 82.
         await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
@@ -961,7 +993,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
@@ -1015,7 +1049,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
@@ -1069,7 +1105,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         await _RunLaneCycleAsync(sut, context, MessageLane.Bus);
         await _RunLaneCycleAsync(sut, context, MessageLane.Bus);
@@ -1133,7 +1171,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // Cycle 1: lock ok + storage throws (storage streak 1). Cycles 2-3: lock throws (lock streak 2).
         await _RunQuadrantCycleAsync(sut, context, MessageType.Publish, MessageLane.Bus);
@@ -1195,7 +1235,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var sut = new MessageNeedToRetryProcessor(options, retryProcessorOptions, logger, dispatcher, lockProvider);
 
         _SetupReceivedMessages(dataStorage);
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // when — drive ProcessAsync once
         await sut.ProcessAsync(context);

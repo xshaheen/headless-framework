@@ -26,12 +26,17 @@ public sealed class MessageDelayedProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => call.Arg<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
-        using var context = _CreateContext(storage);
+        await using var context = _CreateContext(storage);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
+        await using var cancellableContext = new ProcessingContext(
+            context.Provider,
+            TimeProvider.System,
+            cancellation.Token
+        );
         var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+        Func<Task> act = () => sut.ProcessAsync(cancellableContext);
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         await dispatcher
             .Received(1)
@@ -49,12 +54,17 @@ public sealed class MessageDelayedProcessorTests : TestBase
         claimStorage
             .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>([message]));
-        using var context = _CreateContext(storage);
+        await using var context = _CreateContext(storage);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
+        await using var cancellableContext = new ProcessingContext(
+            context.Provider,
+            TimeProvider.System,
+            cancellation.Token
+        );
         var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+        Func<Task> act = () => sut.ProcessAsync(cancellableContext);
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         committedDispatcher.Received(1).EnqueueCommittedDelayedMessage(message);
         await dispatcher
@@ -79,11 +89,16 @@ public sealed class MessageDelayedProcessorTests : TestBase
         claimStorage
             .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>(messages));
-        using var context = _CreateContext(storage);
-        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellationToken);
+        await using var context = _CreateContext(storage);
+        await using var cancellableContext = new ProcessingContext(
+            context.Provider,
+            TimeProvider.System,
+            cancellationToken
+        );
         var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+        Func<Task> act = () => sut.ProcessAsync(cancellableContext);
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         foreach (var message in messages)
         {
@@ -104,12 +119,17 @@ public sealed class MessageDelayedProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => call.Arg<Func<DbTransaction?, IEnumerable<MediumMessage>, ValueTask>>()(null, [message]));
-        using var context = _CreateContext(storage);
+        await using var context = _CreateContext(storage);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        using var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cancellation.Token);
+        await using var cancellableContext = new ProcessingContext(
+            context.Provider,
+            TimeProvider.System,
+            cancellation.Token
+        );
         var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sut.ProcessAsync(cancellableContext));
+        Func<Task> act = () => sut.ProcessAsync(cancellableContext);
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         await claimStorage.DidNotReceive().ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
         await storage

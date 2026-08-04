@@ -288,7 +288,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         _SetupReceivedMessages(dataStorage, openMsg1, healthyMsg, openMsg2);
 
         // when — process retry batch
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
         await retryProcessor.ProcessAsync(context);
 
         // then — only healthyGroup message was enqueued; openGroup messages skipped
@@ -349,7 +351,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var msg1 = _CreateMessage(group);
         _SetupReceivedMessages(dataStorage, msg1);
 
-        using var context1 = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context1 = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
         await retryProcessor.ProcessAsync(context1);
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
 
@@ -366,7 +370,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         dispatcher.ClearReceivedCalls();
         var msg2 = _CreateMessage(group);
         _SetupReceivedMessages(dataStorage, msg2);
-        using var context2 = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        await using var context2 = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
         await retryProcessor.ProcessAsync(context2);
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
     }

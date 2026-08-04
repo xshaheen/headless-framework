@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Logging;
 using Renci.SshNet.Common;
 
 namespace Headless.Blobs.SshNet;

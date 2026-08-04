@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
-
 namespace Headless.Messaging.Messages;
 
 /// <summary>

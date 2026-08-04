@@ -161,7 +161,9 @@ public sealed class HeadlessApiDefaultsTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
 
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;

@@ -15,7 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.Core;
-using Tests.Helpers;
 
 namespace Tests.Diagnostics;
 

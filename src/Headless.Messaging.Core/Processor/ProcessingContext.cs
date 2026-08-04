@@ -8,9 +8,9 @@ internal sealed class ProcessingContext(
     IServiceProvider provider,
     TimeProvider timeProvider,
     CancellationToken cancellationToken
-) : IDisposable
+) : IAsyncDisposable
 {
-    private IServiceScope? _scope;
+    private AsyncServiceScope? _scope;
 
     private ProcessingContext(ProcessingContext other)
         : this(other.Provider, other._timeProvider, other.CancellationToken) { }
@@ -23,9 +23,12 @@ internal sealed class ProcessingContext(
 
     private readonly TimeProvider _timeProvider = timeProvider;
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _scope?.Dispose();
+        if (_scope is { } scope)
+        {
+            await scope.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     public void ThrowIfStopping()
@@ -35,7 +38,7 @@ internal sealed class ProcessingContext(
 
     public ProcessingContext CreateScope()
     {
-        var serviceScope = Provider.CreateScope();
+        var serviceScope = Provider.CreateAsyncScope();
 
         return new ProcessingContext(this) { _scope = serviceScope, Provider = serviceScope.ServiceProvider };
     }

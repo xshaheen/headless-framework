@@ -4,7 +4,6 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
-using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;

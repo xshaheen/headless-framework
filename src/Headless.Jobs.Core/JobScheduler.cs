@@ -137,7 +137,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         if (depth > _maxChainDepth)
         {
             throw new InvalidOperationException(
-                FormattableString.Invariant(
+                string.Create(
+                    CultureInfo.InvariantCulture,
                     $"The job chain has a depth of {depth} nodes, which exceeds the configured maximum chain depth of {_maxChainDepth} nodes (on-success and on-failure edges both count toward depth)."
                 )
             );

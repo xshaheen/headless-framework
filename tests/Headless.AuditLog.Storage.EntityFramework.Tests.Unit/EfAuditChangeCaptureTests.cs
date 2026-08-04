@@ -101,9 +101,9 @@ public abstract class AuditedBaseEntity
     public OwnedAuditDetails? AdditionalDetails { get; set; }
 }
 
-public sealed class InheritedAuditEntity : AuditedBaseEntity { }
+public sealed class InheritedAuditEntity : AuditedBaseEntity;
 
-public sealed class ExcludedDerivedAuditEntity : AuditedBaseEntity { }
+public sealed class ExcludedDerivedAuditEntity : AuditedBaseEntity;
 
 public sealed class OwnedAuditDetails
 {

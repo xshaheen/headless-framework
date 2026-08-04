@@ -66,13 +66,22 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                 return true;
             });
 
-        using var service = _Service(manager, ownerIdentity, membership);
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        var service = harness.Service;
         await service.StartAsync(AbortToken);
 
         try
         {
             await _WaitForAsync(() =>
-                manager.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(manager.ReleaseDeadNodeResources))
+                manager
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(
+                            c.GetMethodInfo().Name,
+                            nameof(manager.ReleaseDeadNodeResources),
+                            StringComparison.Ordinal
+                        )
+                    )
             );
 
             await manager
@@ -127,7 +136,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
         ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 
-        using var service = _Service(manager, ownerIdentity, membership);
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        var service = harness.Service;
         await service.StartAsync(AbortToken);
 
         try
@@ -164,12 +174,15 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             .Returns(call =>
             {
                 call[0] = null;
+#pragma warning disable MA0045 // NSubstitute's synchronous return callback must trip the membership fence before it returns.
                 membershipLost.Cancel();
+#pragma warning restore MA0045
                 finalFenceReached.TrySetResult();
                 return false;
             });
 
-        using var service = _Service(manager, ownerIdentity, membership);
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        var service = harness.Service;
         await service.StartAsync(AbortToken);
 
         try
@@ -203,7 +216,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                var result = registered ? new[] { interleavedIdentity.ToString() } : Array.Empty<string>();
+                string[] result = registered ? [interleavedIdentity.ToString()] : [];
                 registered = true;
                 return Task.FromResult(result);
             });
@@ -231,7 +244,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
         ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 
-        using var service = _Service(manager, ownerIdentity, membership);
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        var service = harness.Service;
         await service.StartAsync(AbortToken);
 
         try
@@ -239,7 +253,15 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             // RunTimedOutTickers runs after the orphan sweep inside the same iteration, so observing it proves
             // the sweep completed both reads and any (defective) reclaim would already have been issued.
             await _WaitForAsync(() =>
-                manager.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(manager.RunTimedOutTickers))
+                manager
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(
+                            c.GetMethodInfo().Name,
+                            nameof(manager.RunTimedOutTickers),
+                            StringComparison.Ordinal
+                        )
+                    )
             );
 
             await manager
@@ -261,14 +283,23 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
         ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 
-        using var service = _Service(manager, ownerIdentity, membership: null);
+        await using var harness = _Service(manager, ownerIdentity, membership: null);
+        var service = harness.Service;
         await service.StartAsync(AbortToken);
 
         try
         {
             // Let the loop demonstrably tick at least once.
             await _WaitForAsync(() =>
-                manager.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(manager.ReclaimStalledResources))
+                manager
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(
+                            c.GetMethodInfo().Name,
+                            nameof(manager.ReclaimStalledResources),
+                            StringComparison.Ordinal
+                        )
+                    )
             );
 
             await manager.DidNotReceive().GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>());
@@ -303,7 +334,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         return manager;
     }
 
-    private static JobsFallbackBackgroundService _Service(
+    private static FallbackServiceHarness _Service(
         IInternalJobManager manager,
         IJobsOwnerIdentity ownerIdentity,
         INodeMembership? membership
@@ -324,17 +355,39 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
-        return new JobsFallbackBackgroundService(
-            manager,
-            new SchedulerOptionsBuilder { FallbackIntervalChecker = TimeSpan.FromMilliseconds(20) },
-            handler,
+        return new FallbackServiceHarness(
+#pragma warning disable CA2000 // FallbackServiceHarness takes ownership of the service and disposes it with the scheduler and provider.
+            new JobsFallbackBackgroundService(
+                manager,
+                new SchedulerOptionsBuilder { FallbackIntervalChecker = TimeSpan.FromMilliseconds(20) },
+                handler,
+                taskScheduler,
+                new JobFunctionConcurrencyGate(),
+                JobFunctionRegistryBuilder.Build([], [], []),
+                TimeProvider.System,
+                ownerIdentity,
+                NullLogger<JobsFallbackBackgroundService>.Instance,
+                membership
+            ),
+#pragma warning restore CA2000
             taskScheduler,
-            new JobFunctionConcurrencyGate(),
-            JobFunctionRegistryBuilder.Build([], [], []),
-            TimeProvider.System,
-            ownerIdentity,
-            NullLogger<JobsFallbackBackgroundService>.Instance,
-            membership
+            serviceProvider
         );
+    }
+
+    private sealed class FallbackServiceHarness(
+        JobsFallbackBackgroundService service,
+        JobsTaskScheduler taskScheduler,
+        ServiceProvider serviceProvider
+    ) : IAsyncDisposable
+    {
+        public JobsFallbackBackgroundService Service { get; } = service;
+
+        public async ValueTask DisposeAsync()
+        {
+            Service.Dispose();
+            await taskScheduler.DisposeAsync().ConfigureAwait(false);
+            await serviceProvider.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

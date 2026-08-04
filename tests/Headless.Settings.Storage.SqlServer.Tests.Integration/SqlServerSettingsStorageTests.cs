@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;

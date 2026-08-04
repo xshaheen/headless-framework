@@ -1213,9 +1213,7 @@ internal sealed partial class PostgreSqlDataStorage(
         // predicate uses that same authority. Lease expiry and stamping remain on one statement-
         // time database snapshot, keeping every replica on one ownership authority without a
         // clock query.
-        var sql = string.Create(
-            CultureInfo.InvariantCulture,
-            $"""
+        var sql = $"""
             WITH candidates AS (
                 SELECT message."Id"
                 FROM {tableName} AS message
@@ -1235,8 +1233,7 @@ internal sealed partial class PostgreSqlDataStorage(
             FROM candidates
             WHERE message."Id" = candidates."Id"
             RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner";
-            """
-        );
+            """;
 
         object[] sqlParams =
         [

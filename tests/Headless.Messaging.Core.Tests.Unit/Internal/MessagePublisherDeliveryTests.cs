@@ -7,8 +7,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Registration;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
@@ -176,7 +174,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider();
+#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
+#pragma warning restore CA2000
         var timeout = TimeSpan.FromSeconds(5);
         await using var harness = _CreateHarness(timeProvider, timeout, transport);
 
@@ -200,7 +200,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider();
+#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
+#pragma warning restore CA2000
         await using var harness = _CreateHarness(timeProvider, TimeSpan.FromHours(1), transport);
         using var callerCts = new CancellationTokenSource();
 
@@ -226,7 +228,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         // given
         var timeProvider = new FakeTimeProvider();
         var serializer = new BlockingTransportSerializer();
+#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
+#pragma warning restore CA2000
         var timeout = TimeSpan.FromSeconds(5);
         await using var harness = _CreateHarness(timeProvider, timeout, transport, serializer);
 
@@ -263,7 +267,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         timeProvider ??= TimeProvider.System;
         var storage = Substitute.For<IDataStorage>();
+#pragma warning disable CA2000 // MessagePublisherHarness owns the dispatcher and disposes it after all publisher assertions complete.
         var dispatcher = new RecordingCommittedDispatcher();
+#pragma warning restore CA2000
 
         var options = Options.Create(new MessagingOptions());
         var registry = new ConsumerRegistry();
@@ -312,7 +318,15 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             transportPublishTimeout
         );
 
-        return new MessagePublisherHarness(publisher, storage, dispatcher, transportLanes, transportMessages, services);
+        return new MessagePublisherHarness(
+            publisher,
+            storage,
+            dispatcher,
+            transportLanes,
+            transportMessages,
+            [.. transports.Values],
+            services
+        );
     }
 
     private sealed record DeliveryMessage(string Value);
@@ -490,12 +504,19 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         RecordingCommittedDispatcher Dispatcher,
         List<MessageLane> TransportLanes,
         List<TransportMessage> TransportMessages,
+        IReadOnlyCollection<ITransport> Transports,
         ServiceProvider Services
     ) : IAsyncDisposable
     {
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            return Services.DisposeAsync();
+            foreach (var transport in Transports)
+            {
+                await transport.DisposeAsync().ConfigureAwait(false);
+            }
+
+            await Dispatcher.DisposeAsync().ConfigureAwait(false);
+            await Services.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

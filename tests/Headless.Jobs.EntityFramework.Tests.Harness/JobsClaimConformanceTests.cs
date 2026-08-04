@@ -475,7 +475,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var thirdSweep = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
 
             firstSweep.Should().HaveCount(100); // Matches the native and compatibility strategy batch ceiling.
+#pragma warning disable FAA0001 // This already uses ordered Equal; the analyzer misidentifies the projected identifier assertion.
             firstSweep.Select(x => x.Id).Should().Equal(visibleRoots.Take(100).Select(x => x.Id));
+#pragma warning restore FAA0001
             secondSweep.Should().ContainSingle().Which.Id.Should().Be(visibleRoots[^1].Id);
             thirdSweep.Should().BeEmpty();
             (await fixture.ReadTimeJobDetailAsync(hiddenRoot.Id, ct)).OwnerId.Should().BeNull();
@@ -895,7 +897,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         private readonly ConcurrentQueue<string> _statements = new();
 
-        public string[] Statements => _statements.ToArray();
+        public string[] Statements => [.. _statements];
 
         public void Clear()
         {

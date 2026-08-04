@@ -9,6 +9,7 @@ using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+#pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
@@ -324,7 +325,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setters =>
                     setters
-                        .SetProperty(x => x.CancelRequested, true)
+                        .SetProperty(x => x.CancelRequested, valueExpression: true)
                         .SetProperty(x => x.Status, x => x.Status == JobStatus.Idle ? JobStatus.Cancelled : x.Status)
                         .SetProperty(
                             x => x.ExecutedAt,

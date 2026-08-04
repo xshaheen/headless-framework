@@ -3,7 +3,6 @@
 using Headless.Jobs.Base;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Models;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 

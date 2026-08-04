@@ -131,7 +131,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             if (xmlBlobCount > MaxXmlElementCount)
             {
                 throw new InvalidOperationException(
-                    $"Data Protection key-ring loading exceeded the {MaxXmlElementCount:N0} XML blob limit."
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Data Protection key-ring loading exceeded the {MaxXmlElementCount:N0} XML blob limit."
+                    )
                 );
             }
 
@@ -172,7 +175,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                     if (blobBytesRead > MaxXmlBlobSizeBytes)
                     {
                         throw new InvalidOperationException(
-                            $"Data Protection XML blob '{blob.BlobKey}' exceeded the {MaxXmlBlobSizeBytes:N0}-byte limit."
+                            string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Data Protection XML blob '{blob.BlobKey}' exceeded the {MaxXmlBlobSizeBytes:N0}-byte limit."
+                            )
                         );
                     }
 
@@ -180,7 +186,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                     if (aggregateBytesRead > MaxAggregateXmlBytes)
                     {
                         throw new InvalidOperationException(
-                            $"Data Protection key-ring loading exceeded the {MaxAggregateXmlBytes:N0}-byte aggregate XML limit."
+                            string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Data Protection key-ring loading exceeded the {MaxAggregateXmlBytes:N0}-byte aggregate XML limit."
+                            )
                         );
                     }
 

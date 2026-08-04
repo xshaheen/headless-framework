@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
-using FluentValidatorErrors = Headless.FluentValidation.Resources.FluentValidatorErrors;
 
 namespace Headless.FluentValidation.Resources;
 

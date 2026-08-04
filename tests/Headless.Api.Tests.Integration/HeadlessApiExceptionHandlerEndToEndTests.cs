@@ -37,7 +37,9 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -97,7 +99,9 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -125,7 +129,9 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         json.Should().NotContain(sentinel);
@@ -158,7 +164,9 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
@@ -252,7 +260,9 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);

@@ -109,7 +109,7 @@ internal sealed class GatewayProxyAgent(
         {
             try
             {
-                var downstreamRequest = await requestMapper.Map(request).ConfigureAwait(false);
+                using var downstreamRequest = await requestMapper.Map(request).ConfigureAwait(false);
 
                 _SetDownStreamRequestUri(
                     downstreamRequest,

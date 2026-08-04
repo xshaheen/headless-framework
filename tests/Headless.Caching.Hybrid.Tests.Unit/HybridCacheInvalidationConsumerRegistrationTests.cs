@@ -260,12 +260,14 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         var contributionType = contribution!.GetType();
 
         contributionType.IsPublic.Should().BeFalse();
+#pragma warning disable REFL009, REFL017 // The contribution type is intentionally internal; these names come from equivalent public contracts and are verified against the runtime type.
         contributionType.GetProperty(nameof(PublishContext.Lane))!.GetValue(contribution).Should().Be(MessageLane.Bus);
         contributionType
             .GetProperty(nameof(ConsumerMetadata.MessageType))!
             .GetValue(contribution)
             .Should()
             .Be(messageType);
+#pragma warning restore REFL009, REFL017
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(MessagingSetupBuilder));
         services
             .Should()

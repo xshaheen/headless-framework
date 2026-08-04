@@ -105,7 +105,9 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         services.AddLogging();
         services.AddDashboardAuthentication(setupAction);
 
+#pragma warning disable MA0045 // This helper must surface options validation synchronously so callers can assert the resolve-time exception.
         using var provider = services.BuildServiceProvider();
+#pragma warning restore MA0045
 
         // Resolving the AuthConfig value runs the FluentValidation options pipeline —
         // the single validation point for every construction path.

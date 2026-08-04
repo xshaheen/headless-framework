@@ -62,7 +62,17 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
 
         // Wait until the loop has demonstrably ticked at least once.
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (manager.ReceivedCalls().All(c => c.GetMethodInfo().Name != nameof(manager.ReclaimStalledResources)))
+        while (
+            manager
+                .ReceivedCalls()
+                .All(c =>
+                    !string.Equals(
+                        c.GetMethodInfo().Name,
+                        nameof(manager.ReclaimStalledResources),
+                        StringComparison.Ordinal
+                    )
+                )
+        )
         {
             DateTime.UtcNow.Should().BeBefore(deadline, "the fallback loop should tick while membership is intact");
             await Task.Delay(10, AbortToken);
@@ -72,7 +82,7 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
 
         var executeTask = service.ExecuteTask;
         executeTask.Should().NotBeNull();
-        await executeTask.WaitAsync(TimeSpan.FromSeconds(10));
+        await executeTask.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         executeTask.IsCompleted.Should().BeTrue("membership loss must stop the fallback loop, not just host shutdown");
 
         await service.StopAsync(CancellationToken.None);

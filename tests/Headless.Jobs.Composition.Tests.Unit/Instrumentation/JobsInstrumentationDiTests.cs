@@ -4,7 +4,6 @@ using System.Diagnostics;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 

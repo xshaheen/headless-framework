@@ -536,6 +536,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         result.Should().BeEquivalentTo(new TestData { Name = "GeneratedRewound", Value = 53 });
     }
 
+#pragma warning disable CA2000 // GetBlobContentAsync takes ownership of each download result; these tests assert that it disposes the stream on every exit path.
     [Fact]
     public async Task should_stream_reflection_json_from_non_seekable_blob_and_dispose_download()
     {
@@ -616,6 +617,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await read.Should().ThrowAsync<OperationCanceledException>();
         stream.IsDisposed.Should().BeTrue();
     }
+#pragma warning restore CA2000
 
     #endregion
 }
@@ -713,7 +715,7 @@ file sealed class InMemoryBlobStorage : IBlobStorage
             return ValueTask.FromResult<BlobDownloadResult?>(null);
         }
 
-#pragma warning disable CA2000 // Dispose objects before losing scope
+#pragma warning disable CA2000 // Ownership of the stream and download result transfers to the caller through the returned value.
         var stream = new MemoryStream(bytes);
         var result = new BlobDownloadResult(stream, location.Path);
 #pragma warning restore CA2000

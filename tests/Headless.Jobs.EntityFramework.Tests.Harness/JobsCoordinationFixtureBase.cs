@@ -814,12 +814,14 @@ public sealed record CoordinatedFacadeRequest(Guid Id, string Value);
 
 internal static class CoordinatedEnqueueJobs
 {
+#pragma warning disable IDE0060 // These methods are registered as job-function delegates, whose context and token are part of the required signature.
     public static Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public static Task RunAsync(
         JobFunctionContext<CoordinatedFacadeRequest> context,
         CancellationToken cancellationToken
     ) => Task.CompletedTask;
+#pragma warning restore IDE0060
 }
 
 internal static class CoordinatedEnqueueJobsRegistration

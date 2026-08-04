@@ -25,25 +25,31 @@ public sealed partial class EfAuditChangeCaptureTests
             product.Should().NotBeNull();
             internalLog.Should().NotBeNull();
 
-            order!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)?.Value.Should().Be(true);
+            var orderAuditAnnotation = order!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited);
+            orderAuditAnnotation.Should().NotBeNull();
+            orderAuditAnnotation!.Value.Should().Be(true);
             product!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited).Should().BeNull();
-            internalLog!.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)?.Value.Should().Be(false);
+            var internalLogAuditAnnotation = internalLog!.FindAnnotation(
+                HeadlessAuditPolicyAnnotations.EntityIsAudited
+            );
+            internalLogAuditAnnotation.Should().NotBeNull();
+            internalLogAuditAnnotation!.Value.Should().Be(false);
 
-            order
+            var computedAtExclusion = order
                 .FindProperty(nameof(Order.LastComputedAt))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded)
-                ?.Value.Should()
-                .Be(true);
-            order
+                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded);
+            computedAtExclusion.Should().NotBeNull();
+            computedAtExclusion!.Value.Should().Be(true);
+            var emailSensitivity = order
                 .FindProperty(nameof(Order.Email))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive)
-                ?.Value.Should()
-                .Be(true);
-            order
+                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive);
+            emailSensitivity.Should().NotBeNull();
+            emailSensitivity!.Value.Should().Be(true);
+            var phoneStrategy = order
                 .FindProperty(nameof(Order.Phone))!
-                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy)
-                ?.Value.Should()
-                .Be((int)SensitiveDataStrategy.Exclude);
+                .FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy);
+            phoneStrategy.Should().NotBeNull();
+            phoneStrategy!.Value.Should().Be((int)SensitiveDataStrategy.Exclude);
         }
     }
 

@@ -6,7 +6,6 @@ using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
-using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.Options;
@@ -43,7 +42,10 @@ public class DelayedSchedulingBenchmarks
         for (var index = 0; index < BatchSize; index++)
         {
             var origin = new Message(
-                new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = $"delayed-{index}" },
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = string.Create(CultureInfo.InvariantCulture, $"delayed-{index}"),
+                },
                 index
             );
             var stored = _storage

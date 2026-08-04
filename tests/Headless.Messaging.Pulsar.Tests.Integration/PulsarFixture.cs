@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
-using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

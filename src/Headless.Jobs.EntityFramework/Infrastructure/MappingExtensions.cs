@@ -7,6 +7,7 @@ using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
+#pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
 internal static class MappingExtensions
@@ -92,9 +93,8 @@ internal static class MappingExtensions
 
         var childrenByParent = new Dictionary<Guid, List<TimeJobEntity>>();
         var frontier = roots.Select(x => x.Id).ToArray();
-        var depth = 1;
 
-        while (frontier.Length != 0 && depth < maxChainDepth)
+        for (var depth = 1; frontier.Length != 0 && depth < maxChainDepth; depth++)
         {
             var parentIds = frontier;
 
@@ -129,8 +129,7 @@ internal static class MappingExtensions
                 bucket.Add(child);
             }
 
-            frontier = children.Select(x => x.Id).ToArray();
-            depth++;
+            frontier = [.. children.Select(x => x.Id)];
         }
 
         foreach (var root in roots)

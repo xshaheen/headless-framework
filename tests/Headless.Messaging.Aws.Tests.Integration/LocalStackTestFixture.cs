@@ -3,7 +3,6 @@
 using Amazon.Runtime;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

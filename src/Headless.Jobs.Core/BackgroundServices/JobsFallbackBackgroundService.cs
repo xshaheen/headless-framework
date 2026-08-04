@@ -4,7 +4,6 @@ using Headless.Coordination;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
-using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

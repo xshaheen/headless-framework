@@ -81,18 +81,24 @@ public sealed class PollingReleaseSignalTests : TestBase
             var departing = signal.WaitAsync(resource, fallback, AbortToken).AsTask();
             using var start = new Barrier(3);
 
-            var timeout = Task.Run(() =>
-            {
-                start.SignalAndWait();
-                timeProvider.Advance(fallback);
-            });
-            var publish = Task.Run(async () =>
-            {
-                start.SignalAndWait();
-                await signal.PublishAsync(resource, AbortToken);
-            });
+            var timeout = Task.Run(
+                () =>
+                {
+                    start.SignalAndWait(AbortToken);
+                    timeProvider.Advance(fallback);
+                },
+                AbortToken
+            );
+            var publish = Task.Run(
+                async () =>
+                {
+                    start.SignalAndWait(AbortToken);
+                    await signal.PublishAsync(resource, AbortToken);
+                },
+                AbortToken
+            );
 
-            start.SignalAndWait();
+            start.SignalAndWait(AbortToken);
             await Task.WhenAll(timeout, publish);
             await departing;
 

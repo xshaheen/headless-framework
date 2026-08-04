@@ -198,8 +198,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _EnsureInitialized();
         var storage = _storage!;
         var explicitlyDirect = CreateMessage();
-        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
-        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.TransportDirect.ToString("G");
+        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.TransportDirect);
+        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect);
 
         var published = await storage.StoreMessageAsync(
             "delivery-metadata-published",

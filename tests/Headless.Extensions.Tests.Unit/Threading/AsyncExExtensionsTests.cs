@@ -100,7 +100,7 @@ public sealed class AsyncExExtensionsTests : TestBase
         // given — a long timeout driven by a fake clock that we never advance
         var clock = new FakeTimeProvider();
         var countdownEvent = new AsyncCountdownEvent(1);
-        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock);
+        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock, AbortToken);
 
         // when — signalling completes the wait; the delay timer must be cancelled so this returns promptly
         countdownEvent.Signal();
@@ -117,7 +117,7 @@ public sealed class AsyncExExtensionsTests : TestBase
         // given — a countdown that never signals, so only the timeout can complete the wait
         var clock = new FakeTimeProvider();
         var countdownEvent = new AsyncCountdownEvent(1);
-        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock);
+        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock, AbortToken);
 
         // when — advancing the provided clock fires the timeout
         clock.Advance(TimeSpan.FromSeconds(30));
@@ -135,7 +135,7 @@ public sealed class AsyncExExtensionsTests : TestBase
         var countdownEvent = new AsyncCountdownEvent(1);
 
         // when
-        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock);
+        var waiter = countdownEvent.WaitAsync(TimeSpan.FromSeconds(30), clock, AbortToken);
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
 
         // then — neither signalled nor advanced, so the wait is still pending

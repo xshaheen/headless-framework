@@ -109,7 +109,10 @@ internal sealed class MessageProcessingServer(
         }
         finally
         {
-            _context?.Dispose();
+            if (_context is not null)
+            {
+                await _context.DisposeAsync().ConfigureAwait(false);
+            }
             _context = null;
             _cts.Dispose();
             _logger.MessagingShutdown();

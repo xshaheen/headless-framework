@@ -3,11 +3,8 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Pulsar;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
-using Pulsar.Client.Api;
 using Pulsar.Client.Common;
-using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;

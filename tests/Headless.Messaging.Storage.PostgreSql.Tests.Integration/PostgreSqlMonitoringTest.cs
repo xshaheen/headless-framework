@@ -376,8 +376,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
     {
         var explicitMessage = _CreateMessage();
-        explicitMessage.Headers[Headers.RequestedDeliveryMode] = DeliveryMode.Auto.ToString("G");
-        explicitMessage.Headers[Headers.ResolvedDeliveryMode] = DeliveryMode.Durable.ToString("G");
+        explicitMessage.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto);
+        explicitMessage.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable);
 
         var explicitPublished = await _storage!.StoreMessageAsync(
             "delivery-metadata-explicit",
