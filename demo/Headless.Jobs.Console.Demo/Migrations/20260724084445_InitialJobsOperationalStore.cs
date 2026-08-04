@@ -2,6 +2,8 @@
 
 #nullable disable
 
+#pragma warning disable CA1861, IDE0300 // EF owns this generated migration shape; extracting or rewriting operation arrays would be overwritten on regeneration.
+
 namespace Headless.Jobs.Console.Demo.Migrations;
 
 /// <summary>Defines the initial Jobs operational store migration.</summary>
@@ -226,3 +228,4 @@ public partial class InitialJobsOperationalStore : Migration
         migrationBuilder.DropTable(name: "CronJobs", schema: "jobs");
     }
 }
+#pragma warning restore CA1861, IDE0300
