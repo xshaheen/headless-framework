@@ -259,7 +259,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         var consumeResult = new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(2), new Offset(17)),
-            Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+            Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
         };
 
         // when
@@ -364,7 +364,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(0)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
                     },
                     2 => new ConsumeResult<string, byte[]>
                     {
@@ -373,7 +373,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(1)
                         ),
-                        Message = new Message<string, byte[]> { Value = [2], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [2], Headers = _CreateHeaders() },
                     },
                     _ => waitAndReturnNull(),
                 };
@@ -534,6 +534,158 @@ public sealed class KafkaConsumerClientTests : TestBase
         {
             releaseOffset100.TrySetResult();
             releaseOffset101.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_commit_past_skipped_offsets_when_processing_concurrently()
+    {
+        // given — a tombstone sits between two records. It is never dispatched to a handler, so the
+        // commit watermark has to account for it in the poll loop or the partition stalls on it.
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                var callIndex = Interlocked.Increment(ref consumeCallCount);
+
+                return callIndex switch
+                {
+                    1 => _CreateConsumeResult(100),
+                    2 => _CreateTombstoneResult(101),
+                    3 => _CreateConsumeResult(102),
+                    _ => waitAndReturnNull(),
+                };
+
+                static ConsumeResult<string, byte[]> waitAndReturnNull()
+                {
+                    Thread.Sleep(10);
+
+                    return null!;
+                }
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        client.OnMessageCallback = async (_, sender) => await client.CommitAsync(sender).ConfigureAwait(false);
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        try
+        {
+            // then — 103 is only reachable if the tombstone at 101 moved the watermark
+            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 1, 101)]
+    [InlineData(true, 1, 100)]
+    [InlineData(false, 2, 101)]
+    [InlineData(true, 2, 100)]
+    public async Task should_commit_trailing_undispatched_offset_when_listening_async(
+        bool isPartitionEof,
+        int concurrency,
+        long expectedOffset
+    )
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = isPartitionEof ? _CreateEndOfPartitionResult(100) : _CreateTombstoneResult(100);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return consumeResult;
+                }
+
+                cts.Token.WaitHandle.WaitOne();
+
+                return null!;
+            });
+
+        var committedOffsets = new ConcurrentQueue<long>();
+        var commitObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .Do(call =>
+            {
+                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
+                {
+                    committedOffsets.Enqueue(offset.Offset.Value);
+                }
+
+                commitObserved.TrySetResult();
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            checked((byte)concurrency),
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var callbackCount = 0;
+        client.OnMessageCallback = (_, _) =>
+        {
+            Interlocked.Increment(ref callbackCount);
+
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        // when — Consume is a synchronous Kafka API. Run the poll loop on a worker so the trailing-only
+        // fake can block after its marker without preventing this test from observing the commit.
+        var listeningTask = Task.Run(
+            async () => await client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token),
+            CancellationToken.None
+        );
+
+        try
+        {
+            await commitObserved.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then
+            committedOffsets.Should().Equal([expectedOffset]);
+            Volatile.Read(ref callbackCount).Should().Be(0);
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
             await cts.CancelAsync();
             await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
         }
@@ -734,7 +886,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_seek_back_when_custom_headers_builder_throws()
+    public async Task should_seek_without_commit_when_custom_headers_builder_throws()
     {
         // given
         var throwingOptions = Options.Create(
@@ -761,7 +913,84 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(5)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
+                    };
+                }
+
+                throw new OperationCanceledException();
+            });
+
+        consumer.When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>())).Do(_ => seekCalled.TrySetResult());
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            throwingOptions,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+#pragma warning disable AsyncFixer04
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+#pragma warning restore AsyncFixer04
+        try
+        {
+            // when
+            await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then
+            consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
+            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup observes the expected mocked cancellation.
+            catch
+            {
+                // Best-effort cleanup only.
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    [Fact]
+    public async Task should_terminally_commit_when_required_header_is_missing()
+    {
+        // given
+        var malformedOptions = Options.Create(
+            new KafkaMessagingOptions
+            {
+                Servers = "localhost:9092",
+                CustomHeadersBuilder = (_, _) =>
+                    [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)],
+            }
+        );
+
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        var commitCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(5)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [1], Headers = _CreateHeaders() },
                     };
                 }
 
@@ -769,12 +998,12 @@ public sealed class KafkaConsumerClientTests : TestBase
                 throw new OperationCanceledException();
             });
 
-        consumer.When(c => c.Seek(Arg.Any<TopicPartitionOffset>())).Do(_ => seekCalled.TrySetResult());
+        consumer.When(c => c.Commit(Arg.Any<ConsumeResult<string, byte[]>>())).Do(_ => commitCalled.TrySetResult());
 
         await using var client = new KafkaConsumerClient(
             "test-group",
             1,
-            throwingOptions,
+            malformedOptions,
             _serviceProvider,
             consumerFactory: _ => consumer
         );
@@ -796,13 +1025,13 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        // when — ListeningAsync will fault after the seek; we only need to observe the seek signal
+        // when — ListeningAsync will fault after the terminal commit; we only need to observe the commit signal
 #pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
 #pragma warning restore AsyncFixer04
         try
         {
-            await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await commitCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
             // Observe the faulted task to prevent unobserved exception
             try
@@ -816,11 +1045,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             }
 #pragma warning restore ERP022
 
-            // then — callback should not be invoked, offset should be seeked back
+            // then — callback should not be invoked and the poison offset must not be sought for redelivery
             callbackInvoked.Should().BeFalse();
-            consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(tpo => tpo.Offset == 5));
+            consumer.Received(1).Commit(Arg.Is<ConsumeResult<string, byte[]>>(result => result.Offset == 5));
+            consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
             loggedError.Should().NotBeNull();
-            loggedError!.Reason.Should().Contain("bad header builder");
+            loggedError!.Reason.Should().Contain("terminally committed").And.NotContain("Messaging header");
         }
         finally
         {
@@ -843,7 +1073,38 @@ public sealed class KafkaConsumerClientTests : TestBase
         return new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
-            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = [] },
+            Message = new Message<string, byte[]> { Value = BitConverter.GetBytes(offset), Headers = _CreateHeaders() },
+        };
+    }
+
+    private static Confluent.Kafka.Headers _CreateHeaders()
+    {
+        return
+        [
+            new Header(Headless.Messaging.Headers.MessageId, "msg-1"u8.ToArray()),
+            new Header(Headless.Messaging.Headers.MessageName, "TestEvent"u8.ToArray()),
+        ];
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateTombstoneResult(long offset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(0), new Offset(offset)),
+            Message = new Message<string, byte[]> { Value = null!, Headers = [] },
+        };
+    }
+
+    private static ConsumeResult<string, byte[]> _CreateEndOfPartitionResult(long logEndOffset)
+    {
+        return new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset(
+                "orders.created",
+                new Partition(0),
+                new Offset(logEndOffset)
+            ),
+            IsPartitionEOF = true,
         };
     }
 

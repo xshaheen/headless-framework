@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 // ReSharper disable once CheckNamespace
 #pragma warning disable IDE0130
@@ -16,7 +16,8 @@ namespace Headless.Primitives;
 ///   <item><see cref="ValidationError"/> → 422 Unprocessable Entity</item>
 ///   <item><see cref="ForbiddenError"/> → 403 Forbidden</item>
 ///   <item><see cref="UnauthorizedError"/> → 401 Unauthorized</item>
-///   <item><see cref="AggregateError"/> → 409 Conflict</item>
+///   <item><see cref="AggregateError"/> containing only validation errors → 422 Unprocessable Entity</item>
+///   <item>Other <see cref="AggregateError"/> instances → 409 Conflict</item>
 ///   <item><see cref="ConflictError"/> → 409 Conflict</item>
 ///   <item>All other errors → 409 Conflict</item>
 /// </list>
@@ -31,11 +32,10 @@ public static class ApiResultExtensions
     /// <typeparam name="T">The success value type.</typeparam>
     /// <param name="result">The result to convert.</param>
     /// <param name="creator">The problem-details creator used to build error responses.</param>
-    /// <returns>An <see cref="IResult"/> representing the HTTP response.</returns>
-    public static IResult ToHttpResult<T>(this ApiResult<T> result, IProblemDetailsCreator creator)
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    public static ApiResultHttpResult<T> ToHttpResult<T>(this ApiResult<T> result, IProblemDetailsCreator creator)
     {
-        // Branch instead of Match: the failure lambda would capture `creator` and allocate on every success response.
-        return result.TryGetValue(out var value) ? TypedResults.Ok(value) : result.Error.ToHttpResult(creator);
+        return new ApiResultHttpResult<T>(result, creator);
     }
 
     /// <summary>
@@ -44,11 +44,10 @@ public static class ApiResultExtensions
     /// </summary>
     /// <param name="result">The result to convert.</param>
     /// <param name="creator">The problem-details creator used to build error responses.</param>
-    /// <returns>An <see cref="IResult"/> representing the HTTP response.</returns>
-    public static IResult ToHttpResult(this ApiResult result, IProblemDetailsCreator creator)
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    public static ApiResultHttpResult ToHttpResult(this ApiResult result, IProblemDetailsCreator creator)
     {
-        // Branch instead of Match: the failure lambda would capture `creator` and allocate on every success response.
-        return result.TryGetError(out var error) ? error.ToHttpResult(creator) : TypedResults.NoContent();
+        return new ApiResultHttpResult(result, creator);
     }
 
     /// <summary>
@@ -57,26 +56,26 @@ public static class ApiResultExtensions
     /// </summary>
     /// <param name="error">The error to map.</param>
     /// <param name="creator">The problem-details creator used to build the response body.</param>
-    /// <returns>An <see cref="IResult"/> with the appropriate HTTP status code and problem-details body.</returns>
-    public static IResult ToHttpResult(this ApiResultError error, IProblemDetailsCreator creator)
+    /// <returns>A problem HTTP result with the appropriate status code and body.</returns>
+    public static ProblemHttpResult ToHttpResult(this ApiResultError error, IProblemDetailsCreator creator)
     {
         return error switch
         {
             NotFoundError => TypedResults.Problem(creator.EntityNotFound()),
 
-            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
+            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.Errors)),
 
-            ForbiddenError e => TypedResults.Problem(
-                creator.Forbidden(error: new ErrorDescriptor(GeneralErrorCodes.Forbidden, e.Reason))
+            ForbiddenError e => TypedResults.Problem(creator.Forbidden(error: e.Error)),
+
+            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(e.Error)),
+
+            AggregateError e when e.TryGetValidationErrors(out var validationErrors) => TypedResults.Problem(
+                creator.UnprocessableEntity(validationErrors)
             ),
 
-            UnauthorizedError => TypedResults.Problem(creator.Unauthorized()),
+            AggregateError e => TypedResults.Problem(creator.Conflict(e.ToErrorDescriptors())),
 
-            AggregateError e => TypedResults.Problem(
-                creator.Conflict(e.Errors.Select(err => new ErrorDescriptor(err.Code, err.Message)).ToList())
-            ),
-
-            ConflictError e => TypedResults.Problem(creator.Conflict([new ErrorDescriptor(e.Code, e.Message)])),
+            ConflictError e => TypedResults.Problem(creator.Conflict(e.Errors)),
 
             // Default: treat as conflict
             _ => TypedResults.Problem(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),

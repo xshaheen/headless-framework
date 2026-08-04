@@ -85,4 +85,19 @@ internal static partial class TransportNaming
 
         return _NormalizeRegex.IsMatch(name) ? _NormalizeRegex.Replace(name, "_") : name;
     }
+
+    /// <summary>
+    /// Normalizes a broker identity and appends a stable discriminator when normalization changes it.
+    /// </summary>
+    /// <param name="name">The broker identity to normalize.</param>
+    public static string NormalizeDistinct(string name)
+    {
+        var normalized = Normalize(name);
+        if (string.Equals(name, normalized, StringComparison.Ordinal))
+        {
+            return normalized;
+        }
+
+        return $"{normalized}_{name.ToSha256()[..12]}";
+    }
 }

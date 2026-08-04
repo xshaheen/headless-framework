@@ -188,6 +188,12 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
         return base.should_expose_none_handle_lost_token_without_monitoring();
     }
 
+    [Fact]
+    public override Task should_not_fire_handle_lost_token_on_clean_release()
+    {
+        return base.should_not_fire_handle_lost_token_on_clean_release();
+    }
+
     // Intentionally not overridden (not portable to the connection-scoped provider):
     //  - should_get_expiration_for_locked_resource / should_get_lock_info_for_locked_resource:
     //    session-scoped locks have no lease, so expiration and TimeToLive are always null.

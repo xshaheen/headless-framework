@@ -60,15 +60,17 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
-        bool createReplacement = true
+        bool createReplacement = true,
+        string? exchangeName = null
     )
     {
         return _CreateConformanceSessionAsync(
             MessageLane.Queue,
             destination,
             group,
-            exchangeName: null,
+            exchangeName,
             createReplacement,
+            failEnvelopeBuild: false,
             cancellationToken
         );
     }
@@ -86,6 +88,44 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             group,
             exchangeName,
             createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateLaneSessionAsync(
+        MessageLane lane,
+        string exchangeName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            lane,
+            destination,
+            group,
+            exchangeName,
+            createReplacement: true,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
+        string exchangeName,
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            MessageLane.Queue,
+            destination,
+            group,
+            exchangeName,
+            createReplacement: true,
+            failEnvelopeBuild: true,
             cancellationToken
         );
     }
@@ -96,6 +136,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         string? group,
         string? exchangeName,
         bool createReplacement,
+        bool failEnvelopeBuild,
         CancellationToken cancellationToken
     )
     {
@@ -113,6 +154,11 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 ExchangeName = exchangeName ?? $"conf-{Guid.NewGuid():N}",
             }
         );
+        if (failEnvelopeBuild)
+        {
+            rabbitOptions.Value.CustomHeadersBuilder = static (_, _) =>
+                [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)];
+        }
 
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new ConnectionChannelPool(
@@ -120,7 +166,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             messagingOptions,
             rabbitOptions
         );
-        var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool);
+        var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool, lane);
         var consumer = new RabbitMqConsumerClient(group, 1, pool, rabbitOptions, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
 
@@ -146,6 +192,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                             group,
                             rabbitOptions.Value.ExchangeName,
                             createReplacement: false,
+                            failEnvelopeBuild,
                             replacementToken
                         )
                     : null

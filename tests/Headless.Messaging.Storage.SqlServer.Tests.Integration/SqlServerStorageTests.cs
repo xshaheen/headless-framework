@@ -331,6 +331,30 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_preserve_persisted_envelope_when_published_transition_declares_preserve()
+    {
+        return base.should_preserve_persisted_envelope_when_published_transition_declares_preserve();
+    }
+
+    [Fact]
+    public override Task should_preserve_persisted_envelope_when_received_transition_declares_preserve()
+    {
+        return base.should_preserve_persisted_envelope_when_received_transition_declares_preserve();
+    }
+
+    [Fact]
+    public override Task should_refresh_persisted_envelope_when_published_transition_declares_refresh()
+    {
+        return base.should_refresh_persisted_envelope_when_published_transition_declares_refresh();
+    }
+
+    [Fact]
+    public override Task should_refresh_persisted_envelope_when_received_transition_declares_refresh()
+    {
+        return base.should_refresh_persisted_envelope_when_received_transition_declares_refresh();
+    }
+
+    [Fact]
     public override Task should_change_publish_state_to_delayed()
     {
         return base.should_change_publish_state_to_delayed();

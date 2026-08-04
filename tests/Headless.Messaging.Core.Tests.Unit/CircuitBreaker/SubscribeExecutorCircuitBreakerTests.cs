@@ -103,6 +103,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -156,6 +157,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
@@ -166,6 +168,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -267,6 +270,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -310,6 +314,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -328,6 +333,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
@@ -366,6 +372,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
                 StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),

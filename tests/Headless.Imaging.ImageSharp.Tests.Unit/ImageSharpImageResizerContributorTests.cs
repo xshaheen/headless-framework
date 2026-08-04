@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Constants;
 using Headless.Imaging;
 using Headless.Imaging.ImageSharp;
@@ -6,6 +8,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
+// Shares the collection with the disposal assertions, which read a process-global ImageSharp counter that a
+// concurrent decode would perturb.
+[Collection(ImageSharpTestCollection.Name)]
 public sealed class ImageSharpImageResizerContributorTests : TestBase
 {
     private readonly ImageSharpImageResizerContributor _imageResizerContributor;

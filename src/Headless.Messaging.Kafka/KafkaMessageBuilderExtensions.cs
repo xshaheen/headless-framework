@@ -12,33 +12,6 @@ namespace Headless.Messaging;
 [PublicAPI]
 public static class KafkaMessageBuilderExtensions
 {
-    /// <summary>
-    /// Configures Kafka publish options for <typeparamref name="TMessage"/>.
-    /// </summary>
-    /// <typeparam name="TMessage">The message type being registered.</typeparam>
-    /// <param name="builder">The bus message builder.</param>
-    /// <param name="configure">A delegate that configures the Kafka publish options.</param>
-    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    /// <remarks>
-    /// Requires the framework-provided <see cref="IBusMessageBuilder{TMessage}"/> from
-    /// <c>setup.Bus.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
-    /// </remarks>
-    public static IBusMessageBuilder<TMessage> UseKafka<TMessage>(
-        this IBusMessageBuilder<TMessage> builder,
-        Action<KafkaMessageConfigBuilder<TMessage>> configure
-    )
-        where TMessage : class
-    {
-        Argument.IsNotNull(builder);
-        Argument.IsNotNull(configure);
-
-        var configBuilder = new KafkaMessageConfigBuilder<TMessage>();
-        configure(configBuilder);
-        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
-
-        return builder;
-    }
-
     /// <summary>Configures Kafka publish options for <typeparamref name="TMessage"/> on the queue lane.</summary>
     public static IQueueMessageBuilder<TMessage> UseKafka<TMessage>(
         this IQueueMessageBuilder<TMessage> builder,
@@ -53,23 +26,6 @@ public static class KafkaMessageBuilderExtensions
         configure(configBuilder);
         ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
 
-        return builder;
-    }
-
-    /// <summary>
-    /// Configures Kafka consumer options for a bus consumer registration.
-    /// </summary>
-    /// <typeparam name="TConsumer">The consumer type being registered.</typeparam>
-    /// <param name="builder">The bus consumer builder.</param>
-    /// <param name="configure">A delegate that configures the Kafka consumer options.</param>
-    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    public static IBusConsumerBuilder<TConsumer> UseKafka<TConsumer>(
-        this IBusConsumerBuilder<TConsumer> builder,
-        Action<KafkaConsumerConfigBuilder> configure
-    )
-        where TConsumer : class
-    {
-        _SetConsumerConfig((IConsumerProviderConfigBuilder)builder, configure);
         return builder;
     }
 

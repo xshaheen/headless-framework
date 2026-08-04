@@ -69,7 +69,7 @@ public sealed class NatsTransportTests : TestBase
         var message = _CreateTransportMessage("msg-123", "orders.created");
         message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant-a";
 
-        NatsTransport.ResolveSubject(message).Should().Be("orders.created.tenant-a");
+        NatsTransport.ResolveSubject(message).Should().Be("headless.bus.orders.created.tenant-a");
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class NatsTransportTests : TestBase
         var message = _CreateTransportMessage("msg-123", "orders.created");
         message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant.a";
 
-        NatsTransport.ResolveSubject(message).Should().Be("orders.created");
+        NatsTransport.ResolveSubject(message).Should().Be("headless.bus.orders.created");
     }
 
     [Fact]

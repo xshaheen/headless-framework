@@ -519,7 +519,7 @@ Asserting on messaging by querying the outbox table covers only messages that fl
 
 - `MessagingTestHarness` records messages at the bus/queue transport layer (covers outbox + direct publish).
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, `WaitForExhausted<T>(...)` block until a match arrives or the configured timeout elapses (`MessageObservationTimeoutException`).
-- `WaitForPublished<T>(IntentType.Bus)` and `WaitForPublished<T>(IntentType.Queue)` distinguish identical payloads sent through bus and queue paths.
+- `WaitForPublished<T>(MessageLane.Bus)` and `WaitForPublished<T>(MessageLane.Queue)` distinguish identical payloads sent through bus and queue paths.
 - Predicate overloads for filtering by payload shape.
 - `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
 - `Clear()` for clean test isolation; integrates with `HeadlessTestServer.ResetMessagingHarness()`.

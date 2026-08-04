@@ -19,11 +19,16 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
         return new RedirectToCanonicalUrlRule(appendTrailingSlash, lowercaseUrls);
     }
 
+    /// <summary>
+    /// Builds a rewrite context. <paramref name="routed"/> models whether <c>UseRouting()</c> has already matched
+    /// the request: only then does endpoint metadata (and with it the opt-out attributes) exist.
+    /// </summary>
     private static RewriteContext _CreateRewriteContext(
         string path,
         string? queryString = null,
         string method = "GET",
-        EndpointMetadataCollection? metadata = null
+        EndpointMetadataCollection? metadata = null,
+        bool routed = true
     )
     {
         var httpContext = new DefaultHttpContext();
@@ -36,10 +41,9 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
             httpContext.Request.QueryString = new QueryString(queryString);
         }
 
-        // Set endpoint with metadata for attribute checks
-        if (metadata is not null)
+        if (routed)
         {
-            var endpoint = new Endpoint(null, metadata, "test");
+            var endpoint = new Endpoint(null, metadata ?? EndpointMetadataCollection.Empty, "test");
             httpContext.SetEndpoint(endpoint);
         }
 
@@ -297,6 +301,112 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
         context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Result.Should().NotBe(RuleResult.EndResponse);
         context.HttpContext.Response.Headers.Location.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Endpoint Availability Tests
+
+    // The opt-out attributes are only visible in endpoint metadata, which exists after UseRouting() has matched
+    // the request. Registered before routing (the conventional UseRewriter placement) the rule must not redirect,
+    // otherwise it silently overrides opt-outs it cannot see.
+
+    [Fact]
+    public void should_not_redirect_when_request_is_not_routed()
+    {
+        // given
+        var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: true);
+        var context = _CreateRewriteContext("/API/Users", routed: false);
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Result.Should().NotBe(RuleResult.EndResponse);
+        context.HttpContext.Response.Headers.Location.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_not_mutate_request_when_not_routed()
+    {
+        // given
+        var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: true);
+        var context = _CreateRewriteContext("/API/Users", queryString: "?State=AbC123", routed: false);
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Request.Path.Value.Should().Be("/API/Users");
+        context.HttpContext.Request.QueryString.Value.Should().Be("?State=AbC123");
+    }
+
+    [Fact]
+    public void should_preserve_case_sensitive_query_string_when_not_routed()
+    {
+        // given — an OAuth callback whose state/code must survive verbatim
+        var rule = _CreateRule(appendTrailingSlash: false, lowercaseUrls: true);
+        var context = _CreateRewriteContext("/callback", queryString: "?state=AbC123&code=XyZ", routed: false);
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.HttpContext.Response.Headers.Location.Should().BeEmpty();
+        context.HttpContext.Request.QueryString.Value.Should().Be("?state=AbC123&code=XyZ");
+    }
+
+    [Fact]
+    public void should_preserve_case_sensitive_query_string_when_routed_endpoint_opts_out()
+    {
+        // given
+        var rule = _CreateRule(appendTrailingSlash: false, lowercaseUrls: true);
+        var metadata = new EndpointMetadataCollection(new NoLowercaseQueryStringAttribute());
+        var context = _CreateRewriteContext("/callback", queryString: "?state=AbC123&code=XyZ", metadata: metadata);
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.HttpContext.Response.Headers.Location.Should().BeEmpty();
+        context.HttpContext.Request.QueryString.Value.Should().Be("?state=AbC123&code=XyZ");
+    }
+
+    [Fact]
+    public void should_redirect_when_routed_endpoint_does_not_opt_out()
+    {
+        // given
+        var rule = _CreateRule(appendTrailingSlash: false, lowercaseUrls: true);
+        var context = _CreateRewriteContext("/callback", queryString: "?state=AbC123&code=XyZ");
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status301MovedPermanently);
+        context.Result.Should().Be(RuleResult.EndResponse);
+        context
+            .HttpContext.Response.Headers.Location.ToString()
+            .Should()
+            .Be("https://example.com/callback?state=abc123&code=xyz");
+    }
+
+    [Fact]
+    public void should_not_append_trailing_slash_when_not_routed()
+    {
+        // given
+        var rule = _CreateRule(appendTrailingSlash: true, lowercaseUrls: false);
+        var context = _CreateRewriteContext("/api/users", routed: false);
+
+        // when
+        rule.ApplyRule(context);
+
+        // then
+        context.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.HttpContext.Request.Path.Value.Should().Be("/api/users");
     }
 
     #endregion

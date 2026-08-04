@@ -49,12 +49,17 @@ public sealed class RedisMessagingOptions
 
     /// <summary>
     /// Optional callback invoked when an error occurs during message consumption. Use this to
-    /// log, alert, or forward failed entries to a dead-letter store.
+    /// log or alert on failed entries.
     /// When <see langword="null"/>, consume errors are logged and the entry is skipped.
+    /// The callback receives a sanitized exception and an entry containing only its identifier;
+    /// raw headers and message bodies are never exposed through this diagnostic surface.
     /// </summary>
     public Func<ConsumeErrorContext, Task>? OnConsumeError { get; set; }
 
-    /// <summary>Context passed to <see cref="OnConsumeError"/> when a stream entry fails processing.</summary>
+    /// <summary>
+    /// Context passed to <see cref="OnConsumeError"/> when a stream entry fails processing.
+    /// Transport-created contexts contain a sanitized exception and an identifier-only entry.
+    /// </summary>
     public record ConsumeErrorContext(Exception Exception, StreamEntry? Entry);
 }
 

@@ -652,56 +652,6 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    public virtual async Task terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_instant()
-    {
-        // Provider-parity guard: the live-status partial unique index (UQ_CronJobId_ExecutionTime) only dedups
-        // Idle/Queued/InProgress rows, so a terminal occurrence for (cron, instant) must not swallow a later
-        // claim of the same instant. PostgreSQL's ON CONFLICT targets the partial index and always agreed;
-        // SQL Server's NOT EXISTS dedup had no status filter and silently dropped the tick with no log.
-        var ct = AbortToken;
-        await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("terminal-reinsert");
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        await host.StartAsync(ct);
-
-        try
-        {
-            var cronId = Guid.NewGuid();
-            await fixture.SeedCronJobAsync(cronId, "create", "* * * * *", NodeDeathPolicy.Retry, ct);
-
-            // Whole-second instant so the equality dedup compares identically across providers' precision.
-            var executionTime = new DateTime(
-                DateTime.UtcNow.Ticks - (DateTime.UtcNow.Ticks % TimeSpan.TicksPerSecond),
-                DateTimeKind.Utc
-            ).AddMinutes(1);
-            await fixture.SeedCronOccurrenceAsync(
-                Guid.NewGuid(),
-                cronId,
-                (int)JobStatus.Skipped,
-                ownerId: null,
-                NodeDeathPolicy.Retry,
-                lockedUntil: null,
-                executionTime,
-                ct
-            );
-
-            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var context = new JobManagerDispatchContext(cronId) { FunctionName = "create", Expression = "* * * * *" };
-            var claimed = await persistence
-                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
-                .ToArrayAsync(ct);
-
-            claimed.Should().ContainSingle("a terminal occurrence at the same instant must not swallow the cron tick");
-            (await fixture.CountCronOccurrencesAsync(ct))
-                .Should()
-                .Be(2, "the terminal row is history, not a dedup key");
-        }
-        finally
-        {
-            await host.StopAsync(ct);
-        }
-    }
-
     public virtual async Task deleting_a_chain_root_removes_the_whole_descendant_tree()
     {
         // The self-referential parent FK is DeleteBehavior.NoAction, so the previous root-only RemoveRange threw
@@ -793,6 +743,77 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         finally
         {
             await Task.WhenAll(firstHost.StopAsync(ct), secondHost.StopAsync(ct));
+        }
+    }
+
+    /// <summary>
+    /// The insert-path dedup must conflict with ACTIVE occurrences only, matching the filtered unique index. A
+    /// terminal row at the same execution time — the one a cron-expression migration marks <c>Skipped</c> without
+    /// creating a replacement — must not suppress the fire. PostgreSQL got this right through
+    /// <c>ON CONFLICT … WHERE Status IN (…)</c>; SQL Server's unfiltered <c>NOT EXISTS</c> silently dropped it.
+    /// </summary>
+    public virtual async Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("terminal-dedup-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "terminal-dedup", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            // Whole seconds: PostgreSQL stores DateTime at microsecond granularity, so a tick-precision execution
+            // time would never match the dedup predicate and the test would pass for the wrong reason there.
+            var now = DateTime.UtcNow;
+            var executionTime = new DateTime(
+                now.Year,
+                now.Month,
+                now.Day,
+                now.Hour,
+                now.Minute,
+                now.Second,
+                DateTimeKind.Utc
+            ).AddMinutes(1);
+
+            var skippedId = Guid.NewGuid();
+            await fixture.SeedCronOccurrenceAsync(
+                skippedId,
+                cronId,
+                (int)JobStatus.Skipped,
+                null,
+                NodeDeathPolicy.Retry,
+                null,
+                executionTime,
+                ct
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var context = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "terminal-dedup",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+            };
+
+            // NextCronOccurrence is null (the earliest-available read skips terminal rows), so dispatch takes the
+            // insert path — exactly the state the scheduler reaches after a cron-expression migration.
+            var claimed = await persistence
+                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
+                .ToArrayAsync(ct);
+
+            var occurrence = claimed.Should().ContainSingle().Subject;
+            occurrence.Id.Should().NotBe(skippedId);
+            occurrence.Status.Should().Be(JobStatus.Queued);
+            occurrence.ExecutionTime.Should().BeCloseTo(executionTime, TimeSpan.FromMicroseconds(1));
+            (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(2);
+            (await fixture.ReadCronOccurrenceAsync(skippedId, ct)).Status.Should().Be((int)JobStatus.Skipped);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
         }
     }
 

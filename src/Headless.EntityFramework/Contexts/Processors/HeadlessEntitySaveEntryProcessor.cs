@@ -140,7 +140,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        ObjectPropertiesHelper.TrySetProperty(entity, nameof(IMultiTenant.TenantId), () => tenantId);
+        ObjectPropertiesHelper.TrySetPropertyValue(entity, nameof(IMultiTenant.TenantId), tenantId);
     }
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)

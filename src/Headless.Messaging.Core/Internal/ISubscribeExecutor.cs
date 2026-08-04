@@ -221,6 +221,10 @@ internal sealed class SubscribeExecutor(
             .ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Succeeded,
+                // Unlike the publish path, the consume path DOES mutate Origin before invoking the
+                // consumer: ExecuteAsync stamps Headers.ExecutionInstanceId on every attempt, after the
+                // row was stored. Preserving here would drop that stamp from the persisted envelope.
+                MessageContentWrite.Refresh,
                 nextRetryAt: null,
                 lockedUntil: null,
                 originalRetries: message.Retries,
@@ -407,6 +411,9 @@ internal sealed class SubscribeExecutor(
             .ChangeReceiveRetryStateAsync(
                 message,
                 state.NextStatus,
+                // _SetFailedState stamped the exception onto Origin, so the persisted envelope is stale
+                // until this write refreshes it.
+                MessageContentWrite.Refresh,
                 state.NextRetryAt,
                 lockedUntil,
                 originalRetries,

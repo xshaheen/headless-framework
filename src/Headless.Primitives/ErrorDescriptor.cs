@@ -45,6 +45,56 @@ public sealed class ErrorDescriptor
         _params = new Dictionary<string, object?>(paramsDictionary, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Initializes a new <see cref="ErrorDescriptor"/> with parameters supplied as a contiguous span.</summary>
+    /// <param name="code">A distinct code indicating the cause of the error.</param>
+    /// <param name="description">A human-readable description of the error.</param>
+    /// <param name="parameters">
+    ///     Parameter values related to the error, copied into the descriptor's parameter bag.
+    ///     Keys are compared case-insensitively.
+    /// </param>
+    /// <param name="severity">The severity of the error. Defaults to <see cref="ValidationSeverity.Error"/>.</param>
+    public ErrorDescriptor(
+        string code,
+        [LocalizationRequired] string description,
+        ReadOnlySpan<(string Key, object? Value)> parameters,
+        ValidationSeverity severity = ValidationSeverity.Error
+    )
+        : this(code, description, severity)
+    {
+        _params = _CreateParams(parameters);
+    }
+
+    /// <summary>Initializes a new <see cref="ErrorDescriptor"/> with one or more tuple parameters.</summary>
+    /// <param name="code">A distinct code indicating the cause of the error.</param>
+    /// <param name="description">A human-readable description of the error.</param>
+    /// <param name="parameter">The first parameter related to the error.</param>
+    /// <param name="additionalParameters">Additional parameters related to the error.</param>
+    public ErrorDescriptor(
+        string code,
+        [LocalizationRequired] string description,
+        (string Key, object? Value) parameter,
+        params ReadOnlySpan<(string Key, object? Value)> additionalParameters
+    )
+        : this(code, description, ValidationSeverity.Error, parameter, additionalParameters) { }
+
+    /// <summary>Initializes a new <see cref="ErrorDescriptor"/> with a severity and one or more tuple parameters.</summary>
+    /// <param name="code">A distinct code indicating the cause of the error.</param>
+    /// <param name="description">A human-readable description of the error.</param>
+    /// <param name="severity">The severity of the error.</param>
+    /// <param name="parameter">The first parameter related to the error.</param>
+    /// <param name="additionalParameters">Additional parameters related to the error.</param>
+    public ErrorDescriptor(
+        string code,
+        [LocalizationRequired] string description,
+        ValidationSeverity severity,
+        (string Key, object? Value) parameter,
+        params ReadOnlySpan<(string Key, object? Value)> additionalParameters
+    )
+        : this(code, description, severity)
+    {
+        _params = _CreateParams(parameter, additionalParameters);
+    }
+
     private Dictionary<string, object?>? _params;
 
     /// <summary>A distinct code indicating the cause of the error.</summary>
@@ -86,6 +136,41 @@ public sealed class ErrorDescriptor
         }
 
         return this;
+    }
+
+    private static Dictionary<string, object?>? _CreateParams(ReadOnlySpan<(string Key, object? Value)> parameters)
+    {
+        if (parameters.IsEmpty)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, object?>(parameters.Length, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, value) in parameters)
+        {
+            result[key] = value;
+        }
+
+        return result;
+    }
+
+    private static Dictionary<string, object?> _CreateParams(
+        (string Key, object? Value) parameter,
+        ReadOnlySpan<(string Key, object? Value)> additionalParameters
+    )
+    {
+        var result = new Dictionary<string, object?>(1 + additionalParameters.Length, StringComparer.OrdinalIgnoreCase)
+        {
+            [parameter.Key] = parameter.Value,
+        };
+
+        foreach (var (key, value) in additionalParameters)
+        {
+            result[key] = value;
+        }
+
+        return result;
     }
 
     /// <summary>Deconstructs the descriptor into its code, description, and severity.</summary>

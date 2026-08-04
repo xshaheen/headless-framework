@@ -40,14 +40,15 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
     public ValueTask<TransportConsumerConformanceSession> CreateBusSessionAsync(
         string destination,
         string group,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool ownsQueue = true
     )
     {
         return _CreateConformanceSessionAsync(
             MessageLane.Bus,
             destination,
             group,
-            ownsQueue: true,
+            ownsQueue,
             createReplacement: false,
             cancellationToken
         );
@@ -104,7 +105,7 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 lane == MessageLane.Queue
                     ? brokerDestinations.Single()
                     : (
-                        await cleanupClient.GetQueueUrlAsync(group.NormalizeForSqsQueueName(), cancellationToken)
+                        await cleanupClient.GetQueueUrlAsync(AwsPhysicalAddress.BusGroupQueue(group), cancellationToken)
                     ).QueueUrl;
             if (ownsQueue)
             {

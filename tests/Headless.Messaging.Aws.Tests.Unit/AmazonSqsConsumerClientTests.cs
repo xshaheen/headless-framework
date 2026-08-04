@@ -1,6 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Amazon.Runtime;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Messaging;
@@ -41,6 +44,15 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         queueUrlField!.SetValue(client, queueUrl);
+    }
+
+    private static void _SetSnsClient(AmazonSqsConsumerClient client, IAmazonSimpleNotificationService snsClient)
+    {
+        var field = typeof(AmazonSqsConsumerClient).GetField(
+            "_snsClient",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        field!.SetValue(client, snsClient);
     }
 
     private static SemaphoreSlim _GetSemaphore(AmazonSqsConsumerClient client)
@@ -105,6 +117,20 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         errorLogs.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(0, 30_000)]
+    [InlineData(500, 26_250)]
+    [InlineData(1000, 22_500)]
+    public void should_generate_retry_jitter_within_thirty_second_ceiling(int jitterPermille, int expectedMilliseconds)
+    {
+        var delay = AmazonSqsConsumerClient.CalculateNextBackoff(TimeSpan.FromSeconds(30), jitterPermille);
+
+        delay
+            .Should()
+            .Be(TimeSpan.FromMilliseconds(expectedMilliseconds))
+            .And.BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+    }
+
     [Fact]
     public async Task should_not_create_group_queue_when_queue_intent_subscribe()
     {
@@ -153,6 +179,54 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_actionable_queue_provisioning_denial()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Queue);
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var denied = new AmazonSQSException("denied https://user:secret@sqs.example/queue?token=leaked")
+        {
+            ErrorCode = "AccessDenied",
+        };
+        sqsClient.CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
+        _SetPrivateFields(client, sqsClient, string.Empty);
+
+        var act = async () => await client.FetchMessageNamesAsync(["orders"], AbortToken);
+
+        var exception = await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*AWS_MESSAGING_PROVISIONING_DENIED*Queue*billing*AccessDenied*sqs:CreateQueue*");
+        exception.Which.InnerException.Should().BeNull();
+        exception.Which.ToString().Should().NotContain("secret").And.NotContain("token=leaked");
+    }
+
+    [Fact]
+    public async Task should_report_actionable_bus_provisioning_denial()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Bus);
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        var denied = new AmazonSimpleNotificationServiceException(
+            "denied https://user:secret@sns.example/topic?token=leaked"
+        )
+        {
+            ErrorCode = "AccessDenied",
+        };
+        snsClient.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
+        _SetPrivateFields(client, sqsClient, string.Empty);
+        _SetSnsClient(client, snsClient);
+
+        var act = async () => await client.FetchMessageNamesAsync(["orders"], AbortToken);
+
+        var exception = await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*AWS_MESSAGING_PROVISIONING_DENIED*Bus*billing*AccessDenied*sns:CreateTopic*sns:Subscribe*");
+        exception.Which.InnerException.Should().BeNull();
+        exception.Which.ToString().Should().NotContain("secret").And.NotContain("token=leaked");
+    }
+
+    [Fact]
     public async Task should_log_error_when_consume_async_throws_in_concurrent_mode()
     {
         // given
@@ -189,6 +263,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     {
                                         "Message": "test message",
                                         "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
                                             "test-key": { "Value": "test-value" }
                                         }
                                     }
@@ -257,6 +333,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     {
                                         "Message": "test message",
                                         "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
                                             "test-key": { "Value": "test-value" }
                                         }
                                     }
@@ -299,7 +377,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_invalid_message_structure_for_redrive_after_three_seconds()
+    public async Task should_delete_invalid_message_structure_without_redelivery()
     {
         // given
         var options = _CreateOptions();
@@ -355,12 +433,17 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         messageReceived.Should().BeFalse("invalid messages should not be processed");
 
         // Verify error was logged
-        _AssertLoggedEvent(logger, LogLevel.Error, 4201, messageContains: "configure an SQS redrive policy");
+        _AssertLoggedEvent(logger, LogLevel.Error, 4201, messageContains: "terminally deleted");
 
-        // Verify message was rejected
+        await sqsClient.Received(1).DeleteMessageAsync(Arg.Any<string>(), "test-receipt", Arg.Any<CancellationToken>());
         await sqsClient
-            .Received(1)
-            .ChangeMessageVisibilityAsync(Arg.Any<string>(), "test-receipt", 3, Arg.Any<CancellationToken>());
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                "test-receipt",
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -399,7 +482,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     Body = """
                                     {
                                         "Message": "test",
-                                        "MessageAttributes": { "key": { "Value": "value" } }
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
+                                            "key": { "Value": "value" }
+                                        }
                                     }
                                     """,
                                     ReceiptHandle = "receipt",
@@ -456,7 +543,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     Body = """
                         {
                             "Message": "test",
-                            "MessageAttributes": { "key": { "Value": "value" } }
+                            "MessageAttributes": {
+                                "headless-msg-id": { "Value": "msg-1" },
+                                "headless-msg-name": { "Value": "TestEvent" },
+                                "key": { "Value": "value" }
+                            }
                         }
                         """,
                     ReceiptHandle = "receipt-1",
@@ -634,7 +725,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                                     Body = """
                                     {
                                         "Message": "test",
-                                        "MessageAttributes": { "key": { "Value": "value" } }
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-1" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
+                                            "key": { "Value": "value" }
+                                        }
                                     }
                                     """,
                                     ReceiptHandle = $"receipt-{count}",
@@ -864,7 +959,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_json_deserialization_error_for_redrive_after_three_seconds()
+    public async Task should_delete_json_deserialization_error_without_redelivery()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
@@ -916,11 +1011,88 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("invalid JSON should not be processed");
-        _AssertLoggedEvent(logger, LogLevel.Error, 4200, messageContains: "configure an SQS redrive policy");
+        _AssertLoggedEvent(logger, LogLevel.Error, 4200, messageContains: "terminally deleted");
 
         await sqsClient
             .Received(1)
-            .ChangeMessageVisibilityAsync(Arg.Any<string>(), "receipt-json-error", 3, Arg.Any<CancellationToken>());
+            .DeleteMessageAsync(Arg.Any<string>(), "receipt-json-error", Arg.Any<CancellationToken>());
+        await sqsClient
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                "receipt-json-error",
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_delete_missing_required_headers_without_redelivery()
+    {
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        logger.IsEnabled(LogLevel.Error).Returns(true);
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+        var callbackInvoked = false;
+        client.OnMessageCallback = (_, _) =>
+        {
+            callbackInvoked = true;
+            return Task.CompletedTask;
+        };
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var receiveCount = 0;
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage
+                                {
+                                    Body = """
+                                    {
+                                        "Message": "valid body",
+                                        "MessageAttributes": {
+                                            "headless-msg-name": { "Value": "TestEvent" }
+                                        }
+                                    }
+                                    """,
+                                    ReceiptHandle = "receipt-missing-header",
+                                },
+                            ],
+                        }
+                    );
+                }
+
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
+        _SetPrivateFields(client, sqsClient, "http://test");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected once the single malformed delivery has been terminally settled.
+        }
+
+        callbackInvoked.Should().BeFalse();
+        _AssertLoggedEvent(logger, LogLevel.Error, 4202, messageContains: "terminally deleted");
+        await sqsClient.Received(1).DeleteMessageAsync("http://test", "receipt-missing-header", CancellationToken.None);
+        await sqsClient
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                "receipt-missing-header",
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     // -------------------------------------------------------------------------

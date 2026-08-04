@@ -90,7 +90,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - `ISettingManager` is the primary entry point. Call `GetAsync(name)` to read; `SetAsync(name, value, providerName, providerKey)` to write. `GetAsync` returns a never-`null` `SettingValue(Name, Value, Provider)`: on a miss both `Value` and `Provider` are `null`; on a hit `Provider` (a `SettingValueProvider(Name, Key)`) identifies the resolving provider and its per-provider key. It still throws `ConflictException` when the setting is undefined.
 - Provider names are constants on `SettingValueProviderNames`: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. Note: the default-value constant is `DefaultValue`, not `Default`.
 - Scoped extension members are available for each provider scope: `GetForTenantAsync` / `SetForTenantAsync`, `GetForUserAsync` / `SetForUserAsync`, `GetGlobalAsync` / `SetGlobalAsync`, `GetDefaultAsync`, `GetInConfigurationAsync`. The raw (non-generic) `Get*` scoped helpers return the unwrapped `string?` value; the generic `Get*<T>` helpers deserialize the JSON value to `T`. Use `IsTrueAsync` / `IsFalseAsync` / `GetAsync<T>` / `SetAsync<T>` on `ISettingManager` for typed or boolean reads.
-- For sensitive settings, set `isEncrypted: true` on `SettingDefinition` — Core handles encryption/decryption via `IStringEncryptionService` automatically.
+- For sensitive settings, set `isEncrypted: true` on `SettingDefinition` — Core handles encryption/decryption via `IStringEncryptionService` automatically. Only values persisted by a store-backed provider (`Global`, `Tenant`, `User`) are decrypted on read; a plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is, on every read path (`GetAsync`, both `GetAllAsync` overloads).
 - Core registers a `SettingsInitializationBackgroundService` hosted service — do not register your own init logic for settings.
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessSettings` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<SettingManagementOptions>(...)` also works and composes regardless of call order.
@@ -260,7 +260,9 @@ Provides the full settings management implementation including hierarchical valu
 
 ### Design Notes
 
-Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. This matters when writing custom providers that must override built-in resolution.
+Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. This matters when writing custom providers that must override built-in resolution. `ISettingValueProviderManager.Providers` exposes the reversed (highest priority first) list, which every read path — `GetAsync`, `GetAllAsync(settingNames)`, and `GetAllAsync(providerName)` — walks forward, taking the first non-null value.
+
+Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving provider is store-backed (`Global`, `Tenant`, `User`). A plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is rather than fed to the decryptor.
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
@@ -443,6 +445,7 @@ Provides EF Core repository implementations for setting values and definitions u
 - EF repositories for `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository`
 - `SettingsStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing
+- Value uniqueness declared as a pair of filtered unique indexes — `(Name, ProviderName, ProviderKey) WHERE "ProviderKey" IS NOT NULL` and `(Name, ProviderName) WHERE "ProviderKey" IS NULL` — matching the raw-DDL providers, so global (NULL-key) values stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite)
 
 ### Design Notes
 

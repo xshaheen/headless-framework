@@ -5,7 +5,6 @@ using Headless.Blobs.SshNet;
 using Headless.Hosting.Options;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
-using Renci.SshNet.Common;
 
 namespace Tests;
 
@@ -336,12 +335,74 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         {
             var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
 
-            await act.Should().ThrowAsync<SftpPathNotFoundException>();
+            // DirectoryNotFoundException, not the SSH.NET SftpPathNotFoundException: a never-provisioned container
+            // is a provisioning error, and it carries the same type here as on the FileSystem provider so
+            // provider-portable code can catch one exception for both.
+            await act.Should().ThrowAsync<DirectoryNotFoundException>();
             (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
         }
         finally
         {
             await manager.DeleteContainerAsync(container, AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task copy_to_missing_container_throws_instead_of_reporting_missing_source()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var manager = GetContainerManager();
+        var source = new BlobLocation(ContainerName, "copy-source.txt");
+        await storage.UploadContentAsync(source, "payload", AbortToken);
+
+        var missingContainer = "missing-" + Guid.NewGuid().ToString("N");
+        var destination = new BlobLocation(missingContainer, "copy-target.txt");
+
+        try
+        {
+            var act = async () => await storage.CopyAsync(source, destination, AbortToken);
+
+            // Copy is a data-plane operation: like UploadAsync it must refuse — not silently provision — a
+            // destination container that was never ensured. Returning false here would claim the source is
+            // missing (the documented meaning of false) while it demonstrably exists.
+            await act.Should().ThrowAsync<DirectoryNotFoundException>();
+            (await manager.ContainerExistsAsync(missingContainer, AbortToken)).Should().BeFalse();
+            (await storage.ExistsAsync(source, AbortToken)).Should().BeTrue();
+        }
+        finally
+        {
+            await manager.DeleteContainerAsync(missingContainer, AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task move_to_missing_container_throws_and_keeps_the_source()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var manager = GetContainerManager();
+        var source = new BlobLocation(ContainerName, "move-source.txt");
+        await storage.UploadContentAsync(source, "payload", AbortToken);
+
+        var missingContainer = "missing-" + Guid.NewGuid().ToString("N");
+        var destination = new BlobLocation(missingContainer, "move-target.txt");
+
+        try
+        {
+            var act = async () => await storage.MoveAsync(source, destination, AbortToken);
+
+            // Move funnels through CopyAsync, so the provisioning error propagates instead of being swallowed as a
+            // "source not found" false — and the source survives because the copy never ran.
+            await act.Should().ThrowAsync<DirectoryNotFoundException>();
+            (await manager.ContainerExistsAsync(missingContainer, AbortToken)).Should().BeFalse();
+            (await storage.GetBlobContentAsync(source, AbortToken)).Should().Be("payload");
+        }
+        finally
+        {
+            await manager.DeleteContainerAsync(missingContainer, AbortToken);
         }
     }
 

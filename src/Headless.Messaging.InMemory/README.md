@@ -18,6 +18,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 ## Design Notes
 
 - Publish and consume happen in process only. Headers and payload never leave memory.
+- Bus sends one copy to each logical subscriber group while replicas inside a group compete. Queue sends one owned copy to the destination replicas. Lane-qualified in-process bindings keep the same logical name isolated between Bus and Queue.
 - Delay stays in the core pipeline. There is no broker-native scheduling layer.
 - Manual callers should await `IBootstrapper.BootstrapAsync(...)` before publishing or attaching runtime subscriptions.
 - Commit is a no-op.
@@ -39,7 +40,7 @@ dotnet add package Headless.Messaging.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.ForMessagesFromAssemblyContaining<Program>();
+    options.Bus.ForConsumersFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseInMemory();
 });

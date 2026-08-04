@@ -14,6 +14,12 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
+    public override Task deleting_a_chain_root_removes_every_descendant_row()
+    {
+        return base.deleting_a_chain_root_removes_every_descendant_row();
+    }
+
+    [Fact]
     public override Task deep_chain_claim_stamps_every_descendant_to_configured_depth()
     {
         return base.deep_chain_claim_stamps_every_descendant_to_configured_depth();
@@ -59,6 +65,18 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     public override Task immediate_acquire_leases_the_whole_non_timed_subtree()
     {
         return base.immediate_acquire_leases_the_whole_non_timed_subtree();
+    }
+
+    [Fact]
+    public override Task immediate_acquire_attributes_each_root_subtree_in_one_batched_walk()
+    {
+        return base.immediate_acquire_attributes_each_root_subtree_in_one_batched_walk();
+    }
+
+    [Fact]
+    public override Task batched_lease_walk_drops_the_fence_failed_root_and_keeps_the_other_subtree()
+    {
+        return base.batched_lease_walk_drops_the_fence_failed_root_and_keeps_the_other_subtree();
     }
 
     [Fact]

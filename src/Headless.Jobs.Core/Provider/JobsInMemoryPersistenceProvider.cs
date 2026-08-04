@@ -1220,45 +1220,35 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
         var count = 0;
-        foreach (var id in jobIds)
+
+        // Deletes the WHOLE subtree, not just the direct children — parity with the EF provider, where a surviving
+        // grandchild is either permanently unreachable (non-timed) or escapes the parent-terminal gate (timed). The
+        // visited set keeps a corrupted parent cycle from looping forever.
+        var visited = new HashSet<Guid>(jobIds);
+        var pending = new Stack<Guid>(jobIds);
+
+        while (pending.TryPop(out var id))
         {
-            if (_timeJobs.TryRemove(id, out var removed))
+            foreach (var childId in _GetChildrenIds(id))
             {
-                count++;
-                _reconcileCandidates.TryRemove(id, out _);
-
-                // Clean children index
-                if (removed.ParentId.HasValue)
-                {
-                    _RemoveChildIndex(removed.ParentId.Value, removed.Id);
-                }
-
-                // Remove the WHOLE descendant subtree, not just direct children: a one-level removal orphaned
-                // grandchildren whose parent-gate lookup could never resolve again — stranded Idle forever.
-                var pending = new Stack<Guid>();
-                foreach (var childId in _GetChildrenIds(id))
+                if (visited.Add(childId))
                 {
                     pending.Push(childId);
                 }
+            }
 
-                while (pending.Count > 0)
-                {
-                    var descendantId = pending.Pop();
-                    foreach (var grandChildId in _GetChildrenIds(descendantId))
-                    {
-                        pending.Push(grandChildId);
-                    }
+            if (!_timeJobs.TryRemove(id, out var removed))
+            {
+                continue;
+            }
 
-                    if (_timeJobs.TryRemove(descendantId, out var descendant))
-                    {
-                        count++;
-                        _reconcileCandidates.TryRemove(descendantId, out _);
-                        if (descendant.ParentId.HasValue)
-                        {
-                            _RemoveChildIndex(descendant.ParentId.Value, descendant.Id);
-                        }
-                    }
-                }
+            count++;
+            _reconcileCandidates.TryRemove(id, out _);
+
+            // Clean children index
+            if (removed.ParentId.HasValue)
+            {
+                _RemoveChildIndex(removed.ParentId.Value, removed.Id);
             }
         }
 

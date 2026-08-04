@@ -56,7 +56,8 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
             Request.Query.TryGetValue(Options.ApiKeyParamName, out apiKeyValues);
         }
 
-        var providedApiKey = apiKeyValues.FirstOrDefault();
+        // Indexer instead of FirstOrDefault(): the LINQ path boxes the StringValues struct.
+        var providedApiKey = apiKeyValues.Count > 0 ? apiKeyValues[0] : null;
 
         if (string.IsNullOrWhiteSpace(providedApiKey))
         {

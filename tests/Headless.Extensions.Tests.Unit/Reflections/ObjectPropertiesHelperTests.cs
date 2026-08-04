@@ -70,6 +70,66 @@ public sealed class ObjectPropertiesHelperTests
     }
 
     [Fact]
+    public void should_set_property_from_a_direct_value()
+    {
+        // given
+        var obj = new TestClass();
+
+        // when
+        var result = ObjectPropertiesHelper.TrySetPropertyValue(obj, nameof(TestClass.Name), "John");
+
+        // then
+        result.Should().BeTrue();
+        obj.Name.Should().Be("John");
+    }
+
+    [Fact]
+    public void should_set_private_property_from_a_direct_value()
+    {
+        // given
+        var obj = new TestClass();
+
+        // when
+        var result = ObjectPropertiesHelper.TrySetPropertyValue(obj, nameof(TestClass.Age), 42);
+
+        // then
+        result.Should().BeTrue();
+        obj.Age.Should().Be(42);
+    }
+
+    [Fact]
+    public void should_not_set_direct_value_on_property_with_ignored_attribute()
+    {
+        // given
+        var obj = new TestClass();
+
+        // when
+        var result = ObjectPropertiesHelper.TrySetPropertyValue(
+            obj,
+            nameof(TestClass.IgnoredProperty),
+            "IgnoredValue",
+            typeof(IgnoreMeAttribute)
+        );
+
+        // then
+        result.Should().BeFalse();
+        obj.IgnoredProperty.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_report_failure_when_setting_a_direct_value_on_a_missing_property()
+    {
+        // given
+        var obj = new TestClass();
+
+        // when
+        var result = ObjectPropertiesHelper.TrySetPropertyValue(obj, "NoSuchProperty", "value");
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_set_nullable_property_to_null()
     {
         // given

@@ -4,9 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Pulsar;
 
-internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnectionFactory connectionFactory)
-    : IBusTransport,
-        IQueueTransport
+internal sealed class PulsarTransport(
+    ILogger<PulsarTransport> logger,
+    IConnectionFactory connectionFactory,
+    MessageLane lane = MessageLane.Bus
+) : IBusTransport, IQueueTransport
 {
     private readonly ILogger _logger = logger;
 
@@ -18,7 +20,9 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var producer = await connectionFactory.CreateProducerAsync(message.Name).ConfigureAwait(false);
+            var producer = await connectionFactory
+                .CreateProducerAsync(PulsarPhysicalAddress.Topic(lane, message.Name))
+                .ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
             headerDic.TryGetValue(PulsarMessagingHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);

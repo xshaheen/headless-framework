@@ -14,6 +14,12 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
+    // Volatile: the manager is a singleton and the snapshots are published without a lock, matching the
+    // convention DynamicFeatureDefinitionStore uses for the identical pattern. Racing recomputes are benign
+    // (same inputs produce an equivalent merge); unordered publication of a fresh object is not.
+    private volatile MergedSnapshot<FeatureDefinition>? _featuresSnapshot;
+    private volatile MergedSnapshot<FeatureGroupDefinition>? _groupsSnapshot;
+
     /// <summary>Finds a feature definition by <paramref name="name"/>, checking the static store first, then the dynamic store.</summary>
     /// <param name="name">The unique feature name to search for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -36,13 +42,24 @@ public sealed class FeatureDefinitionManager(
     public async Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
         var staticFeatures = await staticStore.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
+        var dynamicFeatures = await dynamicStore.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
+
+        var snapshot = _featuresSnapshot;
+
+        if (snapshot?.Matches(staticFeatures, dynamicFeatures) == true)
+        {
+            return snapshot.Merged;
+        }
+
         var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet();
 
         // Prefer static features over dynamics
-        var dynamicFeatures = await dynamicStore.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
         var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
+        var merged = staticFeatures.Concat(uniqueDynamicFeatures).ToImmutableList();
 
-        return staticFeatures.Concat(uniqueDynamicFeatures).ToImmutableList();
+        _featuresSnapshot = new MergedSnapshot<FeatureDefinition>(staticFeatures, dynamicFeatures, merged);
+
+        return merged;
     }
 
     /// <summary>
@@ -56,11 +73,44 @@ public sealed class FeatureDefinitionManager(
     )
     {
         var staticGroups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
-        var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
-        // Prefer static features over dynamics
-        var dynamicFeatures = await dynamicStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
-        var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticGroupNames.Contains(d.Name));
+        var dynamicGroups = await dynamicStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
 
-        return staticGroups.Concat(uniqueDynamicFeatures).ToImmutableList();
+        var snapshot = _groupsSnapshot;
+
+        if (snapshot?.Matches(staticGroups, dynamicGroups) == true)
+        {
+            return snapshot.Merged;
+        }
+
+        var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
+
+        // Prefer static features over dynamics
+        var uniqueDynamicGroups = dynamicGroups.Where(d => !staticGroupNames.Contains(d.Name));
+        var merged = staticGroups.Concat(uniqueDynamicGroups).ToImmutableList();
+
+        _groupsSnapshot = new MergedSnapshot<FeatureGroupDefinition>(staticGroups, dynamicGroups, merged);
+
+        return merged;
+    }
+
+    /// <summary>
+    /// A merged view together with the two source references it was built from. Both stores hand out
+    /// immutable snapshots that are swapped wholesale on refresh, never mutated in place, so reference
+    /// equality on the sources is a sound signal that the merge is still current. Without it the whole
+    /// catalog was re-hashed and re-concatenated on every feature check.
+    /// </summary>
+    private sealed class MergedSnapshot<T>(
+        IReadOnlyList<T> staticDefinitions,
+        IReadOnlyList<T> dynamicDefinitions,
+        IReadOnlyList<T> merged
+    )
+    {
+        public IReadOnlyList<T> Merged => merged;
+
+        public bool Matches(IReadOnlyList<T> currentStatic, IReadOnlyList<T> currentDynamic)
+        {
+            return ReferenceEquals(staticDefinitions, currentStatic)
+                && ReferenceEquals(dynamicDefinitions, currentDynamic);
+        }
     }
 }

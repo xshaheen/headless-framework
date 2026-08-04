@@ -242,6 +242,162 @@ public sealed class SettingManagerTests : TestBase
         result["Setting2"].Provider!.Name.Should().Be("Provider1");
     }
 
+    [Fact]
+    public async Task should_prefer_stored_value_over_default_in_batch()
+    {
+        // given — providers are exposed highest priority first, defaults last
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "RequireTwoFactor" };
+        List<SettingDefinition> definitions = [new("RequireTwoFactor", defaultValue: "false")];
+
+        var globalProvider = new FakeSettingValueProvider { Name = "Global" };
+        globalProvider.SetValue("RequireTwoFactor", "true");
+
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("RequireTwoFactor", "false");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([globalProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["RequireTwoFactor"].Value.Should().Be("true");
+        result["RequireTwoFactor"].Provider!.Name.Should().Be("Global");
+    }
+
+    [Fact]
+    public async Task should_apply_provider_precedence_per_setting_in_batch()
+    {
+        // given — each setting is stored in a different tier of the chain
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Setting1", "Setting2", "Setting3" };
+        List<SettingDefinition> definitions = [new("Setting1"), new("Setting2"), new("Setting3")];
+
+        var userProvider = new FakeSettingValueProvider { Name = "User" };
+        userProvider.SetValue("Setting1", "user1");
+
+        var tenantProvider = new FakeSettingValueProvider { Name = "Tenant" };
+        tenantProvider.SetValue("Setting1", "tenant1");
+        tenantProvider.SetValue("Setting2", "tenant2");
+
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Setting1", "default1");
+        defaultProvider.SetValue("Setting2", "default2");
+        defaultProvider.SetValue("Setting3", "default3");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([userProvider, tenantProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["Setting1"].Value.Should().Be("user1");
+        result["Setting1"].Provider!.Name.Should().Be("User");
+        result["Setting2"].Value.Should().Be("tenant2");
+        result["Setting2"].Provider!.Name.Should().Be("Tenant");
+        result["Setting3"].Value.Should().Be("default3");
+        result["Setting3"].Provider!.Name.Should().Be("Default");
+    }
+
+    [Fact]
+    public async Task should_stop_consulting_providers_once_every_name_is_resolved()
+    {
+        // given
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Setting1" };
+        List<SettingDefinition> definitions = [new("Setting1")];
+
+        var userProvider = new FakeSettingValueProvider { Name = "User" };
+        userProvider.SetValue("Setting1", "user1");
+
+        var defaultProvider = Substitute.For<ISettingValueReadProvider>();
+        defaultProvider.Name.Returns("Default");
+        defaultProvider
+            .GetAllAsync(Arg.Any<SettingDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([userProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then — the lower-priority provider is never queried
+        result["Setting1"].Value.Should().Be("user1");
+        await defaultProvider
+            .DidNotReceive()
+            .GetAllAsync(Arg.Any<SettingDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_not_decrypt_non_store_values_in_batch()
+    {
+        // given — an encrypted setting whose only value is the plaintext definition default
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Smtp.Password" };
+        var definition = new SettingDefinition("Smtp.Password", defaultValue: "changeme", isEncrypted: true);
+
+        var defaultProvider = new FakeReadOnlySettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Smtp.Password", "changeme");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["Smtp.Password"].Value.Should().Be("changeme");
+        _encryptionService.DidNotReceive().Decrypt(Arg.Any<SettingDefinition>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task should_decrypt_store_values_in_batch()
+    {
+        // given
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Smtp.Password" };
+        var definition = new SettingDefinition("Smtp.Password", isEncrypted: true);
+
+        var store = Substitute.For<ISettingValueStore>();
+        store
+            .GetAllAsync(Arg.Any<HashSet<string>>(), "Store", null, AbortToken)
+            .Returns([new SettingValue("Smtp.Password", "encrypted-data")]);
+        var storeProvider = new FakeStoreSettingValueProvider(store);
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([storeProvider]);
+        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["Smtp.Password"].Value.Should().Be("plain-data");
+        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+    }
+
+    [Fact]
+    public async Task should_decrypt_custom_writable_provider_values_in_batch()
+    {
+        // given SetAsync encrypts before every writable-provider write, so a custom ISettingValueProvider
+        // that does NOT derive from StoreSettingValueProvider still holds ciphertext and must be decrypted.
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Smtp.Password" };
+        var definition = new SettingDefinition("Smtp.Password", isEncrypted: true);
+
+        var customProvider = new FakeSettingValueProvider { Name = "Custom" };
+        customProvider.SetValue("Smtp.Password", "encrypted-data");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([customProvider]);
+        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+
+        // when
+        var result = await _sut.GetAllAsync(settings, AbortToken);
+
+        // then
+        result["Smtp.Password"].Value.Should().Be("plain-data");
+        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+    }
+
     #endregion
 
     #region GetAllAsync (provider name)
@@ -296,6 +452,117 @@ public sealed class SettingManagerTests : TestBase
         resolved.Value.Should().Be("en-US");
         resolved.Provider!.Name.Should().Be("Account");
         resolved.Provider!.Key.Should().Be(providerKey);
+    }
+
+    [Fact]
+    public async Task should_not_fall_back_for_non_inherited_setting()
+    {
+        // given — a non-inherited setting is only ever read from the head of the provider chain
+        const string providerName = "Account";
+        var definition = new SettingDefinition("Preferences.Locale", isInherited: false);
+
+        var accountProvider = new FakeSettingValueProvider { Name = providerName };
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Preferences.Locale", "ar-EG");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([accountProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(providerName, fallback: true, cancellationToken: AbortToken);
+
+        // then — the later provider's value is not inherited, so nothing resolves
+        result.Should().BeEmpty();
+        defaultProvider.GetAllCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_read_each_provider_once_regardless_of_definition_count()
+    {
+        // given — three definitions spanning both resolution modes across a two-provider chain
+        const string providerName = "Account";
+        List<SettingDefinition> definitions =
+        [
+            new("Setting1", isInherited: true),
+            new("Setting2", isInherited: true),
+            new("Setting3", isInherited: false),
+        ];
+
+        var accountProvider = new FakeSettingValueProvider { Name = providerName };
+        accountProvider.SetValue("Setting1", "value1");
+
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Setting2", "value2");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([accountProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(providerName, fallback: true, cancellationToken: AbortToken);
+
+        // then — values still resolve from the right providers
+        result.Should().HaveCount(2);
+        result
+            .Should()
+            .Contain(sv => sv.Name == "Setting1" && sv.Value == "value1" && sv.Provider!.Name == providerName);
+        result.Should().Contain(sv => sv.Name == "Setting2" && sv.Value == "value2" && sv.Provider!.Name == "Default");
+
+        // and each provider is read in batches, not once per definition: the head serves the non-inherited
+        // group and the inherited group, the fallback serves only what the head left unresolved.
+        accountProvider.GetAllCallCount.Should().Be(2);
+        defaultProvider.GetAllCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_decrypt_value_resolved_from_fallback_provider()
+    {
+        // given — encrypted setting with no stored value, so the plaintext default wins through fallback
+        var definition = new SettingDefinition("Smtp.Password", defaultValue: "changeme", isEncrypted: true);
+
+        var store = Substitute.For<ISettingValueStore>();
+        store
+            .GetAllAsync(Arg.Any<HashSet<string>>(), "Store", null, AbortToken)
+            .Returns([new SettingValue("Smtp.Password", Value: null)]);
+        var storeProvider = new FakeStoreSettingValueProvider(store);
+
+        var defaultProvider = new FakeReadOnlySettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Smtp.Password", "changeme");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([storeProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync("Store", fallback: true, cancellationToken: AbortToken);
+
+        // then
+        var resolved = result.Should().ContainSingle().Which;
+        resolved.Value.Should().Be("changeme");
+        resolved.Provider!.Name.Should().Be("Default");
+        _encryptionService.DidNotReceive().Decrypt(Arg.Any<SettingDefinition>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task should_decrypt_value_resolved_from_store_provider()
+    {
+        // given
+        var definition = new SettingDefinition("Smtp.Password", isEncrypted: true);
+
+        var store = Substitute.For<ISettingValueStore>();
+        store
+            .GetAllAsync(Arg.Any<HashSet<string>>(), "Store", null, AbortToken)
+            .Returns([new SettingValue("Smtp.Password", "encrypted-data")]);
+        var storeProvider = new FakeStoreSettingValueProvider(store);
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([storeProvider]);
+        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+
+        // when
+        var result = await _sut.GetAllAsync("Store", cancellationToken: AbortToken);
+
+        // then
+        result.Should().ContainSingle().Which.Value.Should().Be("plain-data");
+        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
     }
 
     [Fact]

@@ -77,11 +77,11 @@ The semantic channel of a message: bus (broadcast — every subscriber group get
 (point-to-point — competing consumers, one worker per message). The same CLR contract may use both
 lanes intentionally, but each lane has an independent registration, route, runtime key, and storage
 discriminator; physical topology is independent only when the provider declares that capability.
-Use `MessageLane.Bus` / `MessageLane.Queue` in new APIs and
-writing. Persisted columns, headers, wire values, monitoring, and dashboard projections retain the
-legacy `IntentType` name and numeric values until the #350 compatibility cutover. `Bus = 0` and
-`Queue = 1` are stable compatibility values; an undefined value fails explicitly and never falls
-back to Bus.
+Use `MessageLane.Bus` / `MessageLane.Queue` in public APIs, runtime state, monitoring, dashboard
+projections, and new writing. Persisted columns retain the legacy `IntentType` name and the wire
+header retains the `headless-intent` literal with stable numeric values: `Bus = 0`, `Queue = 1`.
+Those compatibility identities are intentional and are not public terminology. An undefined value
+fails explicitly and never falls back to Bus.
 
 ### Verb-conveyed lane model
 The decided messaging model (2026-07-13): the operation conveys semantics. Publishing through `IBus`
@@ -94,9 +94,9 @@ physical topology separate.
 
 Provider support is declared by immutable transport, storage, and coordination capability
 descriptors. Startup and per-call gates reject unsupported lanes, scheduling, or dual-lane topology
-before readiness, middleware, storage writes, client creation, or transport I/O. NATS and RabbitMQ
-currently cannot isolate the same contract/name on both lanes; that physical topology migration is
-owned by #359.
+before readiness, middleware, storage writes, client creation, or transport I/O. Every built-in
+dual-lane transport declares independent physical topology for the same contract/name. Kafka
+remains Queue-only and rejects Bus registration before readiness or provider side effects.
 
 Callback responses always use the Bus delivery lane, even when the request arrived on Queue. Queue
 remains the request's origin metadata; the declared callback contract selects typed middleware while

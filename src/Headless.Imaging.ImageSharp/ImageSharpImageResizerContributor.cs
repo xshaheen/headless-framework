@@ -34,14 +34,20 @@ internal sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageR
             return ImageStreamResizeResult.NotSupportedMimeType(args.MimeType);
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
+        var (decoded, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
             return ImageStreamResizeResult.NotSupported(error);
         }
 
-        Debug.Assert(image is not null);
+        Debug.Assert(decoded is not null);
+
+        // The decoded image owns pooled pixel buffers that only Dispose returns to the allocator; every exit path
+        // below must release them. No returned result references the image — the pass-through path returns the
+        // caller's own stream and the resized path returns an independent encoded stream.
+        using var image = decoded;
+
         var format = image.Metadata.DecodedImageFormat;
 
         if (format is null)
@@ -65,6 +71,10 @@ internal sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageR
 
         image.Mutate(x => x.Resize(new ResizeOptions { Size = _GetSize(args), Mode = resizeMode.Value }));
 
+        // Deliberately NOT pre-sized from the source (unlike the compressor): a resize output is typically orders
+        // of magnitude smaller than the source, and the returned stream keeps its full capacity for the caller's
+        // lifetime — seeding it with the source length would trade a few transient regrow copies for a retained
+        // (often large-object-heap) allocation per in-flight resize.
         var memoryStream = new MemoryStream();
 
         try

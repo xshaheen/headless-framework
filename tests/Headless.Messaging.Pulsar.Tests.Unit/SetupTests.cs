@@ -66,6 +66,22 @@ public sealed class SetupTests : TestBase
         result.Should().BeSameAs(setup);
     }
 
+    [Fact]
+    public async Task should_register_distinct_lane_transports_and_independent_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UsePulsar("pulsar://localhost:6650"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetRequiredService<IBusTransport>()
+            .Should()
+            .NotBeSameAs(provider.GetRequiredService<IQueueTransport>());
+        var capabilities = provider.GetRequiredService<MessagingProviderCapabilities>();
+        capabilities.SupportsIndependentLaneTopology.Should().BeTrue();
+    }
+
     private static MessagingSetupBuilder _CreateSetup()
     {
         return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());

@@ -808,6 +808,7 @@ const handleTableOptionsUpdate = (options: { page?: number; itemsPerPage?: numbe
   background: rgba(30, 30, 30, 0.8);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);
+  min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.3s ease;
 }

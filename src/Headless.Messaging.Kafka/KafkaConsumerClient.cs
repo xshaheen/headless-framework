@@ -186,8 +186,26 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     continue;
                 }
 
-                if (consumerResult.IsPartitionEOF || consumerResult.Message.Value == null)
+                if (consumerResult.IsPartitionEOF)
                 {
+                    // The marker is not dispatched to a handler, so its offset never reaches
+                    // CommitAsync. The concurrent-mode watermark still has to account for it or it
+                    // stops at the first one and the partition is never committed again.
+                    _ObserveUndispatched(consumerResult);
+
+                    continue;
+                }
+
+                if (consumerResult.Message.Value == null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = "Kafka record had a null transport value and was terminally committed.",
+                        }
+                    );
+                    _ObserveUndispatched(consumerResult);
                     continue;
                 }
 
@@ -453,13 +471,50 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
+    private void _ObserveUndispatched(ConsumeResult<string, byte[]> consumerResult)
+    {
+        lock (_lock)
+        {
+            var consumerClient = _consumerClient;
+
+            if (consumerClient is null || !_OwnsPartition(consumerResult.TopicPartition))
+            {
+                return;
+            }
+
+            List<TopicPartitionOffset> committableOffsets;
+
+            if (_offsetCommitTracker is null)
+            {
+                var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+                if (offset < 0)
+                {
+                    return;
+                }
+
+                var nextOffset = consumerResult.IsPartitionEOF ? offset : offset + 1;
+                committableOffsets = [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextOffset))];
+            }
+            else
+            {
+                committableOffsets = _offsetCommitTracker.MarkObserved(consumerResult);
+            }
+
+            if (committableOffsets.Count > 0)
+            {
+                consumerClient.Commit(committableOffsets);
+            }
+        }
+    }
+
     private async Task _ConsumeAsync(KafkaDelivery delivery)
     {
         var consumerResult = delivery.ConsumerResult;
-        TransportMessage message;
+        Dictionary<string, string?> headers;
         try
         {
-            var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
+            headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
             foreach (var header in consumerResult.Message.Headers)
             {
                 var val = header.GetValueBytes();
@@ -467,8 +522,16 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
 
             headers[Headers.Group] = _groupId;
+        }
+        catch (Exception ex)
+        {
+            await _TerminallyCommitMalformedEnvelopeAsync(delivery, ex).ConfigureAwait(false);
+            return;
+        }
 
-            if (_kafkaOptions.CustomHeadersBuilder != null)
+        if (_kafkaOptions.CustomHeadersBuilder != null)
+        {
+            try
             {
                 var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, _serviceProvider);
                 foreach (var customHeader in customHeaders)
@@ -476,24 +539,61 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     headers[customHeader.Key] = customHeader.Value;
                 }
             }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Kafka custom headers builder failed; seeking offset for retry: {ex.GetType().Name}",
+                    }
+                );
 
+                await RejectAsync(delivery).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
+            _ValidateRequiredHeaders(headers);
             message = new TransportMessage(headers, consumerResult.Message.Value);
         }
         catch (Exception ex)
         {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to build transport message, seeking back: {ex}",
-                }
-            );
-
-            await RejectAsync(delivery).ConfigureAwait(false);
+            await _TerminallyCommitMalformedEnvelopeAsync(delivery, ex).ConfigureAwait(false);
             return;
         }
 
         await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+    }
+
+    private async Task _TerminallyCommitMalformedEnvelopeAsync(KafkaDelivery delivery, Exception exception)
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason =
+                    $"Failed to build transport message; the Kafka offset was terminally committed: {exception.GetType().Name}",
+            }
+        );
+
+        await CommitAsync(delivery).ConfigureAwait(false);
+    }
+
+    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    {
+        if (
+            !headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || !headers.TryGetValue(Headers.MessageName, out var messageName)
+            || string.IsNullOrWhiteSpace(messageName)
+        )
+        {
+            throw new InvalidDataException("The Kafka transport envelope is missing a required Messaging header.");
+        }
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
@@ -625,7 +725,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
-    private sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
+    internal sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
     {
         public const long UntrackedGeneration = -1;
 
@@ -636,7 +736,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         public bool IsTracked => Generation != UntrackedGeneration;
     }
 
-    private sealed class KafkaOffsetCommitTracker
+    /// <summary>
+    /// Tracks which offsets are still being handled per partition so concurrent handlers can only ever
+    /// commit a watermark that no in-flight delivery sits below.
+    /// </summary>
+    internal sealed class KafkaOffsetCommitTracker
     {
         private readonly Dictionary<TopicPartition, PartitionCommitState> _partitions = [];
 
@@ -649,20 +753,61 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
             }
 
-            var topicPartition = consumerResult.TopicPartition;
-
-            if (!_partitions.TryGetValue(topicPartition, out var state))
-            {
-                state = new PartitionCommitState();
-                _partitions.Add(topicPartition, state);
-            }
+            var state = _GetOrAddState(consumerResult.TopicPartition);
 
             if (state.NextCommitOffset is null || offset < state.NextCommitOffset.Value)
             {
                 state.NextCommitOffset = offset;
             }
 
+            state.PendingOffsets.Add(offset);
+            _Observe(state, offset, offset + 1);
+
             return new KafkaDelivery(consumerResult, state.Generation);
+        }
+
+        /// <summary>
+        /// Records an offset the poll loop saw but never dispatched — a tombstone, or an end-of-partition
+        /// marker — and returns the highest commit offset that does not pass an in-flight delivery.
+        /// </summary>
+        public List<TopicPartitionOffset> MarkObserved(ConsumeResult<string, byte[]> consumerResult)
+        {
+            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
+
+            if (offset < 0)
+            {
+                return [];
+            }
+
+            var state = _GetOrAddState(consumerResult.TopicPartition);
+            var isInitialObservation = state.NextCommitOffset is null;
+            state.NextCommitOffset ??= offset;
+
+            // An end-of-partition result already carries the log-end offset (the next offset that will be
+            // produced there), whereas a record carries its own offset.
+            var nextOffset = consumerResult.IsPartitionEOF ? offset : offset + 1;
+
+            if (!_Observe(state, offset, nextOffset))
+            {
+                return [];
+            }
+
+            var candidate =
+                state.PendingOffsets.Count > 0
+                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    : state.NextObservedOffset;
+            var nextCommitOffset = state.NextCommitOffset.Value;
+
+            // The first EOF observation is itself a useful commit even though its offset is already the
+            // next offset to read. Subsequent observations at the same frontier need no duplicate commit.
+            if (candidate < nextCommitOffset || (candidate == nextCommitOffset && !isInitialObservation))
+            {
+                return [];
+            }
+
+            state.NextCommitOffset = candidate;
+
+            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(candidate))];
         }
 
         public void Reset(TopicPartition partition)
@@ -674,7 +819,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             state.Generation++;
             state.NextCommitOffset = null;
-            state.CompletedOffsets.Clear();
+            state.NextObservedOffset = 0;
+            state.IsReplaying = false;
+            state.PendingOffsets.Clear();
         }
 
         public List<TopicPartitionOffset> MarkCommitted(KafkaDelivery delivery)
@@ -692,28 +839,25 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return [];
             }
 
-            if (offset < nextCommitOffset)
+            state.PendingOffsets.Remove(offset);
+
+            // Everything below the lowest still-in-flight offset is done. With nothing in flight the
+            // watermark moves up to everything the poll loop has seen, which is what carries it over the
+            // offsets the broker never delivers — transaction control records, aborted batches under
+            // read_committed, and compaction holes — instead of stalling on them forever.
+            var candidate =
+                state.PendingOffsets.Count > 0
+                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    : state.NextObservedOffset;
+
+            if (candidate <= nextCommitOffset)
             {
                 return [];
             }
 
-            state.CompletedOffsets.Add(offset);
-            var advanced = false;
+            state.NextCommitOffset = candidate;
 
-            while (state.CompletedOffsets.Remove(nextCommitOffset))
-            {
-                nextCommitOffset++;
-                advanced = true;
-            }
-
-            if (!advanced)
-            {
-                return [];
-            }
-
-            state.NextCommitOffset = nextCommitOffset;
-
-            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(nextCommitOffset))];
+            return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(candidate))];
         }
 
         public bool MarkRejected(KafkaDelivery delivery)
@@ -730,8 +874,54 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             var offset = consumerResult.TopicPartitionOffset.Offset.Value;
             state.Generation++;
-            state.NextCommitOffset = offset >= 0 ? offset : null;
-            state.CompletedOffsets.Clear();
+            state.PendingOffsets.Clear();
+
+            if (offset < 0)
+            {
+                state.NextCommitOffset = null;
+                state.NextObservedOffset = 0;
+                state.IsReplaying = false;
+
+                return true;
+            }
+
+            // The caller seeks back to this offset, so the range above it is about to be replayed and
+            // must not count as seen until the replay actually delivers it.
+            state.NextCommitOffset = offset;
+            state.NextObservedOffset = offset;
+            state.IsReplaying = true;
+
+            return true;
+        }
+
+        private PartitionCommitState _GetOrAddState(TopicPartition topicPartition)
+        {
+            if (_partitions.TryGetValue(topicPartition, out var state))
+            {
+                return state;
+            }
+
+            state = new PartitionCommitState();
+            _partitions.Add(topicPartition, state);
+
+            return state;
+        }
+
+        private static bool _Observe(PartitionCommitState state, long offset, long nextOffset)
+        {
+            if (state.IsReplaying)
+            {
+                if (offset > state.NextObservedOffset)
+                {
+                    // A delivery the poll loop already held when the reject seeked back. The replay will
+                    // hand out the whole range again, so it is not proof that the gap below is finished.
+                    return false;
+                }
+
+                state.IsReplaying = false;
+            }
+
+            state.NextObservedOffset = Math.Max(state.NextObservedOffset, nextOffset);
 
             return true;
         }
@@ -740,9 +930,20 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         {
             public long Generation { get; set; }
 
+            /// <summary>The offset to commit, meaning the next offset this consumer would read.</summary>
             public long? NextCommitOffset { get; set; }
 
-            public SortedSet<long> CompletedOffsets { get; } = [];
+            /// <summary>
+            /// The offset the poll loop expects next: one past the highest delivery it has seen. Deliveries
+            /// are ordered within a partition, so nothing below this can still be on its way.
+            /// </summary>
+            public long NextObservedOffset { get; set; }
+
+            /// <summary>Whether a reject seeked back and the replay has not reached that offset yet.</summary>
+            public bool IsReplaying { get; set; }
+
+            /// <summary>Tracked deliveries that have not been committed yet, bounded by the group concurrency.</summary>
+            public SortedSet<long> PendingOffsets { get; } = [];
         }
     }
 }

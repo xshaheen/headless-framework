@@ -4,7 +4,7 @@ ASP.NET Core demo for Pulsar transport with in-memory Headless storage.
 
 ## Shows
 
-- Assembly scanning with `ForMessagesFromAssembly(...)`.
+- Lane-scoped assembly scanning with `Bus.ForConsumersFromAssembly(...)`.
 - Pulsar transport through `UsePulsar(...)`.
 - In-memory storage through `UseInMemoryStorage()`.
 - Messaging dashboard registration with `WithNoAuth()`.

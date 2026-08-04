@@ -187,4 +187,10 @@ public sealed class InMemoryDistributedLockTests : DistributedLockTestsBase
     {
         return base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
     }
+
+    [Fact]
+    public override Task should_not_fire_handle_lost_token_on_clean_release()
+    {
+        return base.should_not_fire_handle_lost_token_on_clean_release();
+    }
 }

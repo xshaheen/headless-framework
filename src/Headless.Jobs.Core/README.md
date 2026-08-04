@@ -45,6 +45,12 @@ Claiming a chained time job leases its non-timed descendants down to the configu
 
 The whole chain executes in-process under the root's single pickup lease. If the owning node crashes mid-chain after the root already completed, the running tail can be orphaned (reclaim returns a non-timed descendant to idle with no execution time and nothing re-picks it up); per-node `OnNodeDeath` policies still apply, and per-node independent pickup is deferred hardening. Lowering `MaxChainDepth` after deeper chains were persisted truncates runtime traversal for those chains.
 
+Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first (the EF provider does so inside one transaction); the returned count includes every removed descendant. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
+
+A typed job function's stored request is read immediately before the handler runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
+
+Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
+
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes that flag immediately before user code and then on `CancellationObservationInterval`, using the same owner/status fence as lease renewal.
 
 Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant. The paused interval is never replayed; catch-up and misfire policy are outside this contract.

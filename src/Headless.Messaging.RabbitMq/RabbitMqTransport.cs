@@ -10,13 +10,19 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 {
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly string _exchange;
+    private readonly MessageLane _lane;
     private readonly ILogger _logger;
 
-    public RabbitMqTransport(ILogger<RabbitMqTransport> logger, IConnectionChannelPool connectionChannelPool)
+    public RabbitMqTransport(
+        ILogger<RabbitMqTransport> logger,
+        IConnectionChannelPool connectionChannelPool,
+        MessageLane lane = MessageLane.Bus
+    )
     {
         _logger = logger;
         _connectionChannelPool = connectionChannelPool;
-        _exchange = _connectionChannelPool.Exchange;
+        _lane = lane;
+        _exchange = RabbitMqPhysicalAddress.Exchange(_connectionChannelPool.Exchange, lane);
     }
 
     public BrokerAddress BrokerAddress => new("rabbitmq", _connectionChannelPool.HostAddress);
@@ -25,6 +31,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
     {
         cancellationToken.ThrowIfCancellationRequested();
         RabbitMqValidation.ValidateMessageName(message.Name);
+        var routingKey = RabbitMqPhysicalAddress.RoutingKey(_lane, message.Name);
 
         IChannel? channel = null;
         try
@@ -39,7 +46,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
             };
 
             await channel
-                .BasicPublishAsync(_exchange, message.Name, mandatory: false, props, message.Body, cancellationToken)
+                .BasicPublishAsync(_exchange, routingKey, mandatory: false, props, message.Body, cancellationToken)
                 .ConfigureAwait(false);
 
             var messageName = message.Name;

@@ -7,6 +7,7 @@ using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -120,15 +121,22 @@ public static class SetupNatsMessaging
                 MessagingProviderCapabilities.Transport(
                     "NATS JetStream",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: true
                 )
             );
 
             configureOptions(services);
 
-            services.AddSingleton<NatsTransport>();
-            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<NatsTransport>());
-            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<NatsTransport>());
+            services.AddSingleton<IBusTransport>(sp => new NatsTransport(
+                sp.GetRequiredService<ILogger<NatsTransport>>(),
+                sp.GetRequiredService<INatsConnectionPool>(),
+                MessageLane.Bus
+            ));
+            services.AddSingleton<IQueueTransport>(sp => new NatsTransport(
+                sp.GetRequiredService<ILogger<NatsTransport>>(),
+                sp.GetRequiredService<INatsConnectionPool>(),
+                MessageLane.Queue
+            ));
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
 

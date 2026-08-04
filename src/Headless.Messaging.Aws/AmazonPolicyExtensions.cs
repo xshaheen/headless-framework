@@ -22,6 +22,21 @@ internal static class AmazonPolicyExtensions
     {
         foreach (var statement in policy.Statements)
         {
+            var isLeastPrivilegeAllow =
+                statement.Effect == Statement.StatementEffect.Allow
+                && statement.Actions.Any(action =>
+                    string.Equals(action.ActionName, "sqs:SendMessage", StringComparison.OrdinalIgnoreCase)
+                )
+                && statement.Principals.Any(principal =>
+                    string.Equals(principal.Provider, Principal.SERVICE_PROVIDER, StringComparison.Ordinal)
+                    && string.Equals(principal.Id, "sns.amazonaws.com", StringComparison.OrdinalIgnoreCase)
+                );
+
+            if (!isLeastPrivilegeAllow)
+            {
+                continue;
+            }
+
             var containsResource = statement.Resources.Any(r => r.Id.Equals(sqsQueueArn, StringComparison.Ordinal));
 
             if (!containsResource)
@@ -80,7 +95,7 @@ internal static class AmazonPolicyExtensions
     /// <code>
     /// {
     ///   "Effect": "Allow",
-    ///   "Principal": { "AWS": "*" },
+    ///   "Principal": { "Service": "sns.amazonaws.com" },
     ///   "Action": "sqs:SendMessage",
     ///   "Resource": "arn:aws:sqs:us-east-1:MyQueue",
     ///   "Condition": {
@@ -97,7 +112,7 @@ internal static class AmazonPolicyExtensions
         var statement = new Statement(Statement.StatementEffect.Allow);
         statement.Actions.Add(new ActionIdentifier("sqs:SendMessage"));
         statement.Resources.Add(new Resource(sqsQueueArn));
-        statement.Principals.Add(new Principal("*"));
+        statement.Principals.Add(new Principal(Principal.SERVICE_PROVIDER, "sns.amazonaws.com"));
         foreach (var topicArn in topicArns)
         {
             statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(topicArn));

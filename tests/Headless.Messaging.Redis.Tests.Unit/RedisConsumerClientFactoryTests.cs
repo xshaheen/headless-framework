@@ -96,7 +96,7 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_bus_consumer_lane()
+    public async Task should_create_bus_consumer_lane()
     {
         // given
         var mockStreamManager = Substitute.For<IRedisStreamManager>();
@@ -109,9 +109,10 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
 
         // when
-        var act = async () => await factory.CreateAsync("group-name", 1, MessageLane.Bus);
+        var client = await factory.CreateAsync("group-name", 1, MessageLane.Bus, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<NotSupportedException>();
+        client.Should().BeOfType<RedisConsumerClient>();
+        await client.DisposeAsync();
     }
 }

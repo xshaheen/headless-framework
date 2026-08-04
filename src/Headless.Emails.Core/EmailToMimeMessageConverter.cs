@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using MimeKit;
 
 namespace Headless.Emails;
@@ -85,9 +86,7 @@ internal static class EmailToMimeMessageConverter
 
         foreach (var requestAttachment in request.Attachments)
         {
-            await using var fileStream = new MemoryStream(requestAttachment.File.Length);
-            fileStream.Write(requestAttachment.File.Span);
-            fileStream.Position = 0;
+            await using var fileStream = _OpenAttachmentStream(requestAttachment.File);
 
             if (requestAttachment.ContentType is { Length: > 0 } contentType)
             {
@@ -109,6 +108,26 @@ internal static class EmailToMimeMessageConverter
         }
 
         message.Body = emailBuilder.ToMessageBody();
+    }
+
+    /// <summary>
+    /// Exposes an attachment's bytes as a stream for MimeKit to read. When the memory is array-backed (the normal
+    /// case) the array is wrapped read-only rather than copied — MimeKit copies the content into its own buffer while
+    /// building the MIME part, so an extra per-attachment, per-send copy of the whole payload buys nothing.
+    /// </summary>
+    private static MemoryStream _OpenAttachmentStream(ReadOnlyMemory<byte> file)
+    {
+        if (MemoryMarshal.TryGetArray(file, out var segment) && segment.Array is not null)
+        {
+            return new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false);
+        }
+
+        // Not array-backed (native or otherwise unmanaged memory) — there is no array to wrap, so copy.
+        var copy = new MemoryStream(file.Length);
+        copy.Write(file.Span);
+        copy.Position = 0;
+
+        return copy;
     }
 
     /// <summary>

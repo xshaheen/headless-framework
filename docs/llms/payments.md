@@ -293,6 +293,8 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 
 `IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (standard async naming). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
+The broker composes every CashOut request as an absolute URL from the current `PaymobCashOutOptions.ApiBaseUrl`. The typed `HttpClient.BaseAddress` does not select or override the CashOut endpoint.
+
 The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprietary API-key flow. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
 
 `ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
@@ -427,7 +429,7 @@ Higher-level service layer for Paymob CashIn and CashOut with typed per-channel 
 - `IPaymobCashInFeesCalculator` / `PaymobCashInFeesCalculator` — fee arithmetic (no network calls):
   - `CalculateDeductFees(amount)` — total gateway fee that will be deducted from the transaction
   - `CalculateDeductFeesAndTax(amount)` — breakdown into fee and VAT tax
-  - `AddFeesForNet(net)` — gross amount to charge so the merchant receives exactly `net`
+  - `AddFeesForNet(net)` — gross amount to charge so the merchant receives at least `net` (rounded up to a whole unit, so it can over-cover by up to 1)
   - `CalcFeesForNet(net)` — fee portion only for the same inverse calculation
 - `PaymobTransactionResponseCodes` — constants for card response codes (0 = approved, etc.)
 - `PaymobRiskDeclineCodes` — constants for Paymob FMS risk decline codes (111–301)

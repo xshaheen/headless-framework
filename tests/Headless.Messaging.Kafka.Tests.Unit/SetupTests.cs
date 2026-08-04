@@ -2,7 +2,9 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Kafka;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +14,35 @@ namespace Tests;
 
 public sealed class SetupTests : TestBase
 {
+    [Fact]
+    public async Task should_reject_bus_route_before_storage_or_broker_side_effects()
+    {
+        var storageInitializeCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(options =>
+        {
+            options.UseKafka("localhost:9092");
+            options.Bus.ForMessage<KafkaBusContract>(message => message.MessageName("orders.changed"));
+        });
+        services.AddMessagingProviderCapabilities(
+            MessagingProviderCapabilities.Storage(
+                "TestStorage",
+                [MessageLane.Bus, MessageLane.Queue],
+                supportsDelayedScheduling: true
+            )
+        );
+        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(() => storageInitializeCalls++));
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*setup.Queue.ForMessage*");
+        storageInitializeCalls.Should().Be(0);
+    }
+
     [Fact]
     public void should_register_services_when_use_kafka_with_bootstrap_servers()
     {
@@ -106,5 +137,20 @@ public sealed class SetupTests : TestBase
 
         // then
         pool1.Should().BeSameAs(pool2);
+    }
+
+    private sealed record KafkaBusContract;
+
+    private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer
+    {
+        public Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            initialize();
+            return Task.CompletedTask;
+        }
+
+        public string GetPublishedTableName() => "published";
+
+        public string GetReceivedTableName() => "received";
     }
 }

@@ -170,7 +170,17 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
 
 #pragma warning restore CA2213
 
-        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
+#pragma warning disable IDE0032 // Use auto property — the field is passed by ref to LazyInitializer below; an auto property has no ref-addressable backing field.
+        private string? _leaseId;
+#pragma warning restore IDE0032
+
+        /// <summary>
+        /// The lease identity required by <see cref="IDistributedLease"/>. Minted on first read rather than per
+        /// acquire, matching <see cref="MultiplexedConnectionLock"/>'s handle: nothing in the acquire path consumes
+        /// it, and the CAS publish keeps the value stable once any caller has read it.
+        /// </summary>
+        public string LeaseId =>
+            LazyInitializer.EnsureInitialized(ref _leaseId, static () => Guid.NewGuid().ToString("N"));
 
         public long? FencingToken => null;
 

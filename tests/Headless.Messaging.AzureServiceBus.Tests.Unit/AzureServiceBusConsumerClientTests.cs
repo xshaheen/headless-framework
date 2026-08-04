@@ -141,6 +141,54 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_propagate_without_completion_when_custom_headers_builder_throws()
+    {
+        // given
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions
+            {
+                ConnectionString =
+                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+                CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),
+            }
+        );
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            options,
+            _serviceProvider,
+            _clientPool
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("test"u8.ToArray()),
+            properties: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "message-1",
+                [Headers.MessageName] = "TestEvent",
+            }
+        );
+        var receiver = Substitute.For<ServiceBusReceiver>();
+        var args = new ProcessMessageEventArgs(message, receiver, AbortToken);
+        var processMethod = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessMessageAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+
+        // when
+        var processTask = (Task)processMethod.Invoke(client, [args])!;
+        var act = async () => await processTask;
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("bad header builder");
+        await receiver
+            .DidNotReceive()
+            .CompleteMessageAsync(Arg.Any<ServiceBusReceivedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given

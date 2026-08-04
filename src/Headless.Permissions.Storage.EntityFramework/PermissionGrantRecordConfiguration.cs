@@ -18,6 +18,9 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
         b.Property(x => x.ProviderKey).HasMaxLength(PermissionGrantRecordConstants.ProviderKeyMaxLength).IsRequired();
         b.Property(x => x.TenantId).HasMaxLength(PermissionGrantRecordConstants.TenantIdMaxLength).IsRequired(false);
 
+        // PostgreSQL and SQLite treat NULLs as distinct in a unique index, so a single index over the
+        // nullable TenantId would let concurrent inserts create duplicate host (NULL-tenant) grant rows.
+        // Mirror the raw PostgreSql/SqlServer initializers: one index per tenant nullability, same names.
         b.HasIndex(x => new
             {
                 x.TenantId,
@@ -25,6 +28,18 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
                 x.ProviderName,
                 x.ProviderKey,
             })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"TenantId\" IS NOT NULL")
+            .HasDatabaseName($"IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey");
+
+        b.HasIndex(x => new
+            {
+                x.Name,
+                x.ProviderName,
+                x.ProviderKey,
+            })
+            .IsUnique()
+            .HasFilter("\"TenantId\" IS NULL")
+            .HasDatabaseName($"IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId");
     }
 }

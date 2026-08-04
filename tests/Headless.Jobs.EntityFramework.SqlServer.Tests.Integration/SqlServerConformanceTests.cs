@@ -254,9 +254,9 @@ public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
-    public override Task terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_instant()
+    public override Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
     {
-        return base.terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_instant();
+        return base.a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time();
     }
 
     [Fact]

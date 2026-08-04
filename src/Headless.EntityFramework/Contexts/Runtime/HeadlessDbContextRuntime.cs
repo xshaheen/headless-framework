@@ -103,7 +103,9 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
             return;
         }
 
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => tenantId);
+        // Name over selector: the expression-selector overload allocates a fresh expression tree on every
+        // tracked Added entity, and this runs from the ChangeTracker.Tracked hook.
+        ObjectPropertiesHelper.TrySetPropertyValue(entity, nameof(IMultiTenant.TenantId), tenantId);
     }
 
     // Retry classification: CrossTenantWriteException is non-transient. Callers wrapping

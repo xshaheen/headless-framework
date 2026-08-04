@@ -226,46 +226,64 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
+        if (timeJobIds.Length == 0)
+        {
+            return 0;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var set = dbContext.Set<TTimeJob>();
-
-        // The self-referential parent FK is DeleteBehavior.NoAction, so deleting a chain root with live
-        // descendants violates the constraint — the previous root-only RemoveRange threw DbUpdateException out of
-        // a documented never-throws API for ANY chain root, and its two-level Include could not have covered
-        // deeper chains anyway. Collect the whole subtree frontier-by-frontier (chains are structurally capped at
-        // JobChain.MaxStructuralDepth, so the walk terminates) and delete deepest level first.
-        var levels = new List<Guid[]>();
+        // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the database
+        // cascades, so the subtree must be resolved explicitly. A surviving descendant is never harmless — a
+        // non-timed one is unreachable forever (every claim path requires ExecutionTime != null), and a timed one
+        // whose ParentId was nulled passes the ParentId == null arm of the parent-terminal gate and runs
+        // unconditionally at its scheduled time. Walked one level at a time rather than with a recursive CTE so a
+        // single query shape serves every relational provider; the visited set also terminates a corrupted cycle.
+        var levels = new List<Guid[]> { timeJobIds };
+        var visited = new HashSet<Guid>(timeJobIds);
         var frontier = timeJobIds;
 
         while (frontier.Length > 0)
         {
-            levels.Add(frontier);
-            var current = frontier;
-            frontier = await set.Where(x =>
-                    x.ParentId != null && ((IEnumerable<Guid>)current).Contains(x.ParentId.Value)
-                )
+            var parentIds = frontier;
+
+            var childIds = await dbContext
+                .Set<TTimeJob>()
+                .AsNoTracking()
+                .Where(x => x.ParentId != null && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value))
                 .Select(x => x.Id)
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
+
+            frontier = [.. childIds.Where(visited.Add)];
+
+            if (frontier.Length > 0)
+            {
+                levels.Add(frontier);
+            }
         }
 
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var total = 0;
-        for (var i = levels.Count - 1; i >= 0; i--)
+        // Deepest level first: with a non-cascading FK a row may only be deleted once its children are gone.
+        var deleted = 0;
+        for (var level = levels.Count - 1; level >= 0; level--)
         {
-            var ids = levels[i];
-            total += await set.Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+            var ids = levels[level];
+
+            deleted += await dbContext
+                .Set<TTimeJob>()
+                .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return total;
+
+        return deleted;
     }
     #endregion
 

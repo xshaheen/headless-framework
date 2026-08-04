@@ -85,7 +85,15 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<boolean> {
     try {
-      if (!this.config?.enabled) {
+      if (!this.config) {
+        await this.initialize();
+      }
+
+      if (!this.config) {
+        return false;
+      }
+
+      if (!this.config.enabled) {
         return true;
       }
 

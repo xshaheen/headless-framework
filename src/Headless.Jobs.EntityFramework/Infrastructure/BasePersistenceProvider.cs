@@ -902,24 +902,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // Lease each acquired root's non-timed subtree BEFORE returning it for execution. The executor runs a chain by
+        // Lease every acquired root's non-timed subtree BEFORE returning it for execution. The executor runs a chain by
         // in-process recursion and fences every node on lease renewal before invoking it, so a hydrated-but-unleased
         // descendant fails that fence and is stranded Idle forever — this is the immediate-dispatch counterpart of the
-        // scheduled tree claim, and it must not be dropped.
-        var claimedIdsByRoot = new Dictionary<Guid, HashSet<Guid>>(acquiredRootIds.Length);
-
-        foreach (var acquiredRootId in acquiredRootIds)
-        {
-            claimedIdsByRoot[acquiredRootId] = await JobsSubtreeLeaseWalk
-                .LeaseNonTimedDescendantsAsync(
-                    jobs,
-                    acquiredRootId,
-                    owner,
-                    MaxChainDepth,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        // scheduled tree claim, and it must not be dropped. The walk advances all roots together, so a batch of
+        // childless roots costs one discovery SELECT rather than one per root.
+        var claimedIdsByRoot = await JobsSubtreeLeaseWalk
+            .LeaseNonTimedDescendantsAsync(
+                jobs,
+                acquiredRootIds,
+                owner,
+                MaxChainDepth,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // Return the acquired jobs for immediate execution, with the non-timed in-tree subtree to MaxChainDepth
         // (R12/KTD2: flat root load + in-memory rebuild replaces a fixed-depth nested projection).

@@ -20,7 +20,13 @@ internal sealed class RedisTransport(
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await redis.PublishAsync(message.Name, message.AsStreamEntries(), cancellationToken).ConfigureAwait(false);
+            await redis
+                .PublishAsync(
+                    RedisPhysicalAddress.QueueStream(message.Name),
+                    message.AsStreamEntries(),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             var messageName = message.Name;
             logger.MessagePublished(messageName);

@@ -91,19 +91,23 @@ internal sealed class JobsExecutionTaskHandler
             return;
         }
 
-        var hasChildren = context.TimeJobChildren.Count > 0;
-
-        // KTD8: persisted chains may carry more than the two children the typed builder authors (and R12's deeper
-        // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
-        // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
-        var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
-        var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
-
-        // Add parent task
-        tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, cancellationToken, isChild));
-
-        if (hasChildren)
+        if (context.TimeJobChildren.Count == 0)
         {
+            // Childless jobs are the common case, so they buffer nothing: no sibling lists, no Task.WhenAll over a
+            // single task, and no deferred-children pass — only the timed-child reconcile below still applies.
+            await _RunContextFunctionAsync(context, isDue, cancellationToken, isChild).ConfigureAwait(false);
+        }
+        else
+        {
+            // KTD8: persisted chains may carry more than the two children the typed builder authors (and R12's deeper
+            // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
+            // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
+            var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
+            var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
+
+            // Add parent task
+            tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, cancellationToken, isChild));
+
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
@@ -116,54 +120,54 @@ internal sealed class JobsExecutionTaskHandler
                     childrenToRunAfter.Add(child);
                 }
             }
-        }
 
-        // Wait for concurrent tasks (parent + InProgress children)
-        await Task.WhenAll(tasksToRunNow).ConfigureAwait(false);
+            // Wait for concurrent tasks (parent + InProgress children)
+            await Task.WhenAll(tasksToRunNow).ConfigureAwait(false);
 
-        // KTD7: process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
-        // its lease (or hit host shutdown, or was fenced out of completion) returns from _RunContextFunctionAsync
-        // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
-        // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
-        // still due to run elsewhere; leaving them unprocessed lets reclaim re-run the whole subtree correctly.
-        if (childrenToRunAfter.Count > 0 && _ParentReachedTerminalStatus(context))
-        {
-            var childrenToSkip = new List<JobExecutionState>(childrenToRunAfter.Count);
-            var childrenToRunAfterTask = new List<Task>(childrenToRunAfter.Count);
-
-            foreach (var child in childrenToRunAfter)
+            // KTD7: process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
+            // its lease (or hit host shutdown, or was fenced out of completion) returns from _RunContextFunctionAsync
+            // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
+            // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
+            // still due to run elsewhere; leaving them unprocessed lets reclaim re-run the whole subtree correctly.
+            if (childrenToRunAfter.Count > 0 && _ParentReachedTerminalStatus(context))
             {
-                if (_ShouldRunChild(child, context.Status))
+                var childrenToSkip = new List<JobExecutionState>(childrenToRunAfter.Count);
+                var childrenToRunAfterTask = new List<Task>(childrenToRunAfter.Count);
+
+                foreach (var child in childrenToRunAfter)
                 {
-                    childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                    if (_ShouldRunChild(child, context.Status))
+                    {
+                        childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                    }
+                    else
+                    {
+                        _jobsInstrumentation.LogJobSkipped(
+                            child.JobId,
+                            child.FunctionName,
+                            $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
+                        );
+                        child.ParentId = context.JobId;
+                        childrenToSkip.Add(child);
+
+                        // Recursively gather all descendants to skip
+                        _GatherDescendantsToSkip(child, childrenToSkip);
+                    }
                 }
-                else
+
+                // Bulk update skipped children
+                if (childrenToSkip.Count > 0)
                 {
-                    _jobsInstrumentation.LogJobSkipped(
-                        child.JobId,
-                        child.FunctionName,
-                        $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
-                    );
-                    child.ParentId = context.JobId;
-                    childrenToSkip.Add(child);
-
-                    // Recursively gather all descendants to skip
-                    _GatherDescendantsToSkip(child, childrenToSkip);
+                    await _internalJobsManager
+                        .UpdateSkipTimeJobsWithUnifiedContextAsync([.. childrenToSkip], cancellationToken)
+                        .ConfigureAwait(false);
                 }
-            }
 
-            // Bulk update skipped children
-            if (childrenToSkip.Count > 0)
-            {
-                await _internalJobsManager
-                    .UpdateSkipTimeJobsWithUnifiedContextAsync([.. childrenToSkip], cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            // Wait for deferred tasks
-            if (childrenToRunAfterTask.Count > 0)
-            {
-                await Task.WhenAll(childrenToRunAfterTask).ConfigureAwait(false);
+                // Wait for deferred tasks
+                if (childrenToRunAfterTask.Count > 0)
+                {
+                    await Task.WhenAll(childrenToRunAfterTask).ConfigureAwait(false);
+                }
             }
         }
 

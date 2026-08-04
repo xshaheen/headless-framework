@@ -40,9 +40,56 @@ public sealed class BlobLocationResolverTests : TestBase
         key.Should().Be("file.txt");
     }
 
+    [Fact]
+    public void should_return_the_same_string_when_no_key_segment_needs_rewriting()
+    {
+        // The clean-key fast path: nothing to rewrite means the input string is handed back as-is, with no
+        // split/join round-trip.
+        var location = new BlobLocation("bucket", "folder/sub/file.txt");
+
+        var (_, key) = BlobLocationResolver.Resolve(location, _normalizer);
+
+        key.Should().BeSameAs(location.Path);
+    }
+
+    [Theory]
+    [InlineData("Folder/sub/file.txt")] // first segment rewritten
+    [InlineData("folder/Sub/file.txt")] // middle segment rewritten
+    [InlineData("folder/sub/File.TXT")] // last segment rewritten
+    public void should_rewrite_only_from_the_first_changed_segment(string path)
+    {
+        // Whichever segment the normalizer first touches, the untouched head must survive verbatim and the
+        // remaining segments must still be normalized and rejoined with '/'.
+        var location = new BlobLocation("bucket", path);
+
+        var (_, key) = BlobLocationResolver.Resolve(location, _normalizer);
+
+        key.Should().Be("folder/sub/file.txt");
+    }
+
     #endregion
 
     #region ResolveQuery Tests
+
+    [Fact]
+    public void should_return_the_same_string_when_a_clean_query_prefix_ends_with_a_slash()
+    {
+        var query = new BlobQuery("bucket", "logs/sub/");
+
+        var (_, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
+
+        prefix.Should().BeSameAs(query.Prefix);
+    }
+
+    [Fact]
+    public void should_preserve_the_trailing_slash_when_a_query_prefix_segment_is_rewritten()
+    {
+        var query = new BlobQuery("bucket", "Logs/Sub/");
+
+        var (_, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
+
+        prefix.Should().Be("logs/sub/");
+    }
 
     [Fact]
     public void should_normalize_query_prefix_segments_lenient()

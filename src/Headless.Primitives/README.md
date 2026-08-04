@@ -38,7 +38,20 @@ descending.
 `ErrorDescriptor` defaults to `ValidationSeverity.Error`, matching its role as an expected failure. Pass
 `ValidationSeverity.Warning` or `ValidationSeverity.Information` explicitly for non-error diagnostics. The
 parameter-bag constructor accepts any `IReadOnlyDictionary<string, object?>` and copies it defensively into a
-case-insensitive bag.
+case-insensitive bag. When parameters are known at construction time, pass one or more `(Key, Value)` tuples,
+or a `ReadOnlySpan<(string Key, object? Value)>`; both forms pre-size and snapshot the same bag. The direct tuple
+form uses `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array. Use
+`WithParam` when a parameter is discovered incrementally.
+
+The built-in result factories preserve the same structured error data as the exception path. `Conflict(...)`
+accepts a message, one descriptor, or many `ErrorDescriptor` instances; `Unauthorized(...)` and
+`Forbidden(...)` accept descriptors; and `ValidationFailed(...)` accepts a field-keyed descriptor map.
+Message-only conflicts use `ApiResultErrorCodes.Default`, while string-only validation pairs use the stable
+`ApiResultErrorCodes.ValidationFailed` code. Error collections are snapshotted when a result is created.
+
+A default-initialized `ApiResult` or `ApiResult<T>` is uninitialized: both `IsSuccess` and `IsFailure` are false,
+`TryGetValue` / `TryGetError` return false, and branch operations or direct access throw a clear
+`InvalidOperationException`.
 
 `FullGeoCoordinate` is constructed from latitude/longitude; the optional components (`Altitude`,
 `HorizontalAccuracy`, `VerticalAccuracy`, `Speed`, `Course`) are init-only properties that default to
@@ -69,6 +82,18 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id, CancellationToken ct)
 
     return user; // implicit conversion from T to ApiResult<T>
 }
+
+var conflicts = ApiResult.Conflict(
+    new ErrorDescriptor("user:duplicate_email", "Email already exists", ("email", email)),
+    new ErrorDescriptor("user:duplicate_phone", "Phone already exists")
+);
+
+var contextualError = new ErrorDescriptor(
+    "user:conflict",
+    "User conflicts with existing data",
+    ("email", email),
+    ("tenantId", tenantId)
+);
 ```
 
 ### Money and MoneyAmount

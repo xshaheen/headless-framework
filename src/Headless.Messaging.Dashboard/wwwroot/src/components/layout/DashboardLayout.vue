@@ -2,8 +2,9 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { useDisplay } from 'vuetify'
 import AuthHeader from '../common/AuthHeader.vue'
-import { useMessagingStore } from '@/stores/messagingStore'
+import { getProviderCapabilitiesDisplayState, useMessagingStore } from '@/stores/messagingStore'
 import type { Stats } from '@/stores/messagingStore'
 
 type BadgeColor = 'error' | 'info' | 'secondary'
@@ -43,7 +44,32 @@ const navigationLinks: NavLink[] = [
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)
 
 const messagingStore = useMessagingStore()
-const { meta, stats } = storeToRefs(messagingStore)
+const { isMetaLoaded, isMetaLoading, meta, metaError, stats } = storeToRefs(messagingStore)
+const providerCapabilities = computed(() => meta.value.providerCapabilities)
+const providerCapabilitiesDisplayState = computed(() =>
+  getProviderCapabilitiesDisplayState(
+    isMetaLoaded.value,
+    isMetaLoading.value,
+    metaError.value,
+    providerCapabilities.value.length,
+  ),
+)
+const providerCapabilitiesSummary = computed(() => {
+  switch (providerCapabilitiesDisplayState.value) {
+    case 'loading':
+      return isMetaLoaded.value ? 'refreshing' : 'loading'
+    case 'refreshing':
+      return `${providerCapabilities.value.length} (refreshing)`
+    case 'error':
+      return 'unavailable'
+    case 'stale':
+      return `${providerCapabilities.value.length} (stale)`
+    default:
+      return providerCapabilities.value.length.toString()
+  }
+})
+const isProviderCapabilitiesOpen = ref(false)
+const { xs } = useDisplay()
 
 function getNodeCookie(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)messaging\.node=([^;]*)/)
@@ -165,6 +191,19 @@ function handleAuthLogout() {
           >
             Storage: {{ meta.storage.name }}
           </v-chip>
+          <v-btn
+            size="x-small"
+            variant="tonal"
+            color="info"
+            class="footer-chip provider-capabilities-trigger"
+            prepend-icon="mdi-transit-connection-variant"
+            :aria-label="`Show provider capabilities (${providerCapabilitiesSummary})`"
+            aria-haspopup="dialog"
+            :aria-expanded="isProviderCapabilitiesOpen"
+            @click="isProviderCapabilitiesOpen = true"
+          >
+            Capabilities: {{ providerCapabilitiesSummary }}
+          </v-btn>
           <v-chip
             v-if="switchedNode"
             size="x-small"
@@ -178,6 +217,130 @@ function handleAuthLogout() {
         <div class="footer-copyright">2026 — <strong>Headless Framework</strong></div>
       </div>
     </v-footer>
+
+    <v-dialog v-model="isProviderCapabilitiesOpen" :fullscreen="xs" max-width="760" scrollable>
+      <v-card class="provider-capabilities" aria-live="polite" :aria-busy="isMetaLoading">
+        <v-toolbar color="transparent" class="provider-capabilities-toolbar px-2">
+          <v-icon color="info" class="ml-2 mr-3">mdi-transit-connection-variant</v-icon>
+          <div class="provider-capabilities-heading">
+            <v-toolbar-title>Provider capabilities</v-toolbar-title>
+            <p>Runtime support reported by the registered messaging providers.</p>
+          </div>
+          <v-spacer />
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            aria-label="Close provider capabilities"
+            @click="isProviderCapabilitiesOpen = false"
+          />
+        </v-toolbar>
+
+        <v-divider />
+
+        <v-card-text
+          v-if="providerCapabilitiesDisplayState === 'loading'"
+          class="provider-capabilities-state"
+          role="status"
+        >
+          <v-progress-circular indeterminate color="info" size="24" />
+          <span>
+            {{
+              isMetaLoaded ? 'Refreshing provider capabilities…' : 'Loading provider capabilities…'
+            }}
+          </span>
+        </v-card-text>
+        <v-card-text
+          v-else-if="providerCapabilitiesDisplayState === 'error'"
+          class="provider-capabilities-state"
+          role="alert"
+        >
+          <v-icon color="error">mdi-alert-circle-outline</v-icon>
+          <span>{{ metaError }}</span>
+          <v-btn
+            size="small"
+            variant="tonal"
+            prepend-icon="mdi-refresh"
+            :loading="isMetaLoading"
+            :disabled="isMetaLoading"
+            @click="messagingStore.fetchMeta()"
+          >
+            Retry
+          </v-btn>
+        </v-card-text>
+        <v-card-text
+          v-else-if="providerCapabilitiesDisplayState === 'empty'"
+          class="provider-capabilities-state"
+        >
+          <v-icon color="warning">mdi-connection</v-icon>
+          <span>No messaging provider capabilities are registered.</span>
+        </v-card-text>
+        <template v-else>
+          <v-card-text
+            v-if="providerCapabilitiesDisplayState === 'refreshing'"
+            class="provider-capabilities-status"
+            role="status"
+          >
+            <v-progress-circular indeterminate color="info" size="18" width="2" />
+            <span>Refreshing provider capabilities. Showing the previous result.</span>
+          </v-card-text>
+          <v-card-text
+            v-else-if="providerCapabilitiesDisplayState === 'stale'"
+            class="provider-capabilities-status"
+            role="alert"
+          >
+            <v-icon color="error" size="20">mdi-alert-circle-outline</v-icon>
+            <span>{{ metaError }} Showing the previous result.</span>
+            <v-btn
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-refresh"
+              :loading="isMetaLoading"
+              :disabled="isMetaLoading"
+              @click="messagingStore.fetchMeta()"
+            >
+              Retry
+            </v-btn>
+          </v-card-text>
+          <v-card-text class="provider-capabilities-content">
+            <article
+              v-for="(capability, capabilityIndex) in providerCapabilities"
+              :key="`${capability.role}:${capability.provider}:${capabilityIndex}`"
+              class="provider-capability"
+            >
+              <header class="provider-capability-header">
+                <div>
+                  <span class="provider-capability-eyebrow">{{ capability.role }} provider</span>
+                  <h2>{{ capability.provider }}</h2>
+                </div>
+              </header>
+
+              <dl class="provider-capability-details">
+                <div v-if="capability.lanes.length > 0">
+                  <dt>Delivery lanes</dt>
+                  <dd>{{ capability.lanes.join(' + ') }}</dd>
+                </div>
+                <div v-if="capability.role === 'Transport'">
+                  <dt>Topology</dt>
+                  <dd>
+                    {{ capability.supportsIndependentLaneTopology ? 'Lane-isolated' : 'Shared' }}
+                  </dd>
+                </div>
+                <div v-if="capability.role === 'Storage'">
+                  <dt>Delayed scheduling</dt>
+                  <dd>
+                    {{ capability.supportsDelayedScheduling ? 'Supported' : 'Not supported' }}
+                  </dd>
+                </div>
+                <div v-if="capability.role === 'Coordination'">
+                  <dt>Capability</dt>
+                  <dd>Cluster coordination</dd>
+                </div>
+              </dl>
+            </article>
+          </v-card-text>
+        </template>
+      </v-card>
+    </v-dialog>
   </v-app>
 </template>
 
@@ -347,6 +510,8 @@ function handleAuthLogout() {
 }
 
 .footer-content {
+  width: 100%;
+  min-width: 0;
   max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
   display: flex;
@@ -359,6 +524,7 @@ function handleAuthLogout() {
 }
 
 .footer-badges {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -370,6 +536,154 @@ function handleAuthLogout() {
   font-size: 0.7rem !important;
   height: 20px !important;
   white-space: nowrap;
+}
+
+.provider-capabilities-trigger {
+  min-width: 0 !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  padding: 0 6px !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.provider-capabilities-trigger :deep(.v-btn__prepend) {
+  margin-inline: 0 4px;
+}
+
+.provider-capabilities-trigger :deep(.v-icon) {
+  font-size: 0.875rem;
+}
+
+.provider-capabilities {
+  max-height: min(720px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+}
+
+.provider-capabilities-toolbar {
+  min-height: 72px;
+  flex-shrink: 0;
+}
+
+.provider-capabilities-heading {
+  min-width: 0;
+}
+
+.provider-capabilities-heading :deep(.v-toolbar-title) {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.provider-capabilities-heading p {
+  margin: 2px 0 0;
+  color: #9e9e9e;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.provider-capabilities-state {
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  text-align: center;
+}
+
+.provider-capabilities-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  padding-bottom: 0;
+  color: #bdbdbd;
+  font-size: 0.82rem;
+}
+
+.provider-capabilities-status span {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.provider-capabilities-status .v-btn {
+  margin-inline-start: auto;
+}
+
+.provider-capabilities-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  align-content: start;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.provider-capability {
+  min-width: 0;
+  align-self: start;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.provider-capability-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.provider-capability-eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: #8c9eff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.provider-capability h2 {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.provider-capability-details {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.provider-capability-details div {
+  min-width: 0;
+}
+
+.provider-capability-details dt {
+  margin-bottom: 5px;
+  color: #9e9e9e;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.provider-capability-details dd {
+  margin: 0;
+  color: #eeeeee;
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .footer-copyright {
@@ -422,6 +736,30 @@ function handleAuthLogout() {
     width: 100%;
     justify-content: center;
   }
+
+  .main-footer {
+    height: auto !important;
+    min-height: 40px !important;
+    max-height: none !important;
+    flex-basis: auto !important;
+  }
+
+  .footer-content {
+    height: auto;
+    min-height: 40px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .footer-badges {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .footer-copyright {
+    display: none;
+  }
 }
 
 @media (max-width: 480px) {
@@ -435,6 +773,33 @@ function handleAuthLogout() {
 
   .logo-image {
     height: 32px;
+  }
+}
+
+@media (max-width: 599.98px) {
+  .provider-capabilities {
+    max-height: none;
+    height: 100%;
+    border-radius: 0 !important;
+  }
+
+  .provider-capabilities-toolbar {
+    min-height: 76px;
+  }
+
+  .provider-capabilities-heading p {
+    max-width: 240px;
+  }
+
+  .provider-capability-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .provider-capability-details {
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
 }
 </style>

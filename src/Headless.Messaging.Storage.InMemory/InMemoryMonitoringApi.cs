@@ -170,6 +170,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // CurrentPage is zero-based (it is returned as IndexPage.Index). Clamping keeps a negative
+        // index from throwing out of Skip.
+        var currentPage = Math.Max(query.CurrentPage, 0);
+        var offset = (int)Math.Min((long)currentPage * query.PageSize, int.MaxValue);
+
         if (query.MessageType == MessageType.Publish)
         {
             var expression = storage.PublishedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
@@ -194,7 +199,6 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Lane == lane);
             }
 
-            var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
             // Materialize the filtered list once, then skip/take to project only the requested
@@ -227,7 +231,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 .ToList();
 
             return ValueTask.FromResult(
-                new IndexPage<MessageView>(pageItems, query.CurrentPage, query.PageSize, filtered.Count)
+                new IndexPage<MessageView>(pageItems, currentPage, query.PageSize, filtered.Count)
             );
         }
         else
@@ -261,7 +265,6 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Lane == lane);
             }
 
-            var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
             var filtered = expression.ToList();
@@ -293,7 +296,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 .ToList();
 
             return ValueTask.FromResult(
-                new IndexPage<MessageView>(pageItems, query.CurrentPage, query.PageSize, filtered.Count)
+                new IndexPage<MessageView>(pageItems, currentPage, query.PageSize, filtered.Count)
             );
         }
     }
