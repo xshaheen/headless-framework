@@ -311,8 +311,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_timeJobs.TryGetValue(id, out var job))
             {
-                // Check if we can release (similar to WhereCanAcquire)
-                if (_CanAcquire(job))
+                // Release only this owner's claimed-but-not-started rows (the EF WhereReleasableBy mirror). The
+                // acquire predicate would also sweep foreign and unowned rows on the empty-id form, and Idle
+                // owned rows are running chains' descendants — stripping them would break continuations.
+                if (_IsReleasable(job.Status, job.OwnerId))
                 {
                     var updatedTicker = _CloneTicker(job);
                     updatedTicker.OwnerId = null;
@@ -329,6 +331,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         return Task.CompletedTask;
+    }
+
+    private bool _IsReleasable(JobStatus status, string? ownerId)
+    {
+        return status == JobStatus.Queued && string.Equals(ownerId, _ownerId, StringComparison.Ordinal);
     }
 
     public Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
@@ -822,6 +829,22 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(0);
     }
 
+    public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        static bool IsActive(JobStatus status) => status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+        var owners = _timeJobs
+            .Values.Where(x => x.OwnerId is not null && IsActive(x.Status))
+            .Select(x => x.OwnerId!)
+            .Concat(
+                _cronOccurrences.Values.Where(x => x.OwnerId is not null && IsActive(x.Status)).Select(x => x.OwnerId!)
+            )
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return Task.FromResult(owners);
+    }
+
     public Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316/U3 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
@@ -857,6 +880,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             switch (job.OnNodeDeath)
             {
+                // The Retry arm consumes one retry-budget unit (RetryCount + 1): a lapsed-lease InProgress row is
+                // a STARTED attempt that was lost — mirrors the EF reclaim so a crash-looping job cannot re-run
+                // forever with a fresh budget each cycle.
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         job.Id,
@@ -865,6 +891,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            t.RetryCount += 1;
                         }
                     ):
                     affected++;
@@ -1272,6 +1299,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (release)
             {
+                // Only a started (InProgress) attempt consumes a retry-budget unit; Idle/Queued rows never
+                // invoked user code — mirrors the EF dead-node split.
+                var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
                         job.Id,
@@ -1280,6 +1310,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            if (consumesBudget)
+                            {
+                                t.RetryCount += 1;
+                            }
                         }
                     )
                 )
@@ -1941,6 +1975,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             switch (occurrence.OnNodeDeath)
             {
+                // Started attempt lost to a lapsed lease — consumes one retry-budget unit (mirrors EF).
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         occurrence.Id,
@@ -1949,6 +1984,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
+                            t.RetryCount += 1;
                         }
                     ):
                     affected++;
@@ -1997,7 +2033,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
             {
-                if (_CanAcquireCronOccurrence(occurrence))
+                // Owner-scoped release, mirroring ReleaseAcquiredTimeJobsAsync (never the acquire predicate).
+                if (_IsReleasable(occurrence.Status, occurrence.OwnerId))
                 {
                     var updatedOccurrence = _CloneCronOccurrence(occurrence);
                     updatedOccurrence.OwnerId = null;
@@ -2112,6 +2149,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (release)
             {
+                // Only a started (InProgress) attempt consumes a retry-budget unit (mirrors the EF split).
+                var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
                         occurrence.Id,
@@ -2120,6 +2159,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.OwnerId = null;
                             o.LockedUntil = null;
                             o.Status = JobStatus.Idle;
+                            if (consumesBudget)
+                            {
+                                o.RetryCount += 1;
+                            }
                         }
                     )
                 )

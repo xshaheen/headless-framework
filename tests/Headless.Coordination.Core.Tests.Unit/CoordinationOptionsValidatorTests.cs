@@ -34,6 +34,9 @@ public sealed class CoordinationOptionsValidatorTests : TestBase
     [InlineData(5, 30, 30, 20, nameof(CoordinationOptions.SuspicionThreshold))]
     [InlineData(5, 35, 30, 20, nameof(CoordinationOptions.SuspicionThreshold))]
     [InlineData(5, 15, 30, 9, nameof(CoordinationOptions.DeadRetentionWindow))]
+    // Strictly ordered but one missed beat from death: DeadThreshold must be >= 3x HeartbeatInterval.
+    [InlineData(14, 15, 16, 30, nameof(CoordinationOptions.DeadThreshold))]
+    [InlineData(11, 15, 30, 30, nameof(CoordinationOptions.DeadThreshold))]
     public void should_reject_invalid_threshold_triangle(
         int heartbeatSeconds,
         int suspicionSeconds,

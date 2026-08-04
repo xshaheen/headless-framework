@@ -234,7 +234,6 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
         // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the database
         // cascades, so the subtree must be resolved explicitly. A surviving descendant is never harmless — a
         // non-timed one is unreachable forever (every claim path requires ExecutionTime != null), and a timed one
@@ -271,7 +270,6 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
         // Deepest level first: with a non-cascading FK a row may only be deleted once its children are gone.
         var deleted = 0;
-
         for (var level = levels.Count - 1; level >= 0; level--)
         {
             var ids = levels[level];

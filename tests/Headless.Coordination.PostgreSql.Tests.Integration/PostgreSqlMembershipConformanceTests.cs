@@ -109,6 +109,12 @@ public sealed class PostgreSqlMembershipConformanceTests(PostgreSqlMembershipFix
     }
 
     [Fact]
+    public override Task should_treat_leave_of_a_never_registered_identity_as_a_no_op()
+    {
+        return base.should_treat_leave_of_a_never_registered_identity_as_a_no_op();
+    }
+
+    [Fact]
     public override Task should_read_targeted_node_liveness_across_states()
     {
         return base.should_read_targeted_node_liveness_across_states();

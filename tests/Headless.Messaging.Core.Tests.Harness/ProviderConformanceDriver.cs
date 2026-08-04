@@ -135,10 +135,12 @@ public static class TransportProviderConformance
             cancellationToken
         );
 
-        await _StartAndCommitAsync(firstA, firstGroup, cancellationToken);
-        await _StartAndCommitAsync(firstB, firstGroup, cancellationToken);
-        await _StartAndCommitAsync(secondA, secondGroup, cancellationToken);
-        await _StartAndCommitAsync(secondB, secondGroup, cancellationToken);
+        await Task.WhenAll(
+            _StartAndCommitAsync(firstA, firstGroup, cancellationToken),
+            _StartAndCommitAsync(firstB, firstGroup, cancellationToken),
+            _StartAndCommitAsync(secondA, secondGroup, cancellationToken),
+            _StartAndCommitAsync(secondB, secondGroup, cancellationToken)
+        );
 
         var result = await firstA.PublishAsync(_CreateMessage(MessageLane.Bus, logicalName), cancellationToken);
         result.Succeeded.Should().BeTrue();
@@ -167,8 +169,10 @@ public static class TransportProviderConformance
             cancellationToken
         );
 
-        await _StartAndCommitAsync(first, deliveries, cancellationToken);
-        await _StartAndCommitAsync(second, deliveries, cancellationToken);
+        await Task.WhenAll(
+            _StartAndCommitAsync(first, deliveries, cancellationToken),
+            _StartAndCommitAsync(second, deliveries, cancellationToken)
+        );
 
         var result = await first.PublishAsync(_CreateMessage(MessageLane.Queue, logicalName), cancellationToken);
         result.Succeeded.Should().BeTrue();

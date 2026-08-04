@@ -49,6 +49,13 @@ internal interface IInternalJobManager
     Task MigrateDefinedCronJobs((string, string)[] cronExpressions, CancellationToken cancellationToken = default);
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
+    Task ReleaseDeadNodeResources(
+        IReadOnlyCollection<string> instanceIdentifiers,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Distinct owner identities stamped on non-terminal rows (see the provider SPI counterpart).</summary>
+    Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reclaims jobs stuck <c>InProgress</c> whose lease lapsed, independent of node death (#316/U3). Runs on the

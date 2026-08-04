@@ -652,6 +652,100 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task deleting_a_chain_root_removes_the_whole_descendant_tree()
+    {
+        // The self-referential parent FK is DeleteBehavior.NoAction, so the previous root-only RemoveRange threw
+        // DbUpdateException (surfacing as a 500 through the dashboard's never-throws delete API) for ANY chain
+        // root with live descendants. Deletion must remove the whole subtree, deepest level first.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var root = _CreateJobTree(DateTime.UtcNow.AddMinutes(5));
+            await persistence.AddTimeJobsAsync([root], ct);
+            var totalNodes = await fixture.CountTimeJobsAsync(ct);
+            totalNodes.Should().BeGreaterThan(1, "the seeded tree must actually have descendants");
+
+            var removed = await persistence.RemoveTimeJobsAsync([root.Id], ct);
+
+            removed.Should().Be(totalNodes, "every node of the tree is deleted, not just the root");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task concurrent_cas_claims_of_one_row_have_exactly_one_winner()
+    {
+        // Adversarial repro for the portable CAS strategy: its optimistic gate is expressed as a subquery over the
+        // root row rather than a predicate on the updated row itself. Under READ COMMITTED, two claimants racing
+        // the SAME row must still resolve to exactly one winner (the loser's re-evaluated gate must fail after it
+        // unblocks on the winner's committed write). Round-loops because the interleaving is probabilistic — a
+        // single shot can trivially pass even when the gate is unsound.
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var firstHost = fixture.BuildHost("cas-race-a", useNativeClaims: false);
+        using var secondHost = fixture.BuildHost("cas-race-b", useNativeClaims: false);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        await firstHost.StartAsync(ct);
+        await secondHost.StartAsync(ct);
+
+        try
+        {
+            var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var second = secondHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+
+            for (var round = 0; round < 30; round++)
+            {
+                var job = new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "cas-race",
+                    ExecutionTime = DateTime.UtcNow,
+                };
+                await first.AddTimeJobsAsync([job], ct);
+                var stored = await first.GetTimeJobByIdAsync(job.Id, ct);
+                var peeked = new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt };
+
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                async Task<TimeJobEntity[]> claimAsync(IJobPersistenceProvider<TimeJobEntity, CronJobEntity> p)
+                {
+                    await gate.Task;
+                    return await p.QueueTimeJobsAsync([peeked], ct).ToArrayAsync(ct);
+                }
+
+                var firstClaim = claimAsync(first);
+                var secondClaim = claimAsync(second);
+                gate.SetResult();
+                var claims = await Task.WhenAll(firstClaim, secondClaim);
+
+                var winners = claims.SelectMany(x => x).Count(x => x.Id == job.Id);
+                winners
+                    .Should()
+                    .Be(
+                        1,
+                        "round {0}: exactly one claimant may win a single-row CAS race — two winners means the "
+                            + "optimistic gate is not re-evaluated against the committed row",
+                        round
+                    );
+            }
+        }
+        finally
+        {
+            await Task.WhenAll(firstHost.StopAsync(ct), secondHost.StopAsync(ct));
+        }
+    }
+
     /// <summary>
     /// The insert-path dedup must conflict with ACTIVE occurrences only, matching the filtered unique index. A
     /// terminal row at the same execution time — the one a cron-expression migration marks <c>Skipped</c> without

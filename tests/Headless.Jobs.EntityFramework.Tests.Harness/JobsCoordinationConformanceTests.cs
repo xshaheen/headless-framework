@@ -958,6 +958,12 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             (await fixture.ReadTimeJobAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
 
+            // Crash-durable budget: the reclaimed row was a STARTED attempt, so the reclaim consumes one
+            // retry-budget unit — without this a host-killing handler re-runs forever with a fresh budget.
+            (await fixture.ReadTimeJobRetryCountAsync(retryId, ct))
+                .Should()
+                .Be(1, "a started attempt lost to a lapsed lease consumes one retry-budget unit");
+
             var (failStatus, failOwnerId, failLockedUntil, failExceptionMessage, _) =
                 await fixture.ReadTimeJobDetailAsync(failId, ct);
             failStatus.Should().Be((int)JobStatus.Failed);

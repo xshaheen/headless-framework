@@ -163,10 +163,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
             }
 
+            _EnsureValidRetries(entity);
+
             entity.ExecutionTime =
                 entity.ExecutionTime == null
                     ? timeProvider.GetUtcNow().UtcDateTime
                     : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+            _NormalizeDescendantExecutionTimes(entity);
 
             // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a
             // mis-wired provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the
@@ -266,6 +269,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
+        _EnsureValidRetries(entity.Retries, entity.Function);
+
         DateTime? nextOccurrence;
         try
         {
@@ -282,7 +287,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (nextOccurrence is null)
         {
-            throw new JobValidatorException($"Cannot parse expression {entity.Expression}");
+            throw new JobValidatorException(
+                $"Cron expression '{entity.Expression}' is invalid or has no future occurrence"
+            );
         }
 
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
@@ -402,7 +409,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (nextOccurrence is null)
         {
-            return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
+            return new JobResult<TCronJob>(
+                new JobValidatorException(
+                    $"Cron expression '{cronJob.Expression}' is invalid or has no future occurrence"
+                )
+            );
         }
 
         try
@@ -528,14 +539,89 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private DateTime _ConvertToUtcIfNeeded(DateTime dateTime)
     {
-        // If DateTime.Kind is Unspecified, assume it's in system timezone
+        // Kind=Unspecified is reinterpreted through the scheduler timezone (UTC by default).
         return dateTime.Kind switch
         {
             DateTimeKind.Utc => dateTime,
             DateTimeKind.Local => dateTime.ToUniversalTime(),
-            DateTimeKind.Unspecified => TimeZoneInfo.ConvertTimeToUtc(dateTime, _cronScheduleCache.TimeZoneInfo),
+            DateTimeKind.Unspecified => _ConvertUnspecifiedToUtc(dateTime),
             _ => dateTime,
         };
+    }
+
+    // Chain descendants carry caller-supplied execution times that bypass the root's normalization: without this
+    // walk a Kind=Unspecified child persisted through the EF value converter's assume-UTC path while the root was
+    // reinterpreted through the scheduler timezone — the same input on two nodes of one chain could land on two
+    // different instants.
+    private void _NormalizeDescendantExecutionTimes(TTimeJob entity)
+    {
+        foreach (var child in entity.Children)
+        {
+            if (child.ExecutionTime is { } executionTime)
+            {
+                child.ExecutionTime = _ConvertToUtcIfNeeded(executionTime);
+            }
+
+            _NormalizeDescendantExecutionTimes(child);
+        }
+    }
+
+    // Negative Retries produced a self-contradictory outcome: no retry ever ran, yet the exhausted callback
+    // fired announcing an exhausted budget. Reject at enqueue where the mistake is written.
+    private static void _EnsureValidRetries(int retries, string function)
+    {
+        if (retries < 0)
+        {
+            throw new JobValidatorException(
+                FormattableString.Invariant($"Retries must be >= 0 for function '{function}' but was {retries}.")
+            );
+        }
+    }
+
+    private static void _EnsureValidRetries(TTimeJob root)
+    {
+        var errors = new List<string>();
+        var pending = new Stack<TTimeJob>();
+        pending.Push(root);
+
+        while (pending.TryPop(out var job))
+        {
+            if (job.Retries < 0)
+            {
+                errors.Add(
+                    FormattableString.Invariant(
+                        $"Retries must be >= 0 for function '{job.Function}' but was {job.Retries}."
+                    )
+                );
+            }
+
+            foreach (var child in job.Children.Reverse())
+            {
+                pending.Push(child);
+            }
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
+    private DateTime _ConvertUnspecifiedToUtc(DateTime dateTime)
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTimeToUtc(dateTime, _cronScheduleCache.TimeZoneInfo);
+        }
+        catch (ArgumentException exception)
+        {
+            // A local time inside a spring-forward gap does not exist in the scheduler timezone; surface the
+            // documented validation exception instead of a raw ArgumentException from the public enqueue API.
+            throw new JobValidatorException(
+                $"Execution time {dateTime:O} (Kind=Unspecified) does not exist in scheduler timezone "
+                    + $"'{_cronScheduleCache.TimeZoneInfo.Id}': {exception.Message}"
+            );
+        }
     }
 
     // Batch operations implementation
@@ -645,8 +731,19 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     continue;
                 }
 
+                try
+                {
+                    _EnsureValidRetries(entity);
+                }
+                catch (JobValidatorException ex)
+                {
+                    (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                    continue;
+                }
+
                 entity.ExecutionTime ??= nowUtc;
                 entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+                _NormalizeDescendantExecutionTimes(entity);
 
                 if (entity.ExecutionTime.Value <= nowUtc.AddSeconds(1))
                 {
@@ -759,6 +856,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
             _StampJob(entity, now, assignId: false);
 
+            try
+            {
+                _EnsureValidRetries(entity.Retries, entity.Function);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                continue;
+            }
+
             DateTime? nextOccurrence;
             try
             {
@@ -776,7 +883,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (nextOccurrence is null)
             {
-                (errors ??= []).Add($"Cannot parse expression {entity.Expression}");
+                (errors ??= []).Add($"Cron expression '{entity.Expression}' is invalid or has no future occurrence");
                 continue;
             }
 
@@ -1112,7 +1219,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (nextOccurrence is null)
             {
-                errors.Add(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
+                errors.Add(
+                    new JobValidatorException(
+                        $"Cron expression '{cronJob.Expression}' is invalid or has no future occurrence"
+                    )
+                );
                 continue;
             }
 

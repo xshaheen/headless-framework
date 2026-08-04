@@ -507,7 +507,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (resources is null)
+        // Null and empty both mean "release every row this owner claimed but has not started": the scheduler's
+        // fault path cannot know which rows a failed tick had already claimed, so it must be able to release
+        // without a list. Previously [] short-circuited to a no-op here (the fault path released nothing and the
+        // rows sat leased for a full LeaseDuration) while the providers treated [] as an UNSCOPED release — both
+        // sides now agree on the owner-scoped release-everything form.
+        if (resources is null || resources.Length == 0)
         {
             await Task.WhenAll(
                     persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync([], cancellationToken),
@@ -517,10 +522,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             return;
         }
 
-        var cronJobIds =
-            resources.Length == 0
-                ? []
-                : resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
+        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
 
         if (cronJobIds.Length != 0)
         {
@@ -529,8 +531,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        var timeJobIds =
-            resources.Length == 0 ? [] : resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
         if (timeJobIds.Length != 0)
         {
@@ -804,6 +805,51 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)
     {
+        await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+
+        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
+        // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
+        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task ReleaseDeadNodeResources(
+        IReadOnlyCollection<string> instanceIdentifiers,
+        CancellationToken cancellationToken = default
+    )
+    {
+        List<Exception>? failures = null;
+
+        foreach (var instanceIdentifier in instanceIdentifiers)
+        {
+            try
+            {
+                await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+
+        try
+        {
+            // All owners share one set-based terminal-child reconciliation. Running it after every owner multiplies
+            // an unbounded global scan during the exact fleet disruption this batch path is meant to recover from.
+            await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            (failures ??= []).Add(exception);
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException("One or more dead-owner resource releases failed.", failures);
+        }
+    }
+
+    private async Task _ReleaseDeadNodeResourcesAsync(string instanceIdentifier, CancellationToken cancellationToken)
+    {
         var cronOccurrence = persistenceProvider.ReleaseDeadNodeOccurrenceResourcesAsync(
             instanceIdentifier,
             cancellationToken
@@ -812,10 +858,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken);
 
         await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+    }
 
-        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
-        // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
-        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+    public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
     }
 
     public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)

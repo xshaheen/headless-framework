@@ -227,8 +227,17 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
-            var rootMatches = context.Where(x => x.Id == rootId && x.UpdatedAt == expectedUpdatedAt);
-            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+            // Gate = CAS token + full claimability, applied INLINE on the updated row (see _ClaimTimeJobTreeAsync
+            // for why a subquery gate is unsound). The acquire predicate closes the same-clock-tick token residue:
+            // even if a racing winner's DB-clock UpdatedAt lands on the peeked value, its fresh foreign lease
+            // fails the loser's re-evaluated claimability arms.
+            var claimedIds = await _ClaimTimeJobTreeAsync(
+                    context,
+                    q => q.Where(x => x.UpdatedAt == expectedUpdatedAt).WhereCanAcquireUsingDatabaseClock(owner),
+                    rootId,
+                    owner,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (claimedIds.Count == 0)
@@ -271,15 +280,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         var context = dbContext.Set<TTimeJob>();
         var now = timeProvider.GetUtcNow();
-        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
         // nested projection).
+        // The due-time arm uses the DATABASE clock (EF translates DateTime.UtcNow), matching the lease arm in the
+        // same predicate — a node with a fast local clock must not claim jobs before they are due.
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .WhereCanFallbackClaimUsingDatabaseClock()
-            .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             // U5/KTD3: the fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
             // gated here too — claimable only once its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(context)
@@ -302,13 +312,19 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
-            // U5/KTD3: re-assert the parent gate inside the atomic claim (rootMatches gates the root ExecuteUpdate), so
-            // a timed descendant is never leased if its parent had not reached its matching terminal state.
-            var rootMatches = context
-                .Where(x => x.Id == rootId && x.UpdatedAt <= expectedUpdatedAt)
-                .WhereCanFallbackClaimUsingDatabaseClock()
-                .WhereClaimableUnderParentTerminalGate(context);
-            var claimedIds = await _ClaimTimeJobTreeAsync(context, rootMatches, rootId, owner, cancellationToken)
+            // U5/KTD3: re-assert the parent gate inside the atomic claim, INLINE on the updated row (see
+            // _ClaimTimeJobTreeAsync). The parent-terminal gate remains a subquery by nature (it reads the PARENT
+            // row) — that residue races only on a parent's one-way terminal transition, not on same-row ownership.
+            var claimedIds = await _ClaimTimeJobTreeAsync(
+                    context,
+                    q =>
+                        q.Where(x => x.UpdatedAt <= expectedUpdatedAt)
+                            .WhereCanFallbackClaimUsingDatabaseClock()
+                            .WhereClaimableUnderParentTerminalGate(context),
+                    rootId,
+                    owner,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (claimedIds.Count == 0)
@@ -345,17 +361,17 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         var now = timeProvider.GetUtcNow();
-        var fallbackThreshold = now.UtcDateTime.AddSeconds(-1);
 
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        // Due-time arm on the DATABASE clock, matching the lease arm (see ClaimTimedOutTimeJobsAsync).
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => !x.CronJob.IsPaused)
             .WhereCanFallbackClaimUsingDatabaseClock()
-            .Where(x => x.ExecutionTime <= fallbackThreshold)
+            .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
             .Take(JobsClaimStrategyDefaults.MaxClaimBatchSize)
@@ -563,7 +579,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
     private async Task<HashSet<Guid>> _ClaimTimeJobTreeAsync(
         DbSet<TTimeJob> context,
-        IQueryable<TTimeJob> rootMatches,
+        Func<IQueryable<TTimeJob>, IQueryable<TTimeJob>> rootGate,
         Guid rootId,
         string owner,
         CancellationToken cancellationToken
@@ -574,9 +590,16 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         //
         //   (1) The root lease-DEADLINE write runs in AUTOCOMMIT with the DB-clock expression — NEVER inside an
         //       explicit transaction, which would freeze PostgreSQL's now() at transaction-open and silently shorten
-        //       the lease. This single UPDATE is already atomic and, gated on the optimistic rootMatches predicate, a
+        //       the lease. This single UPDATE is already atomic and, gated on the optimistic root predicate, a
         //       losing racer sees 0 rows and never touches the descendants — the transaction added no atomicity the
         //       optimistic gate did not already provide.
+        //
+        // The gate MUST be inline predicates on the updated row, never a subquery: under READ COMMITTED PostgreSQL
+        // evaluates an uncorrelated subquery once against the statement snapshot and does NOT re-evaluate it during
+        // EvalPlanQual after blocking on a concurrent claimant's row lock — with a `WHERE EXISTS(...)` gate two
+        // racers both matched and BOTH claimed the same root (reproduced by
+        // concurrent_cas_claims_of_one_row_have_exactly_one_winner). Inline quals are re-checked against the
+        // winner's committed row version, so the loser matches 0 rows.
         //   (2) Every descendant COPIES the root's persisted LockedUntil via a database-evaluated subquery (no clock
         //       function at all in descendant stamps), so all levels share the root's EXACT deadline on both
         //       PostgreSQL and SqlServer — a stronger single-claim-instant than a transaction gave (per-statement
@@ -586,9 +609,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         // is self-healing. PruneToClaimedSet yields only the nodes actually claimed in THIS attempt, so a half-stamped
         // tail never executes; the claimed-but-unexecuted root is reclaimed once its lease lapses (stalled-lease sweep
         // / claim predicate), and re-claiming re-stamps every idle descendant fresh.
-        var rootAffected = await context
-            .Where(x => x.Id == rootId)
-            .Where(_ => rootMatches.Any())
+        var rootAffected = await rootGate(context.Where(x => x.Id == rootId))
             .ExecuteUpdateAsync(
                 setter =>
                     setter

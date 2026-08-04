@@ -111,16 +111,13 @@ internal sealed class JobsExecutionTaskHandler
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
-                if (child.CachedDelegate != null)
+                if (child.RunCondition == RunCondition.InProgress)
                 {
-                    if (child.RunCondition == RunCondition.InProgress)
-                    {
-                        tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
-                    }
-                    else
-                    {
-                        childrenToRunAfter.Add(child);
-                    }
+                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                }
+                else
+                {
+                    childrenToRunAfter.Add(child);
                 }
             }
 
@@ -422,6 +419,84 @@ internal sealed class JobsExecutionTaskHandler
 
             if (!executionOwnsRegistration())
             {
+                return;
+            }
+
+            // A claimed row whose function is absent from THIS node's registry (rolling deploy where the
+            // enqueuing node runs a newer build, or a function removed while rows referencing it remain)
+            // previously reached a null delegate and retried the NullReferenceException through the whole budget
+            // while holding a worker slot. Release the row instead of failing it: a node that HAS the
+            // registration can claim and run it — a local registry gap must not poison the job.
+            if (context.CachedDelegate is null)
+            {
+                if (!await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                _logger.LogJobFunctionNotRegisteredOnNode(context.JobId, context.FunctionName);
+                context.SetProperty(x => x.Status, JobStatus.Idle).SetProperty(x => x.ReleaseLock, value: true);
+                await _internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
+                context.ResetUpdateProps();
+                return;
+            }
+
+            // Crash-recovery exhaustion gate: every InProgress reclaim (stalled lease or node death, Retry
+            // policy) consumed one budget unit for the interrupted attempt, so a row can resume with a persisted
+            // RetryCount past its budget. Terminalize it here WITHOUT invoking the handler — otherwise a handler
+            // that reliably kills or wedges its host runs one more full attempt per lease cycle, forever.
+            var crashRecoveryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
+            if (context.RetryCount > crashRecoveryBudget)
+            {
+                if (!await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                var exhaustedByRecovery = new InvalidOperationException(
+                    FormattableString.Invariant(
+                        $"Retry budget exhausted by crash recovery: the persisted attempt count ({context.RetryCount}) "
+                    )
+                        + FormattableString.Invariant($"exceeds the retry budget ({crashRecoveryBudget}); the ")
+                        + "interrupted attempts were consumed by lease-lapse/node-death reclaims and the handler "
+                        + "was not invoked again."
+                );
+                context
+                    .SetProperty(x => x.Status, JobStatus.Failed)
+                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
+                    .SetProperty(x => x.ElapsedTime, 0L)
+                    .SetProperty(x => x.ExceptionDetails, _SerializeException(exhaustedByRecovery));
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+                jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
+                _jobsInstrumentation.LogJobFailed(
+                    context.JobId,
+                    context.FunctionName,
+                    exhaustedByRecovery,
+                    context.RetryCount
+                );
+
+                var exhaustedAffected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (exhaustedAffected > 0)
+                {
+                    await stopRenewalAsync().ConfigureAwait(false);
+
+                    // #278: run the exhausted callback under the job's tenant scope.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _InvokeOnExhaustedAsync(context, exhaustedByRecovery, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    // KTD7: fenced terminal write — leave children for reclaim, not local processing.
+                    context.LeaseLost = true;
+                }
+
+                // Early return (same shape as TerminateExecution): the durable parent-terminal gate hands
+                // matching children to the fallback sweep instead of in-line continuation processing.
                 return;
             }
 
@@ -1356,4 +1431,14 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string function
     );
+
+    [LoggerMessage(
+        EventId = 3114,
+        EventName = "JobFunctionNotRegisteredOnNode",
+        Level = LogLevel.Error,
+        Message = "Job {JobId} references function '{Function}' which is not registered on this node; the row was "
+            + "released for another node to claim. Ensure every scheduler node loads the assembly that declares the "
+            + "function (AddJobsDiscovery), or expect claim churn until one does."
+    )]
+    public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
 }

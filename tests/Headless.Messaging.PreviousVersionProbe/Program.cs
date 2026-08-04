@@ -91,7 +91,7 @@ internal static class Program
         var received = new TaskCompletionSource<(TransportMessage Message, object? Settlement)>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        consumer.OnLogCallback = static _ => { };
+        consumer.OnLogCallback = log => Console.Error.WriteLine($"{log.LogType}: {log.Reason}");
         consumer.OnMessageCallback = (message, settlement) =>
         {
             received.TrySetResult((message, settlement));
@@ -101,7 +101,7 @@ internal static class Program
         var messageNames = await consumer.FetchMessageNamesAsync([logicalName]);
         await consumer.SubscribeAsync(messageNames);
         using var listenCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var listening = consumer.ListeningAsync(TimeSpan.FromMilliseconds(100), listenCancellation.Token).AsTask();
+        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(2), listenCancellation.Token).AsTask();
         await consumer.WaitUntilReadyAsync(listenCancellation.Token);
         await Console.Out.WriteLineAsync(
             $"READY|{provider}|{_PackageVersion(provider)}|{lane.ToString().ToLowerInvariant()}"

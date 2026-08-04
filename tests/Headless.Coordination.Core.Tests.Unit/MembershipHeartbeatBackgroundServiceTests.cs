@@ -122,6 +122,39 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_measure_the_self_fence_from_before_a_slow_but_successful_beat()
+    {
+        // The store stamps LastBeat mid-call and peers classify Dead from LastBeat + DeadThreshold. Anchoring
+        // the local fence to the beat's RETURN grants this node overhang equal to the call's latency — a slow
+        // 2s success used to reset the full 3s budget, letting the node keep ownership-sensitive work running
+        // while peers already reclaimed it. The fence must be measured from BEFORE the call.
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+        };
+        var store = new FakeMembershipStore { BlockOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        await membership.RegisterAsync(AbortToken);
+
+        // Slow-but-successful beat: 2s in-call (inside the 3s budget), then accepted.
+        var slowBeat = sut.RunOnceAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        store.HeartbeatRelease.TrySetResult();
+        await slowBeat.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // 1s later the PRE-CALL anchor is 3s old — the budget is spent even though the last success returned
+        // only 1s ago. A return-anchored fence would still see 2s of budget here and keep the node alive.
+        store.BlockOnHeartbeat = false;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await sut.RunOnceAsync(AbortToken);
+
+        membership.Identity.Should().BeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_self_fence_when_heartbeat_call_hangs_past_the_dead_threshold()
     {
         var options = new CoordinationOptions

@@ -47,7 +47,7 @@ Custom `IMembershipStore` implementations must provide `ReadNodeLivenessAsync(No
 
 ## Configuration
 
-Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWindow` must be at least two heartbeat intervals.
+Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
 ## Dependencies
 

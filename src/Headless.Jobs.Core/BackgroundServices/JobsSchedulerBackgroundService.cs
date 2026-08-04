@@ -95,19 +95,44 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                     && !loopToken.IsCancellationRequested
                 )
             {
-                // This is a restart request - release resources and continue loop
-                await _internalJobsManager
-                    .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
-                    .ConfigureAwait(false);
+                // This is a restart request - release this wake's claims and continue loop. Explicit ids only,
+                // and only when the context actually holds claims: the empty form releases every Queued row this
+                // owner holds, including rows whose admissions from earlier ticks are still parked in the pool.
+                if (_executionContext.Functions.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
+                        .ConfigureAwait(false);
+                }
+
                 // Small delay to allow resources to be released
                 await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
-                // Host shutdown or local membership loss - release resources and exit
-                await _internalJobsManager
-                    .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
-                    .ConfigureAwait(false);
+                // Host shutdown or local membership loss - release this wake's claims and exit. Same explicit-ids
+                // rule as the restart path; rows whose admissions are already parked in the pool are recovered by
+                // the lease-lapse sweep rather than released out from under a possibly-running admission.
+                if (_executionContext.Functions.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+
+                // This exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps
+                // running without a scheduler, so the cause must be visible in logs.
+                if (
+                    _ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested
+                )
+                {
+                    _logger.LogJobsSchedulerStoppedOnMembershipLoss();
+                }
+                else
+                {
+                    _logger.LogJobsSchedulerStoppedOnShutdown();
+                }
+
                 break;
             }
             catch (Exception ex)
@@ -130,30 +155,69 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     {
         while (!stoppingToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            // Shutdown drain (StopAsync freezes the pool, then waits for running tasks while this loop is still
+            // alive) or manual-start freeze: the pool accepts no admissions, so claiming or queuing would only
+            // throw into the fault path — which releases every Queued row this owner holds, un-claiming the very
+            // backlog the drain is waiting beside, once per second for the whole drain window. Mirror the
+            // fallback service's guard instead: release this wake's parked claims explicitly and idle until the
+            // loop token fires or the pool resumes. A released row's former owner fails the ownership predicate
+            // on the Queued→InProgress transition, so a racing admission drops it rather than double-running.
+            if (_taskScheduler.IsFrozen || _taskScheduler.IsDisposed)
+            {
+                var parked = _executionContext.Functions;
+                if (parked.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(parked, cancellationToken)
+                        .ConfigureAwait(false);
+                    _executionContext.ClearFunctions();
+                }
+
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (_executionContext.Functions.Length != 0)
             {
-                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
+                var frozenMidDispatch = false;
+
+                foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority.DispatchRank()))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
                         function.FunctionName,
                         function.CachedMaxConcurrency
                     );
 
-                    await _taskScheduler
-                        .QueueAsync(
-                            JobsAdmissionWorkItem.Create(
-                                _internalJobsManager,
-                                _taskHandler,
-                                _logger,
-                                semaphore,
-                                function,
-                                isDue: false
-                            ),
-                            function.CachedPriority,
-                            cancellationToken,
-                            stoppingToken
-                        )
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await _taskScheduler
+                            .QueueAsync(
+                                JobsAdmissionWorkItem.Create(
+                                    _internalJobsManager,
+                                    _taskHandler,
+                                    _logger,
+                                    semaphore,
+                                    function,
+                                    isDue: false
+                                ),
+                                function.CachedPriority,
+                                cancellationToken,
+                                stoppingToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (InvalidOperationException) when (_taskScheduler.IsFrozen || _taskScheduler.IsDisposed)
+                    {
+                        // Freeze raced the pre-check; keep the remaining functions in the context so the guard
+                        // above releases them on the next pass.
+                        frozenMidDispatch = true;
+                        break;
+                    }
+                }
+
+                if (frozenMidDispatch)
+                {
+                    continue;
                 }
 
                 _executionContext.ClearFunctions();
@@ -170,6 +234,19 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             {
                 sleepDuration = TimeSpan.FromDays(1);
                 _executionContext.SetNextPlannedOccurrence(dt: null);
+
+                // GetNextJobs already claimed these far-future rows (Queued + lease). Nothing dispatches them for
+                // at least a day — far past any lease — so release them instead of leaving claimed rows to churn
+                // through lease-lapse recovery on every wake. Explicit ids only: the empty form would also release
+                // rows whose admissions from earlier ticks are still parked in the pool.
+                var farFutureClaims = _executionContext.Functions;
+                if (farFutureClaims.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(farFutureClaims, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 _executionContext.ClearFunctions();
             }
             else
@@ -243,6 +320,26 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     {
         _taskScheduler.Freeze();
         Interlocked.Exchange(ref _started, 0);
+
+        // Bounded drain BEFORE cancelling either execution lifetime: in-flight jobs get the host's
+        // remaining shutdown budget to complete and write their terminal status, so a routine deploy stops being
+        // indistinguishable from node death (previously every running job was cancelled with no terminal write,
+        // sat out its lease, and was resolved by OnNodeDeath — including false Failed records for MarkFailed
+        // jobs that never misbehaved). cancellationToken fires when the host's ShutdownTimeout expires;
+        // stragglers are then cancelled cooperatively by base.StopAsync and recovered by the existing sweeps.
+        try
+        {
+            await _taskScheduler.WaitForRunningTasksAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown budget exhausted — fall through to cooperative cancellation of the remaining work.
+        }
+
+        // Immediate dispatch does not flow through BackgroundService.ExecuteAsync, so it cannot use the base
+        // stopping token. Cancel the task scheduler's execution lifetime after the same drain boundary, then let
+        // base.StopAsync cancel the scheduler-loop token used by polled and fallback work.
+        await _taskScheduler.CancelExecutionsAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -252,4 +349,22 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _schedulerLoopCancellationTokenSource?.Dispose();
         base.Dispose();
     }
+}
+
+internal static partial class JobsSchedulerBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 3220,
+        Level = LogLevel.Warning,
+        Message = "Jobs scheduler loop stopped because local coordination membership was lost; "
+            + "no jobs will be claimed or dispatched by this node until the host restarts."
+    )]
+    public static partial void LogJobsSchedulerStoppedOnMembershipLoss(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3221,
+        Level = LogLevel.Information,
+        Message = "Jobs scheduler loop stopped for host shutdown."
+    )]
+    public static partial void LogJobsSchedulerStoppedOnShutdown(this ILogger logger);
 }

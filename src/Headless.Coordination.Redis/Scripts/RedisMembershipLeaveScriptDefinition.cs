@@ -17,15 +17,21 @@ internal sealed class RedisMembershipLeaveScriptDefinition : RedisScriptDefiniti
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
             local lastBeatMs = nowMs - tonumber(@hardMs)
-            local role = @role
-            local metadata = @metadata
 
             local existing = redis.call('hget', @knownKey, @member)
-            if existing ~= false then
-              local payload = cjson.decode(existing)
-              role = payload['role'] or role
-              metadata = payload['metadata'] or metadata
+            if existing == false then
+              -- IMembershipStore contract: leave is a no-op for an absent, pruned, or superseded-and-swept
+              -- identity — recreating a member payload here would retain a phantom entry for the whole
+              -- RedisKnownNodeRetention window and pin the node's generation mirror against cleanup (the
+              -- relational providers are UPDATE-only and correctly touch zero rows). zrem stays: it is
+              -- idempotent and covers a live entry whose payload was already swept.
+              redis.call('zrem', @liveKey, @member)
+              return 0
             end
+
+            local payload = cjson.decode(existing)
+            local role = payload['role'] or @role
+            local metadata = payload['metadata'] or @metadata
 
             redis.call('hset', @knownKey, @member, cjson.encode({
               last_beat_ms = lastBeatMs,

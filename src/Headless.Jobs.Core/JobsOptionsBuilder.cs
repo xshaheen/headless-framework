@@ -355,11 +355,13 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan PostCommitDrainTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// The timezone used when evaluating cron expressions. Defaults to the local machine timezone.
-    /// Set this to a consistent value (e.g., a fixed <c>TimeZoneInfo</c>) in server environments
-    /// where local timezone may differ across nodes.
+    /// The timezone used when evaluating cron expressions and interpreting <c>Kind=Unspecified</c> execution
+    /// times. Defaults to UTC. Never defaulted to <see cref="TimeZoneInfo.Local"/>: two fleet nodes with
+    /// different container timezones would evaluate one cron expression to two different UTC instants, and the
+    /// occurrence dedup unique index cannot collapse them — every tick would run once per distinct timezone.
+    /// Set an explicit zone only when every node in the fleet is configured identically.
     /// </summary>
-    public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
+    public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Utc;
 
     /// <summary>
     /// How often the durable path reconciles dead nodes from the membership liveness snapshot to reclaim

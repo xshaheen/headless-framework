@@ -22,6 +22,12 @@ internal sealed class JobsDispatcher(
             return;
         }
 
+        // The caller's token governs only admission (waiting for pool capacity). By dispatch time the row is
+        // already durably InProgress with a lease, so the running job follows the scheduler's execution lifetime.
+        // ApplicationStopping fires before hosted services receive their StopAsync drain budget, so using it here
+        // would cancel immediate jobs before the scheduler can persist their terminal status.
+        var executionToken = taskScheduler.ExecutionCancellationToken;
+
         foreach (var context in contexts)
         {
             var semaphore = concurrencyGate.GetSemaphoreOrNull(context.FunctionName, context.CachedMaxConcurrency);
@@ -47,7 +53,8 @@ internal sealed class JobsDispatcher(
                         }
                     },
                     context.CachedPriority,
-                    cancellationToken
+                    capacityCancellationToken: cancellationToken,
+                    executionCancellationToken: executionToken
                 )
                 .ConfigureAwait(false);
         }

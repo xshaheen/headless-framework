@@ -14,6 +14,20 @@ public sealed class CronScheduleCacheTests
         next.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("0 0 0 30 2 *")] // Feb 30 never exists
+    [InlineData("0 0 0 31 4 *")] // Apr 31 never exists
+    [InlineData("0 0 0 31 2 *")] // Feb 31 never exists
+    public void get_next_occurrence_or_default_returns_null_for_expressions_that_never_fire(string expression)
+    {
+        // NCrontab reports "no future occurrence" as a DateTime.MaxValue-era value, not null — without the
+        // sentinel guard these expressions were accepted as valid recurring jobs and a permanently pending
+        // year-9999 occurrence row was materialized and re-leased forever.
+        var next = _cache.GetNextOccurrenceOrDefault(expression, DateTime.UtcNow);
+
+        next.Should().BeNull();
+    }
+
     [Fact]
     public void get_next_occurrence_or_default_normalizes_whitespace_and_caches()
     {
