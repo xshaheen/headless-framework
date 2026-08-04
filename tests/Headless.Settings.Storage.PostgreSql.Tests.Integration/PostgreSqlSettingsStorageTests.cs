@@ -232,9 +232,9 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
             """,
             connection
         );
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("createdAt", createdAt);
-        command.Parameters.AddWithValue("updatedAt", updatedAt);
+        command.Parameters.AddWithValue(nameof(id), id);
+        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
+        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

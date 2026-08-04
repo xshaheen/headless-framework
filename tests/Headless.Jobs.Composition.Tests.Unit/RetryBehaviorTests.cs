@@ -632,9 +632,10 @@ public sealed class RetryBehaviorTests : TestBase
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         context.CachedDelegate = async (_, _, token) =>
         {
-            using var registration = token.Register(() => cancellationObserved.TrySetResult());
+            await using var registration = token.Register(() => cancellationObserved.TrySetResult());
             started.TrySetResult();
             await complete.Task;
         };

@@ -182,7 +182,7 @@ public static class DocumentSetExtensions
     }
 
     /// <summary>Returns tasks that each resolve to the document content from a distinct replica node.</summary>
-    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicasAsync<T, TId>(
+    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicas<T, TId>(
         this IDocumentSet<T> set,
         TId id,
         GetAllReplicasOptions? options = null

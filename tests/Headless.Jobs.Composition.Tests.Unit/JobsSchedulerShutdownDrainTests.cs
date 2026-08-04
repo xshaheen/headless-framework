@@ -49,7 +49,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         stop.IsCompleted.Should().BeFalse("stop must wait for in-flight work, not freeze-and-abandon it");
 
         release.TrySetResult();
-        await stop.WaitAsync(_waitBudget);
+        await stop.WaitAsync(_waitBudget, AbortToken);
 
         completed.Should().BeTrue("the drained job ran to completion instead of being cancelled");
     }
@@ -71,11 +71,11 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             JobPriority.Normal,
             AbortToken
         );
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         using var shutdownBudget = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
 
-        await service.StopAsync(shutdownBudget.Token).WaitAsync(_waitBudget);
+        await service.StopAsync(shutdownBudget.Token).WaitAsync(_waitBudget, AbortToken);
 
         release.TrySetResult();
     }
@@ -118,6 +118,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var executionTokenWasCancelled = false;
+
         var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
@@ -136,7 +137,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         };
 
         await host.Services.GetRequiredService<IJobsDispatcher>().DispatchAsync([context], AbortToken);
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         var applicationStopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stoppingRegistration = host
@@ -149,7 +150,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         executionTokenWasCancelled.Should().BeFalse("ApplicationStopping must not cancel immediate work before drain");
 
         release.TrySetResult();
-        await stop.WaitAsync(_waitBudget);
+        await stop.WaitAsync(_waitBudget, AbortToken);
 
         executionTokenWasCancelled.Should().BeFalse();
         context.Status.Should().Be(JobStatus.Succeeded);
@@ -186,7 +187,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             JobPriority.Normal,
             AbortToken
         );
-        await started.Task.WaitAsync(_waitBudget);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
 
         await service.StartAsync(AbortToken);
         var stop = service.StopAsync(CancellationToken.None);
@@ -208,7 +209,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         finally
         {
             release.TrySetResult();
-            await stop.WaitAsync(_waitBudget);
+            await stop.WaitAsync(_waitBudget, AbortToken);
         }
     }
 
@@ -221,6 +222,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         var serviceProvider = services.BuildServiceProvider();
+
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
             TimeProvider.System,
@@ -231,6 +233,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance
         );
+
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
         ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 

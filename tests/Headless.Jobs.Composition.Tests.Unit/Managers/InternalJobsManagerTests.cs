@@ -420,8 +420,8 @@ public sealed class InternalJobsManagerTests : TestBase
         };
 
         // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(new[] { root });
-        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<CronJobEntity>());
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([root]);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
