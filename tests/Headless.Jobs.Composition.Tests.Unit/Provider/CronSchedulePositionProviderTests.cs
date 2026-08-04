@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
@@ -250,7 +251,7 @@ public sealed class CronSchedulePositionProviderTests : TestBase
             {
                 Advance = _Advance(future, future.NextDueUtc, future.NextDueUtc.AddMinutes(1)) with
                 {
-                    RequireProjectionDue = true,
+                    RequireProjectionDue = false,
                 },
                 ExecutionTimeUtc = future.NextDueUtc,
             },
@@ -258,7 +259,9 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         );
 
         staleResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.LostFence);
-        futureResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.NotDue);
+        futureResult
+            .Outcome.Should()
+            .Be(CronScheduleMaterializationOutcome.NotDue, "materialization is intrinsically due-gated");
         (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEmpty();
         await _AssertPositionUnchangedAsync(provider, stale.Id);
         (await provider.GetCronJobByIdAsync(future.Id, AbortToken))!.NextDueUtc.Should().Be(future.NextDueUtc);
@@ -292,13 +295,45 @@ public sealed class CronSchedulePositionProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_reuse_a_non_terminal_occurrence_and_advance_the_position()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        var existing = new CronJobOccurrenceEntity<FakeCronJob>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = definition.Id,
+            CronJob = definition,
+            ExecutionTime = _Projection,
+            Status = JobStatus.Idle,
+            OnNodeDeath = NodeDeathPolicy.Retry,
+            CreatedAt = _Now.AddMinutes(-2),
+            UpdatedAt = _Now.AddMinutes(-1),
+        };
+        await provider.InsertCronJobOccurrencesAsync([existing], AbortToken);
+
+        var result = await provider.MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), AbortToken);
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceExists);
+        result.OccurrenceId.Should().Be(existing.Id);
+        result.OccurrenceCreatedAt.Should().Be(existing.CreatedAt);
+        result.SchedulePosition!.ReconciledThroughUtc.Should().Be(_Projection);
+        result.SchedulePosition.NextDueUtc.Should().Be(_Projection.AddMinutes(1));
+        (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().ContainSingle();
+        var persisted = await provider.GetCronJobByIdAsync(definition.Id, AbortToken);
+        persisted!.ReconciledThroughUtc.Should().Be(_Projection);
+        persisted.NextDueUtc.Should().Be(_Projection.AddMinutes(1));
+    }
+
+    [Fact]
     public async Task should_leave_position_and_occurrences_unchanged_when_cancelled_before_materialization()
     {
         var provider = _Create();
         var definition = _Definition();
         await provider.InsertCronJobsAsync([definition], AbortToken);
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         var action = () =>
             provider.MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), cancellation.Token);
@@ -307,6 +342,55 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         await _AssertPositionUnchangedAsync(provider, definition.Id);
         (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEmpty();
     }
+
+    [Fact]
+#pragma warning disable MA0158 // The regression must contend on the provider's existing object-backed monitor.
+    public async Task should_honor_cancellation_received_while_waiting_for_the_definition_lock()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        using var cancellation = new CancellationTokenSource();
+        using var workerStarted = new ManualResetEventSlim();
+        Exception? failure = null;
+        var definitionLock = typeof(JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>)
+            .GetMethod("_GetCronDefinitionLock", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(provider, [definition.Id])!;
+        var worker = new Thread(() =>
+        {
+            workerStarted.Set();
+            try
+            {
+                provider
+                    .MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), cancellation.Token)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+
+        lock (definitionLock)
+        {
+            worker.Start();
+            workerStarted.Wait(AbortToken);
+            SpinWait
+                .SpinUntil(() => worker.ThreadState.HasFlag(ThreadState.WaitSleepJoin), TimeSpan.FromSeconds(5))
+                .Should()
+                .BeTrue("the materializer must be waiting on the held definition lock before cancellation");
+#pragma warning disable VSTHRD103 // Cancellation must be raised synchronously while the monitor is still held.
+            cancellation.Cancel();
+#pragma warning restore VSTHRD103
+        }
+
+        worker.Join(TimeSpan.FromSeconds(5)).Should().BeTrue();
+        failure.Should().BeOfType<OperationCanceledException>();
+        await _AssertPositionUnchangedAsync(provider, definition.Id);
+        (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEmpty();
+    }
+#pragma warning restore MA0158
 
     [Fact]
     public async Task should_claim_the_committed_idle_occurrence_with_provider_owned_lease_time()

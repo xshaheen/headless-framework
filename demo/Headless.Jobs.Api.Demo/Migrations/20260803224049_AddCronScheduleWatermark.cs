@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -85,6 +87,26 @@ namespace Headless.Jobs.Api.Demo.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                DO $migration$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM jobs."CronJobs"
+                        WHERE "EvaluationFingerprint" IS NOT NULL
+                           OR "MissedRunGraceSeconds" <> 0
+                           OR "NextDueUtc" <> '-infinity'::timestamp with time zone
+                           OR "OnMissedRun" <> 'Coalesce'
+                           OR "ReconciledThroughUtc" <> '-infinity'::timestamp with time zone
+                    ) OR EXISTS (
+                        SELECT 1 FROM jobs."CronJobOccurrences" WHERE "RecoveredFromUtc" IS NOT NULL
+                    ) THEN
+                        RAISE EXCEPTION 'Cannot downgrade cron schedule watermark migration while durable schedule or recovery state exists.';
+                    END IF;
+                END $migration$;
+                """
+            );
+
             migrationBuilder.DropIndex(name: "IX_CronJobs_EvaluationFingerprint", schema: "jobs", table: "CronJobs");
 
             migrationBuilder.DropIndex(name: "IX_CronJobs_IsPaused_NextDueUtc", schema: "jobs", table: "CronJobs");

@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -1536,35 +1537,61 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         cancellationToken.ThrowIfCancellationRequested();
         var advance = materialization.Advance;
 
-        if (materialization.ExecutionTimeUtc != advance.ReconciledThroughUtc)
-        {
-            throw new ArgumentException(
-                "The occurrence instant must equal the schedule position's reconciled-through instant.",
-                nameof(materialization)
-            );
-        }
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ReconciledThroughUtc,
+            "The occurrence instant must equal the schedule position's reconciled-through instant.",
+            nameof(materialization)
+        );
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var executionTimeUtc = materialization.ExecutionTimeUtc;
+        // Authorize due-ness in autocommit before opening the atomic write transaction. PostgreSQL translates
+        // DateTime.UtcNow to now(), whose value is frozen at transaction start; evaluating it here gives the current
+        // statement clock and avoids a row-lock wait making a newly due projection look future. Time is monotonic, and
+        // the transaction below repeats every position/revision/projection fence, so an authorized projection cannot
+        // become "not due" while a competitor can only turn the later write into LostFence.
+        var eligibility = await definitions
+            .AsNoTracking()
+            .WhereScheduleAdvanceFenceHolds(
+                advance.CronJobId,
+                advance.ObservedReconciledThroughUtc,
+                advance.ExpectedScheduleRevision
+            )
+            .Where(x => x.NextDueUtc == executionTimeUtc)
+            .Select(x => new { IsDue = x.NextDueUtc <= DateTime.UtcNow, StoreUtcNow = DateTime.UtcNow })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (eligibility is null)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
+        }
+
+        if (!eligibility.IsDue)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue };
+        }
+
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-        var definitions = dbContext.Set<TCronJob>();
 
         // The fenced UPDATE is deliberately first: its row lock is held through commit and is the per-definition
         // mutex for every conforming materializer. Read committed therefore gives one winner without PostgreSQL's
-        // expected serialization aborts, while occurrence arbitration and the position remain one transaction.
+        // expected serialization aborts, while occurrence arbitration and the position remain one transaction. The
+        // due decision above is safe to omit here because it was already true and the repeated exact-position fence
+        // rejects every intervening definition transition.
 
         var fenced = definitions.WhereScheduleAdvanceFenceHolds(
             advance.CronJobId,
             advance.ObservedReconciledThroughUtc,
             advance.ExpectedScheduleRevision
         );
-        if (advance.RequireProjectionDue)
-        {
-            fenced = fenced.WhereProjectionIsDueUsingDatabaseClock();
-        }
+        fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
 
         var reconciledThroughUtc = advance.ReconciledThroughUtc;
         var nextDueUtc = advance.NextDueUtc;
@@ -1580,25 +1607,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (affected == 0)
         {
-            var notDue =
-                advance.RequireProjectionDue
-                && await definitions
-                    .AsNoTracking()
-                    .WhereScheduleAdvanceFenceHolds(
-                        advance.CronJobId,
-                        advance.ObservedReconciledThroughUtc,
-                        advance.ExpectedScheduleRevision
-                    )
-                    .Where(x => x.NextDueUtc > DateTime.UtcNow)
-                    .AnyAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-            return new CronScheduleMaterializationResult
-            {
-                Outcome = notDue
-                    ? CronScheduleMaterializationOutcome.NotDue
-                    : CronScheduleMaterializationOutcome.LostFence,
-            };
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
         }
 
         var committedDefinition = await definitions
@@ -1609,7 +1618,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 x.ReconciledThroughUtc,
                 x.NextDueUtc,
                 x.OnNodeDeath,
-                StoreUtcNow = DateTime.UtcNow,
             })
             .SingleAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -1658,7 +1666,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             {
                 ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
                 NextDueUtc = committedDefinition.NextDueUtc,
-                StoreUtcNow = committedDefinition.StoreUtcNow,
+                StoreUtcNow = eligibility.StoreUtcNow,
             },
             OccurrenceId = occurrence.Id,
             OccurrenceCreatedAt = occurrence.CreatedAt,

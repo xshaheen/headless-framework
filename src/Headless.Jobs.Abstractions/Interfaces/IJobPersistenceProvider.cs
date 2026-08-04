@@ -449,6 +449,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <remarks>
     /// The occurrence-key arbitration and position write are one provider-owned transaction or critical section.
     /// New occurrences commit as Idle with no owner or lease. A later claim operation applies store-time ownership.
+    /// This operation always requires the persisted projection to equal the requested occurrence instant and be due
+    /// by the provider's time authority; <see cref="CronScheduleAdvance.RequireProjectionDue"/> cannot disable that
+    /// invariant for materialization.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <see cref="CronScheduleMaterialization.ExecutionTimeUtc"/> does not equal the advance's reconciled instant.

@@ -9,7 +9,9 @@ namespace Headless.Jobs.Models;
 /// instant.
 /// </summary>
 /// <remarks>
-/// <see cref="ExecutionTimeUtc"/> must equal <see cref="CronScheduleAdvance.ReconciledThroughUtc"/>. The provider
+/// <see cref="ExecutionTimeUtc"/> must equal <see cref="CronScheduleAdvance.ReconciledThroughUtc"/> and the
+/// definition's currently persisted <c>NextDueUtc</c>. Materialization is always due-gated by
+/// the provider's time authority, regardless of <see cref="CronScheduleAdvance.RequireProjectionDue"/>. The provider
 /// arbitrates that occurrence key and the schedule-position fence in one transaction or critical section. Claiming
 /// and leasing the resulting occurrence are deliberately separate operations.
 /// </remarks>

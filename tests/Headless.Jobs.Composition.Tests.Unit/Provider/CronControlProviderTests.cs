@@ -171,8 +171,8 @@ public sealed class CronControlProviderTests : TestBase
         updated.ScheduleRevision.Should().Be(1);
         updated
             .ReconciledThroughUtc.Should()
-            .Be(default(DateTime), "the stale position must be re-derived under the new expression, not kept");
-        updated.NextDueUtc.Should().Be(default(DateTime), "the projection was derived under the old expression");
+            .Be(default, "the stale position must be re-derived under the new expression, not kept");
+        updated.NextDueUtc.Should().Be(default, "the projection was derived under the old expression");
     }
 
     [Fact]

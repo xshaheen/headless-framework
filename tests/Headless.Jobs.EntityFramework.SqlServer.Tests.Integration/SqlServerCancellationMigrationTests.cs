@@ -28,7 +28,8 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
                 + "CREATE TABLE [jobs].[CronJobs] ([Id] uniqueidentifier NOT NULL PRIMARY KEY);"
                 + "CREATE TABLE [jobs].[CronJobOccurrences] ("
                 + "[Id] uniqueidentifier NOT NULL PRIMARY KEY, [CronJobId] uniqueidentifier NOT NULL, "
-                + "[ExecutionTime] datetime2 NOT NULL, [Status] nvarchar(32) NOT NULL);"
+                + "[ExecutionTime] datetime2 NOT NULL, [CreatedAt] datetime2 NOT NULL DEFAULT SYSUTCDATETIME(), "
+                + "[Status] nvarchar(32) NOT NULL);"
                 + "CREATE UNIQUE INDEX [UQ_CronJobId_ExecutionTime] ON [jobs].[CronJobOccurrences] ([CronJobId], [ExecutionTime]);"
                 + "INSERT INTO [jobs].[CronJobs] ([Id]) VALUES (@cronJobId);";
             var parameter = command.CreateParameter();

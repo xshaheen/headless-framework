@@ -225,14 +225,85 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         occurrences.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_return_zero_delay_after_the_store_materializes_a_due_occurrence_when_node_clock_lags()
+    {
+        var storeTime = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var nodeTime = new FakeTimeProvider(new DateTimeOffset(_Now.AddHours(-1), TimeSpan.Zero));
+        var (manager, provider) = _Create(storeTime, nodeTime);
+        var due = _Definition(nextDue: _Now);
+        await provider.InsertCronJobsAsync([due], AbortToken);
+
+        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+
+        timeRemaining.Should().Be(TimeSpan.Zero, "the store already authorized and claimed this occurrence as due");
+        functions.Should().ContainSingle();
+        functions[0].JobId.Should().NotBeEmpty();
+        functions[0].FunctionName.Should().Be(due.Function);
+    }
+
+    [Fact]
+    public async Task should_wake_for_an_earlier_projection_without_claiming_a_later_stored_occurrence()
+    {
+        var (manager, provider) = _Create();
+        var projection = _Definition(nextDue: _Now.AddMinutes(10));
+        var storedDefinition = _Definition(nextDue: _Now.AddMinutes(30));
+        var storedOccurrence = _Occurrence(storedDefinition.Id, _Now.AddMinutes(20));
+        await provider.InsertCronJobsAsync([projection, storedDefinition], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync([storedOccurrence], AbortToken);
+
+        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+
+        timeRemaining.Should().Be(TimeSpan.FromMinutes(10));
+        functions.Should().BeEmpty("the stored occurrence is later than the earlier projection wake");
+        var persisted = (await provider.GetAllCronJobOccurrencesAsync(x => x.Id == storedOccurrence.Id, AbortToken))
+            .Should()
+            .ContainSingle()
+            .Subject;
+        persisted.Status.Should().Be(JobStatus.Idle);
+        persisted.OwnerId.Should().BeNull();
+        persisted.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_known_occurrence_when_the_claim_key_is_a_different_instant()
+    {
+        var (_, provider) = _Create();
+        var definition = _Definition(nextDue: _Now.AddMinutes(30));
+        var storedOccurrence = _Occurrence(definition.Id, _Now.AddMinutes(20));
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync([storedOccurrence], AbortToken);
+        var context = new JobManagerDispatchContext(definition.Id)
+        {
+            FunctionName = definition.Function,
+            Expression = definition.Expression,
+            ScheduleRevision = definition.ScheduleRevision,
+            OnNodeDeath = definition.OnNodeDeath,
+            NextCronOccurrence = new NextCronOccurrence(storedOccurrence.Id, storedOccurrence.CreatedAt),
+        };
+
+        var claimed = await provider
+            .QueueCronJobOccurrencesAsync((_Now.AddMinutes(10), [context]), AbortToken)
+            .ToArrayAsync(AbortToken);
+
+        claimed.Should().BeEmpty();
+        var persisted = (await provider.GetAllCronJobOccurrencesAsync(x => x.Id == storedOccurrence.Id, AbortToken))
+            .Should()
+            .ContainSingle()
+            .Subject;
+        persisted.Status.Should().Be(JobStatus.Idle);
+        persisted.OwnerId.Should().BeNull();
+    }
+
     private static (
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider
-    ) _Create()
+    ) _Create(TimeProvider? storeTime = null, TimeProvider? nodeTime = null)
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        storeTime ??= new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        nodeTime ??= storeTime;
         var services = new ServiceCollection();
-        services.AddSingleton<TimeProvider>(time);
+        services.AddSingleton(storeTime);
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
@@ -241,7 +312,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
         var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
             provider,
-            time,
+            nodeTime,
             Substitute.For<IJobsNotificationHubSender>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,

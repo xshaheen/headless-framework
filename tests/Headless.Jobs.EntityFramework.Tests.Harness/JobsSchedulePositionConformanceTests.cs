@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -477,9 +479,92 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal);
         result.OccurrenceId.Should().Be(occurrenceId);
-        result.SchedulePosition.Should().NotBeNull();
+        result
+            .SchedulePosition!.ReconciledThroughUtc.Should()
+            .BeCloseTo(seeded.NextDueUtc, TimeSpan.FromMicroseconds(1));
+        result
+            .SchedulePosition.NextDueUtc.Should()
+            .BeCloseTo(seeded.NextDueUtc.AddMinutes(1), TimeSpan.FromMicroseconds(1));
         (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(1);
         (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+        var persisted = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        persisted.ReconciledThroughUtc.Should().BeCloseTo(seeded.NextDueUtc, TimeSpan.FromMicroseconds(1));
+        persisted.NextDueUtc.Should().BeCloseTo(seeded.NextDueUtc.AddMinutes(1), TimeSpan.FromMicroseconds(1));
+    }
+
+    public virtual async Task existing_non_terminal_occurrence_is_reused_and_position_advances()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-existing");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-existing",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.Idle,
+            ownerId: null,
+            NodeDeathPolicy.Retry,
+            lockedUntil: null,
+            seeded.NextDueUtc,
+            ct
+        );
+
+        var result = await persistence.MaterializeCronScheduleOccurrenceAsync(_Materialization(cronId, seeded), ct);
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceExists);
+        result.OccurrenceId.Should().Be(occurrenceId);
+        result.OccurrenceCreatedAt.Should().NotBeNull();
+        result
+            .SchedulePosition!.ReconciledThroughUtc.Should()
+            .BeCloseTo(seeded.NextDueUtc, TimeSpan.FromMicroseconds(1));
+        result
+            .SchedulePosition.NextDueUtc.Should()
+            .BeCloseTo(seeded.NextDueUtc.AddMinutes(1), TimeSpan.FromMicroseconds(1));
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(1);
+        var persisted = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        persisted.ReconciledThroughUtc.Should().BeCloseTo(seeded.NextDueUtc, TimeSpan.FromMicroseconds(1));
+        persisted.NextDueUtc.Should().BeCloseTo(seeded.NextDueUtc.AddMinutes(1), TimeSpan.FromMicroseconds(1));
+    }
+
+    public virtual async Task failure_after_the_position_update_rolls_back_position_and_occurrence()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var fault = new FailAfterCronPositionUpdateInterceptor();
+        using var host = fixture.BuildInterceptedHost("materialize-rollback", fault);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-rollback",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        fault.Arm();
+
+        var action = () => persistence.MaterializeCronScheduleOccurrenceAsync(_Materialization(cronId, seeded), ct);
+
+        await action.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected materialization failure.");
+        await _AssertPositionUnchangedAsync(cronId, seeded, ct);
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(0);
     }
 
     public virtual async Task stale_and_future_materializations_are_distinct_no_mutation_outcomes()
@@ -521,12 +606,17 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             ct
         );
         var futureResult = await persistence.MaterializeCronScheduleOccurrenceAsync(
-            _Materialization(futureId, future),
+            _Materialization(futureId, future) with
+            {
+                Advance = _Materialization(futureId, future).Advance with { RequireProjectionDue = false },
+            },
             ct
         );
 
         staleResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.LostFence);
-        futureResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.NotDue);
+        futureResult
+            .Outcome.Should()
+            .Be(CronScheduleMaterializationOutcome.NotDue, "materialization is intrinsically due-gated");
         (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(0);
         await _AssertPositionUnchangedAsync(staleId, stale, ct);
         await _AssertPositionUnchangedAsync(futureId, future, ct);
@@ -625,15 +715,15 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         var cronId = Guid.NewGuid();
         await fixture.SeedCronJobAsync(cronId, "migrate-reset", "0 0 3 1 1 *", NodeDeathPolicy.Retry, ct);
         var before = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
-        before.NextDueUtc.Should().NotBe(default(DateTime), "the seeded definition carries an initialized position");
+        before.NextDueUtc.Should().NotBe(default, "the seeded definition carries an initialized position");
 
         await persistence.MigrateDefinedCronJobsAsync([("migrate-reset", "0 */5 * * * *")], ct);
 
         var after = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         after
             .ReconciledThroughUtc.Should()
-            .Be(default(DateTime), "the stale position must be re-derived under the new expression, not kept");
-        after.NextDueUtc.Should().Be(default(DateTime), "the projection was derived under the old expression");
+            .Be(default, "the stale position must be re-derived under the new expression, not kept");
+        after.NextDueUtc.Should().Be(default, "the projection was derived under the old expression");
     }
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
@@ -672,5 +762,63 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
+    }
+}
+
+internal sealed class FailAfterCronPositionUpdateInterceptor : DbCommandInterceptor
+{
+    private int _armed;
+    private int _positionUpdated;
+
+    public void Arm() => Interlocked.Exchange(ref _armed, 1);
+
+    public override ValueTask<int> NonQueryExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        int result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _RecordPositionUpdate(command);
+        return base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
+    }
+
+    public override ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _RecordPositionUpdate(command);
+        return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (Volatile.Read(ref _positionUpdated) == 1)
+        {
+            throw new InvalidOperationException("Injected materialization failure.");
+        }
+
+        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    private void _RecordPositionUpdate(DbCommand command)
+    {
+        if (
+            Volatile.Read(ref _armed) == 1
+            && command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+            && command.CommandText.Contains("ReconciledThroughUtc", StringComparison.Ordinal)
+            && command.CommandText.Contains("NextDueUtc", StringComparison.Ordinal)
+        )
+        {
+            Interlocked.Exchange(ref _positionUpdated, 1);
+        }
     }
 }

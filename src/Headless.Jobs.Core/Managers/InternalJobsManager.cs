@@ -157,6 +157,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         if (minCronGroup is { Items.Length: > 0 })
         {
             includeCron = true;
+            // Materialization is the authoritative store-time due decision. A lagging node clock must not make the
+            // scheduler sleep after the store has committed and claimed a due occurrence; its lease is already live.
+            timeRemaining = TimeSpan.Zero;
         }
 
         if (!includeCron && !includeTimeJobs)
@@ -391,9 +394,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // Nothing advanced this wake, so the stored occurrence is the only thing to claim. The wake instant is
             // still whichever comes first: sleeping all the way to a stored occurrence while a projection falls due
             // sooner would dispatch that projection late by the difference.
-            var wakeKey = wakeInstant < storedTime ? wakeInstant.Value : storedTime;
+            if (wakeInstant is not null && wakeInstant.Value < storedTime)
+            {
+                return (wakeInstant.Value, []);
+            }
 
-            return (wakeKey, [storedItem]);
+            return (storedTime, [storedItem]);
         }
 
         if (dispatchInstant is not null)

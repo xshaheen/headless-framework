@@ -76,6 +76,14 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
         base.terminal_occurrence_is_an_explicit_committed_outcome_without_rematerialization();
 
     [Fact]
+    public override Task existing_non_terminal_occurrence_is_reused_and_position_advances() =>
+        base.existing_non_terminal_occurrence_is_reused_and_position_advances();
+
+    [Fact]
+    public override Task failure_after_the_position_update_rolls_back_position_and_occurrence() =>
+        base.failure_after_the_position_update_rolls_back_position_and_occurrence();
+
+    [Fact]
     public override Task stale_and_future_materializations_are_distinct_no_mutation_outcomes() =>
         base.stale_and_future_materializations_are_distinct_no_mutation_outcomes();
 

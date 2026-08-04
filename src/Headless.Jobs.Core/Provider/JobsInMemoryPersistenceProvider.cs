@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -1506,6 +1507,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // exactly one winner here too. The lock is per definition, so advancing one never blocks or mutates a sibling.
         lock (_GetCronDefinitionLock(advance.CronJobId))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (
                 !_cronJobs.TryGetValue(advance.CronJobId, out var current)
                 || current.IsPaused
@@ -1553,21 +1556,22 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         cancellationToken.ThrowIfCancellationRequested();
         var advance = materialization.Advance;
 
-        if (materialization.ExecutionTimeUtc != advance.ReconciledThroughUtc)
-        {
-            throw new ArgumentException(
-                "The occurrence instant must equal the schedule position's reconciled-through instant.",
-                nameof(materialization)
-            );
-        }
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ReconciledThroughUtc,
+            "The occurrence instant must equal the schedule position's reconciled-through instant.",
+            nameof(materialization)
+        );
 
         lock (_GetCronDefinitionLock(advance.CronJobId))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (
                 !_cronJobs.TryGetValue(advance.CronJobId, out var current)
                 || current.IsPaused
                 || current.ScheduleRevision != advance.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+                || current.NextDueUtc != materialization.ExecutionTimeUtc
             )
             {
                 return Task.FromResult(
@@ -1576,7 +1580,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var storeUtcNow = _timeProvider.GetUtcNow();
-            if (advance.RequireProjectionDue && current.NextDueUtc > storeUtcNow.UtcDateTime)
+            if (current.NextDueUtc > storeUtcNow.UtcDateTime)
             {
                 return Task.FromResult(
                     new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue }
@@ -2032,6 +2036,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 // Check if this specific occurrence already exists
                 if (_cronOccurrences.TryGetValue(occurrenceId, out var existingOccurrence))
                 {
+                    if (
+                        existingOccurrence.CronJobId != context.Id
+                        || existingOccurrence.ExecutionTime != cronJobOccurrences.Key
+                        || !_CanAcquireCronOccurrence(existingOccurrence)
+                    )
+                    {
+                        continue;
+                    }
+
                     // Update existing occurrence (should be rare - only if re-queuing)
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
                     updatedOccurrence.OwnerId = _ownerId;
