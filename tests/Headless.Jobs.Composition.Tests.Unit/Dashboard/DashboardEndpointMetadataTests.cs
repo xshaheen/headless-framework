@@ -6,6 +6,7 @@ using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -16,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Dashboard;
 
-public sealed class DashboardEndpointMetadataTests
+public sealed class DashboardEndpointMetadataTests : TestBase
 {
     [Fact]
     public async Task should_apply_the_configured_host_policy_only_to_dashboard_api_endpoints()
@@ -74,11 +75,13 @@ public sealed class DashboardEndpointMetadataTests
     {
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
         var names = _Endpoints(app)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api", StringComparison.Ordinal) is true)
             .Select(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName)
-            .Where(name => name is not null)
             .ToArray();
 
-        names.Should().OnlyHaveUniqueItems();
+        names.Should().NotContainNulls();
+        names.OfType<string>().Should().OnlyHaveUniqueItems();
         names.Should().Contain("CancelJob");
         names.Should().Contain("GetLiveNodes");
         names.Should().Contain("GetJobRequest");

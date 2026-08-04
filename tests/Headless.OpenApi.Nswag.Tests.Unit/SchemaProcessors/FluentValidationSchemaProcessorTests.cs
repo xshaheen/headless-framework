@@ -22,6 +22,7 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         using var services = _CreateServices(new RequestValidator());
         var schema = _CreateObjectSchema(
             ("Name", JsonObjectType.String | JsonObjectType.Null),
+            ("Code", JsonObjectType.String | JsonObjectType.Null),
             ("Age", JsonObjectType.Integer),
             ("Score", JsonObjectType.Number),
             ("Email", JsonObjectType.String)
@@ -34,9 +35,11 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         schema.RequiredProperties.Should().Contain("Name");
         schema.Properties["Name"].IsNullableRaw.Should().BeFalse();
         schema.Properties["Name"].Type.Should().NotHaveFlag(JsonObjectType.Null);
-        schema.Properties["Name"].MinLength.Should().Be(1);
+        schema.Properties["Name"].MinLength.Should().Be(2);
         schema.Properties["Name"].MaxLength.Should().Be(10);
         schema.Properties["Name"].Pattern.Should().Be("^[a-z]+$");
+        schema.RequiredProperties.Should().Contain("Code");
+        schema.Properties["Code"].MinLength.Should().Be(1);
         schema.Properties["Age"].Minimum.Should().Be(18);
         schema.Properties["Age"].Maximum.Should().Be(100);
         schema.Properties["Age"].IsExclusiveMaximum.Should().BeTrue();
@@ -58,7 +61,7 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         new FluentValidationSchemaProcessor(services).Process(_CreateContext(propertyType, schema));
 
         schema.IsNullableRaw.Should().BeFalse();
-        schema.MinLength.Should().Be(1);
+        schema.MinLength.Should().Be(2);
         schema.MaxLength.Should().Be(10);
         schema.Pattern.Should().Be("^[a-z]+$");
     }
@@ -80,7 +83,7 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         );
 
         schema.Properties["Name"].MaxLength.Should().Be(77);
-        schema.Properties["Name"].MinLength.Should().Be(1);
+        schema.Properties["Name"].MinLength.Should().BeNull();
     }
 
     [Theory]
@@ -89,7 +92,7 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
     public void should_honor_the_error_policy_when_a_custom_rule_throws(bool throwOnError)
     {
         using var services = _CreateServices(new RequestValidator());
-        var schema = _CreateObjectSchema(("Name", JsonObjectType.String));
+        var schema = _CreateObjectSchema(("Name", JsonObjectType.String), ("Code", JsonObjectType.String));
         FluentValidationRule failingRule = new()
         {
             RuleName = "FailingRule",
@@ -163,6 +166,8 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
     {
         public string? Name { get; set; }
 
+        public string? Code { get; set; }
+
         public int Age { get; set; }
 
         public decimal Score { get; set; }
@@ -174,7 +179,8 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
     {
         public RequestValidator()
         {
-            RuleFor(request => request.Name).NotEmpty().Length(2, 10).Matches("^[a-z]+$");
+            RuleFor(request => request.Name).NotNull().Length(2, 10).Matches("^[a-z]+$");
+            RuleFor(request => request.Code).NotEmpty();
             RuleFor(request => request.Age).GreaterThanOrEqualTo(18).LessThan(100);
             RuleFor(request => request.Score).ExclusiveBetween(1, 10);
             RuleFor(request => request.Email).EmailAddress(EmailValidationMode.AspNetCoreCompatible);
