@@ -996,11 +996,15 @@ public sealed class DispatcherTests : TestBase
         );
 
         await sender.Entered.Task.WaitAsync(AbortToken);
-        var returnedBeforeRelease = enqueueTask.IsCompleted;
-        sender.Release();
-        await enqueueTask;
+        try
+        {
+            await enqueueTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        }
+        finally
+        {
+            sender.Release();
+        }
 
-        returnedBeforeRelease.Should().BeTrue("committed enqueue must not run the sender continuation inline");
         await cts.CancelAsync();
     }
 
@@ -1022,11 +1026,15 @@ public sealed class DispatcherTests : TestBase
         );
 
         await sender.Entered.Task.WaitAsync(AbortToken);
-        var returnedBeforeRelease = commitTask.IsCompleted;
-        sender.Release();
-        await commitTask;
+        try
+        {
+            await commitTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        }
+        finally
+        {
+            sender.Release();
+        }
 
-        returnedBeforeRelease.Should().BeTrue("commit signaling must not run the sender continuation inline");
         await cts.CancelAsync();
     }
 
