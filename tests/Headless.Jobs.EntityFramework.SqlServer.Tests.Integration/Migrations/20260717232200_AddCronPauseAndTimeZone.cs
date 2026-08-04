@@ -13,36 +13,36 @@ internal sealed class AddCronPauseAndTimeZone : Migration
 
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropIndex(name: "UQ_CronJobId_ExecutionTime", schema: "jobs", table: "CronJobOccurrences");
+        migrationBuilder.DropIndex(name: "UQ_CronJobId_ExecutionTime", table: "CronJobOccurrences", schema: "jobs");
         migrationBuilder.AddColumn<bool>(
             name: "IsPaused",
-            schema: "jobs",
             table: "CronJobs",
             type: "bit",
+            schema: "jobs",
             nullable: false,
             defaultValue: false
         );
         migrationBuilder.AddColumn<long>(
             name: "ScheduleRevision",
-            schema: "jobs",
             table: "CronJobs",
             type: "bigint",
+            schema: "jobs",
             nullable: false,
             defaultValue: 0L
         );
         migrationBuilder.AddColumn<string>(
             name: "TimeZoneId",
-            schema: "jobs",
             table: "CronJobs",
             type: "nvarchar(128)",
             maxLength: 128,
+            schema: "jobs",
             nullable: true
         );
         migrationBuilder.CreateIndex(
             name: "UQ_CronJobId_ExecutionTime",
-            schema: "jobs",
             table: "CronJobOccurrences",
             columns: ["CronJobId", "ExecutionTime"],
+            schema: "jobs",
             unique: true,
             filter: "[Status] IN (N'Idle', N'Queued', N'InProgress')"
         );
@@ -60,15 +60,15 @@ internal sealed class AddCronPauseAndTimeZone : Migration
                 THROW 51000, 'Cannot downgrade cron pause/timezone migration while terminal and live occurrences share a schedule instant.', 1;
             """
         );
-        migrationBuilder.DropIndex(name: "UQ_CronJobId_ExecutionTime", schema: "jobs", table: "CronJobOccurrences");
-        migrationBuilder.DropColumn(name: "IsPaused", schema: "jobs", table: "CronJobs");
-        migrationBuilder.DropColumn(name: "ScheduleRevision", schema: "jobs", table: "CronJobs");
-        migrationBuilder.DropColumn(name: "TimeZoneId", schema: "jobs", table: "CronJobs");
+        migrationBuilder.DropIndex(name: "UQ_CronJobId_ExecutionTime", table: "CronJobOccurrences", schema: "jobs");
+        migrationBuilder.DropColumn(name: "IsPaused", table: "CronJobs", schema: "jobs");
+        migrationBuilder.DropColumn(name: "ScheduleRevision", table: "CronJobs", schema: "jobs");
+        migrationBuilder.DropColumn(name: "TimeZoneId", table: "CronJobs", schema: "jobs");
         migrationBuilder.CreateIndex(
             name: "UQ_CronJobId_ExecutionTime",
-            schema: "jobs",
             table: "CronJobOccurrences",
             columns: ["CronJobId", "ExecutionTime"],
+            schema: "jobs",
             unique: true
         );
     }

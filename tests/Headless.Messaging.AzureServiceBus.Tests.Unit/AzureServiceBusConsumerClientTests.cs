@@ -172,9 +172,13 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         );
         var receiver = Substitute.For<ServiceBusReceiver>();
         var args = new ProcessMessageEventArgs(message, receiver, AbortToken);
+
         var processMethod = typeof(AzureServiceBusConsumerClient).GetMethod(
             "_ServiceBusProcessor_ProcessMessageAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessMessageEventArgs)],
+            null
         )!;
 
         // when

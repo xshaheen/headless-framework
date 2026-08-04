@@ -345,15 +345,29 @@ public sealed class DeepChainProviderTests : TestBase
         // drives the private seam directly because the interleaving is not reproducible through the public API.
         var (provider, _) = _Create();
         var providerType = typeof(JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>);
+
         var timeJobs =
             (ConcurrentDictionary<Guid, FakeTimeJob>)
-                providerType.GetField("_timeJobs", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(provider)!;
+                providerType
+                    .GetField("_timeJobs", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                    .GetValue(provider)!;
+
         var candidates =
             (ConcurrentDictionary<Guid, byte>)
                 providerType
-                    .GetField("_reconcileCandidates", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetField(
+                        "_reconcileCandidates",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!
                     .GetValue(provider)!;
-        var sync = providerType.GetMethod("_SyncReconcileCandidate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var sync = providerType.GetMethod(
+            "_SyncReconcileCandidate",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(FakeTimeJob)],
+            null
+        )!;
 
         var id = Guid.NewGuid();
         var parentId = Guid.NewGuid();
@@ -373,12 +387,12 @@ public sealed class DeepChainProviderTests : TestBase
         // means the id is ADDED, not dropped — the false-negative the fix prevents.
         timeJobs[id] = Candidate(JobStatus.Idle);
         sync.Invoke(provider, [Candidate(JobStatus.Succeeded)]);
-        candidates.ContainsKey(id).Should().BeTrue("the live row is a candidate, so the index must include it");
+        candidates.Should().ContainKey(id, "the live row is a candidate, so the index must include it");
 
         // Live row is now a non-candidate (Succeeded); a stale writer syncs a candidate value. Convergence on live
         // means the id is REMOVED, not re-added on a stale value.
         timeJobs[id] = Candidate(JobStatus.Succeeded);
         sync.Invoke(provider, [Candidate(JobStatus.Idle)]);
-        candidates.ContainsKey(id).Should().BeFalse("the live row is not a candidate, so the index must exclude it");
+        candidates.Should().NotContainKey(id, "the live row is not a candidate, so the index must exclude it");
     }
 }

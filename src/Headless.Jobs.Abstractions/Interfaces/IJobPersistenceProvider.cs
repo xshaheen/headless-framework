@@ -491,7 +491,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// coordination liveness snapshot to recover rows whose owner identity can no longer be observed at all —
     /// a superseded incarnation (its successor's registration instantly removes it from every snapshot, so it
     /// is never classified <c>Dead</c>) or a dead identity already pruned past its retention window. Rows with
-    /// a <c>null</c> execution time (non-timed chain descendants) are matched by no other sweep in that state.
+    /// a <see langword="null"/> execution time (non-timed chain descendants) are matched by no other sweep in that state.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>Distinct non-null owner identity strings; empty when nothing is stamped.</returns>

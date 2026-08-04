@@ -892,7 +892,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
-                            t.RetryCount += 1;
+                            t.RetryCount++;
                         }
                     ):
                     affected++;
@@ -1313,7 +1313,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Idle;
                             if (consumesBudget)
                             {
-                                t.RetryCount += 1;
+                                t.RetryCount++;
                             }
                         }
                     )
@@ -2221,7 +2221,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.OwnerId = null;
                             t.LockedUntil = null;
                             t.Status = JobStatus.Idle;
-                            t.RetryCount += 1;
+                            t.RetryCount++;
                         }
                     ):
                     affected++;
@@ -2398,7 +2398,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.Status = JobStatus.Idle;
                             if (consumesBudget)
                             {
-                                o.RetryCount += 1;
+                                o.RetryCount++;
                             }
                         }
                     )

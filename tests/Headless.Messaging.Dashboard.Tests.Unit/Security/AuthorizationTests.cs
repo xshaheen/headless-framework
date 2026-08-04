@@ -184,9 +184,9 @@ public sealed class AuthorizationTests : TestBase
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Services.AddRouting();
-        builder.Services.AddAuthorization(options =>
-            options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true))
-        );
+
+        builder.Services.AddAuthorizationBuilder().AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
+
         builder.Services.AddCors(options =>
             options.AddPolicy("HeadlessMessagingDashboardCORS", policy => policy.AllowAnyOrigin())
         );
