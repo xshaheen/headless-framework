@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -14,6 +15,7 @@ namespace Headless.Jobs.Infrastructure;
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
@@ -40,6 +42,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
+
+    protected IGuidGenerator GuidGenerator { get; } = guidGenerator;
 
     // Feature-namespaced (jobs:) so the cron entry never collides with another feature's key when the host shares
     // one default ICache across features — matches the permissions:/features:/settings: convention.
@@ -1521,6 +1525,144 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             ReconciledThroughUtc = committed.ReconciledThroughUtc,
             NextDueUtc = committed.NextDueUtc,
             StoreUtcNow = committed.StoreUtcNow,
+        };
+    }
+
+    public async Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var advance = materialization.Advance;
+
+        if (materialization.ExecutionTimeUtc != advance.ReconciledThroughUtc)
+        {
+            throw new ArgumentException(
+                "The occurrence instant must equal the schedule position's reconciled-through instant.",
+                nameof(materialization)
+            );
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        // The fenced UPDATE is deliberately first: its row lock is held through commit and is the per-definition
+        // mutex for every conforming materializer. Read committed therefore gives one winner without PostgreSQL's
+        // expected serialization aborts, while occurrence arbitration and the position remain one transaction.
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+        if (advance.RequireProjectionDue)
+        {
+            fenced = fenced.WhereProjectionIsDueUsingDatabaseClock();
+        }
+
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            var notDue =
+                advance.RequireProjectionDue
+                && await definitions
+                    .AsNoTracking()
+                    .WhereScheduleAdvanceFenceHolds(
+                        advance.CronJobId,
+                        advance.ObservedReconciledThroughUtc,
+                        advance.ExpectedScheduleRevision
+                    )
+                    .Where(x => x.NextDueUtc > DateTime.UtcNow)
+                    .AnyAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+            return new CronScheduleMaterializationResult
+            {
+                Outcome = notDue
+                    ? CronScheduleMaterializationOutcome.NotDue
+                    : CronScheduleMaterializationOutcome.LostFence,
+            };
+        }
+
+        var committedDefinition = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.OnNodeDeath,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        var occurrence = await occurrences
+            .AsNoTracking()
+            .Where(x => x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
+
+        if (occurrence is null)
+        {
+            var now = TimeProvider.GetUtcNow();
+            occurrence = new CronJobOccurrenceEntity<TCronJob>
+            {
+                Id = GuidGenerator.Create(),
+                CronJobId = advance.CronJobId,
+                ExecutionTime = materialization.ExecutionTimeUtc,
+                Status = JobStatus.Idle,
+                OwnerId = null,
+                LockedUntil = null,
+                OnNodeDeath = committedDefinition.OnNodeDeath,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            await occurrences.AddAsync(occurrence, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+        }
+        else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+        {
+            outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronScheduleMaterializationResult
+        {
+            Outcome = outcome,
+            SchedulePosition = new CronScheduleAdvanceResult
+            {
+                ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
+                NextDueUtc = committedDefinition.NextDueUtc,
+                StoreUtcNow = committedDefinition.StoreUtcNow,
+            },
+            OccurrenceId = occurrence.Id,
+            OccurrenceCreatedAt = occurrence.CreatedAt,
+            OnNodeDeath = committedDefinition.OnNodeDeath,
         };
     }
     #endregion

@@ -335,26 +335,19 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                         continue;
                     }
 
-                    // R6: a row already sitting at this instant is REUSED, not duplicated. Carrying it as
-                    // NextCronOccurrence makes the claim path take the existing row while the watermark still advances
-                    // past the instant — skipping the advance instead would leave the definition due forever.
-                    NextCronOccurrence? existing = null;
-                    if (
-                        earliestStored is not null
-                        && earliestStored.CronJobId == candidate.CronJobId
-                        && earliestStored.ExecutionTime == candidate.NextDueUtc
-                    )
-                    {
-                        existing = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt);
-                        storedConsumed = true;
-                    }
-
-                    var context = await _TryAdvanceForDispatchAsync(candidate, existing, cancellationToken)
-                        .ConfigureAwait(false);
+                    var context = await _TryAdvanceForDispatchAsync(candidate, cancellationToken).ConfigureAwait(false);
 
                     if (context is not null)
                     {
                         (dispatched ??= []).Add(context);
+
+                        // The provider arbitrates the occurrence key inside the same transition as the position. If
+                        // that durable row is also the peeked occurrence, it is already represented by this context
+                        // and must not be appended a second time below.
+                        if (earliestStored is not null && context.NextCronOccurrence?.Id == earliestStored.Id)
+                        {
+                            storedConsumed = true;
+                        }
                     }
                 }
 
@@ -451,12 +444,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     /// <summary>
-    /// Advances one due definition's watermark and, when it wins the fence, returns the dispatch context for the
-    /// instant it just claimed responsibility for.
+    /// Atomically materializes one due definition's occurrence with its new schedule position and, when the result is
+    /// non-terminal, returns the context that a later provider operation may claim.
     /// </summary>
     private async Task<JobManagerDispatchContext?> _TryAdvanceForDispatchAsync(
         CronDispatchCandidate candidate,
-        NextCronOccurrence? existingOccurrence,
         CancellationToken cancellationToken
     )
     {
@@ -469,30 +461,43 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             candidate.TimeZoneId
         );
 
-        var advanced = await persistenceProvider
-            .AdvanceCronScheduleAsync(
-                new CronScheduleAdvance
+        var materialized = await persistenceProvider
+            .MaterializeCronScheduleOccurrenceAsync(
+                new CronScheduleMaterialization
                 {
-                    CronJobId = candidate.CronJobId,
-                    ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
-                    ExpectedScheduleRevision = candidate.ScheduleRevision,
-                    ReconciledThroughUtc = candidate.NextDueUtc,
-                    // A schedule with no further occurrence (an exhausted or unparseable expression) parks its
-                    // projection beyond any wake. Leaving the old projection in place would keep the definition
-                    // permanently due and spin the scheduler at its minimum sleep forever.
-                    NextDueUtc = nextAfterDue ?? DateTime.MaxValue,
-                    RequireProjectionDue = true,
+                    Advance = new CronScheduleAdvance
+                    {
+                        CronJobId = candidate.CronJobId,
+                        ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                        ExpectedScheduleRevision = candidate.ScheduleRevision,
+                        ReconciledThroughUtc = candidate.NextDueUtc,
+                        // A schedule with no further occurrence (an exhausted or unparseable expression) parks its
+                        // projection beyond any wake. Leaving the old projection in place would keep the definition
+                        // permanently due and spin the scheduler at its minimum sleep forever.
+                        NextDueUtc = nextAfterDue ?? DateTime.MaxValue,
+                        RequireProjectionDue = true,
+                    },
+                    ExecutionTimeUtc = candidate.NextDueUtc,
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (advanced is null)
+        if (
+            materialized.Outcome
+            is CronScheduleMaterializationOutcome.LostFence
+                or CronScheduleMaterializationOutcome.NotDue
+                or CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal
+        )
         {
-            // Another node advanced first, the revision moved, the definition was paused, or the store does not
-            // consider it due. Every one of those is an ordinary outcome on a multi-node cluster: the loser completes
-            // quietly, with no exception and no failed insert.
+            // A losing/future definition changes nothing; a terminal occurrence already accounts for the instant.
+            // All are ordinary scheduler outcomes and none should reach the claim path.
             return null;
+        }
+
+        if (materialized.OccurrenceId is not { } occurrenceId || materialized.OccurrenceCreatedAt is not { } createdAt)
+        {
+            throw new InvalidOperationException("A committed cron materialization returned no occurrence identity.");
         }
 
         return new JobManagerDispatchContext(candidate.CronJobId)
@@ -504,8 +509,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ScheduleRevision = candidate.ScheduleRevision,
             Retries = candidate.Retries,
             RetryIntervals = candidate.RetryIntervals,
-            OnNodeDeath = candidate.OnNodeDeath,
-            NextCronOccurrence = existingOccurrence,
+            OnNodeDeath = materialized.OnNodeDeath ?? candidate.OnNodeDeath,
+            NextCronOccurrence = new NextCronOccurrence(occurrenceId, createdAt),
         };
     }
 

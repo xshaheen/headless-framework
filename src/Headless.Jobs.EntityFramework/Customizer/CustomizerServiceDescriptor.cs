@@ -193,6 +193,7 @@ internal static class ServiceBuilder
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
                 coordinatedWriteOptionsFactory(provider),
                 provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<IGuidGenerator>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
                 provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),

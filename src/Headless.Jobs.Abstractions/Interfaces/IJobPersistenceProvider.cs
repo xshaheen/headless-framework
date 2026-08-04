@@ -426,15 +426,36 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// in-memory provider uses its injected <c>TimeProvider</c> as the coherent single-process authority. See
     /// <c>docs/solutions/design-patterns/temporal-authority-standard.md</c>.
     /// </para>
-    /// <para>
-    /// A crash between a successful advance and whatever occurrence work accompanies it is self-healing rather than
-    /// transactional: the next wake re-derives the projection from the persisted watermark and materializes it, and
-    /// the filtered uniqueness index on <c>(CronJobId, ExecutionTime)</c> makes the repeated insert idempotent.
-    /// </para>
+    /// This position-only primitive is for initialization and rebase transitions that intentionally produce no
+    /// occurrence. Due dispatch must use <see cref="MaterializeCronScheduleOccurrenceAsync"/> so a position can never
+    /// commit without its durable occurrence outcome.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
         CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically advances one due cron schedule position and materializes or recognizes the occurrence that accounts
+    /// for the reconciled instant.
+    /// </summary>
+    /// <param name="materialization">The expected position transition and its exact occurrence instant.</param>
+    /// <param name="cancellationToken">Token that aborts the transition before it commits.</param>
+    /// <returns>
+    /// An explicit durable outcome. A lost fence or future projection changes nothing; every successful position
+    /// advance is committed with either a new Idle occurrence or a recognized existing occurrence.
+    /// </returns>
+    /// <remarks>
+    /// The occurrence-key arbitration and position write are one provider-owned transaction or critical section.
+    /// New occurrences commit as Idle with no owner or lease. A later claim operation applies store-time ownership.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <see cref="CronScheduleMaterialization.ExecutionTimeUtc"/> does not equal the advance's reconciled instant.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
         CancellationToken cancellationToken = default
     );
 
@@ -511,9 +532,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
-    /// Materializes and claims the occurrences due at one scheduled instant: creates the occurrence row for each
-    /// cron definition that does not yet have one for that instant, re-claims the row when it already exists, and
-    /// stamps this node's owner id, a fresh lease, and <c>Queued</c> status.
+    /// Claims occurrences due at one scheduled instant, reusing their durable identities and stamping this node's
+    /// owner id, a fresh lease, and <c>Queued</c> status. Direct SPI callers may omit an occurrence identity to retain
+    /// compatibility materialization behavior; the scheduler always materializes atomically with the position first.
     /// </summary>
     /// <param name="cronJobOccurrences">
     /// The scheduled instant (<c>Key</c>) and the cron definitions due at it (<c>Items</c>), each carrying the

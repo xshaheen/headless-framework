@@ -12,6 +12,71 @@ namespace Tests;
 public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinationFixture fixture) : TestBase
 {
     [Fact]
+    public async Task watermark_migration_backfills_safe_defaults_and_blocks_state_losing_downgrade()
+    {
+        var cancellationToken = AbortToken;
+        var cronJobId = Guid.NewGuid();
+        await _DropMigrationHistoryAsync("__WatermarkMigrationsHistory", cancellationToken);
+        await fixture.ResetDatabaseAsync(cancellationToken);
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') EXEC('CREATE SCHEMA [jobs]');"
+                + "CREATE TABLE [jobs].[TimeJobs] ([Id] uniqueidentifier NOT NULL PRIMARY KEY);"
+                + "CREATE TABLE [jobs].[CronJobs] ([Id] uniqueidentifier NOT NULL PRIMARY KEY);"
+                + "CREATE TABLE [jobs].[CronJobOccurrences] ("
+                + "[Id] uniqueidentifier NOT NULL PRIMARY KEY, [CronJobId] uniqueidentifier NOT NULL, "
+                + "[ExecutionTime] datetime2 NOT NULL, [Status] nvarchar(32) NOT NULL);"
+                + "CREATE UNIQUE INDEX [UQ_CronJobId_ExecutionTime] ON [jobs].[CronJobOccurrences] ([CronJobId], [ExecutionTime]);"
+                + "INSERT INTO [jobs].[CronJobs] ([Id]) VALUES (@cronJobId);";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@cronJobId";
+            parameter.Value = cronJobId;
+            command.Parameters.Add(parameter);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var options = new DbContextOptionsBuilder<SqlServerCancellationMigrationDbContext>()
+            .UseSqlServer(
+                fixture.ConnectionString,
+                sql =>
+                    sql.MigrationsAssembly(typeof(AddCronScheduleWatermark).Assembly.FullName)
+                        .MigrationsHistoryTable("__WatermarkMigrationsHistory")
+            )
+            .Options;
+        await using var dbContext = new SqlServerCancellationMigrationDbContext(options);
+        var migrator = dbContext.GetService<IMigrator>();
+        await migrator.MigrateAsync(AddCronScheduleWatermark.Id, cancellationToken);
+
+        (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken))
+            .Should()
+            .Be((default, default, 0, "Coalesce", null));
+
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "UPDATE [jobs].[CronJobs] SET [ReconciledThroughUtc] = SYSUTCDATETIME(), "
+                + "[NextDueUtc] = DATEADD(minute, 1, SYSUTCDATETIME()) WHERE [Id] = @id";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@id";
+            parameter.Value = cronJobId;
+            command.Parameters.Add(parameter);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var downgrade = () => migrator.MigrateAsync(AddCronPauseAndTimeZone.Id, cancellationToken);
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron schedule watermark migration*");
+        (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken)).ReconciledThroughUtc.Should().NotBe(default);
+    }
+
+    [Fact]
     public async Task should_preserve_existing_rows_and_block_destructive_downgrade_when_cron_control_migrates()
     {
         var cancellationToken = AbortToken;
@@ -142,6 +207,35 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
             reader.GetBoolean(0),
             reader.GetInt64(1),
             await reader.IsDBNullAsync(2, cancellationToken) ? null : reader.GetString(2)
+        );
+    }
+
+    private async Task<(
+        DateTime ReconciledThroughUtc,
+        DateTime NextDueUtc,
+        int MissedRunGraceSeconds,
+        string OnMissedRun,
+        string? EvaluationFingerprint
+    )> _ReadWatermarkDefaultsAsync(Guid cronJobId, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT [ReconciledThroughUtc], [NextDueUtc], [MissedRunGraceSeconds], [OnMissedRun], "
+            + "[EvaluationFingerprint] FROM [jobs].[CronJobs] WHERE [Id] = @id";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@id";
+        parameter.Value = cronJobId;
+        command.Parameters.Add(parameter);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue();
+        return (
+            reader.GetDateTime(0),
+            reader.GetDateTime(1),
+            reader.GetInt32(2),
+            reader.GetString(3),
+            await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4)
         );
     }
 

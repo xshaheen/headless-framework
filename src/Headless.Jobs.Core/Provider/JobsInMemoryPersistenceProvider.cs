@@ -1545,6 +1545,104 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
+    public Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var advance = materialization.Advance;
+
+        if (materialization.ExecutionTimeUtc != advance.ReconciledThroughUtc)
+        {
+            throw new ArgumentException(
+                "The occurrence instant must equal the schedule position's reconciled-through instant.",
+                nameof(materialization)
+            );
+        }
+
+        lock (_GetCronDefinitionLock(advance.CronJobId))
+        {
+            if (
+                !_cronJobs.TryGetValue(advance.CronJobId, out var current)
+                || current.IsPaused
+                || current.ScheduleRevision != advance.ExpectedScheduleRevision
+                || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+            )
+            {
+                return Task.FromResult(
+                    new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence }
+                );
+            }
+
+            var storeUtcNow = _timeProvider.GetUtcNow();
+            if (advance.RequireProjectionDue && current.NextDueUtc > storeUtcNow.UtcDateTime)
+            {
+                return Task.FromResult(
+                    new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue }
+                );
+            }
+
+            var occurrence = _cronOccurrences
+                .Values.Where(x =>
+                    x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc
+                )
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
+                .FirstOrDefault();
+            var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
+
+            if (occurrence is null)
+            {
+                do
+                {
+                    occurrence = new CronJobOccurrenceEntity<TCronJob>
+                    {
+                        Id = _guidGenerator.Create(),
+                        CronJobId = current.Id,
+                        CronJob = current,
+                        ExecutionTime = materialization.ExecutionTimeUtc,
+                        Status = JobStatus.Idle,
+                        OwnerId = null,
+                        LockedUntil = null,
+                        OnNodeDeath = current.OnNodeDeath,
+                        CreatedAt = storeUtcNow,
+                        UpdatedAt = storeUtcNow,
+                    };
+                } while (!_cronOccurrences.TryAdd(occurrence.Id, occurrence));
+
+                outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+            }
+            else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+            {
+                outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+            }
+
+            // No cancellation or fallible work is allowed between publishing the durable outcome and advancing the
+            // position. The per-definition lock is this provider's single-process transaction boundary.
+            var updated = _CloneCronJob(current);
+            updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
+            updated.NextDueUtc = advance.NextDueUtc;
+            _cronJobs[advance.CronJobId] = updated;
+
+            return Task.FromResult(
+                new CronScheduleMaterializationResult
+                {
+                    Outcome = outcome,
+                    SchedulePosition = new CronScheduleAdvanceResult
+                    {
+                        ReconciledThroughUtc = updated.ReconciledThroughUtc,
+                        NextDueUtc = updated.NextDueUtc,
+                        StoreUtcNow = storeUtcNow.UtcDateTime,
+                    },
+                    OccurrenceId = occurrence.Id,
+                    OccurrenceCreatedAt = occurrence.CreatedAt,
+                    OnNodeDeath = current.OnNodeDeath,
+                }
+            );
+        }
+    }
+
     public Task<TCronJob?> PauseCronJobAsync(
         Guid cronJobId,
         DateTimeOffset operationTimeUtc,

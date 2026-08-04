@@ -62,4 +62,24 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
     {
         return base.migrate_resets_the_position_when_the_code_defined_expression_changes();
     }
+
+    [Fact]
+    public override Task materialization_survives_restart_and_the_idle_occurrence_is_claimed_later() =>
+        base.materialization_survives_restart_and_the_idle_occurrence_is_claimed_later();
+
+    [Fact]
+    public override Task concurrent_materializations_commit_one_position_and_one_occurrence() =>
+        base.concurrent_materializations_commit_one_position_and_one_occurrence();
+
+    [Fact]
+    public override Task terminal_occurrence_is_an_explicit_committed_outcome_without_rematerialization() =>
+        base.terminal_occurrence_is_an_explicit_committed_outcome_without_rematerialization();
+
+    [Fact]
+    public override Task stale_and_future_materializations_are_distinct_no_mutation_outcomes() =>
+        base.stale_and_future_materializations_are_distinct_no_mutation_outcomes();
+
+    [Fact]
+    public override Task cancellation_before_materialization_changes_neither_position_nor_occurrences() =>
+        base.cancellation_before_materialization_changes_neither_position_nor_occurrences();
 }

@@ -339,6 +339,228 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             );
     }
 
+    public virtual async Task materialization_survives_restart_and_the_idle_occurrence_is_claimed_later()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var cronId = Guid.NewGuid();
+        CronScheduleMaterializationResult materialized;
+
+        using (var firstHost = fixture.BuildHost("materialize-before-restart"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+            var persistence = _Persistence(firstHost);
+            await fixture.SeedCronJobAsync(
+                cronId,
+                "materialize-restart",
+                "* * * * *",
+                NodeDeathPolicy.Retry,
+                ct,
+                reconciledThroughOffsetSeconds: -600,
+                nextDueOffsetSeconds: -300
+            );
+            var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+
+            materialized = await persistence.MaterializeCronScheduleOccurrenceAsync(
+                _Materialization(cronId, seeded),
+                ct
+            );
+
+            materialized.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceCreated);
+            materialized.SchedulePosition.Should().NotBeNull();
+            materialized.OccurrenceId.Should().NotBeNull();
+            (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(1);
+            var (status, owner) = await fixture.ReadCronOccurrenceAsync(materialized.OccurrenceId!.Value, ct);
+            status.Should().Be((int)JobStatus.Idle);
+            owner.Should().BeNull("materialization must not claim or lease the occurrence");
+        }
+
+        using var restartedHost = fixture.BuildHost("materialize-after-restart");
+        await restartedHost.StartAsync(ct);
+        try
+        {
+            var persistence = _Persistence(restartedHost);
+            var context = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "materialize-restart",
+                Expression = "* * * * *",
+                ScheduleRevision = 0,
+                OnNodeDeath = materialized.OnNodeDeath!.Value,
+                NextCronOccurrence = new NextCronOccurrence(
+                    materialized.OccurrenceId!.Value,
+                    materialized.OccurrenceCreatedAt!.Value
+                ),
+            };
+
+            var claimed = await persistence
+                .QueueCronJobOccurrencesAsync((materialized.SchedulePosition!.ReconciledThroughUtc, [context]), ct)
+                .ToArrayAsync(ct);
+
+            claimed.Should().ContainSingle();
+            claimed[0].Id.Should().Be(materialized.OccurrenceId.Value);
+            var (owner, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
+            owner.Should().NotBeNull("the restarted node must own the later claim");
+            lockedUntil.Should().NotBeNull("the later claim owns the lease stamp");
+        }
+        finally
+        {
+            await restartedHost.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task concurrent_materializations_commit_one_position_and_one_occurrence()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-race");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-race",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var materialization = _Materialization(cronId, seeded);
+
+        var results = await Task.WhenAll(
+            Enumerable
+                .Range(0, 8)
+                .Select(async _ =>
+                {
+                    await Task.Yield();
+                    return await persistence.MaterializeCronScheduleOccurrenceAsync(materialization, ct);
+                })
+        );
+
+        results.Count(x => x.Outcome == CronScheduleMaterializationOutcome.OccurrenceCreated).Should().Be(1);
+        results.Count(x => x.Outcome == CronScheduleMaterializationOutcome.LostFence).Should().Be(7);
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(1);
+    }
+
+    public virtual async Task terminal_occurrence_is_an_explicit_committed_outcome_without_rematerialization()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-terminal");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-terminal",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.Succeeded,
+            ownerId: null,
+            NodeDeathPolicy.Retry,
+            lockedUntil: null,
+            seeded.NextDueUtc,
+            ct
+        );
+
+        var result = await persistence.MaterializeCronScheduleOccurrenceAsync(_Materialization(cronId, seeded), ct);
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal);
+        result.OccurrenceId.Should().Be(occurrenceId);
+        result.SchedulePosition.Should().NotBeNull();
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(1);
+        (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+    }
+
+    public virtual async Task stale_and_future_materializations_are_distinct_no_mutation_outcomes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-refused");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var staleId = Guid.NewGuid();
+        var futureId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            staleId,
+            "materialize-stale",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            scheduleRevision: 7,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        await fixture.SeedCronJobAsync(
+            futureId,
+            "materialize-future",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: 0,
+            nextDueOffsetSeconds: 1800
+        );
+        var stale = await fixture.ReadCronSchedulePositionAsync(staleId, ct);
+        var future = await fixture.ReadCronSchedulePositionAsync(futureId, ct);
+
+        var staleResult = await persistence.MaterializeCronScheduleOccurrenceAsync(
+            _Materialization(staleId, stale) with
+            {
+                Advance = _Materialization(staleId, stale).Advance with { ExpectedScheduleRevision = 6 },
+            },
+            ct
+        );
+        var futureResult = await persistence.MaterializeCronScheduleOccurrenceAsync(
+            _Materialization(futureId, future),
+            ct
+        );
+
+        staleResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.LostFence);
+        futureResult.Outcome.Should().Be(CronScheduleMaterializationOutcome.NotDue);
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(0);
+        await _AssertPositionUnchangedAsync(staleId, stale, ct);
+        await _AssertPositionUnchangedAsync(futureId, future, ct);
+    }
+
+    public virtual async Task cancellation_before_materialization_changes_neither_position_nor_occurrences()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-cancelled");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-cancelled",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var action = () =>
+            persistence.MaterializeCronScheduleOccurrenceAsync(_Materialization(cronId, seeded), cancellation.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        await _AssertPositionUnchangedAsync(cronId, seeded, ct);
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(0);
+    }
+
     /// <summary>
     /// AE10: an occurrence at the projection instant that already reached a terminal status is invisible to the
     /// claimable-row reuse read and no longer covered by the filtered unique index, so without an explicit guard
@@ -416,6 +638,24 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+    private static CronScheduleMaterialization _Materialization(
+        Guid cronJobId,
+        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) position
+    ) =>
+        new()
+        {
+            Advance = new CronScheduleAdvance
+            {
+                CronJobId = cronJobId,
+                ObservedReconciledThroughUtc = position.ReconciledThroughUtc,
+                ExpectedScheduleRevision = 0,
+                ReconciledThroughUtc = position.NextDueUtc,
+                NextDueUtc = position.NextDueUtc.AddMinutes(1),
+                RequireProjectionDue = true,
+            },
+            ExecutionTimeUtc = position.NextDueUtc,
+        };
 
     private async Task _AssertPositionUnchangedAsync(
         Guid cronJobId,

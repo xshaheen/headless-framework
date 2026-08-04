@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
@@ -17,6 +18,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     IDbContextFactory<TDbContext> dbContextFactory,
     DbContextOptions<TDbContext> coordinatedWriteOptions,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
@@ -26,6 +28,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
+        guidGenerator,
         ownerIdentity,
         optionsBuilder,
         cache,
