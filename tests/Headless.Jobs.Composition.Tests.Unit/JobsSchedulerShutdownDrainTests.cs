@@ -156,9 +156,68 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         persistedStatus.Should().Be(JobStatus.Succeeded, "terminal status must be written during graceful drain");
     }
 
-    private static JobsSchedulerBackgroundService _Service(JobsTaskScheduler taskScheduler)
+    [Fact]
+    public async Task drain_does_not_route_the_live_loop_into_the_release_everything_fault_path()
     {
+        // StopAsync freezes the pool, then drains while ExecuteAsync is still running. Previously the live
+        // loop's next QueueAsync threw "Scheduler is frozen" into the catch-all, whose empty-form release
+        // un-claimed every Queued row this owner holds — the very backlog the drain was waiting beside — once
+        // per second for the whole drain window. The loop must idle behind the frozen guard instead, releasing
+        // only its own parked claims by explicit id.
+        await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
         var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .GetNextJobs(Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(
+                    (TimeSpan.FromMilliseconds(100), new[] { new JobExecutionState { FunctionName = "drain-probe" } })
+                )
+            );
+        using var service = _Service(taskScheduler, manager);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await taskScheduler.QueueAsync(
+            async _ =>
+            {
+                started.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await started.Task.WaitAsync(_waitBudget);
+
+        await service.StartAsync(AbortToken);
+        var stop = service.StopAsync(CancellationToken.None);
+
+        try
+        {
+            // Hold the drain open long enough for the pre-fix loop to hit the frozen throw and enter its fault
+            // path. The one-second delay happens only after that path has already released the owner's rows.
+            await Task.Delay(700, AbortToken);
+            stop.IsCompleted.Should().BeFalse("the drain must still be waiting on the in-flight job");
+
+            await manager
+                .DidNotReceive()
+                .ReleaseAcquiredResources(
+                    Arg.Is<JobExecutionState[]>(x => x.Length == 0),
+                    Arg.Any<CancellationToken>()
+                );
+        }
+        finally
+        {
+            release.TrySetResult();
+            await stop.WaitAsync(_waitBudget);
+        }
+    }
+
+    private static JobsSchedulerBackgroundService _Service(
+        JobsTaskScheduler taskScheduler,
+        IInternalJobManager? manager = null
+    )
+    {
+        manager ??= Substitute.For<IInternalJobManager>();
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         var serviceProvider = services.BuildServiceProvider();

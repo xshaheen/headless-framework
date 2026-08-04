@@ -95,19 +95,30 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                     && !loopToken.IsCancellationRequested
                 )
             {
-                // This is a restart request - release resources and continue loop
-                await _internalJobsManager
-                    .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
-                    .ConfigureAwait(false);
+                // This is a restart request - release this wake's claims and continue loop. Explicit ids only,
+                // and only when the context actually holds claims: the empty form releases every Queued row this
+                // owner holds, including rows whose admissions from earlier ticks are still parked in the pool.
+                if (_executionContext.Functions.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
+                        .ConfigureAwait(false);
+                }
+
                 // Small delay to allow resources to be released
                 await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
-                // Host shutdown or local membership loss - release resources and exit
-                await _internalJobsManager
-                    .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
-                    .ConfigureAwait(false);
+                // Host shutdown or local membership loss - release this wake's claims and exit. Same explicit-ids
+                // rule as the restart path; rows whose admissions are already parked in the pool are recovered by
+                // the lease-lapse sweep rather than released out from under a possibly-running admission.
+                if (_executionContext.Functions.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
 
                 // This exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps
                 // running without a scheduler, so the cause must be visible in logs.
@@ -144,8 +155,32 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     {
         while (!stoppingToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            // Shutdown drain (StopAsync freezes the pool, then waits for running tasks while this loop is still
+            // alive) or manual-start freeze: the pool accepts no admissions, so claiming or queuing would only
+            // throw into the fault path — which releases every Queued row this owner holds, un-claiming the very
+            // backlog the drain is waiting beside, once per second for the whole drain window. Mirror the
+            // fallback service's guard instead: release this wake's parked claims explicitly and idle until the
+            // loop token fires or the pool resumes. A released row's former owner fails the ownership predicate
+            // on the Queued→InProgress transition, so a racing admission drops it rather than double-running.
+            if (_taskScheduler.IsFrozen || _taskScheduler.IsDisposed)
+            {
+                var parked = _executionContext.Functions;
+                if (parked.Length != 0)
+                {
+                    await _internalJobsManager
+                        .ReleaseAcquiredResources(parked, cancellationToken)
+                        .ConfigureAwait(false);
+                    _executionContext.ClearFunctions();
+                }
+
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (_executionContext.Functions.Length != 0)
             {
+                var frozenMidDispatch = false;
+
                 foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority.DispatchRank()))
                 {
                     var semaphore = _concurrencyGate.GetSemaphoreOrNull(
@@ -153,21 +188,36 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         function.CachedMaxConcurrency
                     );
 
-                    await _taskScheduler
-                        .QueueAsync(
-                            JobsAdmissionWorkItem.Create(
-                                _internalJobsManager,
-                                _taskHandler,
-                                _logger,
-                                semaphore,
-                                function,
-                                isDue: false
-                            ),
-                            function.CachedPriority,
-                            cancellationToken,
-                            stoppingToken
-                        )
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await _taskScheduler
+                            .QueueAsync(
+                                JobsAdmissionWorkItem.Create(
+                                    _internalJobsManager,
+                                    _taskHandler,
+                                    _logger,
+                                    semaphore,
+                                    function,
+                                    isDue: false
+                                ),
+                                function.CachedPriority,
+                                cancellationToken,
+                                stoppingToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (InvalidOperationException) when (_taskScheduler.IsFrozen || _taskScheduler.IsDisposed)
+                    {
+                        // Freeze raced the pre-check; keep the remaining functions in the context so the guard
+                        // above releases them on the next pass.
+                        frozenMidDispatch = true;
+                        break;
+                    }
+                }
+
+                if (frozenMidDispatch)
+                {
+                    continue;
                 }
 
                 _executionContext.ClearFunctions();
