@@ -1382,6 +1382,30 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_release_only_exact_published_retry_lease_generation()
+    {
+        return base.should_release_only_exact_published_retry_lease_generation();
+    }
+
+    [Fact]
+    public override Task should_release_only_exact_received_retry_lease_generation()
+    {
+        return base.should_release_only_exact_received_retry_lease_generation();
+    }
+
+    [Fact]
+    public override Task should_not_release_terminal_retry_lease_generation()
+    {
+        return base.should_not_release_terminal_retry_lease_generation();
+    }
+
+    [Fact]
+    public override Task should_batch_release_only_exact_published_retry_lease_generations()
+    {
+        return base.should_batch_release_only_exact_published_retry_lease_generations();
+    }
+
+    [Fact]
     public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
     {
         return base.should_not_reclaim_rows_of_live_or_restarted_incarnation();

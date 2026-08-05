@@ -33,7 +33,7 @@ internal sealed partial class PostgreSqlDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<PostgreSqlDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
+) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -57,6 +57,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// Messages expiring within this window are pre-fetched for scheduling.
     /// </summary>
     private static readonly TimeSpan _DelayedMessageLookahead = TimeSpan.FromMinutes(2);
+    private const int _LeaseReleaseBatchSize = 400;
 
     /// <summary>
     /// Lookback window for queued messages that may have been lost.
@@ -785,6 +786,142 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
+    }
+
+    public ValueTask<bool> ReleasePublishedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeaseAsync(_publishedTable, identity, cancellationToken);
+    }
+
+    public ValueTask<bool> ReleaseReceivedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeaseAsync(_receivedTable, identity, cancellationToken);
+    }
+
+    public ValueTask<int> ReleasePublishedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeasesAsync(_publishedTable, identities, cancellationToken);
+    }
+
+    public ValueTask<int> ReleaseReceivedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeasesAsync(_receivedTable, identities, cancellationToken);
+    }
+
+    private async ValueTask<bool> _ReleaseLeaseAsync(
+        string table,
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql = $"""
+            UPDATE {table}
+            SET "Owner" = NULL, "LockedUntil" = NULL
+            WHERE "Id" = @Id
+              AND "IntentType" = @IntentType
+              AND "Owner" IS NOT DISTINCT FROM @Owner
+              AND "LockedUntil" = @LockedUntil
+              AND {_TerminalRowGuardSimple};
+            """;
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", identity.StorageId),
+            new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+            },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = identity.Owner ?? (object)DBNull.Value },
+            new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = identity.LockedUntil },
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var changed = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return changed == 1;
+    }
+
+    private async ValueTask<int> _ReleaseLeasesAsync(
+        string table,
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken
+    )
+    {
+        if (identities.Count == 0)
+        {
+            return 0;
+        }
+
+        var released = 0;
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        foreach (var batch in identities.Chunk(_LeaseReleaseBatchSize))
+        {
+            var predicates = new string[batch.Length];
+            var sqlParams = new List<object>(batch.Length * 4);
+            for (var index = 0; index < batch.Length; index++)
+            {
+                var identity = batch[index];
+                predicates[index] = $"""
+                    ("Id" = @Id{index}
+                     AND "IntentType" = @IntentType{index}
+                     AND "Owner" IS NOT DISTINCT FROM @Owner{index}
+                     AND "LockedUntil" = @LockedUntil{index})
+                    """;
+                sqlParams.Add(new NpgsqlParameter($"@Id{index}", identity.StorageId));
+                sqlParams.Add(
+                    new NpgsqlParameter($"@IntentType{index}", NpgsqlDbType.Smallint)
+                    {
+                        Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+                    }
+                );
+                sqlParams.Add(
+                    new NpgsqlParameter($"@Owner{index}", NpgsqlDbType.Varchar)
+                    {
+                        Value = identity.Owner ?? (object)DBNull.Value,
+                    }
+                );
+                sqlParams.Add(
+                    new NpgsqlParameter($"@LockedUntil{index}", NpgsqlDbType.TimestampTz)
+                    {
+                        Value = identity.LockedUntil,
+                    }
+                );
+            }
+
+            var sql = $"""
+                UPDATE {table}
+                SET "Owner" = NULL, "LockedUntil" = NULL
+                WHERE {_TerminalRowGuardSimple}
+                  AND ({string.Join(" OR ", predicates)});
+                """;
+            released += await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [.. sqlParams],
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        return released;
     }
 
     /// <summary>Deletes a single received message by its storage identifier.</summary>

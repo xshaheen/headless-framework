@@ -102,11 +102,12 @@ public sealed class RetryPolicyOptions
     /// Handlers that run longer than this lease remain at-least-once and may be re-dispatched.
     /// </para>
     /// <para>
-    /// <b>Rolling-restart retry gap:</b> on host-shutdown during dispatch, the row's
-    /// <c>LockedUntil</c> is preserved; the retry processor will not pick it up until
-    /// <c>LockedUntil</c> expires. Keep <see cref="DispatchTimeout"/> aligned with your expected
-    /// rolling-restart window — values greater than ~2 minutes may produce a noticeable retry delay
-    /// after deployment because in-flight messages stay invisible until the lease expires.
+    /// <b>Rolling-restart retry gap:</b> graceful shutdown releases only the exact lease generations
+    /// of locally completed attempts or work abandoned before execution. A handler still running at
+    /// the shutdown deadline, or a process that crashes, keeps its lease until <c>LockedUntil</c>
+    /// expires. Startup warns when this value exceeds <see cref="InitialDispatchGrace"/> by more than
+    /// two minutes. Measure the longest valid handler duration before aligning the values; shortening
+    /// the lease below valid execution time increases overlapping at-least-once delivery.
     /// </para>
     /// </remarks>
     public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);

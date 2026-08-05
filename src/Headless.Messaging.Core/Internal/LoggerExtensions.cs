@@ -625,6 +625,19 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
+        EventId = 97,
+        EventName = "MessagingDispatchTimeoutMateriallyExceedsInitialGrace",
+        Level = LogLevel.Warning,
+        Message = "Messaging retry DispatchTimeout ({DispatchTimeout}) exceeds InitialDispatchGrace ({InitialDispatchGrace}) by more than two minutes while ShutdownTimeout is {ShutdownTimeout}. During a crash or when a handler outlives graceful shutdown, retry pickup can remain delayed until LockedUntil expires. Measure the longest valid handler duration before explicitly aligning these values; shortening DispatchTimeout blindly can increase overlapping at-least-once delivery."
+    )]
+    public static partial void MessagingDispatchTimeoutMateriallyExceedsInitialGrace(
+        this ILogger logger,
+        TimeSpan dispatchTimeout,
+        TimeSpan initialDispatchGrace,
+        TimeSpan shutdownTimeout
+    );
+
+    [LoggerMessage(
         EventId = 91,
         EventName = "MessagingDeadOwnerRowsReclaimed",
         Level = LogLevel.Information,

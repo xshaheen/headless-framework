@@ -161,6 +161,117 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
+    [Fact]
+    public async Task quiesce_prevents_new_retry_pickup_until_next_run()
+    {
+        var (sut, _, _) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
+        var storage = Substitute.For<IDataStorage>();
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        sut.Quiesce();
+
+        await sut.ProcessAsync(context).WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        await storage
+            .DidNotReceive()
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(MessageType.Publish, MessageLane.Bus)]
+    [InlineData(MessageType.Publish, MessageLane.Queue)]
+    [InlineData(MessageType.Subscribe, MessageLane.Bus)]
+    [InlineData(MessageType.Subscribe, MessageLane.Queue)]
+    public async Task failed_retry_handoff_releases_current_and_remaining_claims(
+        MessageType direction,
+        MessageLane lane
+    )
+    {
+        var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
+        var retryDispatcher = (IRetryDispatcher)dispatcher;
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaseStorage = (IGracefulLeaseReleaseStorage)storage;
+        var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var first = _CreateMessage();
+        first.Lane = lane;
+        first.Owner = "node-a";
+        first.LockedUntil = lockedUntil;
+        var second = _CreateMessage();
+        second.Lane = lane;
+        second.Owner = "node-a";
+        second.LockedUntil = lockedUntil;
+        MediumMessage[] messages = [first, second];
+
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(lane, Arg.Any<CancellationToken>())
+            .Returns(
+                ValueTask.FromResult<IEnumerable<MediumMessage>>(direction == MessageType.Publish ? messages : [])
+            );
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(lane, Arg.Any<CancellationToken>())
+            .Returns(
+                ValueTask.FromResult<IEnumerable<MediumMessage>>(direction == MessageType.Subscribe ? messages : [])
+            );
+        retryDispatcher
+            .DispatchPublishedAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException(new InvalidOperationException("handoff failed")));
+        retryDispatcher
+            .DispatchReceivedAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException(new InvalidOperationException("handoff failed")));
+
+        var released = new TaskCompletionSource<IReadOnlyCollection<MessageLeaseIdentity>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        if (direction == MessageType.Publish)
+        {
+            releaseStorage
+                .ReleasePublishedLeasesAsync(
+                    Arg.Any<IReadOnlyCollection<MessageLeaseIdentity>>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(call =>
+                {
+                    var identities = call.Arg<IReadOnlyCollection<MessageLeaseIdentity>>();
+                    released.TrySetResult(identities);
+                    return ValueTask.FromResult(identities.Count);
+                });
+        }
+        else
+        {
+            releaseStorage
+                .ReleaseReceivedLeasesAsync(
+                    Arg.Any<IReadOnlyCollection<MessageLeaseIdentity>>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(call =>
+                {
+                    var identities = call.Arg<IReadOnlyCollection<MessageLeaseIdentity>>();
+                    released.TrySetResult(identities);
+                    return ValueTask.FromResult(identities.Count);
+                });
+        }
+
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            Substitute.For<ICircuitBreakerMonitor>()
+        );
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        var act = async () => await _RunQuadrantCycleAsync(sut, context, direction, lane);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handoff failed");
+
+        var identities = await released.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        identities.Select(identity => identity.StorageId).Should().BeEquivalentTo(messages.Select(m => m.StorageId));
+        identities.Should().OnlyContain(identity => identity.Lane == lane && identity.Owner == "node-a");
+    }
+
     // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.
 
     private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)

@@ -32,7 +32,7 @@ internal sealed partial class SqlServerDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<SqlServerDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
+) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -55,6 +55,7 @@ internal sealed partial class SqlServerDataStorage(
     /// Messages expiring within this window are pre-fetched for scheduling.
     /// </summary>
     private static readonly TimeSpan _DelayedMessageLookahead = TimeSpan.FromMinutes(2);
+    private const int _LeaseReleaseBatchSize = 400;
 
     /// <summary>
     /// Lookback window for queued messages that may have been lost.
@@ -798,6 +799,142 @@ internal sealed partial class SqlServerDataStorage(
     )
     {
         return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
+    }
+
+    public ValueTask<bool> ReleasePublishedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeaseAsync(_publishedTable, identity, cancellationToken);
+    }
+
+    public ValueTask<bool> ReleaseReceivedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeaseAsync(_receivedTable, identity, cancellationToken);
+    }
+
+    public ValueTask<int> ReleasePublishedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeasesAsync(_publishedTable, identities, cancellationToken);
+    }
+
+    public ValueTask<int> ReleaseReceivedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReleaseLeasesAsync(_receivedTable, identities, cancellationToken);
+    }
+
+    private async ValueTask<bool> _ReleaseLeaseAsync(
+        string table,
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql = $"""
+            UPDATE {table}
+            SET Owner = NULL, LockedUntil = NULL
+            WHERE Id = @Id
+              AND IntentType = @IntentType
+              AND (Owner = @Owner OR (Owner IS NULL AND @Owner IS NULL))
+              AND LockedUntil = @LockedUntil
+              AND {_TerminalRowGuardSimple};
+            """;
+        object[] sqlParams =
+        [
+            new SqlParameter("@Id", identity.StorageId),
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+            },
+            new SqlParameter("@Owner", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+            {
+                Value = identity.Owner ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = identity.LockedUntil },
+        ];
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        var changed = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return changed == 1;
+    }
+
+    private async ValueTask<int> _ReleaseLeasesAsync(
+        string table,
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken
+    )
+    {
+        if (identities.Count == 0)
+        {
+            return 0;
+        }
+
+        var released = 0;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        foreach (var batch in identities.Chunk(_LeaseReleaseBatchSize))
+        {
+            var predicates = new string[batch.Length];
+            var sqlParams = new List<object>(batch.Length * 4);
+            for (var index = 0; index < batch.Length; index++)
+            {
+                var identity = batch[index];
+                predicates[index] = $"""
+                    (Id = @Id{index}
+                     AND IntentType = @IntentType{index}
+                     AND (Owner = @Owner{index} OR (Owner IS NULL AND @Owner{index} IS NULL))
+                     AND LockedUntil = @LockedUntil{index})
+                    """;
+                sqlParams.Add(new SqlParameter($"@Id{index}", identity.StorageId));
+                sqlParams.Add(
+                    new SqlParameter($"@IntentType{index}", SqlDbType.SmallInt)
+                    {
+                        Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+                    }
+                );
+                sqlParams.Add(
+                    new SqlParameter($"@Owner{index}", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+                    {
+                        Value = identity.Owner ?? (object)DBNull.Value,
+                    }
+                );
+                sqlParams.Add(
+                    new SqlParameter($"@LockedUntil{index}", SqlDbType.DateTimeOffset) { Value = identity.LockedUntil }
+                );
+            }
+
+            var sql = $"""
+                UPDATE {table}
+                SET Owner = NULL, LockedUntil = NULL
+                WHERE {_TerminalRowGuardSimple}
+                  AND ({string.Join(" OR ", predicates)});
+                """;
+            released += await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [.. sqlParams],
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        return released;
     }
 
     /// <summary>Deletes a single received message by its storage identifier.</summary>

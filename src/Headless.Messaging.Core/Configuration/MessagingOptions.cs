@@ -222,9 +222,11 @@ public sealed class MessagingOptions
     /// in-flight handlers to observe cancellation. Default is 30 seconds.
     /// </summary>
     /// <remarks>
-    /// One monotonic deadline is shared by the consumer-register listener drain, concurrent consumer-client
-    /// disposal, provider-specific in-flight drains, and the dispatcher loop drain. When the deadline expires,
-    /// remaining cleanup continues fault-observed in the background so host shutdown can proceed.
+    /// One monotonic deadline first closes broker and retry pickup, then drains locally accepted work,
+    /// concurrent consumer-client disposal, provider-specific in-flight handlers, and dispatcher loops.
+    /// When the deadline expires, remaining cleanup continues fault-observed in the background so host
+    /// shutdown can proceed. Configure the outer host or orchestrator termination grace above this value;
+    /// an earlier process kill intentionally falls back to normal lease-expiry recovery.
     /// </remarks>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

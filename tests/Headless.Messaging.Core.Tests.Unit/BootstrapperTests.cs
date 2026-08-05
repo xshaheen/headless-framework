@@ -10,7 +10,9 @@ using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -94,6 +96,111 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task synchronous_dispose_should_not_wait_for_async_processor_cleanup()
+    {
+        await using var processor = new BlockingDisposeProcessingServer();
+        await using var provider = _CreateProvider(beforeMessaging: processor);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var disposeTask = Task.Run(() => ((IDisposable)bootstrapper).Dispose(), AbortToken);
+        await processor.WaitUntilDisposeStartedAsync(AbortToken);
+
+        try
+        {
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            processor.ReleaseDispose();
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task concurrent_stop_and_dispose_should_stop_processors_once()
+    {
+        await using var processor = new TrackingProcessingServer();
+        await using var provider = _CreateProvider(beforeMessaging: processor);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var hostedService = (IHostedService)bootstrapper;
+        await Task.WhenAll(
+            hostedService.StopAsync(AbortToken),
+            bootstrapper.DisposeAsync().AsTask(),
+            hostedService.StopAsync(AbortToken)
+        );
+
+        processor.DisposeCount.Should().Be(1);
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task stop_should_return_at_configured_shutdown_boundary_when_processor_cleanup_blocks()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var processor = new BlockingDisposeProcessingServer();
+        await using var provider = _CreateProvider(
+            beforeMessaging: processor,
+            configureOptions: options => options.ShutdownTimeout = TimeSpan.FromSeconds(2),
+            extraSetup: services => services.AddSingleton<TimeProvider>(timeProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+        await processor.WaitUntilDisposeStartedAsync(AbortToken);
+        stopTask.IsCompleted.Should().BeFalse();
+
+        await Task.Yield();
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            processor.ReleaseDispose();
+        }
+    }
+
+    [Fact]
+    public async Task expired_shutdown_deadline_still_initiates_later_bounded_processors()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var later = new DeadlineTrackingProcessingServer();
+        await using var first = new BlockingDisposeProcessingServer();
+        await using var provider = _CreateProvider(
+            beforeMessaging: later,
+            afterMessaging: first,
+            configureOptions: options => options.ShutdownTimeout = TimeSpan.FromSeconds(2),
+            extraSetup: services => services.AddSingleton<TimeProvider>(timeProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+        await first.WaitUntilDisposeStartedAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            await later.WaitUntilStopStartedAsync(AbortToken);
+            later.Timeout.Should().Be(TimeSpan.Zero);
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            first.ReleaseDispose();
+        }
+    }
+
+    [Fact]
     public async Task should_stop_started_processors_when_later_processor_fails_during_bootstrap()
     {
         await using var startedProcessor = new TrackingProcessingServer();
@@ -147,6 +254,50 @@ public sealed class BootstrapperTests : TestBase
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
                 "warning must be silent when UseStorageLock is false, even with NullDistributedLock"
             );
+    }
+
+    [Theory]
+    [InlineData(120, false)]
+    [InlineData(121, true)]
+    public async Task should_warn_only_when_dispatch_timeout_exceeds_initial_grace_by_more_than_two_minutes(
+        int differenceSeconds,
+        bool shouldWarn
+    )
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: options =>
+            {
+                options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromMinutes(1);
+                options.RetryPolicy.DispatchTimeout =
+                    options.RetryPolicy.InitialDispatchGrace + TimeSpan.FromSeconds(differenceSeconds);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Any(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97).Should().Be(shouldWarn);
+    }
+
+    [Fact]
+    public async Task should_warn_at_one_tick_past_dispatch_timeout_threshold()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: options =>
+            {
+                options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromMinutes(1);
+                options.RetryPolicy.DispatchTimeout =
+                    options.RetryPolicy.InitialDispatchGrace + TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(1);
+            }
+        );
+
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97);
     }
 
     [Fact]
@@ -496,6 +647,62 @@ public sealed class BootstrapperTests : TestBase
         {
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingDisposeProcessingServer : IProcessingServer
+    {
+        private readonly TaskCompletionSource _disposeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _disposeRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask WaitUntilDisposeStartedAsync(CancellationToken cancellationToken)
+        {
+            await _disposeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        public void ReleaseDispose()
+        {
+            _disposeRelease.TrySetResult();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _disposeStarted.TrySetResult();
+            return new ValueTask(_disposeRelease.Task);
+        }
+    }
+
+    private sealed class DeadlineTrackingProcessingServer : IProcessingServer, IProcessingServerShutdown
+    {
+        private readonly TaskCompletionSource _stopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TimeSpan? Timeout { get; private set; }
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return StopAsync(TimeSpan.MaxValue);
+        }
+
+        public ValueTask StopAsync(TimeSpan timeout)
+        {
+            Timeout = timeout;
+            _stopStarted.TrySetResult();
+            return ValueTask.CompletedTask;
+        }
+
+        public Task WaitUntilStopStartedAsync(CancellationToken cancellationToken)
+        {
+            return _stopStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
         }
     }
 

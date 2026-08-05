@@ -33,7 +33,7 @@ internal sealed class ConsumerRegister(
     ILogger<ConsumerRegister> logger,
     IServiceProvider serviceProvider,
     IServiceScopeFactory serviceScopeFactory
-) : IConsumerRegister
+) : IConsumerRegister, IProcessingServerShutdown
 {
     private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
 
@@ -51,7 +51,9 @@ internal sealed class ConsumerRegister(
     private IDispatcher _dispatcher = null!;
 #pragma warning restore CA2213
     private int _state = (int)LifecycleState.NotStarted;
+    private readonly Lock _shutdownLock = new();
     private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private Task? _shutdownTask;
     private volatile bool _isHealthy = true;
     private int _pendingTopologyRefresh;
 
@@ -70,10 +72,19 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        _hostStoppingToken = stoppingToken;
-        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
-        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        lock (_shutdownLock)
+        {
+            if (_shutdownTask is not null)
+            {
+                return;
+            }
+
+            _hostStoppingToken = stoppingToken;
+            _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        }
+
         Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
@@ -92,8 +103,13 @@ internal sealed class ConsumerRegister(
             await _restartGate.WaitAsync(stoppingToken).ConfigureAwait(false);
             try
             {
-                Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
-                await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+                if (
+                    Interlocked.CompareExchange(ref _state, (int)LifecycleState.Running, (int)LifecycleState.Starting)
+                    == (int)LifecycleState.Starting
+                )
+                {
+                    await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+                }
             }
             finally
             {
@@ -132,6 +148,11 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default)
     {
+        if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
         if (!IsHealthy() || force)
         {
             await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -195,30 +216,74 @@ internal sealed class ConsumerRegister(
         );
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return new ValueTask(_StartShutdown(_options.ShutdownTimeout));
+    }
+
+    ValueTask IProcessingServerShutdown.StopAsync(TimeSpan timeout)
+    {
+        return new ValueTask(_StartShutdown(timeout));
+    }
+
+    private Task _StartShutdown(TimeSpan timeout)
+    {
+        TaskCompletionSource completion;
+        Task shutdownTask;
+        CancellationTokenSource stoppingCts;
+
+        lock (_shutdownLock)
+        {
+            if (_shutdownTask is not null)
+            {
+                return _shutdownTask;
+            }
+
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Disposing);
+            completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            shutdownTask = completion.Task;
+            _shutdownTask = shutdownTask;
+            stoppingCts = _stoppingCts;
+        }
+
+        _ = _RunShutdownAsync(timeout, stoppingCts, completion);
+        return shutdownTask;
+    }
+
+    private async Task _RunShutdownAsync(
+        TimeSpan timeout,
+        CancellationTokenSource stoppingCts,
+        TaskCompletionSource completion
+    )
+    {
+        try
+        {
+            try
+            {
+                await stoppingCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // A concurrent restart already drained and disposed this exact generation.
+            }
+
+            await _DisposeCoreAsync(timeout).ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+    }
+
+    private async Task _DisposeCoreAsync(TimeSpan timeout)
     {
         var shutdownStarted = _timeProvider.GetTimestamp();
-
-        // Spin until we win the transition to Disposed, or discover someone else already did.
-        while (true)
-        {
-            var current = (LifecycleState)Volatile.Read(ref _state);
-
-            if (current is LifecycleState.Disposing or LifecycleState.Disposed)
-            {
-                return;
-            }
-
-            if (Interlocked.CompareExchange(ref _state, (int)LifecycleState.Disposing, (int)current) == (int)current)
-            {
-                break;
-            }
-        }
+        await _restartGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
 
         try
         {
-            await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout))
-                .ConfigureAwait(false);
+            await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, timeout)).ConfigureAwait(false);
         }
         catch (AggregateException e)
         {
@@ -230,20 +295,32 @@ internal sealed class ConsumerRegister(
         }
         finally
         {
-            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
-            if (_dispatcher is not null)
+            try
             {
-                await _dispatcher
-                    .DisposeAsync(_GetRemainingTimeout(shutdownStarted, _options.ShutdownTimeout), _hostStoppingToken)
-                    .ConfigureAwait(false);
+                // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+                if (_dispatcher is not null)
+                {
+                    await _dispatcher
+                        .DisposeAsync(_GetRemainingTimeout(shutdownStarted, timeout), _hostStoppingToken)
+                        .ConfigureAwait(false);
+                }
             }
+            finally
+            {
+                Interlocked.Exchange(ref _state, (int)LifecycleState.Disposed);
+                _restartGate.Release();
 
-            _restartGate.Dispose();
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Disposed);
+                // Disposal marked the lifecycle terminal before releasing the gate, so no new
+                // restart can enqueue. Reacquiring lets every restart already queued at that
+                // boundary observe Disposed and leave before the synchronization primitive closes.
+                await _restartGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                _stoppingCts.Dispose();
+                _restartGate.Dispose();
+            }
         }
     }
 
-    public async Task PulseAsync(bool removeCircuitState = true, TimeSpan? waitTimeout = null)
+    public async Task<bool> PulseAsync(bool removeCircuitState = true, TimeSpan? waitTimeout = null)
     {
         var shutdownTimeout = waitTimeout ?? _RestartShutdownTimeout;
         var shutdownStarted = _timeProvider.GetTimestamp();
@@ -252,9 +329,14 @@ internal sealed class ConsumerRegister(
         // Signal every group concurrently so one slow cancellation callback cannot delay the others.
         if (handles.Length > 0)
         {
-            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.Cts.CancelAsync()));
-            await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
-                .ConfigureAwait(false);
+            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
+            if (
+                !await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
+                    .ConfigureAwait(false)
+            )
+            {
+                return false;
+            }
         }
 
         // Wait for all consumer tasks to complete
@@ -263,8 +345,13 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-                await _WaitWithinShutdownBudgetAsync(Task.WhenAll(allTasks), shutdownStarted, shutdownTimeout)
-                    .ConfigureAwait(false);
+                if (
+                    !await _WaitWithinShutdownBudgetAsync(Task.WhenAll(allTasks), shutdownStarted, shutdownTimeout)
+                        .ConfigureAwait(false)
+                )
+                {
+                    return false;
+                }
             }
 #pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception)
@@ -280,13 +367,26 @@ internal sealed class ConsumerRegister(
         {
             var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
             var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
-            await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
+            if (
+                !await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout)
+                    .ConfigureAwait(false)
+            )
+            {
+                return false;
+            }
+        }
+
+        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
+        if (
+            !await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            return false;
         }
 
         _groupHandles.Clear();
-
-        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
-        await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout).ConfigureAwait(false);
+        return true;
     }
 
     private async Task _FinalizePulseAsync(
@@ -317,28 +417,30 @@ internal sealed class ConsumerRegister(
     }
 
 #pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
-    private async Task _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
+    private async Task<bool> _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
     {
         if (task.IsCompleted)
         {
             await task.ConfigureAwait(false);
-            return;
+            return true;
         }
 
         var remaining = _GetRemainingTimeout(started, timeout);
         if (remaining == TimeSpan.Zero)
         {
             task.Forget();
-            return;
+            return false;
         }
 
         try
         {
             await task.WaitAsync(remaining, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+            return true;
         }
         catch (TimeoutException)
         {
             task.Forget();
+            return false;
         }
     }
 #pragma warning restore VSTHRD003
@@ -522,20 +624,52 @@ internal sealed class ConsumerRegister(
             return;
         }
 
-        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        if (Interlocked.CompareExchange(ref _state, (int)LifecycleState.Starting, (int)current) != (int)current)
+        {
+            return;
+        }
+
         Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         // Preserve circuit breaker state across transport restarts — broker reconnects
         // are orthogonal to handler failures tracked by the circuit breaker.
-        await PulseAsync(removeCircuitState: false).ConfigureAwait(false);
+        if (!await PulseAsync(removeCircuitState: false).ConfigureAwait(false))
+        {
+            _isHealthy = false;
+            _logger.ProcessorStopFailed(
+                new TimeoutException("The previous consumer generation did not stop before the restart deadline."),
+                nameof(ConsumerRegister)
+            );
+            Interlocked.CompareExchange(ref _state, (int)LifecycleState.Running, (int)LifecycleState.Starting);
+            return;
+        }
 
-        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
-        _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        // Final shutdown can win while the old clients are draining. Re-check the lifecycle
+        // before allocating replacement state so a queued stop cannot be undone by this restart.
+        lock (_shutdownLock)
+        {
+            current = (LifecycleState)Volatile.Read(ref _state);
+            if (current is LifecycleState.Disposing or LifecycleState.Disposed)
+            {
+                return;
+            }
+
+            _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
+            _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        }
+
         _isHealthy = true;
 
         try
         {
             await ExecuteAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            // Final shutdown canceled the replacement generation after it won publication.
+            // The shutdown owner will drain and dispose the captured handles under the gate.
+            return;
         }
         catch
         {
@@ -551,12 +685,12 @@ internal sealed class ConsumerRegister(
             }
 #pragma warning restore ERP022
 
-            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+            Interlocked.CompareExchange(ref _state, (int)LifecycleState.NotStarted, (int)LifecycleState.Starting);
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }
 
-        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+        Interlocked.CompareExchange(ref _state, (int)LifecycleState.Running, (int)LifecycleState.Starting);
     }
 
     private async ValueTask _DrainPendingTopologyRefreshesAsync()
@@ -981,6 +1115,7 @@ internal sealed class ConsumerRegister(
     private sealed class GroupHandle
     {
         private readonly Lock _clientsLock = new();
+        private Task? _disposeTask;
         private bool _disposing;
         private bool _isPaused;
 
@@ -1066,19 +1201,47 @@ internal sealed class ConsumerRegister(
             }
         }
 
-        public async ValueTask DisposeAsync(TimeSpan shutdownTimeout)
+        public async ValueTask CancelAsync()
+        {
+            lock (_clientsLock)
+            {
+                if (_disposeTask is not null)
+                {
+                    return;
+                }
+            }
+
+            try
+            {
+                await Cts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // A concurrent idempotent disposal already canceled and retired this generation.
+            }
+        }
+
+        public ValueTask DisposeAsync(TimeSpan shutdownTimeout)
+        {
+            lock (_clientsLock)
+            {
+                if (_disposeTask is { } disposeTask)
+                {
+                    return new ValueTask(disposeTask);
+                }
+
+                _disposing = true;
+                _disposeTask = _DisposeCoreAsync([.. _clients], shutdownTimeout);
+                return new ValueTask(_disposeTask);
+            }
+        }
+
+        private async Task _DisposeCoreAsync(IReadOnlyCollection<IConsumerClient> clients, TimeSpan shutdownTimeout)
         {
             await Cts.CancelAsync().ConfigureAwait(false);
             Cts.Dispose();
 
-            IConsumerClient[] snapshot;
-            lock (_clientsLock)
-            {
-                _disposing = true;
-                snapshot = [.. _clients];
-            }
-
-            await Task.WhenAll(snapshot.Select(client => client.ShutdownAsync(shutdownTimeout).AsTask()))
+            await Task.WhenAll(clients.Select(client => client.ShutdownAsync(shutdownTimeout).AsTask()))
                 .ConfigureAwait(false);
         }
     }
