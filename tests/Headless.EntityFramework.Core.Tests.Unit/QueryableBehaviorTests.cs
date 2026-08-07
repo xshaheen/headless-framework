@@ -13,6 +13,26 @@ namespace Tests;
 public sealed class QueryableBehaviorTests : TestBase
 {
     [Fact]
+    public async Task should_find_entities_through_each_supported_identifier_contract()
+    {
+        await using var fixture = await QueryFixture.CreateAsync(AbortToken);
+
+        var generic = await Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions.FirstByIdAsync<QueryRow, int>(
+            fixture.Context.Rows,
+            1,
+            AbortToken
+        );
+        var guid = await fixture.Context.GuidRows.FirstByIdAsync(QueryFixture.GuidId, AbortToken);
+        var longKey = await fixture.Context.LongRows.FirstByIdAsync(4_000_000_000L, AbortToken);
+        var stringKey = await fixture.Context.StringRows.FirstByIdAsync("row-key", AbortToken);
+
+        generic.Name.Should().Be("alpha");
+        guid.Name.Should().Be("guid");
+        longKey.Name.Should().Be("long");
+        stringKey.Name.Should().Be("string");
+    }
+
+    [Fact]
     public async Task should_return_an_entity_by_id_and_throw_a_typed_error_when_missing()
     {
         await using var fixture = await QueryFixture.CreateAsync(AbortToken);
@@ -59,8 +79,26 @@ public sealed class QueryableBehaviorTests : TestBase
         page.Items.Select(row => row.Name).Should().Equal("gamma", "beta");
     }
 
+    [Fact]
+    public async Task should_propagate_cancellation_from_async_query_materialization()
+    {
+        await using var fixture = await QueryFixture.CreateAsync(AbortToken);
+        var cancellationToken = new CancellationToken(canceled: true);
+
+        Func<Task> action = async () =>
+            await fixture.Context.Rows.ToLookupAsync(
+                static row => row.Category,
+                static row => row.Name,
+                cancellationToken: cancellationToken
+            );
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private sealed class QueryFixture : IAsyncDisposable
     {
+        public static readonly Guid GuidId = Guid.Parse("019c89b2-9647-7c18-80d5-681959b0845f");
+
         private readonly SqliteConnection _connection;
 
         private QueryFixture(SqliteConnection connection, QueryDbContext context)
@@ -105,6 +143,9 @@ public sealed class QueryableBehaviorTests : TestBase
                     ],
                     cancellationToken
                 );
+                context.GuidRows.Add(new GuidQueryRow { Id = GuidId, Name = "guid" });
+                context.LongRows.Add(new LongQueryRow { Id = 4_000_000_000L, Name = "long" });
+                context.StringRows.Add(new StringQueryRow { Id = "row-key", Name = "string" });
                 await context.SaveChangesAsync(cancellationToken);
                 return new QueryFixture(connection, context);
             }
@@ -126,6 +167,12 @@ public sealed class QueryableBehaviorTests : TestBase
     private sealed class QueryDbContext(DbContextOptions<QueryDbContext> options) : DbContext(options)
     {
         public DbSet<QueryRow> Rows => Set<QueryRow>();
+
+        public DbSet<GuidQueryRow> GuidRows => Set<GuidQueryRow>();
+
+        public DbSet<LongQueryRow> LongRows => Set<LongQueryRow>();
+
+        public DbSet<StringQueryRow> StringRows => Set<StringQueryRow>();
     }
 
     private sealed class QueryRow : Entity<int>
@@ -133,6 +180,21 @@ public sealed class QueryableBehaviorTests : TestBase
         public required string Name { get; init; }
 
         public required string Category { get; init; }
+    }
+
+    private sealed class GuidQueryRow : Entity<Guid>
+    {
+        public required string Name { get; init; }
+    }
+
+    private sealed class LongQueryRow : Entity<long>
+    {
+        public required string Name { get; init; }
+    }
+
+    private sealed class StringQueryRow : Entity<string>
+    {
+        public required string Name { get; init; }
     }
 
     private sealed class TestDataGridRequest : DataGridRequest;
