@@ -164,8 +164,14 @@ internal sealed class RetryDispatchAttempt
         await AbandonQueuedAsync().ConfigureAwait(false);
     }
 
-    public ValueTask CompleteAsync()
+    public ValueTask CompleteAsync(bool leaseClearedByTransition = false)
     {
+        if (leaseClearedByTransition)
+        {
+            _ = Interlocked.CompareExchange(ref _state, (int)AttemptState.Completed, (int)AttemptState.Running);
+            return ValueTask.CompletedTask;
+        }
+
         return _TransitionAndReleaseAsync(AttemptState.Running, AttemptState.Completed);
     }
 
