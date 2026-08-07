@@ -292,6 +292,88 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         (await db.Basics.CountAsync(AbortToken)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_forward_argument_when_execute_transaction_async()
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        await db.ExecuteTransactionAsync(
+            static async (name, context, ct) =>
+            {
+                await context.Set<BasicEntity>().AddAsync(new BasicEntity { Name = name }, ct);
+                await context.SaveChangesAsync(ct);
+            },
+            "argument",
+            cancellationToken: AbortToken
+        );
+
+        (await db.Basics.SingleAsync(AbortToken)).Name.Should().Be("argument");
+    }
+
+    [Fact]
+    public async Task should_return_operation_result_when_execute_transaction_async()
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var result = await db.ExecuteTransactionAsync(
+            static async (context, ct) =>
+            {
+                await context.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "result" }, ct);
+                return await context.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+
+        result.Should().Be(1);
+        (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_forward_argument_and_return_result_when_execute_transaction_async()
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var result = await db.ExecuteTransactionAsync(
+            static async (name, context, ct) =>
+            {
+                await context.Set<BasicEntity>().AddAsync(new BasicEntity { Name = name }, ct);
+                await context.SaveChangesAsync(ct);
+
+                return name.Length;
+            },
+            "result-with-argument",
+            cancellationToken: AbortToken
+        );
+
+        result.Should().Be("result-with-argument".Length);
+        (await db.Basics.SingleAsync(AbortToken)).Name.Should().Be("result-with-argument");
+    }
+
+    [Fact]
+    public async Task should_not_invoke_transaction_operation_when_cancellation_is_already_requested()
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var cancellationToken = new CancellationToken(canceled: true);
+        var invoked = false;
+
+        Func<Task> action = async () =>
+            await db.ExecuteTransactionAsync(
+                (_, _) =>
+                {
+                    invoked = true;
+                    return Task.CompletedTask;
+                },
+                cancellationToken: cancellationToken
+            );
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        invoked.Should().BeFalse();
+    }
+
     // Global filters
 
     [Fact]

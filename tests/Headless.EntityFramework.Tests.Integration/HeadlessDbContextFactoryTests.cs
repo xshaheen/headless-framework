@@ -96,6 +96,29 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     }
 
     [Fact]
+    public void should_generate_compact_string_primary_keys_from_the_provider_keyed_guid_generator()
+    {
+        var providerGuid = Guid.Parse("019c89c2-d679-7721-804b-72de3c3ecabb");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKeyedSingleton<IGuidGenerator>(SequentialGuidType.Version7, new FixedGuidGenerator(providerGuid));
+        services.AddHeadlessDbContext<KeyedGuidDbContext>(options =>
+            options
+                .UseNpgsql("Host=localhost;Database=headless;Username=headless;Password=headless")
+                .GenerateCompactGuidForStringPrimaryKeys()
+        );
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        using var context = scope.ServiceProvider.GetRequiredService<KeyedGuidDbContext>();
+        var entity = new StringKeyedEntity { Name = "compact" };
+
+        context.StringEntities.Add(entity);
+
+        entity.Id.Should().Be(providerGuid.ToString("N"));
+    }
+
+    [Fact]
     public async Task should_dispose_owned_scope_when_dbcontext_constructor_throws()
     {
         // given — a scoped probe whose disposal we observe, and a context whose ctor throws.
@@ -172,7 +195,27 @@ file sealed class KeyedGuidDbContext(HeadlessDbContextServices services, DbConte
 {
     public DbSet<KeyedGuidEntity> Entities => Set<KeyedGuidEntity>();
 
+    public DbSet<StringKeyedEntity> StringEntities => Set<StringKeyedEntity>();
+
     public override string DefaultSchema => "";
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<StringKeyedEntity>().Property(static entity => entity.Id).ValueGeneratedOnAdd();
+    }
+}
+
+file sealed class StringKeyedEntity : IEntity<string>
+{
+    public string Id { get; private init; } = null!;
+
+    public required string Name { get; init; }
+
+    public IReadOnlyList<object> GetKeys()
+    {
+        return [Id];
+    }
 }
 
 file sealed class KeyedGuidEntity : IEntity<Guid>
