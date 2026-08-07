@@ -31,7 +31,7 @@
     "@mdi/font": "^7.4.47",
     "@tsconfig/node22": "^22.0.0",
     "@types/json-bigint": "^1.0.4",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/eslint-config-prettier": "^10.1.0",
@@ -50,9 +50,9 @@
     "vue-tsc": "^3.3.8"
   },
   "overrides": {
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "fast-uri": "3.1.2",
-    "postcss": "8.5.18",
+    "postcss": "8.5.23",
     "shell-quote": "1.9.0",
     "form-data": "^4.0.6",
     "js-yaml": "^4.2.0",
