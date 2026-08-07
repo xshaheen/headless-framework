@@ -52,7 +52,9 @@ internal sealed class ConsumerRegister(
 #pragma warning restore CA2213
     private int _state = (int)LifecycleState.NotStarted;
     private readonly Lock _shutdownLock = new();
+#pragma warning disable CA2213 // Disposed under the gate in _TeardownUnderGateAsync after the drain-reacquire.
     private readonly SemaphoreSlim _restartGate = new(1, 1);
+#pragma warning restore CA2213
     private Task? _shutdownTask;
     private volatile bool _isHealthy = true;
     private int _pendingTopologyRefresh;
@@ -61,7 +63,9 @@ internal sealed class ConsumerRegister(
     private ISerializer _serializer = null!;
     private BrokerAddress _serverAddress;
     private CancellationToken _hostStoppingToken;
+#pragma warning disable CA2213 // Disposed under the gate in _TeardownUnderGateAsync after the drain-reacquire.
     private CancellationTokenSource _stoppingCts = new();
+#pragma warning restore CA2213
     private CancellationTokenRegistration _stoppingCtsRegistration;
     private IDataStorage _storage = null!;
 
@@ -279,11 +283,55 @@ internal sealed class ConsumerRegister(
     private async Task _DisposeCoreAsync(TimeSpan timeout)
     {
         var shutdownStarted = _timeProvider.GetTimestamp();
-        await _restartGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
 
+        if (
+            !await _restartGate
+                .WaitAsync(_GetRemainingTimeout(shutdownStarted, timeout), CancellationToken.None)
+                .ConfigureAwait(false)
+        )
+        {
+            _logger.ProcessorStopFailed(
+                new TimeoutException("The restart gate was not released before the shutdown deadline."),
+                nameof(ConsumerRegister)
+            );
+
+            // A restart still owns the gate, so this path must not release or dispose it. Detach the
+            // real teardown to acquire the gate unbounded in the background; returning here is the
+            // intended behavior: _RunShutdownAsync completes its TCS when this method returns, so the
+            // host-facing shutdown stays bounded while the eventual cleanup continues fault-observed
+            // until the lifecycle reaches Disposed.
+            _ = _RunEventualTeardownAsync(shutdownStarted, timeout);
+            return;
+        }
+
+        await _TeardownUnderGateAsync(shutdownStarted, timeout).ConfigureAwait(false);
+    }
+
+    private async Task _RunEventualTeardownAsync(long shutdownStarted, TimeSpan timeout)
+    {
         try
         {
-            await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, timeout)).ConfigureAwait(false);
+            await _restartGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            await _TeardownUnderGateAsync(shutdownStarted, timeout).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(ConsumerRegister));
+        }
+    }
+
+    private async Task _TeardownUnderGateAsync(long shutdownStarted, TimeSpan timeout)
+    {
+        try
+        {
+            if (!await PulseAsync(waitTimeout: _GetRemainingTimeout(shutdownStarted, timeout)).ConfigureAwait(false))
+            {
+                // The drain budget ran out before PulseAsync reached its handle-disposal and
+                // finalization stages. This generation is terminal (final disposal, never a restart),
+                // so still initiate broker-client shutdown and finalization best-effort in the
+                // background instead of abandoning the clients outright.
+                _ = _ObserveBestEffortHandleTeardownAsync(_groupHandles.Values.ToArray());
+            }
         }
         catch (AggregateException e)
         {
@@ -317,6 +365,26 @@ internal sealed class ConsumerRegister(
                 _stoppingCts.Dispose();
                 _restartGate.Dispose();
             }
+        }
+    }
+
+    private async Task _ObserveBestEffortHandleTeardownAsync(IReadOnlyCollection<GroupHandle> handles)
+    {
+        try
+        {
+            // GroupHandle.DisposeAsync is idempotent via its cached dispose task; TimeSpan.Zero bounds
+            // each client ShutdownAsync to its immediate path so shutdown is at least initiated.
+            await Task.WhenAll(handles.Select(handle => handle.DisposeAsync(TimeSpan.Zero).AsTask()))
+                .ConfigureAwait(false);
+
+            await _FinalizePulseAsync(handles, removeCircuitState: true, _stoppingCtsRegistration, _stoppingCts)
+                .ConfigureAwait(false);
+
+            _groupHandles.Clear();
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(ConsumerRegister));
         }
     }
 

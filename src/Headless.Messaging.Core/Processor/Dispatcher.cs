@@ -543,6 +543,14 @@ internal sealed class Dispatcher
     {
         if (_disposed || _tasksCts is { IsCancellationRequested: true })
         {
+            // A lagging eventual cleanup (e.g. after a timed-out DisposeAsync) still references the
+            // shutting-down generation's state; resetting fields underneath it would let the old
+            // cleanup clear and dispose the fresh generation's tasks/CTS/scheduler when it resumes.
+            if (_eventualCleanupTask is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("Dispatcher shutdown is still in progress.");
+            }
+
             if (
                 _sendingTask is { IsCompleted: false }
                 || _processingTasks.Any(static task => !task.IsCompleted)
@@ -693,16 +701,23 @@ internal sealed class Dispatcher
     {
         try
         {
-            if (_tasksCts is not null)
+            // Snapshot the shutting-down generation's CTS and background tasks before any await so
+            // this cleanup never observes a fresh generation's state through the live fields if it
+            // resumes after a restart (the _ResetStateIfNeeded guard makes that unreachable, but the
+            // snapshot also removes the read-after-await pattern outright).
+            var tasksCts = _tasksCts;
+            var backgroundTasks = _GetBackgroundTasks();
+
+            if (tasksCts is not null)
             {
-                var cancellationTask = _tasksCts.CancelAsync();
+                var cancellationTask = tasksCts.CancelAsync();
                 await _AbandonUnreadRetryWorkAsync().ConfigureAwait(false);
 
 #pragma warning disable VSTHRD003 // The cancellation task is deliberately completed during eventual cleanup.
                 await cancellationTask.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
-                await _CompleteBackgroundTasksAsync(_GetBackgroundTasks()).ConfigureAwait(false);
+                await _CompleteBackgroundTasksAsync(backgroundTasks).ConfigureAwait(false);
             }
 
             await _ObserveFinalizationAsync(_FinalizeShutdownAsync()).ConfigureAwait(false);
