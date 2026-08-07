@@ -28,6 +28,55 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     [Fact]
+    public void should_generate_a_representative_request_example_from_the_host_registry_type()
+    {
+        var registry = JobFunctionRegistryBuilder.Build(
+            [new KeyValuePair<string, JobFunctionRegistration>(_FunctionName, _Registration())],
+            [
+                new KeyValuePair<string, (string, Type)>(
+                    _FunctionName,
+                    (typeof(ExampleRequest).FullName!, typeof(ExampleRequest))
+                ),
+            ],
+            []
+        );
+        var (repository, _, _, serviceProvider) = _CreateRepository(registry);
+        using (serviceProvider)
+        {
+            var function = repository.GetJobFunctions().Should().ContainSingle().Which;
+
+            function.Item2.Item1.Should().Be(typeof(ExampleRequest).FullName);
+            function.Item2.Item2.Should().Contain("\"Name\": \"string\"");
+            function.Item2.Item2.Should().Contain("\"Retries\": 123");
+            function.Item2.Item2.Should().Contain("\"Tags\": [");
+            function.Item2.Item3.Should().Be(JobPriority.High);
+        }
+    }
+
+    [Fact]
+    public void should_return_an_empty_request_example_when_the_registered_type_cannot_be_constructed()
+    {
+        var registry = JobFunctionRegistryBuilder.Build(
+            [new KeyValuePair<string, JobFunctionRegistration>(_FunctionName, _Registration())],
+            [
+                new KeyValuePair<string, (string, Type)>(
+                    _FunctionName,
+                    (typeof(AbstractRequest).FullName!, typeof(AbstractRequest))
+                ),
+            ],
+            []
+        );
+        var (repository, _, _, serviceProvider) = _CreateRepository(registry);
+        using (serviceProvider)
+        {
+            var function = repository.GetJobFunctions().Should().ContainSingle().Which;
+
+            function.Item2.Item1.Should().Be(typeof(AbstractRequest).FullName);
+            function.Item2.Item2.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task should_dispatch_on_demand_occurrences_with_the_host_registry_delegate_and_priority()
     {
         var registration = _Registration();
@@ -153,4 +202,15 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     private sealed record DashboardRequest(string Value);
+
+    private sealed class ExampleRequest
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public int? Retries { get; set; }
+
+        public List<string> Tags { get; set; } = [];
+    }
+
+    private abstract class AbstractRequest;
 }

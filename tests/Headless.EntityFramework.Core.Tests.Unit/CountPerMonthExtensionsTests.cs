@@ -39,6 +39,25 @@ public sealed class CountPerMonthExtensionsTests : TestBase
         fixture.CommandLog.Commands.Any(_IsGroupedCountSql).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_reject_an_inverted_date_time_offset_range_before_query_execution()
+    {
+        await using var fixture = await MonthCountFixture.CreateAsync(AbortToken);
+        fixture.CommandLog.Clear();
+        var offset = TimeSpan.FromHours(2);
+
+        Func<Task> action = async () =>
+            await fixture.Context.Rows.CountPerMonthAsync(
+                static row => row.DateTimeOffsetValue,
+                new DateTimeOffset(2026, 4, 20, 0, 0, 0, offset),
+                new DateTimeOffset(2026, 1, 15, 0, 0, 0, offset),
+                AbortToken
+            );
+
+        await action.Should().ThrowAsync<ArgumentException>().WithParameterName("start");
+        fixture.CommandLog.Commands.Should().BeEmpty();
+    }
+
     private static bool _IsGroupedCountSql(string sql)
     {
         return sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)
