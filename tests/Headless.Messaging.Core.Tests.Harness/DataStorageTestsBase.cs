@@ -1882,32 +1882,113 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
         NodeMembership.SetIdentity("graceful-terminal-owner");
-        var stored = await _StoreFailedPublishedMessageAsync("graceful-terminal-published");
-        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        var storedPublished = await _StoreFailedPublishedMessageAsync("graceful-terminal-published");
+        var claimedPublished = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
-            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .ContainSingle(message => message.StorageId == storedPublished.StorageId)
             .Subject;
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
+        var publishedIdentity = new MessageLeaseIdentity(
+            claimedPublished.StorageId,
+            claimedPublished.Owner,
+            claimedPublished.LockedUntil!.Value,
+            claimedPublished.Lane
         );
         (
-            await storage.ChangePublishStateAsync(
-                claimed,
+            await storage.ChangePublishRetryStateAsync(
+                claimedPublished,
                 StatusName.Succeeded,
+                MessageContentWrite.Preserve,
                 nextRetryAt: null,
-                lockedUntil: claimed.LockedUntil,
+                lockedUntil: null,
+                originalRetries: claimedPublished.Retries,
+                originalInlineAttempts: claimedPublished.InlineAttempts,
                 cancellationToken: AbortToken
             )
         )
             .Should()
             .BeTrue();
 
-        (await releaseStorage.ReleasePublishedLeaseAsync(identity, AbortToken))
+        if (Capabilities.SupportsMonitoringApi)
+        {
+            var roundTripped = await storage
+                .GetMonitoringApi()
+                .GetPublishedMessageAsync(claimedPublished.StorageId, AbortToken);
+            roundTripped.Should().NotBeNull();
+            roundTripped!.LockedUntil.Should().BeNull("the successful retry transition must clear its lease");
+        }
+
+        (await releaseStorage.ReleasePublishedLeaseAsync(publishedIdentity, AbortToken))
             .Should()
             .BeFalse("graceful release must never rewrite a terminal row");
+
+        var storedReceived = await _StoreFailedReceivedMessageAsync(
+            "graceful-terminal-received",
+            "graceful-terminal-group"
+        );
+        var claimedReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == storedReceived.StorageId)
+            .Subject;
+        var receivedIdentity = new MessageLeaseIdentity(
+            claimedReceived.StorageId,
+            claimedReceived.Owner,
+            claimedReceived.LockedUntil!.Value,
+            claimedReceived.Lane
+        );
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                claimedReceived,
+                StatusName.Succeeded,
+                MessageContentWrite.Preserve,
+                nextRetryAt: null,
+                lockedUntil: null,
+                originalRetries: claimedReceived.Retries,
+                originalInlineAttempts: claimedReceived.InlineAttempts,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        if (Capabilities.SupportsMonitoringApi)
+        {
+            var roundTripped = await storage
+                .GetMonitoringApi()
+                .GetReceivedMessageAsync(claimedReceived.StorageId, AbortToken);
+            roundTripped.Should().NotBeNull();
+            roundTripped!.LockedUntil.Should().BeNull("the successful retry transition must clear its lease");
+        }
+
+        (await releaseStorage.ReleaseReceivedLeaseAsync(receivedIdentity, AbortToken))
+            .Should()
+            .BeFalse("graceful release must never rewrite a terminal row");
+
+        var storedTerminal = await _StoreFailedPublishedMessageAsync("graceful-terminal-preserved-lease");
+        var claimedTerminal = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == storedTerminal.StorageId)
+            .Subject;
+        var terminalIdentity = new MessageLeaseIdentity(
+            claimedTerminal.StorageId,
+            claimedTerminal.Owner,
+            claimedTerminal.LockedUntil!.Value,
+            claimedTerminal.Lane
+        );
+        (
+            await storage.ChangePublishStateAsync(
+                claimedTerminal,
+                StatusName.Succeeded,
+                nextRetryAt: null,
+                lockedUntil: claimedTerminal.LockedUntil,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        (await releaseStorage.ReleasePublishedLeaseAsync(terminalIdentity, AbortToken))
+            .Should()
+            .BeFalse("graceful release must remain fenced by terminal status");
     }
 
     public virtual async Task should_batch_release_only_exact_published_retry_lease_generations()
