@@ -189,6 +189,141 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_send_once_and_release_lease_once_when_sequential_retry_publish_succeeds()
+    {
+        // Sequential (non-parallel) retry-dispatch path: with EnablePublishParallelSend left at its
+        // default (false), DispatchPublishedAsync must run Claimed→Running via _TryStartRetryAsync,
+        // send directly, and release the exact lease exactly once via CompleteAsync's
+        // Running→Completed transition.
+        var sender = new TestThreadSafeMessageSender();
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+
+        await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
+
+        sender.Count.Should().Be(1);
+        sender.ReceivedMessages[0].StorageId.Should().Be(message.StorageId);
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_release_claimed_lease_without_sending_when_sequential_retry_publish_pre_canceled()
+    {
+        // A pre-canceled token throws before the sequential path claims Running; the OCE handler
+        // must release the lease exactly once via AbandonClaimedAsync's Claimed→Abandoned
+        // transition and the sender must never be invoked.
+        var sender = new TestThreadSafeMessageSender();
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+        using var preCanceled = new CancellationTokenSource();
+        await preCanceled.CancelAsync();
+
+        await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, preCanceled.Token);
+
+        sender.Count.Should().Be(0);
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_execute_once_and_release_lease_once_when_sequential_retry_receive_succeeds()
+    {
+        // Received-side sequential path: with EnableSubscriberParallelExecute left at its default
+        // (false), DispatchReceivedAsync must invoke the executor directly and release the exact
+        // lease exactly once via CompleteAsync's Running→Completed transition.
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        _executor
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(OperateResult.Success);
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+
+        await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
+
+        await _executor
+            .Received(1)
+            .ExecuteAsync(
+                message,
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
     public async Task should_invoke_send_when_enqueue_to_publish_parallel_send_disabled()
     {
         // given
