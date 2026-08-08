@@ -130,17 +130,7 @@ public sealed class InternalJobsManagerTests : TestBase
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
-        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
-            provider,
-            TimeProvider.System,
-            sender,
-            new CronScheduleCache(TimeZoneInfo.Utc),
-            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
-            JobsRequestSerializationOptions.Default,
-            Substitute.For<IGuidGenerator>(),
-            Substitute.For<IServiceProvider>(),
-            new SchedulerOptionsBuilder()
-        );
+        var manager = _CreateManager(provider, sender);
         var acceptedId = Guid.NewGuid();
         var rejectedId = Guid.NewGuid();
         provider.RequestTimeJobCancellationAsync(acceptedId, AbortToken).Returns(true);
@@ -272,6 +262,73 @@ public sealed class InternalJobsManagerTests : TestBase
         childContext.RunCondition.Should().Be(RunCondition.OnSuccess);
         var grandChildContext = childContext.TimeJobChildren.Should().ContainSingle().Which;
         grandChildContext.RunCondition.Should().Be(RunCondition.OnCancelled);
+    }
+
+    [Fact]
+    public async Task should_dispatch_cron_claims_when_timed_out_notification_fails()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+        var cron = new FakeCronJob
+        {
+            Id = Guid.NewGuid(),
+            Function = "daily-report",
+            Expression = "0 0 5 * * *",
+            Retries = 3,
+            RetryIntervals = [10, 30, 60],
+        };
+        var occurrence = new CronJobOccurrenceEntity<FakeCronJob>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cron.Id,
+            CronJob = cron,
+            ExecutionTime = new DateTime(2026, 8, 8, 5, 0, 0, DateTimeKind.Utc),
+            RetryCount = 1,
+        };
+        var laterOccurrence = new CronJobOccurrenceEntity<FakeCronJob>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cron.Id,
+            CronJob = cron,
+            ExecutionTime = occurrence.ExecutionTime.AddMinutes(1),
+        };
+        provider
+            .QueueTimedOutTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<TimeJobEntity>());
+        provider
+            .QueueTimedOutCronJobOccurrencesAsync(AbortToken)
+            .Returns(new[] { occurrence, laterOccurrence }.ToAsyncEnumerable());
+        sender
+            .UpdateCronOccurrenceFromExecutionState<FakeCronJob>(
+                Arg.Is<JobExecutionState>(state => state.JobId == occurrence.Id)
+            )
+            .Returns(_ => throw new InvalidOperationException("hub offline"));
+
+        var contexts = await manager.RunTimedOutTickers(AbortToken);
+
+        contexts.Select(state => state.JobId).Should().Equal(occurrence.Id, laterOccurrence.Id);
+        var context = contexts[0];
+        context.JobId.Should().Be(occurrence.Id);
+        context.ParentId.Should().Be(cron.Id);
+        context.Type.Should().Be(JobType.CronJobOccurrence);
+        context.FunctionName.Should().Be("daily-report");
+        context.Retries.Should().Be(3);
+        context.RetryCount.Should().Be(1);
+        context.RetryIntervals.Should().Equal(10, 30, 60);
+        context.ExecutionTime.Should().Be(occurrence.ExecutionTime);
+        await sender.Received(2).UpdateCronOccurrenceFromExecutionState<FakeCronJob>(Arg.Any<JobExecutionState>());
+        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredCronJobOccurrencesAsync(default!, AbortToken);
     }
 
     /// <summary>
@@ -444,7 +501,7 @@ public sealed class InternalJobsManagerTests : TestBase
         // empty-batch forms must reach the providers as the (owner-scoped) release-everything call. Previously []
         // short-circuited to a no-op and a faulted tick left its claims leased for a full LeaseDuration.
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
-        var manager = _ReleaseTestManager(provider);
+        var manager = _CreateManager(provider);
 
         await manager.ReleaseAcquiredResources(resources: null, AbortToken);
 
@@ -467,7 +524,7 @@ public sealed class InternalJobsManagerTests : TestBase
     public async Task release_acquired_resources_with_resources_releases_only_the_listed_ids()
     {
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
-        var manager = _ReleaseTestManager(provider);
+        var manager = _CreateManager(provider);
         var timeJobId = Guid.NewGuid();
         var occurrenceId = Guid.NewGuid();
 
@@ -509,7 +566,7 @@ public sealed class InternalJobsManagerTests : TestBase
         provider
             .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<DateTime?>(null));
-        var manager = _ReleaseTestManager(provider);
+        var manager = _CreateManager(provider);
 
         await manager.ReleaseDeadNodeResources(["node-a@1", "node-b@1", "node-c@1"], AbortToken);
 
@@ -522,8 +579,9 @@ public sealed class InternalJobsManagerTests : TestBase
         await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
     }
 
-    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _ReleaseTestManager(
-        IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider
+    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _CreateManager(
+        IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider,
+        IJobsNotificationHubSender? sender = null
     )
     {
         return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
@@ -531,7 +589,7 @@ public sealed class InternalJobsManagerTests : TestBase
             new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
                 new DateTimeOffset(2026, 7, 17, 10, 0, 0, TimeSpan.Zero)
             ),
-            Substitute.For<IJobsNotificationHubSender>(),
+            sender ?? Substitute.For<IJobsNotificationHubSender>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
