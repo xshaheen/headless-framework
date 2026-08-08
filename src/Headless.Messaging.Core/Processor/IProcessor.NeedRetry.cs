@@ -32,6 +32,8 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
     private readonly RetryQuadrantState[] _quadrantStates;
+    private readonly Lock _pickupGate = new();
+    private bool _acceptingPickup = true;
 
     private const int _StoragePickupErrorEscalationThreshold = 3;
 
@@ -120,6 +122,27 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         _GetState(direction, lane).ActiveTask = task;
     }
 
+    internal void StartRun()
+    {
+        lock (_pickupGate)
+        {
+            _acceptingPickup = true;
+        }
+    }
+
+    internal IReadOnlyList<Task> Quiesce()
+    {
+        lock (_pickupGate)
+        {
+            _acceptingPickup = false;
+            return _quadrantStates
+                .Select(static state => state.ActiveTask)
+                .Where(static task => task is not null)
+                .Cast<Task>()
+                .ToArray();
+        }
+    }
+
     /// <summary>One-shot flag set after the startup jitter delay fires on the first poll.</summary>
     /// <remarks>
     /// The first <see cref="ProcessAsync"/> call waits a random fraction of <see cref="_baseInterval"/>
@@ -144,6 +167,14 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);
+
+        lock (_pickupGate)
+        {
+            if (!_acceptingPickup)
+            {
+                return;
+            }
+        }
 
         if (!StartupJitterApplied)
         {
@@ -172,46 +203,58 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         ISet<RetryQuadrantKey> startedThisTurn
     )
     {
-        foreach (var state in _quadrantStates)
+        lock (_pickupGate)
         {
-            if (startedThisTurn.Contains(state.Key) || state.ActiveTask is { IsCompleted: false } || !state.IsDue(now))
+            if (!_acceptingPickup)
             {
-                continue;
+                return;
             }
 
-            startedThisTurn.Add(state.Key);
-            state.ScheduleNext(now);
-            var task = Task
-                .Factory.StartNew(
-                    () => _ProcessQuadrantAsync(state, storage, context),
-                    CancellationToken.None,
-                    TaskCreationOptions.DenyChildAttach,
-                    TaskScheduler.Default
+            foreach (var state in _quadrantStates)
+            {
+                if (
+                    startedThisTurn.Contains(state.Key)
+                    || state.ActiveTask is { IsCompleted: false }
+                    || !state.IsDue(now)
                 )
-                .Unwrap();
-            state.ActiveTask = task;
-
-            _ = task.ContinueWith(
-                completed =>
                 {
-                    if (completed.IsFaulted)
-                    {
-                        if (state.Key.Direction == MessageType.Publish)
-                        {
-                            _logger.PublishedRetryProcessingUnhandled(completed.Exception);
-                        }
-                        else
-                        {
-                            _logger.ReceivedRetryProcessingUnhandled(completed.Exception);
-                        }
-                    }
+                    continue;
+                }
 
-                    state.ClearActiveTask(completed);
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
+                startedThisTurn.Add(state.Key);
+                state.ScheduleNext(now);
+                var task = Task
+                    .Factory.StartNew(
+                        () => _ProcessQuadrantAsync(state, storage, context),
+                        CancellationToken.None,
+                        TaskCreationOptions.DenyChildAttach,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap();
+                state.ActiveTask = task;
+
+                _ = task.ContinueWith(
+                    completed =>
+                    {
+                        if (completed.IsFaulted)
+                        {
+                            if (state.Key.Direction == MessageType.Publish)
+                            {
+                                _logger.PublishedRetryProcessingUnhandled(completed.Exception);
+                            }
+                            else
+                            {
+                                _logger.ReceivedRetryProcessingUnhandled(completed.Exception);
+                            }
+                        }
+
+                        state.ClearActiveTask(completed);
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default
+                );
+            }
         }
     }
 
@@ -341,21 +384,42 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             return;
         }
 
+        var messages = pickup.Messages.ToList();
         var enqueued = 0;
-        foreach (var message in pickup.Messages)
+        var nextUnhanded = 0;
+        try
         {
-            context.ThrowIfStopping();
-
-            var persistedLane = message.Lane;
-            if (persistedLane != state.Key.Lane)
+            while (nextUnhanded < messages.Count)
             {
-                throw new InvalidOperationException(
-                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
-                );
-            }
+                context.ThrowIfStopping();
 
-            await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
-            enqueued++;
+                var message = messages[nextUnhanded];
+                var persistedLane = message.Lane;
+                if (persistedLane != state.Key.Lane)
+                {
+                    throw new InvalidOperationException(
+                        $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                    );
+                }
+
+                if (_dispatcher is IRetryDispatcher retryDispatcher)
+                {
+                    await retryDispatcher
+                        .DispatchPublishedAsync(message, context.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
+                }
+
+                nextUnhanded++;
+                enqueued++;
+            }
+        }
+        finally
+        {
+            await _ReleaseUnhandedAsync(connection, MessageType.Publish, messages, nextUnhanded).ConfigureAwait(false);
         }
 
         if (_adaptivePolling)
@@ -382,42 +446,80 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             return;
         }
 
+        var messages = pickup.Messages.ToList();
         var enqueued = 0;
         var skippedCircuitOpen = 0;
         var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
-
-        foreach (var message in pickup.Messages)
+        var nextUnhanded = 0;
+        try
         {
-            context.ThrowIfStopping();
-
-            var group = message.Origin.GetGroup();
-            var persistedLane = message.Lane;
-            if (persistedLane != state.Key.Lane)
+            while (nextUnhanded < messages.Count)
             {
-                throw new InvalidOperationException(
-                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
-                );
-            }
+                context.ThrowIfStopping();
 
-            if (group is not null && _IsCircuitOpen(state.Key.Lane, group, circuitOpenCache))
-            {
-                skippedCircuitOpen++;
-                var safeGroup = LogSanitizer.Sanitize(group);
-                _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
-                continue;
-            }
+                var message = messages[nextUnhanded];
+                var group = message.Origin.GetGroup();
+                var persistedLane = message.Lane;
+                if (persistedLane != state.Key.Lane)
+                {
+                    throw new InvalidOperationException(
+                        $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                    );
+                }
 
-            await _dispatcher
-                .EnqueueToExecute(message, descriptor: null, context.CancellationToken)
+                if (group is not null && _IsCircuitOpen(state.Key.Lane, group, circuitOpenCache))
+                {
+                    skippedCircuitOpen++;
+                    var safeGroup = LogSanitizer.Sanitize(group);
+                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
+                    await _ReleaseClaimedAsync(connection, MessageType.Subscribe, message).ConfigureAwait(false);
+                    nextUnhanded++;
+                    continue;
+                }
+
+                if (_dispatcher is IRetryDispatcher retryDispatcher)
+                {
+                    await retryDispatcher
+                        .DispatchReceivedAsync(message, context.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await _dispatcher
+                        .EnqueueToExecute(message, descriptor: null, context.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                nextUnhanded++;
+                enqueued++;
+            }
+        }
+        finally
+        {
+            await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, messages, nextUnhanded)
                 .ConfigureAwait(false);
-
-            enqueued++;
         }
 
         if (_adaptivePolling)
         {
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
+    }
+
+    private static ValueTask _ReleaseUnhandedAsync(
+        IDataStorage storage,
+        MessageType direction,
+        List<MediumMessage> messages,
+        int startIndex
+    )
+    {
+        return RetryDispatchAttempt.ReleaseClaimedBatchAsync(storage, direction, messages.Skip(startIndex));
+    }
+
+    private static ValueTask _ReleaseClaimedAsync(IDataStorage storage, MessageType direction, MediumMessage message)
+    {
+        var attempt = RetryDispatchAttempt.TryCreate(storage, direction, message);
+        return attempt?.AbandonClaimedAsync() ?? ValueTask.CompletedTask;
     }
 
     private async Task<RetryPickupResult<T>> _GetSafelyAsync<T>(

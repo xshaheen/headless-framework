@@ -29,6 +29,301 @@ public sealed class DispatcherTests : TestBase
         .GetRequiredService<IServiceScopeFactory>();
 
     [Fact]
+    public async Task shutdown_releases_queued_retry_but_not_running_retry()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var runningEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var leaseReleased = new TaskCompletionSource<MessageLeaseIdentity>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var sender = Substitute.For<IMessageSender>();
+        sender
+            .SendAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>())
+            .Returns(async _ =>
+            {
+                runningEntered.TrySetResult();
+                await releaseRunning.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        ((IGracefulLeaseReleaseStorage)storage)
+            .ReleasePublishedLeasesAsync(
+                Arg.Any<IReadOnlyCollection<MessageLeaseIdentity>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var identity = call.Arg<IReadOnlyCollection<MessageLeaseIdentity>>().Single();
+                leaseReleased.TrySetResult(identity);
+                return ValueTask.FromResult(1);
+            });
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnablePublishParallelSend = true,
+                PublishBatchSize = 1,
+                ShutdownTimeout = TimeSpan.FromSeconds(2),
+            }
+        );
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            timeProvider,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+
+        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var queued = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var retryDispatcher = (IRetryDispatcher)dispatcher;
+
+        await retryDispatcher.DispatchPublishedAsync(running, AbortToken);
+        await runningEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await retryDispatcher.DispatchPublishedAsync(queued, AbortToken);
+
+        var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
+        var releasedIdentity = await leaseReleased.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        releasedIdentity
+            .Should()
+            .Be(new MessageLeaseIdentity(queued.StorageId, queued.Owner, queued.LockedUntil!.Value, queued.Lane));
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .DidNotReceive()
+            .ReleasePublishedLeaseAsync(
+                Arg.Is<MessageLeaseIdentity>(identity => identity.StorageId == running.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .DidNotReceive()
+            .ReleasePublishedLeaseAsync(
+                Arg.Is<MessageLeaseIdentity>(identity => identity.StorageId == running.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+
+        releaseRunning.TrySetResult();
+        await dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .Received(1)
+            .ReleasePublishedLeaseAsync(
+                Arg.Is<MessageLeaseIdentity>(identity => identity.StorageId == running.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task shutdown_deadline_includes_abandoned_retry_release()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var releaseStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBlocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runningEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runningBlocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async ValueTask<int> BlockReleaseAsync()
+        {
+            releaseStarted.TrySetResult();
+            await releaseBlocked.Task.ConfigureAwait(false);
+            return 1;
+        }
+
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        ((IGracefulLeaseReleaseStorage)storage)
+            .ReleasePublishedLeasesAsync(
+                Arg.Any<IReadOnlyCollection<MessageLeaseIdentity>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ => BlockReleaseAsync());
+        var sender = Substitute.For<IMessageSender>();
+        sender
+            .SendAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>())
+            .Returns(async _ =>
+            {
+                runningEntered.TrySetResult();
+                await runningBlocked.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnablePublishParallelSend = true,
+                PublishBatchSize = 1,
+                ShutdownTimeout = TimeSpan.FromSeconds(2),
+            }
+        );
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            timeProvider,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(AbortToken);
+        var retryDispatcher = (IRetryDispatcher)dispatcher;
+        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var queued = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+
+        await retryDispatcher.DispatchPublishedAsync(running, AbortToken);
+        await runningEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await retryDispatcher.DispatchPublishedAsync(queued, AbortToken);
+        var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
+        await releaseStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        releaseBlocked.Task.IsCompleted.Should().BeFalse("lease release may continue after the caller's deadline");
+
+        releaseBlocked.TrySetResult();
+        runningBlocked.TrySetResult();
+        await dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_send_once_and_release_lease_once_when_sequential_retry_publish_succeeds()
+    {
+        // Sequential (non-parallel) retry-dispatch path: with EnablePublishParallelSend left at its
+        // default (false), DispatchPublishedAsync must run Claimed→Running via _TryStartRetryAsync,
+        // send directly, and release the exact lease exactly once via CompleteAsync's
+        // Running→Completed transition.
+        var sender = new TestThreadSafeMessageSender();
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+
+        await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
+
+        sender.Count.Should().Be(1);
+        sender.ReceivedMessages[0].StorageId.Should().Be(message.StorageId);
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_release_claimed_lease_without_sending_when_sequential_retry_publish_pre_canceled()
+    {
+        // A pre-canceled token throws before the sequential path claims Running; the OCE handler
+        // must release the lease exactly once via AbandonClaimedAsync's Claimed→Abandoned
+        // transition and the sender must never be invoked.
+        var sender = new TestThreadSafeMessageSender();
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+        using var preCanceled = new CancellationTokenSource();
+        await preCanceled.CancelAsync();
+
+        await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, preCanceled.Token);
+
+        sender.Count.Should().Be(0);
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleasePublishedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_execute_once_and_release_lease_once_when_sequential_retry_receive_succeeds()
+    {
+        // Received-side sequential path: with EnableSubscriberParallelExecute left at its default
+        // (false), DispatchReceivedAsync must invoke the executor directly and release the exact
+        // lease exactly once via CompleteAsync's Running→Completed transition.
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaser = (IGracefulLeaseReleaseStorage)storage;
+        _executor
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(OperateResult.Success);
+        var options = Options.Create(new MessagingOptions());
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            options,
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        message.Retries = 1;
+
+        await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
+
+        await _executor
+            .Received(1)
+            .ExecuteAsync(
+                message,
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                Arg.Any<CancellationToken>()
+            );
+        await releaser
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+        await cts.CancelAsync();
+    }
+
+    [Fact]
     public async Task should_invoke_send_when_enqueue_to_publish_parallel_send_disabled()
     {
         // given
@@ -1454,6 +1749,14 @@ public sealed class DispatcherTests : TestBase
             Content = JsonSerializer.Serialize(message),
             Lane = MessageLane.Bus,
         };
+    }
+
+    private static MediumMessage _CreateRetryMessage(string? owner, DateTimeOffset lockedUntil)
+    {
+        var message = _CreateTestMessage();
+        message.Owner = owner;
+        message.LockedUntil = lockedUntil;
+        return message;
     }
 
     private static Guid _StorageGuid(int value)

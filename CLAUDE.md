@@ -180,6 +180,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## Learnings
 
+- Messaging graceful retry release must fence the exact store-returned `(row, lane, Owner, LockedUntil)` generation: quiesce pickup before dispatcher drain, release only completed or pre-execution-abandoned attempts, and retain running or crashed leases for normal expiry. (2026-08-05)
 - ApiResult is the value-based counterpart to the API exception path: conflict and authorization errors preserve `ErrorDescriptor` data, validation preserves field-keyed descriptors, validation-only aggregates map to 422, and Minimal API result wrappers publish the full response set as endpoint metadata. (2026-07-27)
 - Cache events are best-effort observability: preserve `AsyncEvent<T>` handlers, capture the copy-on-write handler array at emission, and feed one lazy bounded FIFO shared by the cache root and tier hubs; producers never block, accepted signals retain FIFO, and a full buffer drops the incoming signal. (2026-07-25)
 - CI runs unit tests only (`make ci-test`); integration suites never gate merges, so a semantics change can silently break provider-integration tests for weeks (a Redis membership test contradicted the #643 heartbeat contract unnoticed). Run the affected `*.Tests.Integration` projects locally when touching provider behavior. (2026-07-21)

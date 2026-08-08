@@ -1795,6 +1795,153 @@ public abstract class DataStorageTestsBase : TestBase
         claimedReceived.LockedUntil.Should().NotBeNull();
     }
 
+    public virtual async Task should_release_only_exact_published_retry_lease_generation()
+    {
+        var storage = GetStorage();
+        var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        NodeMembership.SetIdentity("graceful-published-owner");
+        var stored = await _StoreFailedPublishedMessageAsync("graceful-release-published");
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+
+        (await releaseStorage.ReleasePublishedLeaseAsync(identity with { Owner = "another-owner" }, AbortToken))
+            .Should()
+            .BeFalse();
+        (
+            await releaseStorage.ReleasePublishedLeaseAsync(
+                identity with
+                {
+                    LockedUntil = identity.LockedUntil.AddMilliseconds(1),
+                },
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (await releaseStorage.ReleasePublishedLeaseAsync(identity with { Lane = MessageLane.Queue }, AbortToken))
+            .Should()
+            .BeFalse();
+        (await releaseStorage.ReleasePublishedLeaseAsync(identity, AbortToken)).Should().BeTrue();
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId);
+    }
+
+    public virtual async Task should_release_only_exact_received_retry_lease_generation()
+    {
+        var storage = GetStorage();
+        var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        NodeMembership.SetIdentity("graceful-received-owner");
+        var stored = await _StoreFailedReceivedMessageAsync("graceful-release-received", "graceful-group");
+        var claimed = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+
+        (await releaseStorage.ReleaseReceivedLeaseAsync(identity with { Owner = "another-owner" }, AbortToken))
+            .Should()
+            .BeFalse();
+        (
+            await releaseStorage.ReleaseReceivedLeaseAsync(
+                identity with
+                {
+                    LockedUntil = identity.LockedUntil.AddMilliseconds(1),
+                },
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (await releaseStorage.ReleaseReceivedLeaseAsync(identity with { Lane = MessageLane.Queue }, AbortToken))
+            .Should()
+            .BeFalse();
+        (await releaseStorage.ReleaseReceivedLeaseAsync(identity, AbortToken)).Should().BeTrue();
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId);
+    }
+
+    public virtual async Task should_not_release_terminal_retry_lease_generation()
+    {
+        var storage = GetStorage();
+        var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        NodeMembership.SetIdentity("graceful-terminal-owner");
+        var stored = await _StoreFailedPublishedMessageAsync("graceful-terminal-published");
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+        (
+            await storage.ChangePublishStateAsync(
+                claimed,
+                StatusName.Succeeded,
+                nextRetryAt: null,
+                lockedUntil: claimed.LockedUntil,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        (await releaseStorage.ReleasePublishedLeaseAsync(identity, AbortToken))
+            .Should()
+            .BeFalse("graceful release must never rewrite a terminal row");
+    }
+
+    public virtual async Task should_batch_release_only_exact_published_retry_lease_generations()
+    {
+        var storage = GetStorage();
+        var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        NodeMembership.SetIdentity("graceful-batch-owner");
+        var first = await _StoreFailedPublishedMessageAsync("graceful-batch-published-1");
+        var second = await _StoreFailedPublishedMessageAsync("graceful-batch-published-2");
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Where(message => message.StorageId == first.StorageId || message.StorageId == second.StorageId)
+            .ToArray();
+        claimed.Should().HaveCount(2);
+        var identities = claimed
+            .Select(message => new MessageLeaseIdentity(
+                message.StorageId,
+                message.Owner,
+                message.LockedUntil!.Value,
+                message.Lane
+            ))
+            .ToArray();
+
+        var released = await releaseStorage.ReleasePublishedLeasesAsync(
+            [identities[0] with { Owner = "stale-owner" }, .. identities],
+            AbortToken
+        );
+
+        released.Should().Be(2);
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .Contain(message => message.StorageId == first.StorageId)
+            .And.Contain(message => message.StorageId == second.StorageId);
+    }
+
     public virtual async Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
     {
         var storage = GetStorage();

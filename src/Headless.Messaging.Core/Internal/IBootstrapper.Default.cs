@@ -21,12 +21,13 @@ internal sealed class Bootstrapper(
 ) : BackgroundService, IBootstrapper
 {
     private readonly Lock _bootstrapLock = new();
+    private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
     private IReadOnlyList<IProcessingServer> _processors = [];
     private bool _disposed;
     private bool _isStopping;
     private CancellationTokenSource? _runtimeCts;
-    private CancellationTokenRegistration _stoppingRegistration;
     private Task? _bootstrapTask;
+    private Task? _shutdownTask;
 
     // Plain access under _bootstrapLock (the lock provides a full fence).
     // Volatile.Read in IsStarted for lock-free snapshot by external callers.
@@ -96,6 +97,7 @@ internal sealed class Bootstrapper(
             _CheckRequirement();
             _WarnIfNoOpProvider();
             _WarnIfNullNodeMembership();
+            _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
 
             try
             {
@@ -110,7 +112,6 @@ internal sealed class Bootstrapper(
 
             await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
 
-            var registration = runtimeCts.Token.Register(_StopProcessors);
             var wasStopping = false;
 
             lock (_bootstrapLock)
@@ -120,12 +121,10 @@ internal sealed class Bootstrapper(
                     // Shutdown began while we were starting — undo immediately.
                     _bootstrapTask = null;
                     _isStarted = false;
-                    _stoppingRegistration = default;
                     wasStopping = true;
                 }
                 else
                 {
-                    _stoppingRegistration = registration;
                     _isStarted = true;
                     _bootstrapTask = null;
                 }
@@ -133,9 +132,6 @@ internal sealed class Bootstrapper(
 
             if (wasStopping)
             {
-                await registration.DisposeAsync().ConfigureAwait(false);
-                await _StopProcessorsAsync().ConfigureAwait(false);
-                runtimeCts.Dispose();
                 return;
             }
 
@@ -152,11 +148,12 @@ internal sealed class Bootstrapper(
                 // Ignore races with external disposal during startup failure cleanup.
             }
 
-            await _StopProcessorsAsync().ConfigureAwait(false);
-            await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+            bool shutdownOwnsCleanup;
 
             lock (_bootstrapLock)
             {
+                shutdownOwnsCleanup = _isStopping;
+
                 if (ReferenceEquals(_runtimeCts, runtimeCts))
                 {
                     _runtimeCts = null;
@@ -166,7 +163,12 @@ internal sealed class Bootstrapper(
                 _isStarted = false;
             }
 
-            runtimeCts.Dispose();
+            if (!shutdownOwnsCleanup)
+            {
+                await _StopProcessorsAsync().ConfigureAwait(false);
+                runtimeCts.Dispose();
+            }
+
             throw;
         }
     }
@@ -214,33 +216,7 @@ internal sealed class Bootstrapper(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        CancellationTokenSource? runtimeCts;
-        CancellationTokenRegistration stoppingRegistration;
-
-        lock (_bootstrapLock)
-        {
-            _isStopping = true;
-            Volatile.Write(ref _isStarted, value: false);
-            runtimeCts = _runtimeCts;
-            _runtimeCts = null;
-            stoppingRegistration = _stoppingRegistration;
-            _stoppingRegistration = default;
-        }
-
-        if (runtimeCts is not null)
-        {
-            try
-            {
-                await runtimeCts.CancelAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-                // Ignore races with concurrent startup failure cleanup.
-            }
-        }
-
-        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
-        runtimeCts?.Dispose();
+        await _StartShutdown(dispose: false).WaitAsync(cancellationToken).ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -315,6 +291,27 @@ internal sealed class Bootstrapper(
         if (deadThreshold is { } threshold && threshold < dispatchTimeout)
         {
             logger.MessagingDeadThresholdBelowDispatchTimeout(threshold, dispatchTimeout);
+        }
+    }
+
+    private void _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace()
+    {
+        var retryPolicy = options.Value.RetryPolicy;
+        var threshold = TimeSpan.FromMinutes(2);
+        var initialGrace = retryPolicy.InitialDispatchGrace;
+
+        if (initialGrace > TimeSpan.MaxValue - threshold)
+        {
+            return;
+        }
+
+        if (retryPolicy.DispatchTimeout > initialGrace + threshold)
+        {
+            logger.MessagingDispatchTimeoutMateriallyExceedsInitialGrace(
+                retryPolicy.DispatchTimeout,
+                initialGrace,
+                options.Value.ShutdownTimeout
+            );
         }
     }
 
@@ -451,93 +448,168 @@ internal sealed class Bootstrapper(
 
     public override void Dispose()
     {
-        CancellationTokenSource? runtimeCts;
-        CancellationTokenRegistration stoppingRegistration;
-
-        lock (_bootstrapLock)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            _isStopping = true;
-            Volatile.Write(ref _isStarted, value: false);
-            runtimeCts = _runtimeCts;
-            _runtimeCts = null;
-            stoppingRegistration = _stoppingRegistration;
-            _stoppingRegistration = default;
-            _bootstrapTask = null;
-        }
-
-#pragma warning disable VSTHRD103 // Dispose is synchronous by contract — CancelAsync is not available here.
-        runtimeCts?.Cancel();
-#pragma warning restore VSTHRD103
-        stoppingRegistration.Dispose();
-        runtimeCts?.Dispose();
-
+        _ = _StartShutdown(dispose: true);
         base.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
+        await _StartShutdown(dispose: true).ConfigureAwait(false);
+        base.Dispose();
+    }
+
+    private Task _StartShutdown(bool dispose)
+    {
+        TaskCompletionSource shutdownCompletion;
         Task? pendingBootstrap;
         CancellationTokenSource? runtimeCts;
-        CancellationTokenRegistration stoppingRegistration;
+        Task shutdownTask;
 
         lock (_bootstrapLock)
         {
-            if (_disposed)
+            if (dispose)
             {
-                return;
+                _disposed = true;
             }
 
-            _disposed = true;
             _isStopping = true;
             Volatile.Write(ref _isStarted, value: false);
+
+            if (_shutdownTask is not null)
+            {
+                return _shutdownTask;
+            }
+
             pendingBootstrap = _bootstrapTask;
             _bootstrapTask = null;
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
-            stoppingRegistration = _stoppingRegistration;
-            _stoppingRegistration = default;
+
+            shutdownCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            shutdownTask = shutdownCompletion.Task;
+            _shutdownTask = shutdownTask;
         }
 
-        if (runtimeCts is not null)
-        {
-            await runtimeCts.CancelAsync().ConfigureAwait(false);
-        }
-
-        if (pendingBootstrap is not null)
-        {
-#pragma warning disable ERP022 // We just need the in-flight bootstrap to finish its cleanup; the outcome does not matter.
-            try
-            {
-                await pendingBootstrap.ConfigureAwait(false);
-            }
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
-#pragma warning restore ERP022
-        }
-
-        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
-        runtimeCts?.Dispose();
-
-        base.Dispose();
+        _ = _RunShutdownAsync(pendingBootstrap, runtimeCts, shutdownCompletion);
+        return shutdownTask;
     }
 
-    private async Task _StopProcessorsAsync()
+    private async Task _RunShutdownAsync(
+        Task? pendingBootstrap,
+        CancellationTokenSource? runtimeCts,
+        TaskCompletionSource shutdownCompletion
+    )
+    {
+        var cleanupTask = _ShutdownCoreAsync(pendingBootstrap, runtimeCts);
+
+        try
+        {
+            await cleanupTask
+                .WaitAsync(options.Value.ShutdownTimeout, _timeProvider, CancellationToken.None)
+                .ConfigureAwait(false);
+            shutdownCompletion.TrySetResult();
+        }
+        catch (TimeoutException)
+        {
+            _ = _ObserveEventualShutdownAsync(cleanupTask);
+            shutdownCompletion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            shutdownCompletion.TrySetException(ex);
+        }
+    }
+
+    private async Task _ShutdownCoreAsync(Task? pendingBootstrap, CancellationTokenSource? runtimeCts)
+    {
+        var shutdownStarted = _timeProvider.GetTimestamp();
+
+        try
+        {
+            if (runtimeCts is not null)
+            {
+                try
+                {
+                    await runtimeCts.CancelAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Startup failure cleanup may have won the race and disposed the source.
+                }
+            }
+
+            if (pendingBootstrap is not null)
+            {
+#pragma warning disable ERP022 // Shutdown observes startup completion but preserves its original caller-facing outcome.
+                try
+                {
+                    await pendingBootstrap.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                // ReSharper disable once EmptyGeneralCatchClause
+                catch { }
+#pragma warning restore ERP022
+            }
+
+            await _StopProcessorsAsync(shutdownStarted).ConfigureAwait(false);
+        }
+        finally
+        {
+            runtimeCts?.Dispose();
+        }
+    }
+
+    private static async Task _ObserveEventualShutdownAsync(Task cleanupTask)
+    {
+#pragma warning disable ERP022 // Individual processor failures are logged by _StopProcessorsAsync.
+        try
+        {
+            await cleanupTask.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        // ReSharper disable once EmptyGeneralCatchClause
+        catch { }
+#pragma warning restore ERP022
+    }
+
+    private Task _StopProcessorsAsync()
+    {
+        return _StopProcessorsAsync(_timeProvider.GetTimestamp());
+    }
+
+    private async Task _StopProcessorsAsync(long shutdownStarted)
     {
         logger.MessagingStopping();
 
         List<Exception>? failures = null;
 
-        foreach (var item in _processors)
+        foreach (var item in _processors.Reverse())
         {
+            Task? stopTask = null;
             try
             {
-                await item.DisposeAsync().ConfigureAwait(false);
+                var remaining = options.Value.ShutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
+                stopTask = item is IProcessingServerShutdown bounded
+                    ? bounded.StopAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero).AsTask()
+                    : item.DisposeAsync().AsTask();
+
+                if (remaining <= TimeSpan.Zero)
+                {
+                    logger.ProcessorStopFailed(
+                        new TimeoutException("The shared messaging shutdown deadline has expired."),
+                        item.GetType().FullName ?? item.GetType().Name
+                    );
+                    _ = _ObserveEventualShutdownAsync(stopTask);
+                    continue;
+                }
+
+                await stopTask.WaitAsync(remaining, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (TimeoutException ex)
+            {
+                logger.ProcessorStopFailed(ex, item.GetType().FullName ?? item.GetType().Name);
+                if (stopTask is not null)
+                {
+                    _ = _ObserveEventualShutdownAsync(stopTask);
+                }
             }
             catch (OperationCanceledException ex)
             {
@@ -563,27 +635,5 @@ internal sealed class Bootstrapper(
     private void _DrainPendingMessageRegistrations()
     {
         SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, options.Value);
-    }
-
-    private void _StopProcessors()
-    {
-        // Synchronous shutdown bridge for CancellationToken.Register callbacks. The async equivalent
-        // (_StopProcessorsAsync) is used everywhere else; this path preserves drainer compatibility
-        // by blocking the cancellation callback until the processors stop.
-        logger.MessagingStopping();
-
-        foreach (var item in _processors)
-        {
-            try
-            {
-#pragma warning disable MA0045 // CancellationToken.Register callback must block until processor disposal finishes.
-                item.DisposeAsync().AsTask().GetAwaiter().GetResult();
-#pragma warning restore MA0045
-            }
-            catch (OperationCanceledException ex)
-            {
-                logger.ExpectedOperationCanceledException(ex, ex.Message);
-            }
-        }
     }
 }

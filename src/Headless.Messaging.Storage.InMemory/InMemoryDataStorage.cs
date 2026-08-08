@@ -21,7 +21,7 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage, IDelayedMessageClaimStorage, IDeliveryCoordinationResolver
+) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -932,6 +932,88 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, deadOwners, cancellationToken));
+    }
+
+    public ValueTask<bool> ReleasePublishedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReleaseLease(PublishedMessages, identity, cancellationToken));
+    }
+
+    public ValueTask<bool> ReleaseReceivedLeaseAsync(
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReleaseLease(ReceivedMessages, identity, cancellationToken));
+    }
+
+    public ValueTask<int> ReleasePublishedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReleaseLeases(PublishedMessages, identities, cancellationToken));
+    }
+
+    public ValueTask<int> ReleaseReceivedLeasesAsync(
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReleaseLeases(ReceivedMessages, identities, cancellationToken));
+    }
+
+    private static int _ReleaseLeases(
+        ConcurrentDictionary<Guid, MemoryMessage> source,
+        IReadOnlyCollection<MessageLeaseIdentity> identities,
+        CancellationToken cancellationToken
+    )
+    {
+        var released = 0;
+        foreach (var identity in identities)
+        {
+            if (_ReleaseLease(source, identity, cancellationToken))
+            {
+                released++;
+            }
+        }
+
+        return released;
+    }
+
+    private static bool _ReleaseLease(
+        ConcurrentDictionary<Guid, MemoryMessage> source,
+        MessageLeaseIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = MessageLaneCompatibility.ToPersistedValue(identity.Lane);
+
+        if (!source.TryGetValue(identity.StorageId, out var current))
+        {
+            return false;
+        }
+
+        lock (current)
+        {
+            if (
+                current.Lane != identity.Lane
+                || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
+                || current.LockedUntil != identity.LockedUntil
+                || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+            )
+            {
+                return false;
+            }
+
+            current.Owner = null;
+            current.LockedUntil = null;
+            return true;
+        }
     }
 
     private List<MediumMessage> _ClaimMessagesOfNeedRetry(

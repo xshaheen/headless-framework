@@ -15,7 +15,12 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatcher, ICommittedMessageDispatcher
+internal sealed class Dispatcher
+    : IDispatcher,
+        ICommittedDelayedMessageDispatcher,
+        ICommittedMessageDispatcher,
+        IRetryDispatcher,
+        IProcessingServerShutdown
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
@@ -31,6 +36,9 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     private readonly bool _enableParallelExecute;
     private readonly bool _enableParallelSend;
     private readonly int _publishChannelSize;
+    private readonly Lock _retryDispatchGate = new();
+    private readonly Lock _shutdownGate = new();
+    private bool _acceptingRetryDispatch;
 
 #pragma warning disable CA2213 // Disposed by deadline-bounded asynchronous finalization.
     private CancellationTokenSource? _tasksCts;
@@ -55,13 +63,13 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     private CancellationTokenSource TasksCts =>
         _tasksCts ?? throw new InvalidOperationException("Dispatcher is not started.");
 
-    private Channel<MediumMessage> PublishedChannel
+    private Channel<PublishedDispatchWork> PublishedChannel
     {
         get => field ?? throw new InvalidOperationException("Published channel is not initialized.");
         set;
     }
 
-    private Channel<(MediumMessage, ConsumerExecutorDescriptor?)> ReceivedChannel
+    private Channel<ReceivedDispatchWork> ReceivedChannel
     {
         get => field ?? throw new InvalidOperationException("Received channel is not initialized.");
         set;
@@ -111,6 +119,10 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         }
 
         _schedulerTask = _StartSchedulerTaskAsync();
+        lock (_retryDispatchGate)
+        {
+            _acceptingRetryDispatch = true;
+        }
         _ = _schedulerTask.ContinueWith(
             _OnSchedulerLoopFaulted,
             CancellationToken.None,
@@ -223,7 +235,7 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
         // A full channel is not a publish failure: the row already committed, so the relay is the
         // recovery authority. This path must never wait for channel capacity or broker progress.
-        _ = PublishedChannel.Writer.TryWrite(message);
+        _ = PublishedChannel.Writer.TryWrite(new PublishedDispatchWork(message, RetryAttempt: null));
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
@@ -240,7 +252,12 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
             if (_ShouldUseParallelSend(message))
             {
-                await _WriteToChannelAsync(PublishedChannel, message, cancellationToken).ConfigureAwait(false);
+                await _WriteToChannelAsync(
+                        PublishedChannel,
+                        new PublishedDispatchWork(message, RetryAttempt: null),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -270,7 +287,11 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
             if (_ShouldUseParallelExecute(message))
             {
-                await _WriteToChannelAsync(ReceivedChannel, (message, descriptor), cancellationToken)
+                await _WriteToChannelAsync(
+                        ReceivedChannel,
+                        new ReceivedDispatchWork(message, descriptor, RetryAttempt: null),
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             else
@@ -293,130 +314,168 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         }
     }
 
+    async ValueTask IRetryDispatcher.DispatchPublishedAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var attempt = RetryDispatchAttempt.TryCreate(_storage, MessageType.Publish, message);
+        if (attempt is null)
+        {
+            await EnqueueToPublish(message, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_IsCancellationRequested())
+            {
+                await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (_ShouldUseParallelSend(message))
+            {
+                await _WritePublishedRetryAsync(message, attempt, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (!await _TryStartRetryAsync(attempt).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            try
+            {
+                await _SendMessageDirectlyAsync(message).ConfigureAwait(false);
+            }
+            finally
+            {
+                await attempt.CompleteAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+        }
+    }
+
+    async ValueTask IRetryDispatcher.DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var attempt = RetryDispatchAttempt.TryCreate(_storage, MessageType.Subscribe, message);
+        if (attempt is null)
+        {
+            await EnqueueToExecute(message, descriptor: null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_IsCancellationRequested())
+            {
+                await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (_ShouldUseParallelExecute(message))
+            {
+                await _WriteReceivedRetryAsync(message, attempt, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (!await _TryStartRetryAsync(attempt).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            try
+            {
+                await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+                await _executor
+                    .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor: null, TasksCts.Token)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                await attempt.CompleteAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.SubscriberInvocationFailed(e, message.StorageId);
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
         return DisposeAsync(_options.ShutdownTimeout);
     }
 
+    ValueTask IProcessingServerShutdown.StopAsync(TimeSpan timeout)
+    {
+        return DisposeAsync(timeout, CancellationToken.None);
+    }
+
     public async ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        var shutdownStarted = _timeProvider.GetTimestamp();
-
-        if (_disposed)
+        Task shutdownTask;
+        TaskCompletionSource? shutdownCompletion = null;
+        lock (_shutdownGate)
         {
-            if (_eventualCleanupTask is { } eventualCleanupTask)
+            if (_eventualCleanupTask is { } existingShutdownTask)
             {
-                // Bound the reentrant join: both IDispatcher and IConsumerRegister are registered as
-                // IProcessingServer over this same instance, so the second dispose always lands here.
-                // An unbounded await would let a handler that never observes cancellation hang host
-                // shutdown past ShutdownTimeout — the exact failure the option exists to prevent. On
-                // timeout the cleanup keeps running in background and logs its own outcome.
-                if (timeout <= TimeSpan.Zero)
-                {
-                    _logger.ProcessorStopFailed(
-                        new TimeoutException("The shared messaging shutdown deadline has expired."),
-                        nameof(Dispatcher)
-                    );
-                    return;
-                }
-
-                try
-                {
-                    await eventualCleanupTask
-                        .WaitAsync(timeout, _timeProvider, CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException ex)
-                {
-                    _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
-                }
-            }
-
-            return;
-        }
-
-        _disposed = true;
-
-        if (_tasksCts is not null)
-        {
-            var cancellationTask = _tasksCts.CancelAsync();
-            var remaining = _GetRemainingTimeout(shutdownStarted, timeout);
-            if (!cancellationTask.IsCompleted)
-            {
-                if (remaining <= TimeSpan.Zero)
-                {
-                    _LogShutdownTimeout();
-                    _eventualCleanupTask = _CompleteShutdownAfterCancellationAsync(cancellationTask);
-                    return;
-                }
-
-                try
-                {
-                    await cancellationTask
-                        .WaitAsync(remaining, _timeProvider, CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException ex)
-                {
-                    _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
-                    _eventualCleanupTask = _CompleteShutdownAfterCancellationAsync(cancellationTask);
-                    return;
-                }
+                shutdownTask = existingShutdownTask;
             }
             else
             {
-                await cancellationTask.ConfigureAwait(false);
-            }
+                lock (_retryDispatchGate)
+                {
+                    _acceptingRetryDispatch = false;
+                }
 
-            if (
-                !await _WaitForBackgroundTasksAsync(_GetRemainingTimeout(shutdownStarted, timeout))
-                    .ConfigureAwait(false)
-            )
-            {
-                return;
+                _disposed = true;
+                shutdownCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                shutdownTask = shutdownCompletion.Task;
+                _eventualCleanupTask = shutdownTask;
             }
         }
 
-        await _FinalizeShutdownWithinBudgetAsync(shutdownStarted, timeout).ConfigureAwait(false);
-    }
-
-    private TimeSpan _GetRemainingTimeout(long started, TimeSpan timeout)
-    {
-        var remaining = timeout - _timeProvider.GetElapsedTime(started);
-        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
-    }
-
-    private async Task _FinalizeShutdownWithinBudgetAsync(long shutdownStarted, TimeSpan timeout)
-    {
-        var finalizationTask = _FinalizeShutdownAsync();
-        if (finalizationTask.IsCompleted)
+        if (shutdownCompletion is not null)
         {
-            await finalizationTask.ConfigureAwait(false);
+            _ = _CompleteShutdownAsync(shutdownCompletion);
+        }
+
+        await _WaitForShutdownAsync(shutdownTask, timeout).ConfigureAwait(false);
+    }
+
+#pragma warning disable VSTHRD003 // The shared cleanup task is explicitly deadline-bounded and keeps running on timeout.
+    private async Task _WaitForShutdownAsync(Task shutdownTask, TimeSpan timeout)
+    {
+        if (shutdownTask.IsCompleted)
+        {
+            await shutdownTask.ConfigureAwait(false);
             return;
         }
 
-        var remaining = _GetRemainingTimeout(shutdownStarted, timeout);
-        if (remaining > TimeSpan.Zero)
-        {
-            try
-            {
-                await finalizationTask
-                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-                return;
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
-            }
-        }
-        else
+        if (timeout <= TimeSpan.Zero)
         {
             _LogShutdownTimeout();
+            return;
         }
 
-        _eventualCleanupTask = _ObserveFinalizationAsync(finalizationTask);
+        try
+        {
+            await shutdownTask.WaitAsync(timeout, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
     }
+#pragma warning restore VSTHRD003
 
     private async Task _FinalizeShutdownAsync()
     {
@@ -484,6 +543,14 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     {
         if (_disposed || _tasksCts is { IsCancellationRequested: true })
         {
+            // A lagging eventual cleanup (e.g. after a timed-out DisposeAsync) still references the
+            // shutting-down generation's state; resetting fields underneath it would let the old
+            // cleanup clear and dispose the fresh generation's tasks/CTS/scheduler when it resumes.
+            if (_eventualCleanupTask is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("Dispatcher shutdown is still in progress.");
+            }
+
             if (
                 _sendingTask is { IsCompleted: false }
                 || _processingTasks.Any(static task => !task.IsCompleted)
@@ -498,13 +565,14 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
             _sendingTask = null;
             _processingTasks = [];
             _schedulerTask = null;
+            _eventualCleanupTask = null;
             _disposed = false;
         }
     }
 
     private void _InitializePublishedChannel()
     {
-        PublishedChannel = Channel.CreateBounded<MediumMessage>(
+        PublishedChannel = Channel.CreateBounded<PublishedDispatchWork>(
             new BoundedChannelOptions(_publishChannelSize)
             {
                 AllowSynchronousContinuations = false,
@@ -523,7 +591,7 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         );
         var isSingleReader = _options.SubscriberParallelExecuteThreadCount == 1;
 
-        ReceivedChannel = Channel.CreateBounded<(MediumMessage, ConsumerExecutorDescriptor?)>(
+        ReceivedChannel = Channel.CreateBounded<ReceivedDispatchWork>(
             new BoundedChannelOptions(bufferSize)
             {
                 AllowSynchronousContinuations = true,
@@ -612,48 +680,6 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         );
     }
 
-    private async ValueTask<bool> _WaitForBackgroundTasksAsync(TimeSpan timeout)
-    {
-        var tasks = _GetBackgroundTasks();
-
-        if (tasks.Count == 0)
-        {
-            return true;
-        }
-
-        var completionTask = Task.WhenAll(tasks);
-
-        if (timeout <= TimeSpan.Zero)
-        {
-            var exception = new TimeoutException("The shared messaging shutdown deadline has expired.");
-            _logger.ProcessorStopFailed(exception, nameof(Dispatcher));
-            _eventualCleanupTask = _CompleteTimedOutShutdownAsync(tasks);
-            return false;
-        }
-
-        try
-        {
-            await completionTask.WaitAsync(timeout, _timeProvider, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (TimeoutException ex)
-        {
-            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
-            _eventualCleanupTask = _CompleteTimedOutShutdownAsync(tasks);
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected during shutdown.
-        }
-        catch (Exception ex)
-        {
-            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
-        }
-        _ClearBackgroundTasks();
-
-        return true;
-    }
-
     private List<Task> _GetBackgroundTasks()
     {
         var tasks = new List<Task>(_processingTasks.Length + 2);
@@ -671,23 +697,42 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         return tasks;
     }
 
-    private async Task _CompleteShutdownAfterCancellationAsync(Task cancellationTask)
+    private async Task _CompleteShutdownAsync(TaskCompletionSource completion)
     {
         try
         {
+            // Snapshot the shutting-down generation's CTS and background tasks before any await so
+            // this cleanup never observes a fresh generation's state through the live fields if it
+            // resumes after a restart (the _ResetStateIfNeeded guard makes that unreachable, but the
+            // snapshot also removes the read-after-await pattern outright).
+            var tasksCts = _tasksCts;
+            var backgroundTasks = _GetBackgroundTasks();
+
+            if (tasksCts is not null)
+            {
+                var cancellationTask = tasksCts.CancelAsync();
+                await _AbandonUnreadRetryWorkAsync().ConfigureAwait(false);
+
 #pragma warning disable VSTHRD003 // The cancellation task is deliberately completed during eventual cleanup.
-            await cancellationTask.ConfigureAwait(false);
+                await cancellationTask.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
+
+                await _CompleteBackgroundTasksAsync(backgroundTasks).ConfigureAwait(false);
+            }
+
+            await _ObserveFinalizationAsync(_FinalizeShutdownAsync()).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
         }
-
-        await _CompleteTimedOutShutdownAsync(_GetBackgroundTasks()).ConfigureAwait(false);
+        finally
+        {
+            completion.TrySetResult();
+        }
     }
 
-    private async Task _CompleteTimedOutShutdownAsync(IReadOnlyCollection<Task> tasks)
+    private async Task _CompleteBackgroundTasksAsync(IReadOnlyCollection<Task> tasks)
     {
         try
         {
@@ -703,7 +748,6 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         }
 
         _ClearBackgroundTasks();
-        await _ObserveFinalizationAsync(_FinalizeShutdownAsync()).ConfigureAwait(false);
     }
 
 #pragma warning disable VSTHRD003 // The caller-created finalization task is explicitly fault-observed here.
@@ -747,7 +791,8 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
             if (_ShouldUseParallelSend(nextMessage))
             {
-                await _WriteToChannelAsync(PublishedChannel, nextMessage).ConfigureAwait(false);
+                await _WriteToChannelAsync(PublishedChannel, new PublishedDispatchWork(nextMessage, RetryAttempt: null))
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -804,9 +849,9 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         var batchSize = _CalculateBatchSize();
         var tasks = new List<Task>(batchSize);
 
-        for (var i = 0; i < batchSize && PublishedChannel.Reader.TryRead(out var message); i++)
+        for (var i = 0; i < batchSize && PublishedChannel.Reader.TryRead(out var work); i++)
         {
-            tasks.Add(_SendMessageAsync(message));
+            tasks.Add(_SendMessageAsync(work));
         }
 
         if (tasks.Count > 0)
@@ -817,14 +862,20 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
 
     private async Task _SendBatchSequentialAsync()
     {
-        while (PublishedChannel.Reader.TryRead(out var message))
+        while (PublishedChannel.Reader.TryRead(out var work))
         {
-            await _SendMessageAsync(message).ConfigureAwait(false);
+            await _SendMessageAsync(work).ConfigureAwait(false);
         }
     }
 
-    private async Task _SendMessageAsync(MediumMessage message)
+    private async Task _SendMessageAsync(PublishedDispatchWork work)
     {
+        var (message, retryAttempt) = work;
+        if (retryAttempt is not null && !await _TryStartRetryAsync(retryAttempt).ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
@@ -837,6 +888,13 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         catch (Exception ex)
         {
             _logger.TransportSendError(ex, message.StorageId);
+        }
+        finally
+        {
+            if (retryAttempt is not null)
+            {
+                await retryAttempt.CompleteAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -871,9 +929,9 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         {
             while (await ReceivedChannel.Reader.WaitToReadAsync(TasksCts.Token).ConfigureAwait(false))
             {
-                while (ReceivedChannel.Reader.TryRead(out var messageData))
+                while (ReceivedChannel.Reader.TryRead(out var work))
                 {
-                    await _ProcessReceivedMessageAsync(messageData).ConfigureAwait(false);
+                    await _ProcessReceivedMessageAsync(work).ConfigureAwait(false);
                 }
             }
         }
@@ -883,11 +941,16 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         }
     }
 
-    private async Task _ProcessReceivedMessageAsync((MediumMessage, ConsumerExecutorDescriptor?) messageData)
+    private async Task _ProcessReceivedMessageAsync(ReceivedDispatchWork work)
     {
+        var (message, descriptor, retryAttempt) = work;
+        if (retryAttempt is not null && !await _TryStartRetryAsync(retryAttempt).ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
-            var (message, descriptor) = messageData;
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
             await _executor
                 .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
@@ -899,7 +962,14 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
         }
         catch (Exception e)
         {
-            _logger.SubscriberInvocationFailed(e, messageData.Item1.StorageId);
+            _logger.SubscriberInvocationFailed(e, message.StorageId);
+        }
+        finally
+        {
+            if (retryAttempt is not null)
+            {
+                await retryAttempt.CompleteAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -920,6 +990,156 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     private bool _ShouldUseParallelExecute(MediumMessage message)
     {
         return _enableParallelExecute && message.Retries == 0;
+    }
+
+    private ValueTask _WritePublishedRetryAsync(
+        MediumMessage message,
+        RetryDispatchAttempt attempt,
+        CancellationToken cancellationToken
+    )
+    {
+        return _WriteRetryAsync(
+            PublishedChannel,
+            new PublishedDispatchWork(message, attempt),
+            attempt,
+            cancellationToken
+        );
+    }
+
+    private ValueTask _WriteReceivedRetryAsync(
+        MediumMessage message,
+        RetryDispatchAttempt attempt,
+        CancellationToken cancellationToken
+    )
+    {
+        return _WriteRetryAsync(
+            ReceivedChannel,
+            new ReceivedDispatchWork(message, Descriptor: null, RetryAttempt: attempt),
+            attempt,
+            cancellationToken
+        );
+    }
+
+    private async ValueTask _WriteRetryAsync<T>(
+        Channel<T> channel,
+        T work,
+        RetryDispatchAttempt attempt,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!attempt.TryQueue())
+        {
+            return;
+        }
+
+        try
+        {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
+            while (true)
+            {
+                lock (_retryDispatchGate)
+                {
+                    if (!_acceptingRetryDispatch)
+                    {
+                        break;
+                    }
+
+                    if (channel.Writer.TryWrite(work))
+                    {
+                        return;
+                    }
+                }
+
+                if (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+                return;
+            }
+        }
+        catch
+        {
+            await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> _TryStartRetryAsync(RetryDispatchAttempt attempt)
+    {
+        lock (_retryDispatchGate)
+        {
+            if (_acceptingRetryDispatch && attempt.TryStart())
+            {
+                return true;
+            }
+        }
+
+        await attempt.AbandonAsync().ConfigureAwait(false);
+        return false;
+    }
+
+    private async Task _AbandonUnreadRetryWorkAsync()
+    {
+        var publishedOrdinary = new List<PublishedDispatchWork>();
+        var retryAttempts = new List<RetryDispatchAttempt>();
+        while (PublishedChannel.Reader.TryRead(out var published))
+        {
+            if (published.RetryAttempt is not null)
+            {
+                retryAttempts.Add(published.RetryAttempt);
+            }
+            else
+            {
+                publishedOrdinary.Add(published);
+            }
+        }
+
+        foreach (var ordinary in publishedOrdinary)
+        {
+            _ = PublishedChannel.Writer.TryWrite(ordinary);
+        }
+
+        if (!_enableParallelExecute)
+        {
+            await _ReleaseAbandonedAsync(retryAttempts).ConfigureAwait(false);
+            return;
+        }
+
+        var receivedOrdinary = new List<ReceivedDispatchWork>();
+        while (ReceivedChannel.Reader.TryRead(out var received))
+        {
+            if (received.RetryAttempt is not null)
+            {
+                retryAttempts.Add(received.RetryAttempt);
+            }
+            else
+            {
+                receivedOrdinary.Add(received);
+            }
+        }
+
+        foreach (var ordinary in receivedOrdinary)
+        {
+            _ = ReceivedChannel.Writer.TryWrite(ordinary);
+        }
+
+        await _ReleaseAbandonedAsync(retryAttempts).ConfigureAwait(false);
+    }
+
+    private async Task _ReleaseAbandonedAsync(IEnumerable<RetryDispatchAttempt> attempts)
+    {
+        try
+        {
+            await RetryDispatchAttempt.ReleaseAbandonedBatchAsync(attempts).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
+        }
     }
 
     private int _CalculateBatchSize()
@@ -992,4 +1212,12 @@ internal sealed class Dispatcher : IDispatcher, ICommittedDelayedMessageDispatch
     }
 
     #endregion
+
+    private readonly record struct PublishedDispatchWork(MediumMessage Message, RetryDispatchAttempt? RetryAttempt);
+
+    private readonly record struct ReceivedDispatchWork(
+        MediumMessage Message,
+        ConsumerExecutorDescriptor? Descriptor,
+        RetryDispatchAttempt? RetryAttempt
+    );
 }

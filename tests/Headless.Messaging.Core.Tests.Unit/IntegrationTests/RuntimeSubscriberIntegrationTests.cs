@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Runtime;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.IntegrationTests;
 
@@ -111,6 +114,118 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         consumed.Message.Id.Should().Be("mid-bootstrap");
     }
 
+    [Fact]
+    public async Task final_stop_racing_runtime_subscription_does_not_start_replacement_consumer_loop()
+    {
+        var factory = new RestartRaceConsumerClientFactory(blockInitialListenerShutdown: true);
+        await using var provider = _CreateProvider(consumerClientFactory: factory);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        var consumerRegister = provider.GetRequiredService<IConsumerRegister>();
+        var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
+
+        await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            probe.HandleAsync,
+            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Group = "runtime.race" },
+            AbortToken
+        );
+        await bootstrapper.BootstrapAsync(AbortToken);
+        await factory.WaitUntilInitialListenerStartedAsync(AbortToken);
+
+        var restartTask = runtimeSubscriber
+            .SubscribeAsync<RuntimeMessage>(
+                probe.HandleAsync,
+                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Group = "runtime.race" },
+                AbortToken
+            )
+            .AsTask();
+        await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
+
+        var finalStopTask = consumerRegister.DisposeAsync().AsTask();
+        factory.ReleaseInitialListenerShutdown();
+
+        await Task.WhenAll(restartTask, finalStopTask).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        factory.ListenerCreateCount.Should().Be(1, "final stop won before restart could create a replacement loop");
+        factory.MaximumConcurrentListenerCount.Should().Be(1, "restart and final stop must never double-start loops");
+    }
+
+    [Fact]
+    public async Task final_stop_after_restart_drain_does_not_start_replacement_consumer_loop()
+    {
+        var factory = new RestartRaceConsumerClientFactory(blockReplacementMetadataCreation: true);
+        await using var provider = _CreateProvider(consumerClientFactory: factory);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        var consumerRegister = provider.GetRequiredService<IConsumerRegister>();
+        var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
+
+        await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            probe.HandleAsync,
+            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Group = "runtime.race" },
+            AbortToken
+        );
+        await bootstrapper.BootstrapAsync(AbortToken);
+        await factory.WaitUntilInitialListenerStartedAsync(AbortToken);
+
+        var restartTask = runtimeSubscriber
+            .SubscribeAsync<RuntimeMessage>(
+                probe.HandleAsync,
+                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Group = "runtime.race" },
+                AbortToken
+            )
+            .AsTask();
+        await factory.WaitUntilReplacementMetadataCreationAsync(AbortToken);
+
+        var finalStopTask = consumerRegister.DisposeAsync().AsTask();
+        factory.ReleaseReplacementMetadataCreation();
+
+        await Task.WhenAll(restartTask, finalStopTask).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        factory.ListenerCreateCount.Should().Be(1, "final stop won before replacement consumer creation");
+        factory.MaximumConcurrentListenerCount.Should().Be(1, "restart and final stop must never double-start loops");
+    }
+
+    [Fact]
+    public async Task restart_timeout_does_not_overlap_the_previous_consumer_generation()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var factory = new RestartRaceConsumerClientFactory(blockInitialListenerShutdown: true);
+        await using var provider = _CreateProvider(consumerClientFactory: factory, timeProvider: timeProvider);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
+
+        await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            probe.HandleAsync,
+            new RuntimeSubscriptionOptions { MessageName = "runtime.timeout.initial", Group = "runtime.timeout" },
+            AbortToken
+        );
+        await bootstrapper.BootstrapAsync(AbortToken);
+        await factory.WaitUntilInitialListenerStartedAsync(AbortToken);
+
+        var restartTask = runtimeSubscriber
+            .SubscribeAsync<RuntimeMessage>(
+                probe.HandleAsync,
+                new RuntimeSubscriptionOptions
+                {
+                    MessageName = "runtime.timeout.replacement",
+                    Group = "runtime.timeout",
+                },
+                AbortToken
+            )
+            .AsTask();
+        await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        factory.ListenerCreateCount.Should().Be(1, "a timed-out old generation must fence replacement startup");
+        factory.MaximumConcurrentListenerCount.Should().Be(1);
+
+        factory.ReleaseInitialListenerShutdown();
+    }
+
     private async Task<ServiceProvider> _CreateStartedProviderAsync()
     {
         var provider = _CreateProvider();
@@ -118,7 +233,11 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         return provider;
     }
 
-    private ServiceProvider _CreateProvider(IProcessingServer? additionalProcessor = null)
+    private ServiceProvider _CreateProvider(
+        IProcessingServer? additionalProcessor = null,
+        IConsumerClientFactory? consumerClientFactory = null,
+        TimeProvider? timeProvider = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging(builder =>
@@ -148,6 +267,16 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         if (additionalProcessor is not null)
         {
             services.AddSingleton(additionalProcessor);
+        }
+
+        if (consumerClientFactory is not null)
+        {
+            services.AddSingleton(consumerClientFactory);
+        }
+
+        if (timeProvider is not null)
+        {
+            services.AddSingleton<TimeProvider>(timeProvider);
         }
 
         return services.BuildServiceProvider();
@@ -302,6 +431,216 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         {
             _release.TrySetResult();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RestartRaceConsumerClientFactory(
+        bool blockInitialListenerShutdown = false,
+        bool blockReplacementMetadataCreation = false
+    ) : IConsumerClientFactory
+    {
+        private readonly TaskCompletionSource _initialListenerStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _initialListenerShutdown = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseInitialListenerShutdown = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _replacementMetadataCreation = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseReplacementMetadataCreation = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _activeListenerCount;
+        private int _createCount;
+        private int _listenerCreateCount;
+        private int _maximumConcurrentListenerCount;
+
+        public int ListenerCreateCount => Volatile.Read(ref _listenerCreateCount);
+
+        public int MaximumConcurrentListenerCount => Volatile.Read(ref _maximumConcurrentListenerCount);
+
+        public async Task<IConsumerClient> CreateAsync(
+            string groupName,
+            byte groupConcurrent,
+            MessageLane lane,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var createCount = Interlocked.Increment(ref _createCount);
+
+            if ((createCount & 1) == 1)
+            {
+                if (createCount == 3 && blockReplacementMetadataCreation)
+                {
+                    _replacementMetadataCreation.TrySetResult();
+                    await _releaseReplacementMetadataCreation.Task.WaitAsync(cancellationToken);
+                }
+
+                return new MetadataConsumerClient();
+            }
+
+            var listenerOrdinal = Interlocked.Increment(ref _listenerCreateCount);
+            return new ListenerConsumerClient(this, listenerOrdinal == 1 && blockInitialListenerShutdown);
+        }
+
+        public Task WaitUntilInitialListenerStartedAsync(CancellationToken cancellationToken)
+        {
+            return _initialListenerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        public Task WaitUntilInitialListenerShutdownAsync(CancellationToken cancellationToken)
+        {
+            return _initialListenerShutdown.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        public void ReleaseInitialListenerShutdown()
+        {
+            _releaseInitialListenerShutdown.TrySetResult();
+        }
+
+        public Task WaitUntilReplacementMetadataCreationAsync(CancellationToken cancellationToken)
+        {
+            return _replacementMetadataCreation.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        public void ReleaseReplacementMetadataCreation()
+        {
+            _releaseReplacementMetadataCreation.TrySetResult();
+        }
+
+        private void _ListenerStarted()
+        {
+            var active = Interlocked.Increment(ref _activeListenerCount);
+            _UpdateMaximum(active);
+            _initialListenerStarted.TrySetResult();
+        }
+
+        private void _ListenerStopped()
+        {
+            Interlocked.Decrement(ref _activeListenerCount);
+        }
+
+        private ValueTask _ShutdownAsync(bool block)
+        {
+            if (!block)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            _initialListenerShutdown.TrySetResult();
+            return new ValueTask(_releaseInitialListenerShutdown.Task);
+        }
+
+        private void _UpdateMaximum(int active)
+        {
+            var observed = Volatile.Read(ref _maximumConcurrentListenerCount);
+            while (active > observed)
+            {
+                observed = Interlocked.CompareExchange(ref _maximumConcurrentListenerCount, active, observed);
+            }
+        }
+
+        private sealed class MetadataConsumerClient : ConsumerClientBase
+        {
+            public override ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+            {
+                return ValueTask.CompletedTask;
+            }
+        }
+
+        private sealed class ListenerConsumerClient(RestartRaceConsumerClientFactory owner, bool blockShutdown)
+            : ConsumerClientBase
+        {
+            public override async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+            {
+                owner._ListenerStarted();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                finally
+                {
+                    owner._ListenerStopped();
+                }
+            }
+
+            public override ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+            {
+                return owner._ShutdownAsync(blockShutdown);
+            }
+        }
+
+        private abstract class ConsumerClientBase : IConsumerClient
+        {
+            public BrokerAddress BrokerAddress => new("test", "restart-race");
+
+            public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
+
+            public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
+
+            public void AttachCallbacks(
+                Func<TransportMessage, object?, Task>? onMessage,
+                Action<LogMessageEventArgs>? onLog
+            )
+            {
+                OnMessageCallback = onMessage;
+                OnLogCallback = onLog;
+            }
+
+            public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+                IEnumerable<string> messageNames,
+                CancellationToken cancellationToken = default
+            )
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
+            }
+
+            public ValueTask SubscribeAsync(
+                IEnumerable<string> messageNames,
+                CancellationToken cancellationToken = default
+            )
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return ValueTask.CompletedTask;
+            }
+
+            public abstract ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken);
+
+            public virtual ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }
