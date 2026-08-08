@@ -3,8 +3,10 @@
 using Headless.Caching;
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -419,6 +421,82 @@ public sealed class NamedHybridCacheTests : TestBase
         factoryCalls.Should().Be(2, "per-call options must beat the hybrid's default and both tier defaults");
     }
 
+    [Fact]
+    public async Task should_configure_named_hybrid_with_service_provider_aware_action()
+    {
+        var services = _CreateBaseServices();
+        var tierNames = new TierNames("tenant-l1", "tenant-l2");
+        services.AddSingleton(tierNames);
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>(tierNames.Local, l1);
+        services.AddKeyedSingleton<ICache>(tierNames.Remote, new InMemoryRemoteCacheAdapter(l2Inner));
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(
+                        (options, provider) =>
+                        {
+                            var names = provider.GetRequiredService<TierNames>();
+                            options.LocalCacheName = names.Local;
+                            options.RemoteCacheName = names.Remote;
+                            options.CacheName = "caller-override";
+                        }
+                    )
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredKeyedService<ICache>("tenant");
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        (await l1.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+        (await l2Inner.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+        var options = provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get("tenant");
+        options.CacheName.Should().Be("tenant");
+        options.InvalidationRoutingName.Should().Be("tenant");
+    }
+
+    [Fact]
+    public async Task should_bind_named_hybrid_from_configuration_and_preserve_registration_identity()
+    {
+        var services = _CreateBaseServices();
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("configured-l1", l1);
+        services.AddKeyedSingleton<ICache>("configured-l2", new InMemoryRemoteCacheAdapter(l2Inner));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [nameof(HybridCacheOptions.LocalCacheName)] = "configured-l1",
+                    [nameof(HybridCacheOptions.RemoteCacheName)] = "configured-l2",
+                    [nameof(HybridCacheOptions.CacheName)] = "caller-override",
+                }
+            )
+            .Build();
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+            setup.AddNamed("tenant", instance => instance.UseHybrid(configuration));
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredKeyedService<ICache>("tenant");
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        (await l1.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+        (await l2Inner.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+        var options = provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get("tenant");
+        options.CacheName.Should().Be("tenant");
+        options.InvalidationRoutingName.Should().Be("tenant");
+    }
+
     // Reserved-name rejection is owned by AddHeadlessCaching's AddNamed gate and is covered by
     // Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
+
+    private sealed record TierNames(string Local, string Remote);
 }
