@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage" uri="datacollector://Microsoft/CodeCoverage/2.0">
+        <Configuration>
+          <CodeCoverage>
+            <Sources>
+              <Exclude>
+                <!--
+                  Directory.Build.props enables EmitCompilerGeneratedFiles, which writes
+                  source-generator implementations here.
+                  Filtering the generated output path keeps hand-written partial declarations
+                  and compiler-generated behavior attributed to production source in scope.
+                -->
+                <Source>.*[/\\]obj[/\\].*[/\\]generated[/\\].*</Source>
+              </Exclude>
+            </Sources>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
