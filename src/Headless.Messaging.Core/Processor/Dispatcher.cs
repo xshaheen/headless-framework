@@ -7,6 +7,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -343,13 +344,14 @@ internal sealed class Dispatcher
                 return;
             }
 
+            var executionState = new RetryExecutionState();
             try
             {
-                await _SendMessageDirectlyAsync(message).ConfigureAwait(false);
+                await _SendMessageDirectlyAsync(message, executionState).ConfigureAwait(false);
             }
             finally
             {
-                await attempt.CompleteAsync().ConfigureAwait(false);
+                await attempt.CompleteAsync(executionState.LeaseClearedByTransition).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -387,16 +389,23 @@ internal sealed class Dispatcher
                 return;
             }
 
+            var executionState = new RetryExecutionState();
             try
             {
                 await using var dispatchScope = _scopeFactory.CreateAsyncScope();
                 await _executor
-                    .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor: null, TasksCts.Token)
+                    .ExecuteRetryAsync(
+                        message,
+                        dispatchScope.ServiceProvider,
+                        executionState,
+                        descriptor: null,
+                        TasksCts.Token
+                    )
                     .ConfigureAwait(false);
             }
             finally
             {
-                await attempt.CompleteAsync().ConfigureAwait(false);
+                await attempt.CompleteAsync(executionState.LeaseClearedByTransition).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -876,10 +885,15 @@ internal sealed class Dispatcher
             return;
         }
 
+        RetryExecutionState? executionState = retryAttempt is null ? null : new RetryExecutionState();
         try
         {
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
-            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
+            var result = executionState is null
+                ? await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false)
+                : await _sender
+                    .SendRetryAsync(message, dispatchScope.ServiceProvider, executionState)
+                    .ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
@@ -893,17 +907,21 @@ internal sealed class Dispatcher
         {
             if (retryAttempt is not null)
             {
-                await retryAttempt.CompleteAsync().ConfigureAwait(false);
+                await retryAttempt.CompleteAsync(executionState!.LeaseClearedByTransition).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task _SendMessageDirectlyAsync(MediumMessage message)
+    private async Task _SendMessageDirectlyAsync(MediumMessage message, RetryExecutionState? executionState = null)
     {
         try
         {
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
-            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
+            var result = executionState is null
+                ? await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false)
+                : await _sender
+                    .SendRetryAsync(message, dispatchScope.ServiceProvider, executionState)
+                    .ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
@@ -949,12 +967,28 @@ internal sealed class Dispatcher
             return;
         }
 
+        RetryExecutionState? executionState = retryAttempt is null ? null : new RetryExecutionState();
         try
         {
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
-            await _executor
-                .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
-                .ConfigureAwait(false);
+            if (executionState is null)
+            {
+                await _executor
+                    .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await _executor
+                    .ExecuteRetryAsync(
+                        message,
+                        dispatchScope.ServiceProvider,
+                        executionState,
+                        descriptor,
+                        TasksCts.Token
+                    )
+                    .ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -968,7 +1002,7 @@ internal sealed class Dispatcher
         {
             if (retryAttempt is not null)
             {
-                await retryAttempt.CompleteAsync().ConfigureAwait(false);
+                await retryAttempt.CompleteAsync(executionState!.LeaseClearedByTransition).ConfigureAwait(false);
             }
         }
     }

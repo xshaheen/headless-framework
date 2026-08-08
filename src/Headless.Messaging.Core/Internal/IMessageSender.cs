@@ -32,6 +32,12 @@ internal interface IMessageSender
     /// lifetime.
     /// </summary>
     Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices);
+
+    Task<OperateResult> SendRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState executionState
+    );
 }
 
 internal sealed class MessageSender : IMessageSender
@@ -78,6 +84,24 @@ internal sealed class MessageSender : IMessageSender
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {
+        return _SendAsync(message, dispatchServices, executionState: null);
+    }
+
+    public Task<OperateResult> SendRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState executionState
+    )
+    {
+        return _SendAsync(message, dispatchServices, executionState);
+    }
+
+    private Task<OperateResult> _SendAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState? executionState
+    )
+    {
         Argument.IsNotNull(dispatchServices);
 
         // Outbox sender doesn't propagate user cancellation; messages should be delivered.
@@ -87,11 +111,20 @@ internal sealed class MessageSender : IMessageSender
         // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
         // it up on restart.
         return _retryPipeline.ExecuteAsync(
-            (_, ct) => _SendWithoutRetryAsync(message, ct),
+            (_, ct) => _SendWithoutRetryAsync(message, executionState, ct),
             (inlineRetries, exception, delay, strategyFailed, ct) =>
-                _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
+                _HandleRetryAsync(
+                    message,
+                    exception,
+                    dispatchServices,
+                    inlineRetries,
+                    delay,
+                    strategyFailed,
+                    executionState,
+                    ct
+                ),
             (inlineRetries, exception, ct) =>
-                _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, ct),
+                _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, executionState, ct),
             message.StorageId,
             _shutdownToken
         );
@@ -99,6 +132,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<MessagingRetryAttempt> _SendWithoutRetryAsync(
         MediumMessage message,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -137,7 +171,7 @@ internal sealed class MessageSender : IMessageSender
         var transportMsg = await _serializer
             .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
             .ConfigureAwait(false);
-        var selected = await _ResolveTransportAsync(message).ConfigureAwait(false);
+        var selected = await _ResolveTransportAsync(message, executionState).ConfigureAwait(false);
         if (selected.Result is { } failure)
         {
             return MessagingRetryAttempt.Completed(failure);
@@ -178,7 +212,7 @@ internal sealed class MessageSender : IMessageSender
         {
             try
             {
-                await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
+                await _SetSuccessfulState(message, executionState, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -204,7 +238,10 @@ internal sealed class MessageSender : IMessageSender
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
     }
 
-    private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
+    private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
+        MediumMessage message,
+        RetryExecutionState? executionState
+    )
     {
         if (!Enum.IsDefined(message.Lane))
         {
@@ -214,7 +251,7 @@ internal sealed class MessageSender : IMessageSender
                     $"Stored message {message.StorageId} has unsupported MessageLane value '{(short)message.Lane}'."
                 )
             );
-            await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
+            await _MarkMissingLaneTransportFailedAsync(message, ex, executionState).ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));
         }
 
@@ -222,31 +259,39 @@ internal sealed class MessageSender : IMessageSender
         {
             MessageLane.Bus when _busTransport is not null => (_busTransport, null),
             MessageLane.Queue when _queueTransport is not null => (_queueTransport, null),
-            MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
-            MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
+            MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport), executionState)
+                .ConfigureAwait(false),
+            MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport), executionState)
+                .ConfigureAwait(false),
             _ => throw new UnreachableException(),
         };
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _MissingTransportAsync(
         MediumMessage message,
-        string transportType
+        string transportType,
+        RetryExecutionState? executionState
     )
     {
         var ex = new InvalidOperationException(
             $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
         );
-        await _MarkMissingLaneTransportFailedAsync(message, ex).ConfigureAwait(false);
+        await _MarkMissingLaneTransportFailedAsync(message, ex, executionState).ConfigureAwait(false);
         return (null, OperateResult.Failed(ex));
     }
 
-    private async Task _MarkMissingLaneTransportFailedAsync(MediumMessage message, Exception ex)
+    private async Task _MarkMissingLaneTransportFailedAsync(
+        MediumMessage message,
+        Exception ex,
+        RetryExecutionState? executionState
+    )
     {
         var originalInlineAttempts = message.InlineAttempts;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
+        DateTimeOffset? lockedUntil = null;
 
-        await _dataStorage
+        var affected = await _dataStorage
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
@@ -254,19 +299,25 @@ internal sealed class MessageSender : IMessageSender
                 // before any transport attempt, so no exception is stamped onto Origin.
                 MessageContentWrite.Preserve,
                 nextRetryAt: null,
-                lockedUntil: null,
+                lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
     }
 
-    private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
+    private async Task _SetSuccessfulState(
+        MediumMessage message,
+        RetryExecutionState? executionState,
+        CancellationToken cancellationToken
+    )
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
+        DateTimeOffset? lockedUntil = null;
         var updated = await _dataStorage
             .ChangePublishRetryStateAsync(
                 message,
@@ -275,12 +326,13 @@ internal sealed class MessageSender : IMessageSender
                 // byte-identical — re-serializing it would be a wasted write on the hottest path.
                 MessageContentWrite.Preserve,
                 nextRetryAt: null,
-                lockedUntil: null,
+                lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
                 cancellationToken
             )
             .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(updated, lockedUntil);
 
         if (!updated)
         {
@@ -299,6 +351,7 @@ internal sealed class MessageSender : IMessageSender
         int _,
         TimeSpan delay,
         bool strategyFailed,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -314,6 +367,7 @@ internal sealed class MessageSender : IMessageSender
                 dispatchServices,
                 inlineRetries,
                 decision,
+                executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -325,6 +379,7 @@ internal sealed class MessageSender : IMessageSender
         Exception exception,
         IServiceProvider dispatchServices,
         int _,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -335,6 +390,7 @@ internal sealed class MessageSender : IMessageSender
                 dispatchServices,
                 inlineRetries,
                 MessagingRetryDecision.Stop,
+                executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -346,6 +402,7 @@ internal sealed class MessageSender : IMessageSender
         IServiceProvider dispatchServices,
         int inlineRetries,
         MessagingRetryDecision decision,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -395,7 +452,8 @@ internal sealed class MessageSender : IMessageSender
                     decision,
                     state,
                     originalRetries,
-                    originalInlineAttempts
+                    originalInlineAttempts,
+                    executionState
                 )
                 .ConfigureAwait(false);
             return MessagingRetryDecision.Stop;
@@ -412,7 +470,8 @@ internal sealed class MessageSender : IMessageSender
                 decision,
                 state,
                 originalRetries: message.Retries,
-                originalInlineAttempts
+                originalInlineAttempts,
+                executionState
             )
             .ConfigureAwait(false);
     }
@@ -424,7 +483,8 @@ internal sealed class MessageSender : IMessageSender
         MessagingRetryDecision decision,
         RetryNextState state,
         int originalRetries,
-        int originalInlineAttempts
+        int originalInlineAttempts,
+        RetryExecutionState? executionState
     )
     {
         // #14 — Preserve the active pickup lease on inline-in-flight transitions; clear it on
@@ -445,6 +505,7 @@ internal sealed class MessageSender : IMessageSender
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
