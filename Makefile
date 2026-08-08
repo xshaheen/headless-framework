@@ -22,6 +22,7 @@ TEST_RESULTS_DIR ?= $(ARTIFACTS_DIR)/test-results
 COVERAGE_DIR ?= $(ARTIFACTS_DIR)/coverage
 COVERAGE_REPORT_DIR ?= $(COVERAGE_DIR)/report
 COVERAGE_REPORT_TYPES ?= Html;JsonSummary
+COVERAGE_SETTINGS ?= eng/coverage.runsettings
 DEPENDENCY_AUDIT_DIR ?= $(ARTIFACTS_DIR)/dependency-audit
 PROJECT ?=
 TEST_PROJECT ?=
@@ -53,8 +54,8 @@ DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDL
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
 NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
 
-COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
-CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
+COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura --coverage-settings "$(COVERAGE_SETTINGS)"
+CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura --coverage-settings "$(COVERAGE_SETTINGS)"
 
 .PHONY: help
 help: ## Show available commands.
@@ -219,6 +220,28 @@ test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURA
 ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS)
+	$(MAKE) coverage-verify-generated-sources
+
+.PHONY: coverage-verify-generated-sources
+coverage-verify-generated-sources: ## Verify generated implementations exist in build output but not Cobertura reports.
+	@set -eu; \
+		generated_file="$$(find src -type f -path '*/obj/*/generated/*' -name '*.cs' -print -quit)"; \
+		if [ -z "$$generated_file" ]; then \
+			echo "No compiler/source-generated implementation was found under src/**/obj/**/generated/**."; \
+			exit 1; \
+		fi; \
+		report_file="$$(find "$(TEST_RESULTS_DIR)" -type f -name '*.cobertura.xml' -print -quit)"; \
+		if [ -z "$$report_file" ]; then \
+			echo "No Cobertura report was found under $(TEST_RESULTS_DIR)."; \
+			exit 1; \
+		fi; \
+		scan_result="$$(find "$(TEST_RESULTS_DIR)" -type f -name '*.cobertura.xml' \
+			-exec sh -c 'report=$$1; pattern=$$2; grep -Eq "$$pattern" "$$report"; status=$$?; if [ "$$status" -eq 0 ]; then printf "MATCH:%s\n" "$$report"; exit 0; fi; if [ "$$status" -gt 1 ]; then printf "ERROR:%s:%s\n" "$$status" "$$report"; exit 0; fi; exit 1' sh {} 'filename="[^"]*[/\\]obj[/\\].*[/\\]generated[/\\]' \; -quit)"; \
+		case "$$scan_result" in \
+			MATCH:*) echo "Generated implementations remain in Cobertura coverage. First: $${scan_result#MATCH:}"; exit 1 ;; \
+			ERROR:*) echo "Failed to inspect a Cobertura report: $$scan_result"; exit 1 ;; \
+		esac; \
+		echo "Verified generated implementations are absent from Cobertura coverage."
 
 .PHONY: ci-messaging-conformance-evidence
 ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
@@ -298,6 +321,7 @@ coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverag
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
 		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
 		$(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
+	$(MAKE) coverage-verify-generated-sources
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate HTML coverage report plus Summary.json.
