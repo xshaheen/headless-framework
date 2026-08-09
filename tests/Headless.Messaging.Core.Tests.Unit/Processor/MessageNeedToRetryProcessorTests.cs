@@ -166,7 +166,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var (sut, _, _) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
         var storage = Substitute.For<IDataStorage>();
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
 
         sut.Quiesce();
 
@@ -262,7 +262,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             Substitute.For<IDistributedLock>(),
             Substitute.For<ICircuitBreakerMonitor>()
         );
-        using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
 
         var act = async () => await _RunQuadrantCycleAsync(sut, context, direction, lane);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handoff failed");

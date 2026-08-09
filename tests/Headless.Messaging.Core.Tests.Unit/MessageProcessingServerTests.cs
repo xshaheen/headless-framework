@@ -37,7 +37,7 @@ public sealed class MessageProcessingServerTests : TestBase
         try
         {
             shutdownTask.IsCompleted.Should().BeFalse("the captured in-flight retry quadrant is still running");
-            using (
+            await using (
                 var context = new ProcessingContext(new RejectingServiceProvider(), fakeTime, CancellationToken.None)
             )
             {

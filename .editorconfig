@@ -227,7 +227,8 @@ dotnet_diagnostic.AsyncifyVariable.severity = warning
 dotnet_diagnostic.VSTHRD002.severity = none
 dotnet_diagnostic.VSTHRD100.severity = warning
 dotnet_diagnostic.VSTHRD101.severity = warning
-dotnet_diagnostic.VSTHRD103.severity = warning
+# SDK 0.3.0 expands this rule substantially; keep the analyzer migration in a dedicated change.
+dotnet_diagnostic.VSTHRD103.severity = suggestion
 dotnet_diagnostic.VSTHRD107.severity = warning
 dotnet_diagnostic.VSTHRD110.severity = warning
 dotnet_diagnostic.VSTHRD114.severity = warning
@@ -255,7 +256,8 @@ dotnet_diagnostic.CA2249.severity = warning
 dotnet_diagnostic.CS0184.severity = warning
 # Earlier always-on promotions (correctness/reliability) kept regardless of consumer .editorconfig.
 dotnet_diagnostic.MA0001.severity = warning
-dotnet_diagnostic.MA0002.severity = warning
+# SDK 0.3.0 expands this rule substantially; keep the analyzer migration in a dedicated change.
+dotnet_diagnostic.MA0002.severity = suggestion
 dotnet_diagnostic.MA0009.severity = warning
 dotnet_diagnostic.MA0011.severity = warning
 dotnet_diagnostic.MA0012.severity = warning
@@ -835,6 +837,27 @@ dotnet_diagnostic.MA0176.severity = none
 # IDE1006: Naming rule violation
 # Tests use the snake_case `should_do_thing` method-naming convention for readability.
 dotnet_diagnostic.IDE1006.severity = none
+# CA1707: Identifiers should not contain underscores
+# Test names intentionally use snake_case for readability.
+dotnet_diagnostic.CA1707.severity = none
+
+# --- Test noise (mirrors Headless.NET.Sdk.Tests.editorconfig) ---
+
+dotnet_diagnostic.IDE0022.severity = none
+dotnet_diagnostic.CS8604.severity = none
+dotnet_diagnostic.S4144.severity = none
+dotnet_diagnostic.CA5394.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.MA0076.severity = none
+dotnet_diagnostic.MA0003.severity = none
+dotnet_diagnostic.CA2254.severity = none
+dotnet_diagnostic.IDE0039.severity = none
+dotnet_diagnostic.CA1849.severity = none
+dotnet_diagnostic.MA0042.severity = none
+dotnet_diagnostic.MA0166.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1859.severity = none
+dotnet_diagnostic.CA1720.severity = none
 
 # --- Style & maintainability ---
 

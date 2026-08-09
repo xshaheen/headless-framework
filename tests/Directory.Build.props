@@ -3,6 +3,13 @@
   <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
+  <PropertyGroup>
+    <!--
+      SDK 0.3.0's editorconfig relaxation does not suppress nullable warnings promoted by
+      /warnaserror:nullable.
+    -->
+    <NoWarn>$(NoWarn);CS8604</NoWarn>
+  </PropertyGroup>
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
