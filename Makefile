@@ -27,6 +27,7 @@ PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
 TEST_ARGS ?= --no-progress
+COVERAGE_SETTINGS_PROJECT ?= tests/Headless.Domain.Tests.Unit/Headless.Domain.Tests.Unit.csproj
 TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
@@ -218,7 +219,12 @@ test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURA
 .PHONY: ci-test
 ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS)
+	@coverage_settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
+	if [[ -z "$$coverage_settings" || ! -f "$$coverage_settings" ]]; then \
+		echo "Unable to resolve HeadlessCoverageSettingsPath from $(COVERAGE_SETTINGS_PROJECT)." >&2; \
+		exit 1; \
+	fi; \
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS) --coverage-settings "$$coverage_settings"
 
 .PHONY: ci-messaging-conformance-evidence
 ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
