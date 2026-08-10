@@ -737,6 +737,42 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         after.NextDueUtc.Should().Be(default, "the projection was derived under the old expression");
     }
 
+    public virtual async Task dispatch_selection_excludes_definitions_with_durable_fingerprint_defer_state()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("dispatch-defer-filter");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var now = DateTime.UtcNow;
+        var deferred = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "deferred",
+            Expression = "0 * * * * *",
+            ReconciledThroughUtc = now.AddHours(-2),
+            NextDueUtc = now.AddHours(-1),
+            EvaluationFingerprint = "stale",
+            FingerprintFailureCount = 1,
+            FingerprintRetryAfterUtc = now.AddMinutes(-1),
+        };
+        var healthy = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "healthy",
+            Expression = "0 * * * * *",
+            ReconciledThroughUtc = now,
+            NextDueUtc = now.AddMinutes(5),
+            EvaluationFingerprint = "current",
+        };
+        (await persistence.InsertCronJobsAsync([deferred, healthy], ct)).Should().Be(2);
+
+        var result = await persistence.GetEarliestCronDispatchCandidatesAsync(limit: 64, ct);
+
+        result.Should().NotBeNull();
+        result!.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(healthy.Id);
+    }
+
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 

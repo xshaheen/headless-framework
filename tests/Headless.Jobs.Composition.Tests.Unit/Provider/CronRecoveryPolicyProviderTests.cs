@@ -54,6 +54,9 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
 
         var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
         occurrences.Should().ContainSingle("coalesce materializes one run regardless of how many were missed");
+        occurrences[0].Id.Should().Be(result.CoalescedRun.Id);
+        occurrences[0].Status.Should().Be(JobStatus.Idle, "the one preserved recovery run remains claimable");
+        result.SkippedOccurrenceCount.Should().Be(0, "the preserved recovery run is not part of residual cleanup");
 
         var stored = await provider.GetCronJobByIdAsync(definition.Id, AbortToken);
         stored!.ReconciledThroughUtc.Should().Be(_RecoveredThrough, "the backlog it resolved is never reconsidered");
@@ -246,6 +249,9 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             ExpectedScheduleRevision = definition.ScheduleRevision,
             RecoveredThroughUtc = _RecoveredThrough,
             NextDueUtc = _RecoveredThrough.AddMinutes(30),
+            BoundedProgressThroughUtc = _RecoveredThrough,
+            NextDueAfterBoundedProgressUtc = _RecoveredThrough.AddMinutes(30),
+            EvaluationSaturated = false,
             Policy = policy,
             EarliestMissedUtc = _EarliestMissed,
             MissedInstantsUtc = missedInstants ?? [_EarliestMissed],
@@ -338,6 +344,54 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
         occurrences.Should().HaveCount(2, "nothing was materialized and nothing was disturbed");
         occurrences.Single(x => x.ExecutionTime == _SecondMissed).Status.Should().Be(JobStatus.InProgress);
+    }
+
+    [Fact]
+    public async Task should_preserve_an_unexamined_idle_n_plus_one_until_the_next_saturated_page()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        var nPlusOne = new DateTime(2026, 7, 26, 17, 0, 0, DateTimeKind.Utc);
+        var idleNPlusOne = _Occurrence(definition.Id, nPlusOne, JobStatus.Idle);
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync(
+            [
+                _Occurrence(definition.Id, _EarliestMissed, JobStatus.Succeeded),
+                _Occurrence(definition.Id, _SecondMissed, JobStatus.Succeeded),
+                idleNPlusOne,
+            ],
+            AbortToken
+        );
+
+        var first = await provider.ApplyCronRecoveryAsync(
+            _Request(definition, missedInstants: [_EarliestMissed, _SecondMissed]) with
+            {
+                EvaluationSaturated = true,
+                BoundedProgressThroughUtc = _SecondMissed,
+                NextDueAfterBoundedProgressUtc = nPlusOne,
+            },
+            AbortToken
+        );
+
+        first!.CoalescedRun.Should().BeNull();
+        first.ReconciledThroughUtc.Should().Be(_SecondMissed);
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken))
+            .Single(x => x.Id == idleNPlusOne.Id)
+            .Status.Should()
+            .Be(JobStatus.Idle);
+
+        var second = await provider.ApplyCronRecoveryAsync(
+            _Request(definition, missedInstants: [nPlusOne]) with
+            {
+                ObservedReconciledThroughUtc = _SecondMissed,
+                EarliestMissedUtc = nPlusOne,
+            },
+            AbortToken
+        );
+
+        second!.CoalescedRun.Should().NotBeNull();
+        second.CoalescedRun!.Id.Should().Be(idleNPlusOne.Id);
+        second.CoalescedRun.RecoveredFromUtc.Should().Be(nPlusOne);
     }
 
     private static CronJobOccurrenceEntity<FakeCronJob> _Occurrence(

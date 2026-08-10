@@ -242,6 +242,43 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         functions[0].FunctionName.Should().Be(due.Function);
     }
 
+    [Theory]
+    [InlineData(-60)]
+    [InlineData(60)]
+    public async Task should_calculate_a_future_cron_wake_from_the_store_clock(int nodeOffsetMinutes)
+    {
+        var storeTime = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var nodeTime = new FakeTimeProvider(new DateTimeOffset(_Now.AddMinutes(nodeOffsetMinutes), TimeSpan.Zero));
+        var (manager, provider) = _Create(storeTime, nodeTime);
+        var future = _Definition(nextDue: _Now.AddMinutes(10));
+        await provider.InsertCronJobsAsync([future], AbortToken);
+
+        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+
+        timeRemaining.Should().Be(TimeSpan.FromMinutes(10));
+        functions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_dispatch_healthy_work_after_activation_defers_an_invalid_definition()
+    {
+        var (manager, provider) = _Create();
+        var invalid = _Definition(nextDue: _Now.AddHours(-1));
+        invalid.TimeZoneId = "Invalid/Recovery-Zone";
+        invalid.EvaluationFingerprint = "legacy";
+        var healthy = _Definition(nextDue: _Now);
+        healthy.EvaluationFingerprint = new CronScheduleCache(TimeZoneInfo.Utc).ComputeEvaluationFingerprint(null);
+        await provider.InsertCronJobsAsync([invalid, healthy], AbortToken);
+
+        var activation = await manager.RebaseStaleFingerprintsAsync(limit: 64, cancellationToken: AbortToken);
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        activation.Deferred.Should().Be(1);
+        functions.Should().ContainSingle().Which.ParentId.Should().Be(healthy.Id);
+        var deferred = (await provider.GetCronJobByIdAsync(invalid.Id, AbortToken))!;
+        deferred.FingerprintRetryAfterUtc.Should().NotBeNull();
+    }
+
     [Fact]
     public async Task should_wake_for_an_earlier_projection_without_claiming_a_later_stored_occurrence()
     {

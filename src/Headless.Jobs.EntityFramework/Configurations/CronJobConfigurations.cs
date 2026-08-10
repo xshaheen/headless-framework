@@ -19,6 +19,7 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
         // same normalization the occurrence timestamps use — their UTC contract must not depend on the host's Kind
         // defaults (docs/solutions/design-patterns/temporal-authority-standard.md).
         var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
+        var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
 
         builder.HasKey("Id");
 
@@ -42,6 +43,8 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
             .HasDefaultValue(MissedRunPolicy.Coalesce);
 
         builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
+        builder.Property(e => e.FingerprintFailureCount).HasDefaultValue(0);
+        builder.Property(e => e.FingerprintRetryAfterUtc).HasConversion(nullableUtcDateTimeConverter);
 
         builder.Property(e => e.ReconciledThroughUtc).HasConversion(utcDateTimeConverter);
 
@@ -57,6 +60,9 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
         builder
             .HasIndex(nameof(CronJobEntity.EvaluationFingerprint))
             .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
+        builder
+            .HasIndex(nameof(CronJobEntity.FingerprintRetryAfterUtc), nameof(CronJobEntity.Id))
+            .HasDatabaseName("IX_CronJobs_FingerprintRetryAfterUtc_Id");
 
         // Cron is system-scope by contract (a tenant-scoped cron definition is rejected at schedule time), so
         // TenantId always persists null. Bound the column length for parity with time jobs; no tenant index — cron

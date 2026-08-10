@@ -12,6 +12,7 @@ namespace Headless.Jobs.Models;
 /// <param name="Expression">Six-field cron expression, already resolved from configuration when it was a <c>%</c> key.</param>
 /// <param name="OnMissedRun">Recovery policy to seed at creation.</param>
 /// <param name="MissedRunGraceSeconds">Misfire grace, in seconds, to seed at creation.</param>
+/// <param name="EvaluationFingerprint">Current evaluator fingerprint stamped with a new or repositioned seed.</param>
 /// <remarks>
 /// Both recovery settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -28,5 +29,6 @@ public readonly record struct CronSeedDefinition(
     string Function,
     string Expression,
     MissedRunPolicy OnMissedRun,
-    int MissedRunGraceSeconds
+    int MissedRunGraceSeconds,
+    string? EvaluationFingerprint = null
 );

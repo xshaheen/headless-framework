@@ -22,6 +22,21 @@ internal sealed class AddCronScheduleWatermark : Migration
             nullable: true
         );
         migrationBuilder.AddColumn<int>(
+            name: "FingerprintFailureCount",
+            schema: "jobs",
+            table: "CronJobs",
+            type: "int",
+            nullable: false,
+            defaultValue: 0
+        );
+        migrationBuilder.AddColumn<DateTime>(
+            name: "FingerprintRetryAfterUtc",
+            schema: "jobs",
+            table: "CronJobs",
+            type: "datetime2",
+            nullable: true
+        );
+        migrationBuilder.AddColumn<int>(
             name: "MissedRunGraceSeconds",
             schema: "jobs",
             table: "CronJobs",
@@ -68,6 +83,12 @@ internal sealed class AddCronScheduleWatermark : Migration
             column: "EvaluationFingerprint"
         );
         migrationBuilder.CreateIndex(
+            name: "IX_CronJobs_FingerprintRetryAfterUtc_Id",
+            schema: "jobs",
+            table: "CronJobs",
+            columns: ["FingerprintRetryAfterUtc", "Id"]
+        );
+        migrationBuilder.CreateIndex(
             name: "IX_CronJobs_IsPaused_NextDueUtc",
             schema: "jobs",
             table: "CronJobs",
@@ -82,6 +103,8 @@ internal sealed class AddCronScheduleWatermark : Migration
             IF EXISTS (
                 SELECT 1 FROM [jobs].[CronJobs]
                 WHERE [EvaluationFingerprint] IS NOT NULL
+                   OR [FingerprintFailureCount] <> 0
+                   OR [FingerprintRetryAfterUtc] IS NOT NULL
                    OR [MissedRunGraceSeconds] <> 0
                    OR [NextDueUtc] <> CONVERT(datetime2, '0001-01-01T00:00:00.0000000')
                    OR [OnMissedRun] <> N'Coalesce'
@@ -93,8 +116,11 @@ internal sealed class AddCronScheduleWatermark : Migration
             """
         );
         migrationBuilder.DropIndex(name: "IX_CronJobs_EvaluationFingerprint", schema: "jobs", table: "CronJobs");
+        migrationBuilder.DropIndex(name: "IX_CronJobs_FingerprintRetryAfterUtc_Id", schema: "jobs", table: "CronJobs");
         migrationBuilder.DropIndex(name: "IX_CronJobs_IsPaused_NextDueUtc", schema: "jobs", table: "CronJobs");
         migrationBuilder.DropColumn(name: "EvaluationFingerprint", schema: "jobs", table: "CronJobs");
+        migrationBuilder.DropColumn(name: "FingerprintFailureCount", schema: "jobs", table: "CronJobs");
+        migrationBuilder.DropColumn(name: "FingerprintRetryAfterUtc", schema: "jobs", table: "CronJobs");
         migrationBuilder.DropColumn(name: "MissedRunGraceSeconds", schema: "jobs", table: "CronJobs");
         migrationBuilder.DropColumn(name: "NextDueUtc", schema: "jobs", table: "CronJobs");
         migrationBuilder.DropColumn(name: "OnMissedRun", schema: "jobs", table: "CronJobs");

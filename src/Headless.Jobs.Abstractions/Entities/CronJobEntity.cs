@@ -68,6 +68,12 @@ public class CronJobEntity : BaseJobEntity
     /// </summary>
     public virtual string? EvaluationFingerprint { get; set; }
 
+    /// <summary>Consecutive deterministic fingerprint-evaluation failures.</summary>
+    public virtual int FingerprintFailureCount { get; set; }
+
+    /// <summary>Provider-time instant before which the fingerprint sweep must not retry this definition.</summary>
+    public virtual DateTime? FingerprintRetryAfterUtc { get; set; }
+
     /// <summary>
     /// Seconds of lateness tolerated before a single pending occurrence counts as a misfire. Resolved once at
     /// creation from the scheduler-wide setting and persisted here, so every node evaluates the same threshold and
@@ -83,11 +89,7 @@ public class CronJobEntity : BaseJobEntity
     /// Policy applied when this definition enters recovery. Seeded from the job function attribute at creation and
     /// never reapplied afterwards, so any later value is an operator override.
     /// </summary>
-    /// <remarks>
-    /// Not yet honored by the scheduler. Misfire detection and the skip/coalesce recovery behavior this selects ship
-    /// in a later slice; until then the value is persisted and returned but changes nothing at runtime. The same
-    /// applies to <see cref="MissedRunGraceSeconds"/>.
-    /// </remarks>
+    /// <remarks>Applied atomically with the durable schedule position whenever a definition is detected as missed.</remarks>
     public virtual MissedRunPolicy OnMissedRun { get; set; } = MissedRunPolicy.Coalesce;
 
     /// <summary>

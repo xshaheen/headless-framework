@@ -25,6 +25,23 @@ namespace Headless.Jobs.Api.Demo.Migrations
             );
 
             migrationBuilder.AddColumn<int>(
+                name: "FingerprintFailureCount",
+                schema: "jobs",
+                table: "CronJobs",
+                type: "integer",
+                nullable: false,
+                defaultValue: 0
+            );
+
+            migrationBuilder.AddColumn<DateTime>(
+                name: "FingerprintRetryAfterUtc",
+                schema: "jobs",
+                table: "CronJobs",
+                type: "timestamp with time zone",
+                nullable: true
+            );
+
+            migrationBuilder.AddColumn<int>(
                 name: "MissedRunGraceSeconds",
                 schema: "jobs",
                 table: "CronJobs",
@@ -77,6 +94,13 @@ namespace Headless.Jobs.Api.Demo.Migrations
             );
 
             migrationBuilder.CreateIndex(
+                name: "IX_CronJobs_FingerprintRetryAfterUtc_Id",
+                schema: "jobs",
+                table: "CronJobs",
+                columns: new[] { "FingerprintRetryAfterUtc", "Id" }
+            );
+
+            migrationBuilder.CreateIndex(
                 name: "IX_CronJobs_IsPaused_NextDueUtc",
                 schema: "jobs",
                 table: "CronJobs",
@@ -94,6 +118,8 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     IF EXISTS (
                         SELECT 1 FROM jobs."CronJobs"
                         WHERE "EvaluationFingerprint" IS NOT NULL
+                           OR "FingerprintFailureCount" <> 0
+                           OR "FingerprintRetryAfterUtc" IS NOT NULL
                            OR "MissedRunGraceSeconds" <> 0
                            OR "NextDueUtc" <> '-infinity'::timestamp with time zone
                            OR "OnMissedRun" <> 'Coalesce'
@@ -109,9 +135,19 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
             migrationBuilder.DropIndex(name: "IX_CronJobs_EvaluationFingerprint", schema: "jobs", table: "CronJobs");
 
+            migrationBuilder.DropIndex(
+                name: "IX_CronJobs_FingerprintRetryAfterUtc_Id",
+                schema: "jobs",
+                table: "CronJobs"
+            );
+
             migrationBuilder.DropIndex(name: "IX_CronJobs_IsPaused_NextDueUtc", schema: "jobs", table: "CronJobs");
 
             migrationBuilder.DropColumn(name: "EvaluationFingerprint", schema: "jobs", table: "CronJobs");
+
+            migrationBuilder.DropColumn(name: "FingerprintFailureCount", schema: "jobs", table: "CronJobs");
+
+            migrationBuilder.DropColumn(name: "FingerprintRetryAfterUtc", schema: "jobs", table: "CronJobs");
 
             migrationBuilder.DropColumn(name: "MissedRunGraceSeconds", schema: "jobs", table: "CronJobs");
 

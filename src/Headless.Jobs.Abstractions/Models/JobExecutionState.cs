@@ -95,8 +95,8 @@ public class JobExecutionState
     public DateTime ExecutionTime { get; set; }
 
     /// <summary>
-    /// For a cron occurrence materialized by misfire recovery, the earliest missed instant it stands in for;
-    /// <see langword="null"/> otherwise. Carried from the occurrence row to <c>JobFunctionContext</c>.
+    /// For a cron occurrence materialized by misfire recovery, the first unaccounted-for missed instant it stands in
+    /// for; <see langword="null"/> otherwise. Carried from the occurrence row to <c>JobFunctionContext</c>.
     /// </summary>
     /// <remarks>
     /// This is a pass-through of durable state, not something execution derives. Every path that carries an occurrence

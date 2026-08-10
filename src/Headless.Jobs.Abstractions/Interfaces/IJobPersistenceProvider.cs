@@ -370,9 +370,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads the earliest non-paused cron definitions by dispatch projection, together with the store's own instant.
-    /// This is the scheduler's selection path: an indexed range scan replacing the load-every-definition-and-evaluate
-    /// -every-expression walk that previously ran on every node at every wake.
+    /// Reads the earliest non-paused, activation-eligible cron definitions by dispatch projection, together with the
+    /// store's own instant. This is the scheduler's selection path: an indexed range scan replacing the
+    /// load-every-definition-and-evaluate-every-expression walk that previously ran on every node at every wake.
     /// </summary>
     /// <param name="limit">Maximum definitions to return. The caller needs the earliest instant and its ties, not a page.</param>
     /// <param name="cancellationToken">Token that aborts the query.</param>
@@ -389,6 +389,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// position, which every advance moves; a cached projection would hand the scheduler a watermark that has already
     /// been superseded and make every advance lose its fence.
     /// </para>
+    /// A non-null fingerprint retry boundary is a durable activation quarantine, even after its timestamp expires.
+    /// Only a successful sweep rebase or an explicit schedule correction clears it, so deferred invalid definitions
+    /// must never reach dispatch directly.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
@@ -488,6 +491,43 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
         CronRecoveryRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads definitions whose persisted evaluation fingerprint differs from the fingerprints in <paramref name="request"/>,
+    /// independently of whether their projection is due.
+    /// </summary>
+    /// <param name="request">Known fingerprints and the bounded snapshot/keyset continuation to read.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>Candidate definitions with their store instant and continuation state; candidates are empty when none.</returns>
+    /// <remarks>
+    /// Selection is deliberately the OPPOSITE criterion from dispatch. A rule change that moves an occurrence
+    /// <i>earlier</i> is hidden behind the stale later projection, so a sweep keyed on due-ness would never see the
+    /// definitions that most need rebasing — which is why this is its own read and its own hosted service rather than
+    /// a branch inside the scheduler loop.
+    /// When <see cref="CronFingerprintSweepRequest.AllowWrap"/> is enabled, a provider may use remaining page capacity
+    /// for one bounded read from the beginning of the snapshot. It sets <see cref="CronFingerprintSweepPage.Wrapped"/>
+    /// only when that wrap opportunity was consumed; a full forward page that merely detects wrapped lookahead keeps
+    /// it <see langword="false"/> so the continuation page can return that candidate.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronFingerprintSweepPage> GetStaleFingerprintDefinitionsAsync(
+        CronFingerprintSweepRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically records a deterministic fingerprint-evaluation failure and a provider-time exponential retry
+    /// boundary. Returns <see langword="false"/> when the definition position changed first; a lost fence changes no
+    /// defer fields.
+    /// </summary>
+    /// <param name="request">Observed definition state and the provider-time retry delay to record.</param>
+    /// <param name="cancellationToken">Token that aborts the fenced update.</param>
+    /// <returns><see langword="true"/> when the defer state was recorded; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> DeferStaleFingerprintDefinitionAsync(
+        CronFingerprintDeferRequest request,
         CancellationToken cancellationToken = default
     );
 
@@ -863,14 +903,17 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </summary>
     /// <param name="cronJobId">The cron-definition identifier.</param>
     /// <param name="expectedScheduleRevision">The exact durable revision the caller observed.</param>
-    /// <param name="nextOccurrence">The single first occurrence strictly after the resume instant.</param>
+    /// <param name="nextOccurrenceFactory">
+    /// Creates the single first occurrence strictly after the supplied store-authoritative resume instant. The
+    /// provider invokes it only after winning the revision/pause fence and inside the atomic transition.
+    /// </param>
     /// <param name="operationTimeUtc">The operation timestamp used for definition audit fields.</param>
     /// <param name="cancellationToken">Cancels the atomic resume operation.</param>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob?> ResumeCronJobAsync(
         Guid cronJobId,
         long expectedScheduleRevision,
-        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        Func<DateTime, CronJobOccurrenceEntity<TCronJob>?> nextOccurrenceFactory,
         DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     );
@@ -879,7 +922,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Atomically applies a definition batch. Schedule-changing edits retire pending occurrences and insert their
     /// replacement occurrence while metadata-only edits preserve both the schedule revision and pending work.
     /// </summary>
-    /// <param name="updates">The definitions, expected revisions, and optional replacement occurrences.</param>
+    /// <param name="updates">
+    /// The definitions, expected revisions, and optional factories that derive active schedule replacements from the
+    /// exact store anchors supplied by the provider inside the transaction.
+    /// </param>
     /// <param name="operationTimeUtc">The operation timestamp shared by every accepted update.</param>
     /// <param name="cancellationToken">Cancels the atomic batch operation.</param>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>

@@ -130,6 +130,14 @@ public static class SetupJobs
             schedulerOptionsBuilder.DefaultMissedRunGraceSeconds > 0,
             "SchedulerOptionsBuilder.DefaultMissedRunGraceSeconds must be greater than zero."
         );
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepInterval > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.FingerprintSweepInterval must be greater than zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
+            "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
+        );
         // The structural bound JobChainBuilder.Build() enforces doubles as the configuration ceiling, so the enqueue
         // guard and the structural guard can never contradict (and SqlServer's recursive-CTE MAXRECURSION stays reachable).
         Ensure.True(
@@ -206,6 +214,8 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
+            // KTD7: its own service, because it selects on staleness — the opposite criterion from dispatch.
+            services.AddHostedService<JobsFingerprintSweepBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<JobsExecutionCancellationRegistry>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();

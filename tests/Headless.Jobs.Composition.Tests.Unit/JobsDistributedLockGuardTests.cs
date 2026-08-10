@@ -64,6 +64,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton(manager);
+        services.AddSingleton(new CronScheduleCache(TimeZoneInfo.Utc));
         // Register the lock under the Jobs-scoped keyed slot — production resolves it lazily from this same slot
         // (NullDistributedLock fallback included) inside the seed guard's try/catch.
         services.AddKeyedSingleton(JobsKeys.LockProvider, lockProvider);

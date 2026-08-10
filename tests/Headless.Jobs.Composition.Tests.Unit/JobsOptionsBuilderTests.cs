@@ -373,6 +373,38 @@ public sealed class JobsOptionsBuilderTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunGraceSeconds*");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_fingerprint_sweep_interval(int seconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval = TimeSpan.FromSeconds(seconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepInterval*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_fingerprint_sweep_batch_size(int batchSize)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.FingerprintSweepBatchSize = batchSize)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepBatchSize*");
+    }
+
     [Fact]
     public void explicit_node_id_is_preserved_verbatim()
     {

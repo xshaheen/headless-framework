@@ -62,4 +62,22 @@ public sealed class PostgreSqlRecoveryTests(PostgreSqlJobsCoordinationFixture fi
     {
         return base.coalesce_steps_past_an_occupied_earliest_instant_to_the_next_missed_instant();
     }
+
+    [Fact]
+    public override Task saturated_coalesce_preserves_an_unexamined_idle_n_plus_one_for_the_next_pass()
+    {
+        return base.saturated_coalesce_preserves_an_unexamined_idle_n_plus_one_for_the_next_pass();
+    }
+
+    [Fact]
+    public override Task fingerprint_keyset_progress_survives_provider_recreation()
+    {
+        return base.fingerprint_keyset_progress_survives_provider_recreation();
+    }
+
+    [Fact]
+    public override Task fingerprint_wrap_returns_low_id_after_exactly_full_forward_page()
+    {
+        return base.fingerprint_wrap_returns_low_id_after_exactly_full_forward_page();
+    }
 }

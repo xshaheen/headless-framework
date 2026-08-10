@@ -63,6 +63,21 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_select_a_durably_deferred_definition_even_after_its_retry_boundary()
+    {
+        var provider = _Create();
+        var deferred = _Definition(nextDue: _Now.UtcDateTime.AddHours(-1));
+        deferred.FingerprintRetryAfterUtc = _Now.UtcDateTime.AddMinutes(-1);
+        var healthy = _Definition(nextDue: _Now.UtcDateTime.AddMinutes(5));
+        await provider.InsertCronJobsAsync([deferred, healthy], AbortToken);
+
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken);
+
+        result.Should().NotBeNull();
+        result!.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(healthy.Id);
+    }
+
+    [Fact]
     public async Task should_bound_the_candidate_read_to_the_requested_limit()
     {
         var provider = _Create();
@@ -106,7 +121,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         var resumed = await provider.ResumeCronJobAsync(
             definition.Id,
             definition.ScheduleRevision,
-            _Occurrence(definition.Id, replacementInstant),
+            _ => _Occurrence(definition.Id, replacementInstant),
             _Now,
             AbortToken
         );
@@ -139,7 +154,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
                 new CronJobAtomicUpdate<FakeCronJob>(
                     edited,
                     definition.ScheduleRevision,
-                    _Occurrence(definition.Id, replacementInstant)
+                    _ => _Occurrence(definition.Id, replacementInstant)
                 ),
             ],
             _Now,
@@ -169,7 +184,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         edited.Retries = 9;
 
         var results = await provider.UpdateCronJobsAtomicallyAsync(
-            [new CronJobAtomicUpdate<FakeCronJob>(edited, definition.ScheduleRevision, NextOccurrence: null)],
+            [new CronJobAtomicUpdate<FakeCronJob>(edited, definition.ScheduleRevision, NextOccurrenceFactory: null)],
             _Now,
             AbortToken
         );

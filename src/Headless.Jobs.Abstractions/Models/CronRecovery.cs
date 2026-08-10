@@ -31,6 +31,18 @@ public sealed record CronRecoveryRequest
     /// <summary>The projection to persist: the first occurrence after <see cref="RecoveredThroughUtc"/>.</summary>
     public required DateTime NextDueUtc { get; init; }
 
+    /// <summary>
+    /// Last schedule instant actually examined by a saturated bounded evaluation. Used only when coalesce found every
+    /// examined instant already accounted for, so recovery can persist prefix progress without skipping unseen work.
+    /// </summary>
+    public required DateTime BoundedProgressThroughUtc { get; init; }
+
+    /// <summary>Projection immediately after <see cref="BoundedProgressThroughUtc"/>.</summary>
+    public required DateTime NextDueAfterBoundedProgressUtc { get; init; }
+
+    /// <summary>Whether more elapsed schedule instants existed beyond the bounded evaluation page.</summary>
+    public required bool EvaluationSaturated { get; init; }
+
     /// <summary>Which policy resolves the backlog.</summary>
     public required MissedRunPolicy Policy { get; init; }
 

@@ -186,6 +186,20 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         };
     }
 
+    /// <summary>
+    /// The fingerprint of the rules this cache would currently evaluate <paramref name="timeZoneId"/> under. A
+    /// definition whose persisted fingerprint differs was positioned under rules that have since changed.
+    /// </summary>
+    /// <remarks>
+    /// Resolved through the same <c>CronTimeZoneResolver</c> the evaluation path uses, so the fingerprint describes the
+    /// zone actually applied — including the scheduler-wide fallback when the definition names none — rather than the
+    /// identifier stored on the row.
+    /// </remarks>
+    public string ComputeEvaluationFingerprint(string? timeZoneId)
+    {
+        return CronEvaluationFingerprint.Compute(CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo));
+    }
+
     public bool Invalidate(string expression)
     {
         return _cache.TryRemove(_Normalize(expression), out _);

@@ -34,7 +34,7 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
         await migrator.MigrateAsync(PostgreSqlAddCronScheduleWatermark.Id, cancellationToken);
         (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken))
             .Should()
-            .Be((default, default, 0, "Coalesce", null));
+            .Be((default, default, 0, "Coalesce", null, 0, null));
 
         await migrator.MigrateAsync(Migration.InitialDatabase, cancellationToken);
         (await _ColumnExistsAsync("CronJobs", "ReconciledThroughUtc", cancellationToken)).Should().BeFalse();
@@ -52,6 +52,56 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
             .ThrowAsync<Exception>()
             .WithMessage("*Cannot downgrade cron schedule watermark migration*");
         (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken)).ReconciledThroughUtc.Should().NotBe(default);
+
+        await _ExecuteAsync(
+            "UPDATE jobs.\"CronJobs\" SET \"ReconciledThroughUtc\" = '-infinity', \"NextDueUtc\" = '-infinity', "
+                + "\"FingerprintFailureCount\" = 1, \"FingerprintRetryAfterUtc\" = now() + interval '1 hour' WHERE \"Id\" = @id;",
+            cancellationToken,
+            cronJobId
+        );
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron schedule watermark migration*");
+        (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken)).FingerprintFailureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task watermark_migration_creates_the_fingerprint_retry_keyset_index()
+    {
+        var cancellationToken = AbortToken;
+        var cronJobId = Guid.NewGuid();
+        await fixture.ResetDatabaseAsync(cancellationToken);
+        await _ExecuteAsync("DROP TABLE IF EXISTS \"__WatermarkMigrationsHistory\";", cancellationToken);
+        await _CreateLegacySchemaAsync(cronJobId, cancellationToken);
+        var options = new DbContextOptionsBuilder<PostgreSqlWatermarkMigrationDbContext>()
+            .UseNpgsql(
+                fixture.ConnectionString,
+                sql =>
+                    sql.MigrationsAssembly(typeof(PostgreSqlAddCronScheduleWatermark).Assembly.FullName)
+                        .MigrationsHistoryTable("__WatermarkMigrationsHistory")
+            )
+            .Options;
+        await using var dbContext = new PostgreSqlWatermarkMigrationDbContext(options);
+        var migrator = dbContext.GetService<IMigrator>();
+        await migrator.MigrateAsync(PostgreSqlAddCronScheduleWatermark.Id, cancellationToken);
+        await migrator.MigrateAsync(PostgreSqlAddCronScheduleWatermark.Id, cancellationToken);
+
+        (await _IndexExistsAsync("IX_CronJobs_FingerprintRetryAfterUtc_Id", cancellationToken)).Should().BeTrue();
+    }
+
+    private async Task<bool> _IndexExistsAsync(string indexName, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'jobs' AND indexname = @name);";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@name";
+        parameter.Value = indexName;
+        command.Parameters.Add(parameter);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private async Task _CreateLegacySchemaAsync(Guid cronJobId, CancellationToken cancellationToken)
@@ -82,7 +132,9 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
         DateTime NextDueUtc,
         int MissedRunGraceSeconds,
         string OnMissedRun,
-        string? EvaluationFingerprint
+        string? EvaluationFingerprint,
+        int FingerprintFailureCount,
+        DateTime? FingerprintRetryAfterUtc
     )> _ReadWatermarkDefaultsAsync(Guid cronJobId, CancellationToken cancellationToken)
     {
         await using var connection = fixture.CreateConnection();
@@ -90,7 +142,8 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
         await using var command = connection.CreateCommand();
         command.CommandText =
             "SELECT \"ReconciledThroughUtc\", \"NextDueUtc\", \"MissedRunGraceSeconds\", \"OnMissedRun\", "
-            + "\"EvaluationFingerprint\" FROM jobs.\"CronJobs\" WHERE \"Id\" = @id;";
+            + "\"EvaluationFingerprint\", \"FingerprintFailureCount\", \"FingerprintRetryAfterUtc\" "
+            + "FROM jobs.\"CronJobs\" WHERE \"Id\" = @id;";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@id";
         parameter.Value = cronJobId;
@@ -102,7 +155,9 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
             reader.GetDateTime(1),
             reader.GetInt32(2),
             reader.GetString(3),
-            await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4)
+            await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4),
+            reader.GetInt32(5),
+            await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetDateTime(6)
         );
     }
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -111,6 +112,15 @@ internal sealed class JobsInitializationHostedService(
             executionContext.ExternalProviderApplicationAction(serviceProvider);
             executionContext.ExternalProviderApplicationAction = null;
         }
+
+        // Hosted services start sequentially in registration order. Drain one stable store snapshot here, before this
+        // initializer returns and therefore before the scheduler can pick up a legacy/null or stale-fingerprint row.
+        // Deterministically invalid definitions are durably deferred by the manager; storage/infrastructure failures
+        // propagate and fail closed instead of allowing dispatch under an unverified interpretation.
+        if (backgroundScheduler is not null)
+        {
+            await DrainFingerprintSnapshotAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -121,6 +131,54 @@ internal sealed class JobsInitializationHostedService(
         }
 
         return Task.CompletedTask;
+    }
+
+    internal async Task DrainFingerprintSnapshotAsync(
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
+    {
+        var manager = serviceProvider.GetRequiredService<IInternalJobManager>();
+        Guid? cursor = null;
+        Guid? highWatermark = null;
+        var scanned = 0;
+        var rebased = 0;
+        var deferred = 0;
+        var lostFence = 0;
+        CronFingerprintSweepResult result;
+        while (true)
+        {
+            result = await manager
+                .RebaseStaleFingerprintsAsync(
+                    schedulerOptions.FingerprintSweepBatchSize,
+                    afterId: cursor,
+                    throughId: highWatermark,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+            scanned += result.Scanned;
+            rebased += result.Rebased;
+            deferred += result.Deferred;
+            lostFence += result.LostFence;
+            cursor = result.NextCursorId;
+            highWatermark ??= result.SnapshotHighWatermarkId;
+
+            if (result.HasMore)
+            {
+                if (cursor is null)
+                {
+                    throw new InvalidOperationException(
+                        "Fingerprint sweep reported more rows without a continuation cursor."
+                    );
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence);
     }
 
     // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
@@ -147,7 +205,8 @@ internal sealed class JobsInitializationHostedService(
                     x.Key,
                     x.Value.MissedRunGraceSeconds,
                     schedulerOptions.DefaultMissedRunGraceSeconds
-                )
+                ),
+                serviceProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null)
             ))
             .ToArray();
 
@@ -213,7 +272,10 @@ internal sealed class JobsInitializationHostedService(
         }
 
         throw new JobValidatorException(
-            $"Missed-run policy value '{(int)resolved}' is not defined for function '{function}'."
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Missed-run policy value '{(int)resolved}' is not defined for function '{function}'."
+            )
         );
     }
 
@@ -226,13 +288,31 @@ internal sealed class JobsInitializationHostedService(
         }
 
         throw new JobValidatorException(
-            $"Missed-run grace must be greater than zero seconds for function '{function}' but was {resolved}."
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Missed-run grace must be greater than zero seconds for function '{function}' but was {resolved}."
+            )
         );
     }
 }
 
 internal static partial class JobsInitializationLog
 {
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "CronFingerprintActivationCompleted",
+        Level = LogLevel.Information,
+        Message = "Cron fingerprint activation gate completed: scanned={Scanned}, rebased={Rebased}, "
+            + "deferred={Deferred}, lostFence={LostFence}."
+    )]
+    public static partial void CronFingerprintActivationCompleted(
+        this ILogger logger,
+        int scanned,
+        int rebased,
+        int deferred,
+        int lostFence
+    );
+
     [LoggerMessage(
         EventId = 1,
         EventName = "LeaseDurationShorterThanFallback",

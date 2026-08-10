@@ -52,6 +52,19 @@ public sealed record CronDispatchCandidate
 
     /// <summary>The definition's persisted recovery policy, applied when its watermark falls behind.</summary>
     public required MissedRunPolicy OnMissedRun { get; init; }
+
+    /// <summary>
+    /// Fingerprint of the rules this definition's projection was derived under, or <see langword="null"/> when it was
+    /// positioned before fingerprinting existed. Compared for equality only; a mismatch means the same expression and
+    /// timezone would now resolve to a different instant.
+    /// </summary>
+    public string? EvaluationFingerprint { get; init; }
+
+    /// <summary>Consecutive deterministic evaluation failures used by the durable defer backoff.</summary>
+    public int FingerprintFailureCount { get; init; }
+
+    /// <summary>Provider-time retry boundary for a previously deferred definition.</summary>
+    public DateTime? FingerprintRetryAfterUtc { get; init; }
 }
 
 /// <summary>
@@ -67,7 +80,7 @@ public sealed record CronDispatchCandidate
 [PublicAPI]
 public sealed record CronDispatchCandidates
 {
-    /// <summary>Non-paused definitions ordered by projection, earliest first.</summary>
+    /// <summary>Non-paused, non-deferred definitions ordered by projection, earliest first.</summary>
     public required IReadOnlyList<CronDispatchCandidate> Candidates { get; init; }
 
     /// <summary>The store's instant at the moment the candidates were read.</summary>

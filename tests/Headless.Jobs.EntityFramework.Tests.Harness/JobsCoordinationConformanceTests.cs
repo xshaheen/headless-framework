@@ -1624,14 +1624,14 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 first.ResumeCronJobAsync(
                     definition.Id,
                     expectedScheduleRevision: 7,
-                    _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
+                    _ => _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
                     operationTime,
                     ct
                 ),
                 second.ResumeCronJobAsync(
                     definition.Id,
                     expectedScheduleRevision: 7,
-                    _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
+                    _ => _CronOccurrence(definition.Id, JobStatus.Idle, executionTime),
                     operationTime,
                     ct
                 )
@@ -1652,6 +1652,70 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             await secondHost.StopAsync(ct);
             await firstHost.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task should_persist_the_store_anchor_used_for_resume_and_schedule_edit_under_node_skew()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-control-clock-skew");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var definition = _CronDefinition(isPaused: true, revision: 3, timeZoneId: "Etc/UTC");
+            (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
+
+            var skewedResumeAudit = TimeProvider.System.GetUtcNow().AddHours(-12);
+            DateTime? resumeAnchor = null;
+            var resumed = await persistence.ResumeCronJobAsync(
+                definition.Id,
+                definition.ScheduleRevision,
+                anchor =>
+                {
+                    resumeAnchor = anchor;
+                    return _CronOccurrence(definition.Id, JobStatus.Idle, anchor.AddMinutes(5));
+                },
+                skewedResumeAudit,
+                ct
+            );
+
+            resumed.Should().NotBeNull();
+            resumeAnchor.Should().NotBeNull();
+            resumed!.ReconciledThroughUtc.Should().BeCloseTo(resumeAnchor!.Value, TimeSpan.FromMicroseconds(1));
+            resumed.NextDueUtc.Should().BeCloseTo(resumeAnchor.Value.AddMinutes(5), TimeSpan.FromMicroseconds(1));
+
+            var skewedEditAudit = TimeProvider.System.GetUtcNow().AddHours(12);
+            DateTime? editAnchor = null;
+            resumed.Expression = "0 */10 * * * *";
+            var edited = await persistence.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<CronJobEntity>(
+                        resumed,
+                        resumed.ScheduleRevision,
+                        anchor =>
+                        {
+                            editAnchor = anchor;
+                            return _CronOccurrence(definition.Id, JobStatus.Idle, anchor.AddMinutes(10));
+                        }
+                    ),
+                ],
+                skewedEditAudit,
+                ct
+            );
+
+            edited.Should().NotBeNull();
+            editAnchor.Should().NotBeNull();
+            edited![0].ReconciledThroughUtc.Should().BeCloseTo(editAnchor!.Value, TimeSpan.FromMicroseconds(1));
+            edited[0].NextDueUtc.Should().BeCloseTo(editAnchor.Value.AddMinutes(10), TimeSpan.FromMicroseconds(1));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
         }
     }
 
@@ -1682,7 +1746,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                     new CronJobAtomicUpdate<CronJobEntity>(
                         metadataEdit,
                         ExpectedScheduleRevision: 2,
-                        NextOccurrence: null
+                        NextOccurrenceFactory: null
                     ),
                 ],
                 operationTime,
@@ -1702,7 +1766,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             scheduleEdit.Expression = "0 */5 * * * *";
             var replacement = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.UtcDateTime.AddMinutes(5));
             var scheduleResult = await persistence.UpdateCronJobsAtomicallyAsync(
-                [new CronJobAtomicUpdate<CronJobEntity>(scheduleEdit, ExpectedScheduleRevision: 2, replacement)],
+                [new CronJobAtomicUpdate<CronJobEntity>(scheduleEdit, ExpectedScheduleRevision: 2, _ => replacement)],
                 operationTime,
                 ct
             );
@@ -1728,7 +1792,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                     new CronJobAtomicUpdate<CronJobEntity>(
                         pausedEdit,
                         ExpectedScheduleRevision: paused!.ScheduleRevision,
-                        NextOccurrence: null
+                        NextOccurrenceFactory: null
                     ),
                 ],
                 operationTime.AddSeconds(2),
@@ -1773,8 +1837,16 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             second.Description = "second-updated";
             var result = await persistence.UpdateCronJobsAtomicallyAsync(
                 [
-                    new CronJobAtomicUpdate<CronJobEntity>(first, ExpectedScheduleRevision: 0, NextOccurrence: null),
-                    new CronJobAtomicUpdate<CronJobEntity>(second, ExpectedScheduleRevision: 0, NextOccurrence: null),
+                    new CronJobAtomicUpdate<CronJobEntity>(
+                        first,
+                        ExpectedScheduleRevision: 0,
+                        NextOccurrenceFactory: null
+                    ),
+                    new CronJobAtomicUpdate<CronJobEntity>(
+                        second,
+                        ExpectedScheduleRevision: 0,
+                        NextOccurrenceFactory: null
+                    ),
                 ],
                 TimeProvider.System.GetUtcNow(),
                 ct
